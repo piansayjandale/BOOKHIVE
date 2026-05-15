@@ -1,0 +1,47 @@
+{
+  "name": "bookhive-admin",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=4096 next dev",
+    "build": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=4096 next build",
+    "start": "cd frontend && next start",
+    "lint": "eslint",
+    "api:dev": "tsx watch backend/src/server.js",
+    "api:start": "node backend/src/server.js",
+    "db:seed": "cross-env NODE_ENV=development tsx scripts/seed-admin-users.js",
+    "db:import:goodreads": "tsx scripts/import-goodreads.ts",
+    "db:import:kaggle": "tsx scripts/import-goodreads.ts --file data/imports/books_1.Best_Books_Ever.csv"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "fflate": "^0.8.2",
+    "framer-motion": "^12.38.0",
+    "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^1.8.0",
+    "next": "16.2.4",
+    "pg": "^8.20.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "recharts": "^3.8.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/pg": "^8.11.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "cross-env": "^10.1.0",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.4",
+    "tailwindcss": "^4",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

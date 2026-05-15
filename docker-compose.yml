@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: bookhive-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bookhive
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7
+    container_name: bookhive-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: bookhive-search
+    restart: unless-stopped
+    environment:
+      MEILI_MASTER_KEY: bookhive-master-key
+    ports:
+      - "7700:7700"
+    volumes:
+      - meili_data:/meili_data
+
+volumes:
+  postgres_data:
+  meili_data:

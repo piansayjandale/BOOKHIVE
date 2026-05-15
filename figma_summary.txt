@@ -1,0 +1,69 @@
+﻿=== BOOKHIVE FIGMA DESIGN ANALYSIS ===
+
+[DOCUMENT OVERVIEW]
+- File: Bookhive
+- Total Pages: 3
+- Pages Analyzed: Page 2 and Page 3 (indices 1 and 2)
+
+[PAGE 2: Home Page]
+Main Frame: BookHive: Home (Fixed Height)
+- Size: 1280x1024 pixels
+- Background Color: RGB(15, 29, 41) - Dark blue
+
+[KEY COMPONENTS FOUND ON PAGE 2:]
+
+1. HEADER - TopAppBar
+   - Size: 1000x64
+   - Background: RGB(0, 32, 59)
+   - Layout: Horizontal
+   - Contains: 'BOOKHIVE librarian' branding, notification icon, user avatar
+   - Avatar background: RGB(241, 245, 249) - Light
+
+2. MAIN SEARCH SECTION
+   - Background: RGB(38, 66, 88)
+   - Text: 'Find resources across the entire STI WNU digital ecosystem.'
+   - Search placeholder: 'search by title, author, ISBN or ask a question...'
+   - Placeholder text color: RGB(148, 163, 184) - Gray
+
+3. COMMAND DESK SECTION
+   - Title: 'LIBRARIAN COMMAND DESK' (Yellow: RGB(252, 212, 0))
+   - Buttons:
+     * BOOKHIVE LIBRARIAN (RGB(100, 116, 139))
+     * 3 pending requests (RGB(100, 116, 139))
+
+4. CATEGORY FILTER BUTTONS
+   - All buttons have corner radius: 25
+   - Button colors: RGB(48, 69, 87) or RGB(58, 95, 120) for active
+   - Categories:
+     * Computer Science (active - highlighted)
+     * Engineering
+     * Education
+     * Business & Accountancy
+     * Arts
+
+5. INTERACTIVE ELEMENTS
+   - All buttons use rounded corners (border radius: 9999 or 25)
+   - Text color: White (RGB(255, 255, 255))
+   - Secondary text: RGB(148, 163, 184) - Muted gray
+
+[COLOR PALETTE]
+Primary Colors:
+- Dark Navy: RGB(15, 29, 41)
+- Darker Blue: RGB(0, 32, 59)
+- Medium Blue: RGB(38, 66, 88)
+- Steel Blue: RGB(100, 116, 139)
+- Light Blue: RGB(58, 95, 120)
+- Accent Yellow: RGB(252, 212, 0)
+- White: RGB(255, 255, 255)
+- Muted Gray: RGB(148, 163, 184)
+- Light Background: RGB(241, 245, 249)
+
+[LAYOUT SYSTEM]
+- Layout Mode: Horizontal/Vertical flexbox
+- Primary Axis Sizing: FIXED
+- Counter Axis Sizing: FIXED
+- All containers use nested frame structure
+
+Report continues with Page 3 analysis...
+
+Full detailed report: figma_report.txt
