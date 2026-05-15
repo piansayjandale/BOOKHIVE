@@ -11,52 +11,12 @@ async function seedDatabase() {
   try {
     console.log("🌱 Starting database seeding...");
 
-    // Create admin_account_users table if it doesn't exist
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS admin_account_users (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        id_number TEXT NOT NULL UNIQUE,
-        email TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        role TEXT NOT NULL,
-        department TEXT NOT NULL,
-        course TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'Active',
-        last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS admin_account_profiles (
-        user_id TEXT PRIMARY KEY REFERENCES admin_account_users(id) ON DELETE CASCADE,
-        phone TEXT NOT NULL DEFAULT '',
-        bio TEXT NOT NULL DEFAULT '',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE TABLE IF NOT EXISTS admin_auth_logs (
-        id TEXT PRIMARY KEY,
-        actor TEXT NOT NULL,
-        message TEXT NOT NULL,
-        severity TEXT NOT NULL DEFAULT 'info',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_admin_account_users_email
-        ON admin_account_users(email);
-      CREATE INDEX IF NOT EXISTS idx_admin_account_users_role
-        ON admin_account_users(role);
-      CREATE INDEX IF NOT EXISTS idx_admin_account_users_last_active
-        ON admin_account_users(last_active DESC);
-    `);
-
-    console.log("✅ Tables created successfully");
+    // No need to create tables here, they are handled by schema.sql
+    console.log("✅ Using existing tables from schema.sql");
 
     // Check if users already exist
     const existing = await pool.query(
-      "SELECT COUNT(*) as count FROM admin_account_users"
+      "SELECT COUNT(*) as count FROM users"
     );
 
     if (parseInt(existing.rows[0].count, 10) > 0) {
@@ -69,10 +29,9 @@ async function seedDatabase() {
     const librarianPasswordHash = await bcryptjs.hash("BookHiveLibrarian!2026", 10);
 
     // Insert admin user
-    await pool.query(
+    const adminRes = await pool.query(
       `
-        INSERT INTO admin_account_users (
-          id,
+        INSERT INTO users (
           name,
           id_number,
           email,
@@ -82,10 +41,10 @@ async function seedDatabase() {
           course,
           status,
           last_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        RETURNING id
       `,
       [
-        "user-001",
         "Yana Palmares",
         "USER-YANA-001",
         "yana.palmares@stiwnu.edu.ph",
@@ -96,28 +55,28 @@ async function seedDatabase() {
         "Active",
       ]
     );
+    const adminId = adminRes.rows[0].id;
 
     // Insert admin profile
     await pool.query(
       `
-        INSERT INTO admin_account_profiles (
+        INSERT INTO admin_profiles (
           user_id,
           phone,
           bio
         ) VALUES ($1, $2, $3)
       `,
       [
-        "user-001",
+        adminId,
         "+63 917 555 0101",
         "Oversees the BookHive platform, policy configuration, and system-wide analytics.",
       ]
     );
 
     // Insert librarian user
-    await pool.query(
+    const librarianRes = await pool.query(
       `
-        INSERT INTO admin_account_users (
-          id,
+        INSERT INTO users (
           name,
           id_number,
           email,
@@ -127,10 +86,10 @@ async function seedDatabase() {
           course,
           status,
           last_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        RETURNING id
       `,
       [
-        "user-002",
         "Joseph Tan",
         "USER-JOSEPH-001",
         "joseph.tan@stiwnu.edu.ph",
@@ -141,18 +100,19 @@ async function seedDatabase() {
         "Active",
       ]
     );
+    const librarianId = librarianRes.rows[0].id;
 
     // Insert librarian profile
     await pool.query(
       `
-        INSERT INTO admin_account_profiles (
+        INSERT INTO admin_profiles (
           user_id,
           phone,
           bio
         ) VALUES ($1, $2, $3)
       `,
       [
-        "user-002",
+        librarianId,
         "+63 917 555 0199",
         "Supports circulation, patron service, and day-to-day catalog operations.",
       ]

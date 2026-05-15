@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import { AppProviders } from "@/components/providers/app-providers";
 import { getSession } from "@/lib/auth";
 import "./globals.css";
-import "@/styles/dashboard.css";
 
 export const metadata: Metadata = {
   title: "BookHive Monitor",

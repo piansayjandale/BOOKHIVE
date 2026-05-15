@@ -18,7 +18,7 @@ export function AppShell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen flex bg-[var(--background)] text-[var(--card-foreground)] transition-colors duration-300 ease-out">
+    <div className="h-screen flex overflow-hidden bg-[var(--background)] text-[var(--card-foreground)] transition-colors duration-300 ease-out">
       <Sidebar
         isOpen={sidebarOpen}
         collapsed={sidebarCollapsed}
@@ -35,8 +35,8 @@ export function AppShell({
       >
         <Menu className="h-5 w-5" />
       </button>
-      <main className="flex-1 min-h-screen overflow-y-auto lg:pl-[250px] transition-all duration-300 ease-out">
-        <div className="min-h-screen bg-[var(--content-bg)] px-4 pb-8 pt-6 sm:px-5 lg:px-8 lg:pt-8">
+      <main className="flex-1 h-screen overflow-y-auto lg:pl-0 transition-all duration-300 ease-out relative">
+        <div className="lg:ml-[250px] min-h-full bg-[var(--content-bg)] px-4 pb-8 pt-6 sm:px-5 lg:px-8 lg:pt-8 transition-all duration-300 ease-out">
           <Topbar variant={variant} />
           <div className="mx-auto max-w-[1400px] mt-6">
             {children}

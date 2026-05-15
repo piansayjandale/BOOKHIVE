@@ -6,9 +6,14 @@ import { asyncHandler } from "../utils/async-handler.js";
 
 export const adminRouter = Router();
 
-adminRouter.use(authenticateToken, requireAdmin);
+adminRouter.use(authenticateToken);
 
+// Dashboard is accessible to all staff (Admins and Librarians)
 adminRouter.get("/dashboard", asyncHandler(adminController.getDashboard));
+
+// All other routes below are restricted to Admins only
+adminRouter.use(requireAdmin);
+
 adminRouter.get("/users", asyncHandler(adminController.listUsers));
 adminRouter.post("/users", asyncHandler(adminController.createUser));
 adminRouter.patch("/users/:id", asyncHandler(adminController.updateUser));

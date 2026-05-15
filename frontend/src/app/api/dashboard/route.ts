@@ -24,9 +24,9 @@ export async function GET() {
 
     if (!response.ok) {
       const error = await response.text();
-      console.error("/api/admin/dashboard failed:", response.status, error);
+      console.error(`Backend /api/admin/dashboard failed [${response.status}]:`, error);
       return NextResponse.json(
-        { message: "Failed to load dashboard from backend." },
+        { message: `Backend error: ${response.status}` },
         { status: response.status }
       );
     }

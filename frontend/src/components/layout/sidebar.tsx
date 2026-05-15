@@ -59,12 +59,9 @@ export function Sidebar({
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-screen w-[250px] flex-col border-r border-slate-700/50 px-6 pb-8 pt-8 text-[var(--sidebar-foreground)] shadow-[24px_0_80px_rgba(0,0,0,0.36)] transition-all duration-300 ease-out overflow-y-auto lg:translate-x-0 lg:shadow-[24px_0_64px_rgba(0,0,0,0.18)]",
+          "fixed inset-y-0 left-0 z-50 flex h-screen w-[250px] flex-col border-r border-[var(--line)] px-6 pb-8 pt-8 text-[var(--sidebar-foreground)] shadow-[24px_0_80px_rgba(0,0,0,0.36)] transition-all duration-300 ease-out overflow-y-auto lg:translate-x-0 lg:shadow-[24px_0_64px_rgba(0,0,0,0.18)] bg-[var(--sidebar-bg)]",
           isOpen ? "translate-x-0" : "-translate-x-full",
         )}
-        style={{
-          background: "#061A2E",
-        }}
       >
         {/* Header */}
         <div className="mb-8">

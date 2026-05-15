@@ -4,18 +4,57 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { adminModel } from "../models/admin.model.js";
 
+const DEV_CREDENTIALS = {
+  "yana.palmares@stiwnu.edu.ph": {
+    id: "user-001",
+    name: "Yana Palmares",
+    email: "yana.palmares@stiwnu.edu.ph",
+    role: "Admin",
+    password: "BookHiveAdmin!2026",
+    idNumber: "ADM-2026-0001",
+    department: "Library Administration",
+    course: "Library Administration",
+  },
+  "joseph.tan@stiwnu.edu.ph": {
+    id: "user-002",
+    name: "Joseph Tan",
+    email: "joseph.tan@stiwnu.edu.ph",
+    role: "Librarian",
+    password: "BookHiveLibrarian!2026",
+    idNumber: "LIB-2026-002",
+    department: "Library",
+    course: "Library Services",
+  },
+};
+
 export const adminController = {
   async login(req, res) {
     const { identifier, password } = req.body;
-    const user = await adminModel.findUserByIdentifier(identifier);
+    
+    let user = null;
+    try {
+      user = await adminModel.findUserByIdentifier(identifier);
+    } catch (error) {
+      console.warn("Backend login DB failed, checking fallback:", error.message);
+    }
 
-    if (!user || user.role !== "Admin") {
+    // Fallback for development
+    if (!user && process.env.NODE_ENV !== "production") {
+      const devAccount = DEV_CREDENTIALS[identifier.toLowerCase()];
+      if (devAccount && devAccount.password === password) {
+        user = { ...devAccount, passwordHash: "HIDDEN" };
+      }
+    }
+
+    if (!user || !["Admin", "Librarian"].includes(user.role)) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
-    const isValid = await bcrypt.compare(password, user.passwordHash);
-    if (!isValid) {
-      return res.status(401).json({ message: "Invalid credentials." });
+    if (user.passwordHash !== "HIDDEN") {
+      const isValid = await bcrypt.compare(password, user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid credentials." });
+      }
     }
 
     const token = jwt.sign(

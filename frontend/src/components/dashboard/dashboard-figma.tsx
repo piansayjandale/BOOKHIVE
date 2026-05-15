@@ -32,6 +32,8 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
         if (response.ok) {
           const data = await response.json();
           setDashboardData(data);
+        } else if (response.status === 401) {
+          console.error("Dashboard unauthorized. Session may have expired.");
         }
       } catch (error) {
         console.error("Failed to fetch dashboard:", error);
@@ -63,153 +65,178 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   ];
 
   return (
-    <div
-      style={{
-        backgroundColor: colors.darkNavy,
-        minHeight: "100vh",
-        color: colors.textWhite,
-        fontFamily: "system-ui, -apple-system, sans-serif",
-      }}
-    >
-      {/* Header - TopAppBar */}
-      <header
+    <>
+      {/* Header - TopAppBar removed as it is now provided by AppShell */}
+
+      {/* Hero Section */}
+      <section
         style={{
-          backgroundColor: colors.headerBlue,
-          padding: "16px 24px",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          borderBottom: `1px solid ${colors.containerBlue}`,
+          backgroundColor: colors.containerBlue,
+          borderRadius: "12px",
+          padding: "48px 32px",
+          marginBottom: "32px",
         }}
       >
-        <div style={{ fontSize: "18px", fontWeight: "700", letterSpacing: "0.5px" }}>
-          BOOKHIVE {variant === "librarian" ? "LIBRARIAN" : "ADMIN"}
-        </div>
-        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
-          <Bell size={20} color={colors.textWhite} />
-          <div
-            style={{
-              width: "36px",
-              height: "36px",
-              borderRadius: "50%",
-              backgroundColor: colors.lightBg,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "12px",
-              fontWeight: "700",
-              color: colors.headerBlue,
-            }}
-          >
-            YB
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main style={{ padding: "32px 24px", maxWidth: "1280px", margin: "0 auto" }}>
-        {/* Hero Section */}
-        <section
+        {/* Section Label */}
+        <div
           style={{
-            backgroundColor: colors.containerBlue,
-            borderRadius: "12px",
-            padding: "48px 32px",
-            marginBottom: "32px",
+            display: "inline-block",
+            backgroundColor: colors.accentGold,
+            color: colors.darkNavy,
+            padding: "6px 12px",
+            borderRadius: "20px",
+            fontSize: "12px",
+            fontWeight: "600",
+            marginBottom: "16px",
+            letterSpacing: "0.5px",
           }}
         >
-          {/* Section Label */}
-          <div
-            style={{
-              display: "inline-block",
-              backgroundColor: colors.accentGold,
-              color: colors.darkNavy,
-              padding: "6px 12px",
-              borderRadius: "20px",
-              fontSize: "12px",
-              fontWeight: "600",
-              marginBottom: "16px",
-              letterSpacing: "0.5px",
-            }}
-          >
-            {variant === "librarian" ? "LIBRARIAN COMMAND DESK" : "ADMIN DASHBOARD"}
-          </div>
+          {variant === "librarian" ? "LIBRARIAN COMMAND DESK" : "ADMIN DASHBOARD"}
+        </div>
 
-          {/* Main Heading */}
-          <h1
-            style={{
-              fontSize: "32px",
-              fontWeight: "700",
-              marginBottom: "32px",
-              lineHeight: "1.4",
-              maxWidth: "600px",
-            }}
-          >
-            Find resources across the entire STI WNU digital ecosystem.
-          </h1>
+        {/* Main Heading */}
+        <h1
+          style={{
+            fontSize: "32px",
+            fontWeight: "700",
+            marginBottom: "32px",
+            lineHeight: "1.4",
+            maxWidth: "600px",
+            color: colors.textWhite,
+          }}
+        >
+          Find resources across the entire STI WNU digital ecosystem.
+        </h1>
 
-          {/* Search Box */}
-          <div
+        {/* Search Box */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            backgroundColor: colors.textWhite,
+            borderRadius: "32px",
+            padding: "12px 24px",
+            marginBottom: "24px",
+            gap: "12px",
+          }}
+        >
+          <SearchIcon size={20} color={colors.textGray} />
+          <input
+            type="text"
+            placeholder="Search books, authors, subjects..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
             style={{
-              display: "flex",
-              alignItems: "center",
-              backgroundColor: colors.textWhite,
-              borderRadius: "32px",
-              padding: "12px 24px",
-              marginBottom: "24px",
-              gap: "12px",
+              flex: 1,
+              border: "none",
+              outline: "none",
+              fontSize: "14px",
+              color: "#1E293B",
+              backgroundColor: "transparent",
             }}
-          >
-            <SearchIcon size={20} color={colors.textGray} />
-            <input
-              type="text"
-              placeholder="Search books, authors, subjects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+
+        {/* Category Filter Buttons */}
+        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+          {categories.map((category) => (
+            <button
+              key={category}
+              onClick={() => setSelectedCategory(category)}
               style={{
-                flex: 1,
+                backgroundColor:
+                  selectedCategory === category ? colors.activeBlue : colors.steelBlue,
+                color: colors.textWhite,
                 border: "none",
-                outline: "none",
+                padding: "8px 16px",
+                borderRadius: "25px",
                 fontSize: "14px",
-                color: "#1E293B",
-                backgroundColor: "transparent",
+                fontWeight: "500",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
               }}
-            />
-          </div>
+              onMouseOver={(e) =>
+                (e.currentTarget.style.backgroundColor = colors.activeBlue)
+              }
+              onMouseOut={(e) =>
+                (e.currentTarget.style.backgroundColor =
+                  selectedCategory === category ? colors.activeBlue : colors.steelBlue)
+              }
+            >
+              {category}
+            </button>
+          ))}
+        </div>
+      </section>
 
-          {/* Category Filter Buttons */}
-          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-            {categories.map((category) => (
-              <button
-                key={category}
-                onClick={() => setSelectedCategory(category)}
-                style={{
-                  backgroundColor:
-                    selectedCategory === category ? colors.activeBlue : colors.steelBlue,
-                  color: colors.textWhite,
-                  border: "none",
-                  padding: "8px 16px",
-                  borderRadius: "25px",
-                  fontSize: "14px",
-                  fontWeight: "500",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                }}
-                onMouseOver={(e) =>
-                  (e.currentTarget.style.backgroundColor = colors.activeBlue)
-                }
-                onMouseOut={(e) =>
-                  (e.currentTarget.style.backgroundColor =
-                    selectedCategory === category ? colors.activeBlue : colors.steelBlue)
-                }
-              >
-                {category}
-              </button>
-            ))}
-          </div>
-        </section>
+      {/* Command Desk Section */}
+      <section style={{ marginBottom: "32px" }}>
+        <h2
+          style={{
+            fontSize: "16px",
+            fontWeight: "700",
+            marginBottom: "16px",
+            color: colors.accentGold,
+            letterSpacing: "0.5px",
+          }}
+        >
+          {variant === "librarian" ? "LIBRARIAN COMMAND DESK" : "ADMIN COMMAND CENTER"}
+        </h2>
 
-        {/* Command Desk Section */}
-        <section style={{ marginBottom: "32px" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+            gap: "16px",
+          }}
+        >
+          {commandActions.map((action, idx) => (
+            <button
+              key={idx}
+              style={{
+                backgroundColor: colors.steelBlue,
+                color: colors.textWhite,
+                border: "none",
+                borderRadius: "12px",
+                padding: "20px 16px",
+                textAlign: "left",
+                cursor: "pointer",
+                transition: "all 0.2s ease",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+              onMouseOver={(e) =>
+                (e.currentTarget.style.backgroundColor = colors.activeBlue)
+              }
+              onMouseOut={(e) =>
+                (e.currentTarget.style.backgroundColor = colors.steelBlue)
+              }
+            >
+              <div>
+                <div
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: "600",
+                    marginBottom: "4px",
+                    color: colors.textGray,
+                  }}
+                >
+                  {action.title}
+                </div>
+                <div style={{ fontSize: "14px", fontWeight: "500" }}>
+                  {action.count}
+                </div>
+              </div>
+              <MoreVertical size={18} color={colors.textGray} />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* Key Metrics Section */}
+      {dashboardData && (
+        <section>
           <h2
             style={{
               fontSize: "16px",
@@ -219,109 +246,42 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
               letterSpacing: "0.5px",
             }}
           >
-            {variant === "librarian" ? "LIBRARIAN COMMAND DESK" : "ADMIN COMMAND CENTER"}
+            DASHBOARD METRICS
           </h2>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
               gap: "16px",
             }}
           >
-            {commandActions.map((action, idx) => (
-              <button
-                key={idx}
-                style={{
-                  backgroundColor: colors.steelBlue,
-                  color: colors.textWhite,
-                  border: "none",
-                  borderRadius: "12px",
-                  padding: "20px 16px",
-                  textAlign: "left",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-                onMouseOver={(e) =>
-                  (e.currentTarget.style.backgroundColor = colors.activeBlue)
-                }
-                onMouseOut={(e) =>
-                  (e.currentTarget.style.backgroundColor = colors.steelBlue)
-                }
-              >
-                <div>
-                  <div
-                    style={{
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      marginBottom: "4px",
-                      color: colors.textGray,
-                    }}
-                  >
-                    {action.title}
-                  </div>
-                  <div style={{ fontSize: "14px", fontWeight: "500" }}>
-                    {action.count}
-                  </div>
-                </div>
-                <MoreVertical size={18} color={colors.textGray} />
-              </button>
-            ))}
+            <MetricCard
+              label="Total Books"
+              value={dashboardData.metrics?.totalBooks || "..."}
+              detail="Active catalog records"
+            />
+            <MetricCard
+              label="Active Users"
+              value={dashboardData.metrics?.activeUsers || "..."}
+              detail="Authenticated sessions"
+            />
+            <MetricCard
+              label="Pending Requests"
+              value={dashboardData.metrics?.pendingRequests || "..."}
+              detail="Awaiting approval"
+            />
+            {variant === "admin" && (
+              <MetricCard
+                label="System Health"
+                value="98%"
+                detail="All systems operational"
+              />
+            )}
           </div>
         </section>
-
-        {/* Key Metrics Section */}
-        {dashboardData && (
-          <section>
-            <h2
-              style={{
-                fontSize: "16px",
-                fontWeight: "700",
-                marginBottom: "16px",
-                color: colors.accentGold,
-                letterSpacing: "0.5px",
-              }}
-            >
-              DASHBOARD METRICS
-            </h2>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
-                gap: "16px",
-              }}
-            >
-              <MetricCard
-                label="Total Books"
-                value={dashboardData.metrics?.totalBooks || "..."}
-                detail="Active catalog records"
-              />
-              <MetricCard
-                label="Active Users"
-                value={dashboardData.metrics?.activeUsers || "..."}
-                detail="Authenticated sessions"
-              />
-              <MetricCard
-                label="Pending Requests"
-                value={dashboardData.metrics?.pendingRequests || "..."}
-                detail="Awaiting approval"
-              />
-              {variant === "admin" && (
-                <MetricCard
-                  label="System Health"
-                  value="98%"
-                  detail="All systems operational"
-                />
-              )}
-            </div>
-          </section>
-        )}
-      </main>
-    </div>
+      )}
+    </>
   );
 }
 

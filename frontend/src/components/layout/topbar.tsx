@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { Bell, AlertTriangle, Search } from "lucide-react";
@@ -33,20 +33,16 @@ export function Topbar({
   }, [notificationsOpen]);
 
   return (
-    <header style={{
-      backgroundColor: '#FFFFFF',
-      borderColor: '#e2e8f0',
-      color: '#1e293b'
-    }} className="sticky top-0 z-20 mb-8 flex items-center justify-between gap-4 rounded-[12px] border px-6 py-4 shadow-sm transition-colors duration-300 ease-out">
+    <header className="sticky top-0 z-20 mb-8 flex items-center justify-between gap-4 rounded-[12px] border border-[var(--line)] bg-[var(--topbar-bg)] px-6 py-4 text-[var(--topbar-foreground)] shadow-sm transition-colors duration-300 ease-out backdrop-blur-md">
       <div className="pl-0 flex-1">
-        <p style={{ color: '#64748b' }} className="text-xs font-semibold uppercase tracking-[0.32em]">
+        <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[var(--topbar-muted)]">
           {config.label}
         </p>
         <div className="mt-3 flex items-center gap-3">
-          <svg className="h-5 w-5" style={{ color: '#3b82f6' }} fill="currentColor" viewBox="0 0 20 20">
+          <svg className="h-5 w-5 text-[var(--accent)]" fill="currentColor" viewBox="0 0 20 20">
             <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
           </svg>
-          <h2 style={{ color: '#0f172a' }} className="text-2xl font-bold tracking-[0.12em]">
+          <h2 className="text-2xl font-bold tracking-[0.12em] text-[var(--topbar-title-color)]">
             {config.title}
           </h2>
         </div>
@@ -56,12 +52,7 @@ export function Topbar({
         <div ref={panelRef} className="relative">
           <button
             type="button"
-            style={{
-              backgroundColor: 'transparent',
-              borderColor: 'transparent',
-              color: '#1e293b'
-            }}
-            className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border transition-all duration-300 ease-out hover:bg-slate-100"
+            className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--line)] bg-transparent text-[var(--topbar-foreground)] transition-all duration-300 ease-out hover:bg-[var(--surface-hover)]"
             aria-label="Open notifications"
             aria-expanded={notificationsOpen}
             onClick={() => setNotificationsOpen((current) => !current)}
@@ -69,7 +60,7 @@ export function Topbar({
           >
             <Bell className="h-4 w-4" />
             {notificationsCount > 0 ? (
-              <span style={{ backgroundColor: '#3b82f6', color: '#ffffff' }} className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1.5 text-[10px] font-semibold">
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-semibold text-[var(--background)]">
                 {notificationsCount}
               </span>
             ) : null}
@@ -80,7 +71,7 @@ export function Topbar({
               backgroundColor: '#FFFFFF',
               borderColor: '#e2e8f0',
               boxShadow: '0 10px 25px rgba(15, 23, 42, 0.1)'
-            }} className="absolute right-0 z-30 mt-3 w-80 rounded-[28px] border p-4">
+            }} className="absolute right-0 z-30 mt-3 w-80 rounded-[28px] border border-[var(--line)] bg-[var(--card-bg)] p-4 shadow-2xl">
               <div className="mb-4 flex items-center justify-between">
                 <p style={{ color: '#1e293b' }} className="text-sm font-semibold">Notifications</p>
                 <button

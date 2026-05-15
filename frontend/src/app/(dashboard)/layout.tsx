@@ -1,9 +1,13 @@
 import { AppShell } from "@/components/layout/app-shell";
+import { getSession } from "@/lib/auth";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <AppShell variant="admin">{children}</AppShell>;
+  const session = await getSession();
+  const variant = session?.role === "Admin" ? "admin" : "librarian";
+
+  return <AppShell variant={variant}>{children}</AppShell>;
 }
