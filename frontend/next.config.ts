@@ -10,3 +10,4 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+// Force Next.js hard restart to clear stale cache

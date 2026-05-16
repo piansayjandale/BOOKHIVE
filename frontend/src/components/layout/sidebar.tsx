@@ -100,6 +100,7 @@ export function Sidebar({
           {/* New Record Button */}
           <button
             type="button"
+            suppressHydrationWarning
             className="w-full rounded-lg bg-[#FFD600] px-4 py-3 text-sm font-bold text-slate-900 transition-all duration-200 ease-out hover:bg-yellow-500 hover:-translate-y-0.5 shadow-lg shadow-yellow-600/20"
             title="New Record"
           >
@@ -109,6 +110,7 @@ export function Sidebar({
           {/* Appearance Button */}
           <button
             type="button"
+            suppressHydrationWarning
             onClick={toggleTheme}
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-600/50 bg-slate-800/30 px-4 py-2.5 text-sm font-medium text-slate-300 transition-all duration-200 ease-out hover:bg-slate-800/50 hover:text-slate-100"
             title="Toggle appearance"
@@ -120,6 +122,7 @@ export function Sidebar({
           {/* Logout Button */}
           <button
             type="button"
+            suppressHydrationWarning
             onClick={logout}
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-600/50 bg-slate-800/30 px-4 py-2.5 text-sm font-medium text-slate-300 transition-all duration-200 ease-out hover:bg-slate-800/50 hover:text-slate-100"
             title="Logout"

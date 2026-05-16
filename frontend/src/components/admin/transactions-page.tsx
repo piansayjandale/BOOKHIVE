@@ -58,10 +58,10 @@ export function TransactionsPage() {
       />
 
       <div className="grid gap-4 md:grid-cols-4">
-        <AdminStatCard label="Pending" value={payload?.summary.pending ?? "..."} />
-        <AdminStatCard label="Approved" value={payload?.summary.approved ?? "..."} tone="success" />
-        <AdminStatCard label="Declined" value={payload?.summary.declined ?? "..."} tone="danger" />
-        <AdminStatCard label="Returned" value={payload?.summary.returned ?? "..."} tone="warning" />
+        <AdminStatCard label="Pending" value={payload?.summary?.pending ?? "..."} />
+        <AdminStatCard label="Approved" value={payload?.summary?.approved ?? "..."} tone="success" />
+        <AdminStatCard label="Declined" value={payload?.summary?.declined ?? "..."} tone="danger" />
+        <AdminStatCard label="Returned" value={payload?.summary?.returned ?? "..."} tone="warning" />
       </div>
 
       <AdminSection

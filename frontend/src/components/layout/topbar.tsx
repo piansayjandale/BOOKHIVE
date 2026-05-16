@@ -52,6 +52,7 @@ export function Topbar({
         <div ref={panelRef} className="relative">
           <button
             type="button"
+            suppressHydrationWarning
             className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--line)] bg-transparent text-[var(--topbar-foreground)] transition-all duration-300 ease-out hover:bg-[var(--surface-hover)]"
             aria-label="Open notifications"
             aria-expanded={notificationsOpen}
@@ -76,6 +77,7 @@ export function Topbar({
                 <p style={{ color: '#1e293b' }} className="text-sm font-semibold">Notifications</p>
                 <button
                   type="button"
+                  suppressHydrationWarning
                   style={{ color: '#64748b' }}
                   className="text-xs font-semibold uppercase tracking-[0.18em] transition hover:text-slate-900"
                   onClick={() => setNotificationsOpen(false)}

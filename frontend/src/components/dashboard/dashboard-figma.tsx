@@ -123,6 +123,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           <SearchIcon size={20} color={colors.textGray} />
           <input
             type="text"
+            suppressHydrationWarning
             placeholder="Search books, authors, subjects..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -142,6 +143,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           {categories.map((category) => (
             <button
               key={category}
+              suppressHydrationWarning
               onClick={() => setSelectedCategory(category)}
               style={{
                 backgroundColor:
@@ -193,6 +195,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           {commandActions.map((action, idx) => (
             <button
               key={idx}
+              suppressHydrationWarning
               style={{
                 backgroundColor: colors.steelBlue,
                 color: colors.textWhite,

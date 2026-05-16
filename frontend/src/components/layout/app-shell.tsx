@@ -28,6 +28,7 @@ export function AppShell({
       />
       <button
         type="button"
+        suppressHydrationWarning
         className="fixed left-4 top-4 z-40 inline-flex h-12 w-12 items-center justify-center rounded-2xl border border-[var(--line)] bg-[var(--topbar-bg)] text-[var(--card-foreground)] shadow-lg transition-all duration-300 ease-out hover:shadow-xl lg:hidden"
         onClick={() => setSidebarOpen((current) => !current)}
         aria-label="Toggle sidebar"
