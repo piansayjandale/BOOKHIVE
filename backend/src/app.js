@@ -10,7 +10,16 @@ export function createApp() {
 
   app.use(
     cors({
-      origin: env.corsOrigin,
+      origin: (origin, callback) => {
+        // Allow any origin in development to facilitate network access
+        if (process.env.NODE_ENV !== "production" || !origin) {
+          return callback(null, true);
+        }
+        if (origin === env.corsOrigin) {
+          return callback(null, true);
+        }
+        callback(new Error("Not allowed by CORS"));
+      },
       credentials: true,
     }),
   );

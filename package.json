@@ -4,11 +4,11 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=2048 next dev",
+    "dev": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=2048 next dev -H 0.0.0.0",
     "build": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=2048 next build",
     "start": "cd frontend && next start",
     "lint": "eslint",
-    "api:dev": "tsx watch backend/src/server.js",
+    "api:dev": "tsx watch backend/src/server.js --host 0.0.0.0",
     "api:start": "node backend/src/server.js",
     "db:seed": "cross-env NODE_ENV=development tsx scripts/seed-admin-users.js",
     "db:import:goodreads": "tsx scripts/import-goodreads.ts",

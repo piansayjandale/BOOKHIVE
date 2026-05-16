@@ -3,6 +3,6 @@ import { env } from "./config/env.js";
 
 const app = createApp();
 
-app.listen(env.port, () => {
-  console.log(`BookHive Express API listening on port ${env.port}`);
+app.listen(env.port, "0.0.0.0", () => {
+  console.log(`BookHive Express API listening on port ${env.port} (0.0.0.0)`);
 });
