@@ -54,9 +54,9 @@ const LoginPage: React.FC = () => {
 
       // Redirect based on the path provided by the API
       if (data.redirectPath) {
-        router.push(data.redirectPath);
+        window.location.assign(data.redirectPath);
       } else {
-        router.push('/dashboard');
+        window.location.assign('/dashboard');
       }
     } catch (err) {
       console.error('Login error:', err);
@@ -96,6 +96,7 @@ const LoginPage: React.FC = () => {
                 autoComplete="username"
                 required
                 disabled={isLoading}
+                suppressHydrationWarning
               />
             </div>
 
@@ -113,6 +114,7 @@ const LoginPage: React.FC = () => {
                   autoComplete="current-password"
                   required
                   disabled={isLoading}
+                  suppressHydrationWarning
                 />
                 <button
                   type="button"
@@ -120,6 +122,7 @@ const LoginPage: React.FC = () => {
                   onClick={() => setShowPassword(!showPassword)}
                   disabled={isLoading}
                   aria-label="Toggle password visibility"
+                  suppressHydrationWarning
                 >
                   {showPassword ? '👁️' : '👁️‍🗨️'}
                 </button>
@@ -133,6 +136,7 @@ const LoginPage: React.FC = () => {
                   checked={rememberMe}
                   onChange={e => setRememberMe(e.target.checked)}
                   disabled={isLoading}
+                  suppressHydrationWarning
                 />
                 Remember
               </label>
@@ -145,6 +149,7 @@ const LoginPage: React.FC = () => {
               type="submit" 
               className="submit-btn"
               disabled={isLoading}
+              suppressHydrationWarning
             >
               {isLoading ? 'SIGNING IN...' : 'SUBMIT'}
             </button>

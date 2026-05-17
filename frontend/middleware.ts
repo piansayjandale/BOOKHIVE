@@ -29,6 +29,16 @@ export async function middleware(request: NextRequest) {
   const isAuthenticated = !!session;
   const sessionDashboardPath = session ? getDashboardPathForRole(session.role) : "/login";
 
+  if (pathname.startsWith("/api")) {
+    if (!isPublicPath(pathname) && !isAuthenticated) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+    if (pathname.startsWith("/api/admin") && session?.role !== "Admin") {
+      return NextResponse.json({ message: "Forbidden" }, { status: 403 });
+    }
+    return NextResponse.next();
+  }
+
   if (!isAuthenticated && !isPublicPath(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
@@ -43,14 +53,6 @@ export async function middleware(request: NextRequest) {
 
   if (isLibrarianDashboardPath(pathname) && (!session || !["Admin", "Librarian"].includes(session.role))) {
     return NextResponse.redirect(new URL("/login", request.url));
-  }
-
-  if (pathname.startsWith("/api/admin") && session?.role !== "Admin") {
-    return NextResponse.json({ message: "Forbidden" }, { status: 403 });
-  }
-
-  if (pathname.startsWith("/api") && !isPublicPath(pathname) && !isAuthenticated) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
   return NextResponse.next();

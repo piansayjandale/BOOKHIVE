@@ -38,8 +38,7 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
   admin: {
     label: "BOOKHIVE",
     title: "BOOKHIVE ADMIN",
-    description:
-      "Centralized administration for users, books, analytics, AI search, and platform controls.",
+    description: "SYSTEM OVERSIGHT",
     profileLabel: "Library Admin",
     basePath: "/admin",
     navItems: [
@@ -51,14 +50,12 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
       { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig },
       { href: "/admin/system-monitoring", label: "System Monitoring", icon: ShieldAlert },
       { href: "/admin/settings", label: "Settings", icon: Settings2 },
-      { href: "/admin/profile", label: "Admin Profile", icon: UserCircle2 },
     ],
   },
   librarian: {
     label: "BOOKHIVE",
     title: "BOOKHIVE LIBRARIAN",
-    description:
-      "Daily circulation control, announcements, AI prompt search, and operational analytics.",
+    description: "CIRCULATION CONTROL",
     profileLabel: "Librarian",
     basePath: "/librarian",
     navItems: [

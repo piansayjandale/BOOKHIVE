@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import { startTransition, useEffect, useEffectEvent, useRef, useState } from "react";
-import { Plus, Search } from "lucide-react";
+import { Plus, Search, Sparkles, Mic, Image as ImageIcon } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import { useNotice } from "@/components/providers/notice-provider";
@@ -115,69 +115,103 @@ export function AiSearchPage() {
         title="Prompt Search"
         description="Upload supporting files and inspect relevance percentages for matched books."
       >
-        <form className="space-y-6" onSubmit={handleSearch}>
-          <div className="space-y-5 rounded-[32px] border border-[var(--line)] bg-[var(--panel)] p-6 shadow-2xl shadow-sky-500/10 ai-search-hero">
-            <div className="relative">
+        <form className="mb-8 rounded-[32px] border border-white/10 bg-[#152E47] p-8 md:p-12 shadow-xl shadow-black/20" onSubmit={handleSearch}>
+          {/* Section Label */}
+          <div className="mb-6 flex items-center gap-2 text-[#FCD400]">
+            <Sparkles className="h-4 w-4 fill-current" />
+            <span className="text-xs font-bold tracking-widest">
+              ASK BOOKHIVE
+            </span>
+          </div>
+
+          {/* Main Heading */}
+          <h1 className="mb-10 text-[28px] font-bold leading-tight text-white md:text-[36px]">
+            Find resources across the entire STI WNU digital ecosystem.
+          </h1>
+
+          {/* AI Prompt Search Box */}
+          <div className="mb-8 flex w-full items-center gap-2 rounded-full bg-white py-1.5 pl-6 pr-2 shadow-sm">
+            <Search className="h-5 w-5 flex-shrink-0 text-[#94A3B8]" />
+            
+            <input
+              type="text"
+              suppressHydrationWarning
+              placeholder="Search by Title, Author, ISBN, or ask a question..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="flex-1 bg-transparent text-[15px] text-[#1E293B] outline-none placeholder:text-[#94A3B8]"
+            />
+
+            <div className="flex items-center gap-3 border-l border-slate-200 pl-4 pr-1">
               <button
                 type="button"
+                suppressHydrationWarning
+                className="text-[#94A3B8] transition-colors hover:text-slate-700"
+                title="Voice Search"
+              >
+                <Mic className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                suppressHydrationWarning
                 onClick={() => {
                   const fileInput = document.getElementById("prompt-upload-input") as HTMLInputElement | null;
                   fileInput?.click();
                 }}
-                className="absolute left-3 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-500/20 text-sky-400 shadow-sm shadow-sky-500/20 transition hover:bg-sky-500/30 z-20"
-                aria-label="Upload files"
+                className="text-[#94A3B8] transition-colors hover:text-slate-700"
+                title="Upload Image/Context"
               >
-                <Plus className="h-5 w-5" />
+                <ImageIcon className="h-5 w-5" />
               </button>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search by title, author, ISBN, or a natural language prompt"
-                className="glass-input relative z-0 w-full rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-16 py-5 text-base text-[var(--module-title-color)]"
-              />
+              
               <button
-                type="button"
-                onClick={() => {
-                  const selectedQuery = query.trim();
-                  if (selectedQuery) {
-                    void executeSearch(selectedQuery, department);
-                  }
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex h-11 w-11 items-center justify-center rounded-full bg-[var(--accent)] text-[#10233a] shadow-lg shadow-sky-500/20 transition hover:scale-105 z-20"
-                aria-label="Search"
+                type="submit"
+                suppressHydrationWarning
+                className="ml-2 rounded-full bg-[#152E47] px-8 py-3.5 text-xs font-bold tracking-widest text-white transition-transform hover:scale-105"
               >
-                <Search className="h-5 w-5" />
+                ANALYZE
               </button>
             </div>
-
-            <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-              <select value={department} onChange={(event) => setDepartment(event.target.value)} className="glass-input px-4 py-4">
-                <option value="Computer Science">Computer Science</option>
-                <option value="Engineering">Engineering</option>
-                <option value="Education">Education</option>
-                <option value="Business & Accountancy">Business &amp; Accountancy</option>
-                <option value="Arts & Sciences">Arts &amp; Sciences</option>
-              </select>
-
-              <input
-                id="prompt-upload-input"
-                type="file"
-                className="hidden"
-                accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
-                multiple
-                onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
-              />
-            </div>
-
-            <p className="text-sm text-[var(--module-muted-color)]">
-              The plus icon uploads supporting files for the AI prompt search.
-            </p>
+            
+            <input
+              id="prompt-upload-input"
+              type="file"
+              className="hidden"
+              accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
+              multiple
+              onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
+            />
           </div>
 
+          {/* Category Filter Buttons */}
+          <div className="flex flex-wrap gap-3">
+            {["Computer Science", "Engineering", "Education", "Business & Accountancy", "Arts & Sciences"].map((cat) => (
+              <button
+                key={cat}
+                type="button"
+                suppressHydrationWarning
+                onClick={() => {
+                  setDepartment(cat);
+                  if (query.trim()) {
+                    void executeSearch(query, cat);
+                  }
+                }}
+                className={`rounded-[24px] px-6 py-2.5 text-[13px] font-medium transition-colors ${
+                  department === cat
+                    ? "bg-[#1E3445] text-white"
+                    : "bg-[#1E3445] text-[#94A3B8] hover:text-white"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* File list */}
           {files.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
+            <div className="mt-6 flex flex-wrap gap-2">
               {files.map((file) => (
-                <span key={`${file.name}-${file.size}`} className="rounded-full border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-1 text-xs">
+                <span key={`${file.name}-${file.size}`} className="rounded-full bg-white/20 px-3 py-1 text-xs text-white backdrop-blur-md">
                   {file.name}
                 </span>
               ))}

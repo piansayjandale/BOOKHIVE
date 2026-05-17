@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell, AlertTriangle, Search } from "lucide-react";
+import { Bell, AlertTriangle, Search, Sun, Moon } from "lucide-react";
 
 import { useSession } from "@/components/providers/session-provider";
+import { useTheme } from "@/components/providers/theme-provider";
 import { dashboardVariantConfig, type DashboardVariant } from "@/lib/dashboard-config";
 
 export function Topbar({
@@ -12,6 +13,7 @@ export function Topbar({
   variant?: DashboardVariant;
 }) {
   const { user } = useSession();
+  const { theme, toggleTheme } = useTheme();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsCount = 2;
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -49,6 +51,17 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-3">
+        <button
+          type="button"
+          suppressHydrationWarning
+          className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--line)] bg-transparent text-[var(--topbar-foreground)] transition-all duration-300 ease-out hover:bg-[var(--surface-hover)]"
+          aria-label="Toggle appearance"
+          onClick={toggleTheme}
+          title="Toggle appearance"
+        >
+          {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+        </button>
+
         <div ref={panelRef} className="relative">
           <button
             type="button"

@@ -194,7 +194,7 @@ const DashboardPage = () => {
                 key={category}
                 style={{
                   backgroundColor: 'rgba(255, 214, 0, 0.1)',
-                  border: 1px solid ,
+                  border: '1px solid rgba(255, 214, 0, 0.2)',
                   color: colors.yellow,
                   borderRadius: '20px',
                   padding: '8px 16px',
@@ -350,7 +350,7 @@ const DashboardPage = () => {
             <thead>
               <tr
                 style={{
-                  borderBottom: 1px solid ,
+                  borderBottom: '1px solid #E2E8F0',
                   backgroundColor: colors.background,
                 }}
               >
@@ -416,8 +416,7 @@ const DashboardPage = () => {
                 <tr
                   key={row.id}
                   style={{
-                    borderBottom: 1px solid ,
-                    '&:hover': { backgroundColor: colors.background },
+                    borderBottom: '1px solid #E2E8F0',
                   }}
                 >
                   <td style={{ padding: '12px' }}>
@@ -501,7 +500,7 @@ const DashboardPage = () => {
             </div>
 
             {trendingRecords.map((record, idx) => (
-              <div key={idx} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: 1px solid  }}>
+              <div key={idx} style={{ marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #E2E8F0' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
                   <FileText size={16} color={colors.muted} style={{ marginTop: '2px', flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>

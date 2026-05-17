@@ -6,6 +6,13 @@ export async function requestJson<T>(input: RequestInfo | URL, init?: RequestIni
   const isJson = response.headers.get("content-type")?.includes("application/json");
 
   if (!response.ok) {
+    if (response.status === 401) {
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new Error("Unauthorized");
+    }
+
     if (isJson) {
       const payload = (await response.json()) as { message?: string };
       throw new Error(payload.message ?? "Request failed.");

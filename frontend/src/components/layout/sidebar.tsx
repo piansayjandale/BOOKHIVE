@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LogOut, Settings, Palette } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 
 import { useSession } from "@/components/providers/session-provider";
-import { useTheme } from "@/components/providers/theme-provider";
 import { dashboardVariantConfig, type DashboardVariant } from "@/lib/dashboard-config";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +23,6 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
   const { user, logout } = useSession();
-  const { theme, toggleTheme } = useTheme();
   const config = dashboardVariantConfig[variant];
 
   const normalizedPathname =
@@ -66,9 +64,9 @@ export function Sidebar({
         {/* Header */}
         <div className="mb-8">
           <p className="text-sm font-bold uppercase tracking-[0.3em] text-white">
-            Admin Console
+            {config.title}
           </p>
-          <p className="mt-2 text-xs font-medium text-slate-400">SYSTEM OVERSIGHT</p>
+          <p className="mt-2 text-xs font-medium text-slate-400">{config.description}</p>
         </div>
 
         {/* Navigation */}
@@ -96,39 +94,39 @@ export function Sidebar({
         </nav>
 
         {/* Bottom Section */}
-        <div className="space-y-4 border-t border-slate-700/50 pt-6">
-          {/* New Record Button */}
-          <button
-            type="button"
-            suppressHydrationWarning
-            className="w-full rounded-lg bg-[#FFD600] px-4 py-3 text-sm font-bold text-slate-900 transition-all duration-200 ease-out hover:bg-yellow-500 hover:-translate-y-0.5 shadow-lg shadow-yellow-600/20"
-            title="New Record"
-          >
-            + NEW RECORD
-          </button>
-
-          {/* Appearance Button */}
-          <button
-            type="button"
-            suppressHydrationWarning
-            onClick={toggleTheme}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-600/50 bg-slate-800/30 px-4 py-2.5 text-sm font-medium text-slate-300 transition-all duration-200 ease-out hover:bg-slate-800/50 hover:text-slate-100"
-            title="Toggle appearance"
-          >
-            <Palette className="h-4 w-4" />
-            <span>Appearance</span>
-          </button>
+        <div className="mt-auto space-y-4 border-t border-white/10 pt-6">
+          
+          {/* User Profile Card */}
+          <div className="flex items-center justify-between rounded-xl border border-white/5 bg-[#0F1D29]/50 p-3 shadow-inner transition-all hover:border-white/10 hover:bg-[#0F1D29]/80">
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-white/10 bg-gradient-to-br from-[#152E47] to-[#0F1D29] text-sm font-bold text-[#FCD400] shadow-sm">
+                {user?.name?.charAt(0).toUpperCase() || 'A'}
+              </div>
+              <div className="flex flex-col overflow-hidden">
+                <span className="truncate text-sm font-semibold text-white">{user?.name || 'Administrator'}</span>
+                <span className="truncate text-[10px] uppercase tracking-wider text-slate-400">{user?.role || config.profileLabel}</span>
+              </div>
+            </div>
+            <Link 
+              href={`${config.basePath}/profile`}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 transition-all hover:scale-110 hover:bg-white/10 hover:text-[#FCD400] active:scale-95" 
+              title="Profile Settings"
+              onClick={onClose}
+            >
+              <Settings className="h-4 w-4 transition-transform hover:rotate-45" />
+            </Link>
+          </div>
 
           {/* Logout Button */}
           <button
             type="button"
             suppressHydrationWarning
             onClick={logout}
-            className="flex w-full items-center justify-center gap-2 rounded-lg border border-slate-600/50 bg-slate-800/30 px-4 py-2.5 text-sm font-medium text-slate-300 transition-all duration-200 ease-out hover:bg-slate-800/50 hover:text-slate-100"
+            className="group flex w-full items-center justify-center gap-2 rounded-xl border border-white/5 bg-gradient-to-r from-red-500/5 to-transparent px-4 py-3 text-sm font-bold tracking-widest text-slate-400 transition-all duration-300 hover:border-red-500/30 hover:bg-red-500/10 hover:text-red-400 hover:shadow-[0_0_15px_rgba(239,68,68,0.1)]"
             title="Logout"
           >
-            <LogOut className="h-4 w-4" />
-            <span>Logout</span>
+            <LogOut className="h-4 w-4 transition-transform group-hover:-translate-x-1" />
+            <span>LOGOUT</span>
           </button>
         </div>
       </aside>

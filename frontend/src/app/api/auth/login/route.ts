@@ -38,13 +38,14 @@ export async function POST(request: Request) {
       account = await adminRepository.authenticate(identifier, password);
     } catch (dbError) {
       console.warn("Database authentication failed:", dbError);
-      // Fall back to dev credentials if database is unavailable
-      if (process.env.NODE_ENV === "development") {
-        console.log("⚠️  Using fallback development credentials");
-        const devAccount = DEV_CREDENTIALS[identifier as keyof typeof DEV_CREDENTIALS];
-        if (devAccount && devAccount.password === password) {
-          account = devAccount;
-        }
+    }
+
+    // Fall back to dev credentials if database is unavailable or returns null
+    if (!account && process.env.NODE_ENV === "development") {
+      console.log("⚠️  Using fallback development credentials");
+      const devAccount = DEV_CREDENTIALS[identifier as keyof typeof DEV_CREDENTIALS];
+      if (devAccount && devAccount.password === password) {
+        account = devAccount;
       }
     }
 
