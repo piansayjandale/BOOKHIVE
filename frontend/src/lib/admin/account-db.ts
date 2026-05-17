@@ -47,16 +47,18 @@ function inferCourse(role: Role, department: Department) {
   }
 
   switch (department) {
-    case "Computer Science":
-      return "BS Computer Science";
-    case "Engineering":
-      return "BS Civil Engineering";
-    case "Education":
-      return "BSEd";
-    case "Business & Accountancy":
-      return "BS Accountancy";
+    case "Circulation":
+      return "Circulation Services";
+    case "General Reference":
+      return "Reference Services";
+    case "Filipiniana":
+      return "Filipiniana & Local Studies";
+    case "Reserve":
+      return "Reserve Services";
+    case "Periodical":
+      return "Periodicals & Serials";
     default:
-      return "BA Social Sciences";
+      return "Special Collections";
   }
 }
 

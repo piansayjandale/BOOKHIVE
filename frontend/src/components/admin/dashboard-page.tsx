@@ -188,7 +188,7 @@ const DashboardPage = () => {
 
         {/* Category Pills */}
         <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {['Computer Science', 'Engineering', 'Education', 'Business & Accountancy', 'Arts & Sciences'].map(
+          {['Circulation', 'General Reference', 'Filipiniana', 'Reserve', 'Periodical', 'Special Collections'].map(
             (category) => (
               <button
                 key={category}

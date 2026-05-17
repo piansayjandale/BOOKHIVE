@@ -28,17 +28,18 @@ import type {
 import { cn, formatDateTime } from "@/lib/utils";
 
 const categories = [
-  "Computer Science",
-  "Engineering",
-  "Education",
-  "Business & Accountancy",
-  "Arts & Sciences",
+  "Circulation",
+  "General Reference",
+  "Filipiniana",
+  "Reserve",
+  "Periodical",
+  "Special Collections",
 ];
 
 export function DashboardHome() {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("Computer Science");
+  const [selectedCategory, setSelectedCategory] = useState<string>("Circulation");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);

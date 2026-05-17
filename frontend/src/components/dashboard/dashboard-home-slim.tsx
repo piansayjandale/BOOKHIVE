@@ -24,11 +24,12 @@ import type { DashboardPayload, SearchResult } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
 const categories = [
-  "Computer Science",
-  "Engineering",
-  "Education",
-  "Business & Accountancy",
-  "Arts & Sciences",
+  "Circulation",
+  "General Reference",
+  "Filipiniana",
+  "Reserve",
+  "Periodical",
+  "Special Collections",
 ];
 
 const adminActions = [

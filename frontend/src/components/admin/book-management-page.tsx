@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { startTransition, useCallback, useDeferredValue, useEffect, useState } from "react";
 import { Archive, Pencil, Plus, Trash2 } from "lucide-react";
@@ -13,7 +13,7 @@ const emptyBookForm = {
   title: "",
   author: "",
   isbn: "",
-  department: "Computer Science",
+  department: "Circulation",
   category: "",
   shelfLocation: "",
   publishedDate: "",
@@ -203,12 +203,13 @@ export function BookManagementPage() {
               }}
               className="glass-input px-4 py-3"
             >
-              <option value="All">All Departments</option>
-              <option value="Computer Science">Computer Science</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Education">Education</option>
-              <option value="Business & Accountancy">Business &amp; Accountancy</option>
-              <option value="Arts & Sciences">Arts &amp; Sciences</option>
+              <option value="All">All Sections</option>
+              <option value="Circulation">Circulation</option>
+              <option value="General Reference">General Reference</option>
+              <option value="Filipiniana">Filipiniana</option>
+              <option value="Reserve">Reserve</option>
+              <option value="Periodical">Periodical</option>
+              <option value="Special Collections">Special Collections</option>
             </select>
             <select
               value={status}
@@ -328,12 +329,13 @@ export function BookManagementPage() {
               onChange={(event) => setCatalogDepartment(event.target.value)}
               className="glass-input px-4 py-3"
             >
-              <option value="All">All Departments</option>
-              <option value="Computer Science">Computer Science</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Education">Education</option>
-              <option value="Business & Accountancy">Business &amp; Accountancy</option>
-              <option value="Arts & Sciences">Arts &amp; Sciences</option>
+              <option value="All">All Sections</option>
+              <option value="Circulation">Circulation</option>
+              <option value="General Reference">General Reference</option>
+              <option value="Filipiniana">Filipiniana</option>
+              <option value="Reserve">Reserve</option>
+              <option value="Periodical">Periodical</option>
+              <option value="Special Collections">Special Collections</option>
             </select>
           </div>
 
@@ -380,13 +382,14 @@ export function BookManagementPage() {
           <FieldLabel label="ISBN">
             <input value={form.isbn} onChange={(event) => setForm((current) => ({ ...current, isbn: event.target.value }))} className="glass-input w-full px-4 py-3" required />
           </FieldLabel>
-          <FieldLabel label="Department">
+          <FieldLabel label="Section">
             <select value={form.department} onChange={(event) => setForm((current) => ({ ...current, department: event.target.value }))} className="glass-input w-full px-4 py-3">
-              <option value="Computer Science">Computer Science</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Education">Education</option>
-              <option value="Business & Accountancy">Business &amp; Accountancy</option>
-              <option value="Arts & Sciences">Arts &amp; Sciences</option>
+              <option value="Circulation">Circulation</option>
+              <option value="General Reference">General Reference</option>
+              <option value="Filipiniana">Filipiniana</option>
+              <option value="Reserve">Reserve</option>
+              <option value="Periodical">Periodical</option>
+              <option value="Special Collections">Special Collections</option>
             </select>
           </FieldLabel>
           <FieldLabel label="Category">

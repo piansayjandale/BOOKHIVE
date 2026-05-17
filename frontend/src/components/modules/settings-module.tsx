@@ -22,7 +22,7 @@ const emptyUserForm = {
   name: "",
   email: "",
   role: "Student" as Role,
-  department: "Computer Science" as Department,
+  department: "Circulation" as Department,
   status: "Active" as SystemUser["status"],
 };
 
@@ -338,11 +338,12 @@ export function SettingsModule() {
                   }
                 >
                   {[
-                    "Computer Science",
-                    "Engineering",
-                    "Education",
-                    "Business & Accountancy",
-                    "Arts & Sciences",
+                    "Circulation",
+                    "General Reference",
+                    "Filipiniana",
+                    "Reserve",
+                    "Periodical",
+                    "Special Collections",
                   ].map((option) => (
                     <option key={option} value={option}>
                       {option}

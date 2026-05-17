@@ -109,16 +109,18 @@ function inferCourse(role: Role, department: Department) {
   }
 
   switch (department) {
-    case "Computer Science":
-      return "BS Computer Science";
-    case "Engineering":
-      return "BS Civil Engineering";
-    case "Education":
-      return "BSEd";
-    case "Business & Accountancy":
-      return "BS Accountancy";
+    case "Circulation":
+      return "Circulation Services";
+    case "General Reference":
+      return "Reference Services";
+    case "Filipiniana":
+      return "Filipiniana & Local Studies";
+    case "Reserve":
+      return "Reserve Services";
+    case "Periodical":
+      return "Periodicals & Serials";
     default:
-      return "BA Social Sciences";
+      return "Special Collections";
   }
 }
 
@@ -129,16 +131,18 @@ function inferCategory(book: BookRecord) {
   }
 
   switch (book.department) {
-    case "Computer Science":
-      return "Technology";
-    case "Engineering":
-      return "Engineering";
-    case "Education":
-      return "Pedagogy";
-    case "Business & Accountancy":
-      return "Business";
+    case "Circulation":
+      return "General Circulation";
+    case "General Reference":
+      return "Reference";
+    case "Filipiniana":
+      return "Filipiniana";
+    case "Reserve":
+      return "Reserved Titles";
+    case "Periodical":
+      return "Serials";
     default:
-      return "Humanities";
+      return "Special Collections";
   }
 }
 
@@ -443,31 +447,50 @@ export const adminRepository = {
 
     const recentHistory = store.listHistory("", "All").slice(0, 8);
 
+    const summary = {
+      totalUsers,
+      totalBooks: catalogCount,
+      activeBorrowedBooks: approvedBorrows,
+      pendingRequests,
+    };
+    let topBooks: any[] = [];
+    try {
+      topBooks = await catalogRepository.getTrendingBooks(5);
+    } catch (error) {
+      console.error("Unable to load top books:", error);
+    }
+    const monthlyBorrowTrends = Array.from(monthMap.entries()).map(([month, value]) => ({
+      month,
+      borrows: value.borrows,
+      returns: value.returns,
+      reservations: value.reservations,
+    }));
+    const departmentUsage = Array.from(departmentMap.entries()).map(([department, usage]) => ({
+      department,
+      usage,
+    }));
+    const recentActivities = recentHistory.map((entry) => ({
+      id: entry.id,
+      actor: entry.actor,
+      message: `${entry.action} · ${entry.target}`,
+      timestamp: entry.timestamp,
+      category: buildActivityCategory(entry.action),
+    }));
+
+    const systemHealth = {
+      status: "NOMINAL" as const,
+      lastIndexing: new Date().toISOString(),
+      storageUsed: 84.2,
+      storageTotal: 128,
+    };
+
     return {
-      summary: {
-        totalUsers,
-        totalBooks: catalogCount,
-        activeBorrowedBooks: approvedBorrows,
-        pendingRequests,
-      },
-      topBooks: await catalogRepository.getTrendingBooks(5),
-      monthlyBorrowTrends: Array.from(monthMap.entries()).map(([month, value]) => ({
-        month,
-        borrows: value.borrows,
-        returns: value.returns,
-        reservations: value.reservations,
-      })),
-      departmentUsage: Array.from(departmentMap.entries()).map(([department, usage]) => ({
-        department,
-        usage,
-      })),
-      recentActivities: recentHistory.map((entry) => ({
-        id: entry.id,
-        actor: entry.actor,
-        message: `${entry.action} · ${entry.target}`,
-        timestamp: entry.timestamp,
-        category: buildActivityCategory(entry.action),
-      })),
+      summary,
+      systemHealth,
+      topBooks,
+      monthlyBorrowTrends,
+      departmentUsage,
+      recentActivities,
       newUsers,
       latestTransactions: transactions.slice(0, 6),
     };

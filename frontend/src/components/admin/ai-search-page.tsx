@@ -17,7 +17,7 @@ export function AiSearchPage() {
   const searchParams = useSearchParams();
   const [query, setQuery] = useState(() => searchParams.get("query") ?? "");
   const [department, setDepartment] = useState(
-    () => searchParams.get("department") ?? "Computer Science",
+    () => searchParams.get("department") ?? "Circulation",
   );
   const [files, setFiles] = useState<File[]>([]);
   const [payload, setPayload] = useState<PromptSearchPayload | null>(null);
@@ -185,7 +185,7 @@ export function AiSearchPage() {
 
           {/* Category Filter Buttons */}
           <div className="flex flex-wrap gap-3">
-            {["Computer Science", "Engineering", "Education", "Business & Accountancy", "Arts & Sciences"].map((cat) => (
+            {["Circulation", "General Reference", "Filipiniana", "Reserve", "Periodical", "Special Collections"].map((cat) => (
               <button
                 key={cat}
                 type="button"

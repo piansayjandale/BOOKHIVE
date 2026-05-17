@@ -7,44 +7,41 @@ async function initializeCatalogSchema() {
     throw new Error("Catalog PostgreSQL temporarily unavailable.");
   }
 
+  // The books table is created by schema.sql with: id UUID PRIMARY KEY, shelf_location TEXT, etc.
+  // We add the extra catalog columns that schema.sql doesn't define.
   await pool.query(`
-    CREATE TABLE IF NOT EXISTS books (
-      catalog_id SERIAL PRIMARY KEY,
-      id TEXT NOT NULL UNIQUE,
-      source TEXT NOT NULL DEFAULT 'bookhive',
-      source_book_id TEXT,
-      title TEXT NOT NULL,
-      author TEXT NOT NULL,
-      isbn TEXT NOT NULL,
-      publication_date TEXT NOT NULL DEFAULT '',
-      department TEXT NOT NULL,
-      shelf_location TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      series TEXT NOT NULL DEFAULT '',
-      genres TEXT NOT NULL DEFAULT '',
-      language TEXT NOT NULL DEFAULT '',
-      publisher TEXT NOT NULL DEFAULT '',
-      pages INTEGER NOT NULL DEFAULT 0,
-      rating REAL NOT NULL DEFAULT 0,
-      num_ratings INTEGER NOT NULL DEFAULT 0,
-      liked_percent REAL NOT NULL DEFAULT 0,
-      cover_img TEXT NOT NULL DEFAULT '',
-      bbe_score INTEGER NOT NULL DEFAULT 0,
-      bbe_votes INTEGER NOT NULL DEFAULT 0,
-      borrow_count INTEGER NOT NULL DEFAULT 0,
-      availability TEXT NOT NULL DEFAULT 'Available',
-      ai_score INTEGER NOT NULL DEFAULT 70,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'bookhive';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS source_book_id TEXT;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS publication_date TEXT DEFAULT '';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS series TEXT DEFAULT '';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS genres TEXT DEFAULT '';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'English';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS publisher TEXT DEFAULT '';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS pages INTEGER DEFAULT 0;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS rating REAL DEFAULT 0;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS num_ratings INTEGER DEFAULT 0;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS liked_percent REAL DEFAULT 0;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS cover_img TEXT DEFAULT '';
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS bbe_score INTEGER DEFAULT 0;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS bbe_votes INTEGER DEFAULT 0;
+    ALTER TABLE books ADD COLUMN IF NOT EXISTS ai_score INTEGER DEFAULT 70;
+  `);
 
-    CREATE INDEX IF NOT EXISTS idx_books_department ON books(department);
-    CREATE INDEX IF NOT EXISTS idx_books_title ON books(title);
-    CREATE INDEX IF NOT EXISTS idx_books_author ON books(author);
-    CREATE INDEX IF NOT EXISTS idx_books_isbn ON books(isbn);
+  // Backfill publication_date from published_date (DATE column) for existing rows
+  await pool.query(`
+    UPDATE books
+    SET publication_date = TO_CHAR(published_date, 'YYYY-MM-DD')
+    WHERE (publication_date IS NULL OR publication_date = '')
+      AND published_date IS NOT NULL;
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_books_source ON books(source);
     CREATE INDEX IF NOT EXISTS idx_books_borrow_count ON books(borrow_count DESC);
   `);
 }
+
+
 
 export async function getCatalogDb() {
   if (!hasExplicitDatabaseUrl) {

@@ -57,6 +57,12 @@ export interface AdminDashboardPayload {
     activeBorrowedBooks: number;
     pendingRequests: number;
   };
+  systemHealth?: {
+    status: "NOMINAL" | "DEGRADED" | "CRITICAL";
+    lastIndexing: string;
+    storageUsed: number;
+    storageTotal: number;
+  };
   topBooks: BookRecord[];
   monthlyBorrowTrends: Array<{
     month: string;

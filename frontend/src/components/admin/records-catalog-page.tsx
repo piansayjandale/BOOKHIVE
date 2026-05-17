@@ -35,12 +35,13 @@ export function RecordsCatalogPage() {
         <div className="mb-4 grid gap-3 md:grid-cols-[1fr_240px]">
           <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search title or author" className="glass-input px-4 py-3" />
           <select value={department} onChange={(event) => setDepartment(event.target.value)} className="glass-input px-4 py-3">
-            <option value="All">All Departments</option>
-            <option value="Computer Science">Computer Science</option>
-            <option value="Engineering">Engineering</option>
-            <option value="Education">Education</option>
-            <option value="Business & Accountancy">Business &amp; Accountancy</option>
-            <option value="Arts & Sciences">Arts &amp; Sciences</option>
+            <option value="All">All Sections</option>
+            <option value="Circulation">Circulation</option>
+            <option value="General Reference">General Reference</option>
+            <option value="Filipiniana">Filipiniana</option>
+            <option value="Reserve">Reserve</option>
+            <option value="Periodical">Periodical</option>
+            <option value="Special Collections">Special Collections</option>
           </select>
         </div>
 

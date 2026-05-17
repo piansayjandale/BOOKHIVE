@@ -47,30 +47,31 @@ type BookRow = {
 
 function mapBookRow(row: BookRow): BookRecord {
   return toCatalogBookRecord({
-    id: row.id,
-    source: row.source,
+    // schema.sql uses UUID for id; cast to string so catalog code works uniformly
+    id: String(row.id),
+    source: row.source ?? "bookhive",
     sourceBookId: row.source_book_id ?? undefined,
     title: row.title,
     author: row.author,
     isbn: row.isbn,
-    publicationDate: row.publication_date,
+    publicationDate: row.publication_date ?? "",
     department: row.department,
     shelfLocation: row.shelf_location,
-    summary: row.summary,
-    series: row.series,
-    genres: row.genres,
-    language: row.language,
-    publisher: row.publisher,
-    pages: row.pages,
-    rating: row.rating,
-    numRatings: row.num_ratings,
-    likedPercent: row.liked_percent,
-    coverImg: row.cover_img,
-    bbeScore: row.bbe_score,
-    bbeVotes: row.bbe_votes,
-    borrowCount: row.borrow_count,
-    availability: row.availability,
-    aiScore: row.ai_score,
+    summary: row.summary ?? "",
+    series: row.series ?? "",
+    genres: row.genres ?? "",
+    language: row.language ?? "English",
+    publisher: row.publisher ?? "",
+    pages: row.pages ?? 0,
+    rating: row.rating ?? 0,
+    numRatings: row.num_ratings ?? 0,
+    likedPercent: row.liked_percent ?? 0,
+    coverImg: row.cover_img ?? "",
+    bbeScore: row.bbe_score ?? 0,
+    bbeVotes: row.bbe_votes ?? 0,
+    borrowCount: row.borrow_count ?? 0,
+    availability: row.availability ?? "Available",
+    aiScore: row.ai_score ?? 70,
   });
 }
 
@@ -112,20 +113,30 @@ function createInsertedBookInput(
 }
 
 async function insertBookRow(database: Pool, book: CatalogBookInput) {
+  // Param order matches insertBookSql:
+  // title, author, isbn, department, category, shelf_location, published_date,
+  // summary, apa_citation, availability, borrow_count,
+  // source, source_book_id, publication_date,
+  // series, genres, language, publisher, pages, rating, num_ratings,
+  // liked_percent, cover_img, bbe_score, bbe_votes, ai_score
   const result = await database.query(insertBookSql, [
-    book.id,
-    book.source ?? "bookhive",
-    book.sourceBookId ?? "",
     book.title,
     book.author,
     book.isbn,
-    book.publicationDate,
     book.department,
+    (book as any).category ?? (book.genres?.split(',')[0]?.trim() || "General"),
     book.shelfLocation,
+    book.publicationDate || new Date().toISOString().split('T')[0],
     book.summary,
+    `${book.author}. (${(book.publicationDate || new Date().toISOString()).substring(0, 4)}). ${book.title}.`,
+    book.availability ?? "Available",
+    book.borrowCount ?? 0,
+    book.source ?? "bookhive",
+    book.sourceBookId ?? "",
+    book.publicationDate ?? "",
     book.series ?? "",
     book.genres ?? "",
-    book.language,
+    book.language ?? "English",
     book.publisher ?? "",
     book.pages ?? 0,
     book.rating ?? 0,
@@ -134,11 +145,7 @@ async function insertBookRow(database: Pool, book: CatalogBookInput) {
     book.coverImg ?? "",
     book.bbeScore ?? 0,
     book.bbeVotes ?? 0,
-    book.borrowCount ?? 0,
-    book.availability ?? "Available",
     book.aiScore ?? 70,
-    new Date().toISOString(),
-    new Date().toISOString(),
   ]);
   return result.rows[0] as BookRow;
 }
@@ -182,9 +189,9 @@ async function ensureCuratedSeedBooks() {
   }
 
   const database = await getCatalogDb();
+  // Check if any books exist at all (from schema.sql seed, kaggle import, or curated seed)
   const existing = await database.query<{ total: string }>(
-    "SELECT COUNT(*) as total FROM books WHERE source = $1",
-    ["bookhive-curated"],
+    "SELECT COUNT(*) as total FROM books",
   );
 
   if (parseInt(existing.rows[0].total, 10) > 0) {
@@ -193,24 +200,33 @@ async function ensureCuratedSeedBooks() {
   }
 
   for (const seedBook of seedBooks) {
-    await insertBookRow(database, toCuratedSeedInput(seedBook));
+    try {
+      await insertBookRow(database, toCuratedSeedInput(seedBook));
+    } catch {
+      // Skip duplicates silently
+    }
   }
 
   curatedSeedLoaded = true;
 }
 
+
 const insertBookSql = `
   INSERT INTO books (
-    id,
-    source,
-    source_book_id,
     title,
     author,
     isbn,
-    publication_date,
     department,
+    category,
     shelf_location,
+    published_date,
     summary,
+    apa_citation,
+    availability,
+    borrow_count,
+    source,
+    source_book_id,
+    publication_date,
     series,
     genres,
     language,
@@ -222,13 +238,12 @@ const insertBookSql = `
     cover_img,
     bbe_score,
     bbe_votes,
-    borrow_count,
-    availability,
-    ai_score,
-    created_at,
-    updated_at
-  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+    ai_score
+  ) VALUES ($1, $2, $3, $4, $5, $6, $7::date, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+  ON CONFLICT (isbn) DO NOTHING
+  RETURNING *, id::text AS id
 `;
+
 
 function getSeedCatalogBooks() {
   const importedBooks = readCatalogImportSnapshot();
@@ -766,37 +781,10 @@ export const catalogRepository = {
     await ensureCuratedSeedBooks();
     const database = await getCatalogDb();
     const book = createInsertedBookInput(input);
-    const result = await database.query<BookRow>(insertBookSql, [
-      book.id,
-      book.source,
-      book.sourceBookId,
-      book.title,
-      book.author,
-      book.isbn,
-      book.publicationDate,
-      book.department,
-      book.shelfLocation,
-      book.summary,
-      book.series,
-      book.genres,
-      book.language,
-      book.publisher,
-      book.pages,
-      book.rating,
-      book.numRatings,
-      book.likedPercent,
-      book.coverImg,
-      book.bbeScore,
-      book.bbeVotes,
-      book.borrowCount,
-      book.availability,
-      book.aiScore,
-      new Date().toISOString(),
-      new Date().toISOString(),
-    ]);
-
-    return mapBookRow(result.rows[0]);
+    const row = await insertBookRow(database, book);
+    return mapBookRow(row);
   },
+
 
   async updateBook(id: string, updates: Partial<BookRecord>) {
     await ensureCuratedSeedBooks();

@@ -86,13 +86,14 @@ export function ProfilePage() {
             <FieldLabel label="Email">
               <input type="email" value={profile.email} onChange={(event) => setProfile((current) => current ? { ...current, email: event.target.value } : current)} className="glass-input w-full px-4 py-3" />
             </FieldLabel>
-            <FieldLabel label="Department">
+            <FieldLabel label="Section">
               <select value={profile.department} onChange={(event) => setProfile((current) => current ? { ...current, department: event.target.value as typeof profile.department } : current)} className="glass-input w-full px-4 py-3">
-                <option value="Computer Science">Computer Science</option>
-                <option value="Engineering">Engineering</option>
-                <option value="Education">Education</option>
-                <option value="Business & Accountancy">Business &amp; Accountancy</option>
-                <option value="Arts & Sciences">Arts &amp; Sciences</option>
+                <option value="Circulation">Circulation</option>
+                <option value="General Reference">General Reference</option>
+                <option value="Filipiniana">Filipiniana</option>
+                <option value="Reserve">Reserve</option>
+                <option value="Periodical">Periodical</option>
+                <option value="Special Collections">Special Collections</option>
               </select>
             </FieldLabel>
             <FieldLabel label="Phone">

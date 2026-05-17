@@ -23,7 +23,7 @@ interface DashboardProps {
 }
 
 export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
-  const [selectedCategory, setSelectedCategory] = useState("Computer Science");
+  const [selectedCategory, setSelectedCategory] = useState("Circulation");
   const [searchQuery, setSearchQuery] = useState("");
   const [summary, setSummary] = useState({
     totalBooks: 0,
@@ -36,6 +36,12 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [newUsers, setNewUsers] = useState<any[]>([]);
   const [latestTransactions, setLatestTransactions] = useState<any[]>([]);
+  const [systemHealth, setSystemHealth] = useState({
+    status: "NOMINAL",
+    lastIndexing: "2024-10-24T04:12:00.000Z",
+    storageUsed: 84.2,
+    storageTotal: 128,
+  });
 
   useEffect(() => {
     async function fetchDashboard() {
@@ -56,6 +62,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
         if (data.recentActivities) setRecentActivities(data.recentActivities);
         if (data.newUsers) setNewUsers(data.newUsers);
         if (data.latestTransactions) setLatestTransactions(data.latestTransactions);
+        if (data.systemHealth) setSystemHealth(data.systemHealth);
       } catch (err) {
         console.error("Error fetching dashboard:", err);
       }
@@ -65,11 +72,12 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
 
 
   const categories = [
-    "Computer Science",
-    "Engineering",
-    "Education",
-    "Business & Accountancy",
-    "Arts & Sciences",
+    "Circulation",
+    "General Reference",
+    "Filipiniana",
+    "Reserve",
+    "Periodical",
+    "Special Collections",
   ];
 
   const commandActions = [
@@ -225,9 +233,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
         >
           <div className="mb-6 flex items-center justify-between">
             <div className="text-xs font-bold tracking-widest text-[#FCD400]">SYSTEM_HEALTH</div>
-            <div className="flex items-center gap-2 text-[10px] font-bold text-[#10B981]">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-[#10B981] shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div>
-              NOMINAL
+            <div className={`flex items-center gap-2 text-[10px] font-bold ${systemHealth.status === 'NOMINAL' ? 'text-[#10B981]' : systemHealth.status === 'DEGRADED' ? 'text-[#F59E0B]' : 'text-[#EF4444]'}`}>
+              <div className={`h-2 w-2 animate-pulse rounded-full ${systemHealth.status === 'NOMINAL' ? 'bg-[#10B981] shadow-[0_0_8px_rgba(16,185,129,0.8)]' : systemHealth.status === 'DEGRADED' ? 'bg-[#F59E0B] shadow-[0_0_8px_rgba(245,158,11,0.8)]' : 'bg-[#EF4444] shadow-[0_0_8px_rgba(239,68,68,0.8)]'}`}></div>
+              {systemHealth.status}
             </div>
           </div>
           
@@ -238,12 +246,15 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
             </div>
             
             <div className="mb-4 flex justify-between text-xs font-bold text-white">
-              <span>2024.10.24 04:12</span>
-              <span>84.2 / 128 GB</span>
+              <span>{new Date(systemHealth.lastIndexing).toLocaleDateString('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/-/g, '.')} {new Date(systemHealth.lastIndexing).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit' })}</span>
+              <span>{systemHealth.storageUsed.toFixed(1)} / {systemHealth.storageTotal} GB</span>
             </div>
             
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1E3445]">
-              <div className="h-full w-[65%] rounded-full bg-[#FCD400] transition-all duration-1000 group-hover:w-[70%]"></div>
+              <div 
+                className="h-full rounded-full bg-[#FCD400] transition-all duration-1000"
+                style={{ width: `${Math.min(100, Math.max(0, (systemHealth.storageUsed / systemHealth.storageTotal) * 100))}%` }}
+              ></div>
             </div>
           </div>
         </motion.div>

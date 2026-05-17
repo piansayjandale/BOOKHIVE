@@ -3,11 +3,12 @@ export type ThemeMode = "dark" | "light";
 export type Role = "Admin" | "Librarian" | "Student";
 
 export type Department =
-  | "Computer Science"
-  | "Engineering"
-  | "Education"
-  | "Business & Accountancy"
-  | "Arts & Sciences";
+  | "Circulation"
+  | "General Reference"
+  | "Filipiniana"
+  | "Reserve"
+  | "Periodical"
+  | "Special Collections";
 
 export type BookAvailability = "Available" | "Limited" | "Reserved";
 
