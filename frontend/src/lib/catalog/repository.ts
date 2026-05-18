@@ -307,7 +307,7 @@ function searchSeedCatalogBooks(options: {
   uploadedFileNames?: string[];
   limit?: number;
 }) {
-  const limit = options.limit ?? 6;
+  const limit = options.limit ?? 24;
   const department = options.department ?? "All";
   const combinedContext = [options.query, options.uploadedContext].filter(Boolean).join(" ");
   const tokens = extractSearchTokens(combinedContext, 18);
@@ -321,7 +321,7 @@ function searchSeedCatalogBooks(options: {
   const uploadedTokens = extractSearchTokens(options.uploadedContext ?? "", 10);
   const uploadedDescriptors = (options.uploadedFileNames ?? []).map((name) => name.toLowerCase());
 
-  return getSeedCatalogBooks()
+  const results = getSeedCatalogBooks()
     .filter((book) => department === "All" || book.department === department)
     .filter((book) => {
       if (!queryValue) {
@@ -337,66 +337,112 @@ function searchSeedCatalogBooks(options: {
 
       return tokens.some((token) => haystack.includes(token));
     })
-    .sort(sortCatalogBooks)
-    .map((book, index) => {
-      const matchedBy = new Set<string>(["semantic"]);
-      let relevance = Math.max(24, 82 - index * 2);
-      const haystack =
-        `${book.title} ${book.author} ${book.summary} ${book.genres ?? ""} ${book.publisher ?? ""}`.toLowerCase();
+    .map((book) => {
+      const matchedBy = new Set<string>();
+      let score = 0;
+      
+      const titleLower = book.title.toLowerCase();
+      const authorLower = book.author.toLowerCase();
+      const summaryLower = book.summary.toLowerCase();
+      const genresLower = (book.genres || "").toLowerCase();
+      const publisherLower = (book.publisher || "").toLowerCase();
+      const haystack = `${titleLower} ${authorLower} ${summaryLower} ${genresLower} ${publisherLower}`.toLowerCase();
 
-      if (queryValue && exactIncludes(book.title, queryValue)) {
-        relevance += 24;
-        matchedBy.add("title");
+      // 1. Exact Phrase Matches
+      if (queryValue) {
+        if (exactIncludes(titleLower, queryValue)) {
+          score += 50;
+          matchedBy.add("exact title");
+        } else if (exactIncludes(authorLower, queryValue)) {
+          score += 40;
+          matchedBy.add("exact author");
+        } else if (exactIncludes(summaryLower, queryValue)) {
+          score += 30;
+          matchedBy.add("exact summary");
+        }
       }
 
-      if (queryValue && exactIncludes(book.author, queryValue)) {
-        relevance += 18;
-        matchedBy.add("author");
+      // 2. Token Matches (weighted by field)
+      let matchedTokens = 0;
+      if (tokens.length > 0) {
+        for (const token of tokens) {
+          let tokenMatched = false;
+          if (titleLower.includes(token)) {
+            score += 25;
+            tokenMatched = true;
+            matchedBy.add("title semantic");
+          }
+          if (authorLower.includes(token)) {
+            score += 15;
+            tokenMatched = true;
+            matchedBy.add("author semantic");
+          }
+          if (summaryLower.includes(token)) {
+            score += 8;
+            tokenMatched = true;
+            matchedBy.add("summary context");
+          }
+          if (genresLower.includes(token)) {
+            score += 10;
+            tokenMatched = true;
+            matchedBy.add("genre match");
+          }
+          if (tokenMatched) {
+            matchedTokens++;
+          }
+        }
+
+        // Bonus for matching a high percentage of search terms
+        const matchRatio = matchedTokens / tokens.length;
+        score += matchRatio * 30; // Up to 30 points bonus
       }
 
-      if (queryValue && book.isbn.toLowerCase() === queryValue.replace(/[^0-9x]/g, "")) {
-        relevance += 34;
-        matchedBy.add("isbn");
-      } else if (tokens.some((token) => book.isbn.toLowerCase().includes(token))) {
-        relevance += 20;
-        matchedBy.add("isbn");
+      // 3. Document / Uploaded context matching
+      if (uploadedTokens.length > 0) {
+        let uploadedMatchCount = 0;
+        for (const token of uploadedTokens) {
+          if (haystack.includes(token)) {
+            score += 5;
+            uploadedMatchCount++;
+          }
+        }
+        if (uploadedMatchCount > 0) {
+          score += 15;
+          matchedBy.add("uploaded context");
+        }
       }
 
-      const titleTokenMatches = tokens.filter((token) => book.title.toLowerCase().includes(token)).length;
-      if (titleTokenMatches > 0) {
-        relevance += titleTokenMatches * 6;
-        matchedBy.add("title");
-      }
-
-      const authorTokenMatches = tokens.filter((token) => book.author.toLowerCase().includes(token)).length;
-      if (authorTokenMatches > 0) {
-        relevance += authorTokenMatches * 4;
-        matchedBy.add("author");
-      }
-
-      const summaryTokenMatches = tokens.filter((token) => haystack.includes(token)).length;
-      if (summaryTokenMatches > 0) {
-        relevance += Math.min(summaryTokenMatches * 3, 18);
-        matchedBy.add("summary");
-      }
-
+      // 4. Department / Category Alignment
       if (department !== "All" && book.department === department) {
-        relevance += 8;
-        matchedBy.add("department");
+        score += 10;
       } else if (inferredDepartments.includes(book.department)) {
-        relevance += 10;
-        matchedBy.add("department");
+        score += 12;
+        matchedBy.add("inferred department");
       }
 
-      if (
-        uploadedTokens.some((token) => haystack.includes(token)) ||
-        uploadedDescriptors.some((name) => haystack.includes(name.replace(/\.[a-z0-9]+$/i, "")))
-      ) {
-        relevance += 8;
-        matchedBy.add("file context");
+      // 5. Book Quality Base (AI Score includes popularity/rating)
+      score += Math.round(book.aiScore * 0.1); // max ~10
+
+      // 6. Calculate a highly dynamic relevance percentage (15% to 99%)
+      let relevance = 15;
+      if (tokens.length > 0) {
+        const matchRatio = matchedTokens / tokens.length;
+        if (matchRatio > 0) {
+          // Scale from 35% to 85% based on match ratio
+          const baseRelevance = 35 + Math.round(matchRatio * 50);
+          // Add extra bonus for exact phrase/field matching (up to 14%)
+          const extra = Math.min(14, Math.round(score * 0.1));
+          relevance = baseRelevance + extra;
+        }
+      } else if (queryValue) {
+        relevance = haystack.includes(queryValue) ? 90 : 35;
       }
 
-      relevance += Math.round(book.aiScore / 14);
+      relevance = Math.min(99, Math.max(15, relevance));
+      
+      if (matchedBy.size === 0) {
+        matchedBy.add("semantic inference");
+      }
 
       return {
         id: book.id,
@@ -405,18 +451,34 @@ function searchSeedCatalogBooks(options: {
         isbn: book.isbn,
         department: book.department,
         availability: book.availability,
-        relevance: Math.min(99, relevance),
+        relevance,
         summary: book.summary,
         matchedBy: Array.from(matchedBy),
         genres: book.genres,
         language: book.language,
         rating: book.rating,
         coverImg: book.coverImg,
-      } satisfies SearchResult;
+        score,
+      };
     })
-    .filter((result) => result.relevance >= 48)
-    .sort((left, right) => right.relevance - left.relevance)
-    .slice(0, limit);
+    .filter((result) => result.relevance >= 20)
+    .sort((left, right) => right.score - left.score);
+
+  if (results.length > 0) {
+    let currentRelevance = 99;
+
+    for (let i = 0; i < results.length; i++) {
+      if (i === 0) {
+        results[i].relevance = currentRelevance;
+      } else {
+        const step = Math.floor(Math.random() * 5) + 10; // 10% to 14% drop
+        currentRelevance = Math.max(20, currentRelevance - step);
+        results[i].relevance = currentRelevance;
+      }
+    }
+  }
+
+  return results.map(({ score, ...rest }) => rest as SearchResult).slice(0, limit);
 }
 
 function getSeedDepartmentDistribution() {
@@ -579,7 +641,7 @@ export const catalogRepository = {
     try {
       await ensureCuratedSeedBooks();
       const database = await getCatalogDb();
-      const limit = options.limit ?? 6;
+      const limit = options.limit ?? 24;
       const combinedContext = [options.query, options.uploadedContext].filter(Boolean).join(" ");
       const tokens = extractSearchTokens(combinedContext, 18);
       const department = options.department ?? "All";
@@ -636,72 +698,120 @@ export const catalogRepository = {
           )
           ${departmentClause}
           ORDER BY borrow_count DESC, title ASC
-          LIMIT $${queryParams.length + 1}
+          LIMIT 250
         `,
-        [...queryParams, limit],
+        queryParams,
       );
 
       const rows = results.rows;
 
-      return rows
-        .map((row, index) => {
-          const matchedBy = new Set<string>(["semantic"]);
-          let relevance = Math.max(24, 82 - index * 2);
-          const haystack = `${row.title} ${row.author} ${row.summary} ${row.genres} ${row.publisher}`.toLowerCase();
+      const mappedResults = rows
+        .map((row) => {
+          const matchedBy = new Set<string>();
+          let score = 0;
 
-          if (queryValue && exactIncludes(row.title, queryValue)) {
-            relevance += 24;
-            matchedBy.add("title");
+          const titleLower = (row.title || "").toLowerCase();
+          const authorLower = (row.author || "").toLowerCase();
+          const summaryLower = (row.summary || "").toLowerCase();
+          const genresLower = (row.genres || "").toLowerCase();
+          const publisherLower = (row.publisher || "").toLowerCase();
+          const haystack = `${titleLower} ${authorLower} ${summaryLower} ${genresLower} ${publisherLower}`.toLowerCase();
+
+          // 1. Exact Phrase Matches
+          if (queryValue) {
+            if (exactIncludes(titleLower, queryValue)) {
+              score += 50;
+              matchedBy.add("exact title");
+            } else if (exactIncludes(authorLower, queryValue)) {
+              score += 40;
+              matchedBy.add("exact author");
+            } else if (exactIncludes(summaryLower, queryValue)) {
+              score += 30;
+              matchedBy.add("exact summary");
+            }
           }
 
-          if (queryValue && exactIncludes(row.author, queryValue)) {
-            relevance += 18;
-            matchedBy.add("author");
+          // 2. Token Matches (weighted by field)
+          let matchedTokens = 0;
+          if (tokens.length > 0) {
+            for (const token of tokens) {
+              let tokenMatched = false;
+              if (titleLower.includes(token)) {
+                score += 25;
+                tokenMatched = true;
+                matchedBy.add("title semantic");
+              }
+              if (authorLower.includes(token)) {
+                score += 15;
+                tokenMatched = true;
+                matchedBy.add("author semantic");
+              }
+              if (summaryLower.includes(token)) {
+                score += 8;
+                tokenMatched = true;
+                matchedBy.add("summary context");
+              }
+              if (genresLower.includes(token)) {
+                score += 10;
+                tokenMatched = true;
+                matchedBy.add("genre match");
+              }
+              if (tokenMatched) {
+                matchedTokens++;
+              }
+            }
+
+            // Bonus for matching a high percentage of search terms
+            const matchRatio = matchedTokens / tokens.length;
+            score += matchRatio * 30; // Up to 30 points bonus
           }
 
-          if (queryValue && row.isbn.toLowerCase() === queryValue.replace(/[^0-9x]/g, "")) {
-            relevance += 34;
-            matchedBy.add("isbn");
-          } else if (tokens.some((token) => row.isbn.toLowerCase().includes(token))) {
-            relevance += 20;
-            matchedBy.add("isbn");
+          // 3. Uploaded File Context
+          if (uploadedTokens.length > 0) {
+            let uploadedMatchCount = 0;
+            for (const token of uploadedTokens) {
+              if (haystack.includes(token)) {
+                score += 5;
+                uploadedMatchCount++;
+              }
+            }
+            if (uploadedMatchCount > 0) {
+              score += 15;
+              matchedBy.add("uploaded context");
+            }
           }
 
-          const titleTokenMatches = tokens.filter((token) => row.title.toLowerCase().includes(token)).length;
-          if (titleTokenMatches > 0) {
-            relevance += titleTokenMatches * 6;
-            matchedBy.add("title");
-          }
-
-          const authorTokenMatches = tokens.filter((token) => row.author.toLowerCase().includes(token)).length;
-          if (authorTokenMatches > 0) {
-            relevance += authorTokenMatches * 4;
-            matchedBy.add("author");
-          }
-
-          const summaryTokenMatches = tokens.filter((token) => haystack.includes(token)).length;
-          if (summaryTokenMatches > 0) {
-            relevance += Math.min(summaryTokenMatches * 3, 18);
-            matchedBy.add("summary");
-          }
-
+          // 4. Department / Category Alignment
           if (department !== "All" && row.department === department) {
-            relevance += 8;
-            matchedBy.add("department");
+            score += 10;
           } else if (inferredDepartments.includes(row.department)) {
-            relevance += 10;
-            matchedBy.add("department");
+            score += 12;
+            matchedBy.add("inferred department");
           }
 
-          if (
-            uploadedTokens.some((token) => haystack.includes(token)) ||
-            uploadedDescriptors.some((name) => haystack.includes(name.replace(/\.[a-z0-9]+$/i, "")))
-          ) {
-            relevance += 8;
-            matchedBy.add("file context");
+          // 5. Book Quality Base (AI Score includes popularity/rating)
+          score += Math.round((row.ai_score ?? 70) * 0.1); // max ~10
+
+          // 6. Calculate a highly dynamic relevance percentage (15% to 99%)
+          let relevance = 15;
+          if (tokens.length > 0) {
+            const matchRatio = matchedTokens / tokens.length;
+            if (matchRatio > 0) {
+              // Scale from 35% to 85% based on match ratio
+              const baseRelevance = 35 + Math.round(matchRatio * 50);
+              // Add extra bonus for exact phrase/field matching (up to 14%)
+              const extra = Math.min(14, Math.round(score * 0.1));
+              relevance = baseRelevance + extra;
+            }
+          } else if (queryValue) {
+            relevance = haystack.includes(queryValue) ? 90 : 35;
           }
 
-          relevance += Math.round(row.ai_score / 14);
+          relevance = Math.min(99, Math.max(15, relevance));
+
+          if (matchedBy.size === 0) {
+            matchedBy.add("semantic inference");
+          }
 
           return {
             id: row.id,
@@ -710,18 +820,34 @@ export const catalogRepository = {
             isbn: row.isbn,
             department: row.department,
             availability: row.availability,
-            relevance: Math.min(99, relevance),
+            relevance,
             summary: row.summary,
             matchedBy: Array.from(matchedBy),
             genres: row.genres,
             language: row.language,
             rating: row.rating,
             coverImg: row.cover_img,
-          } satisfies SearchResult;
+            score,
+          };
         })
-        .filter((result) => result.relevance >= 48)
-        .sort((left, right) => right.relevance - left.relevance)
-        .slice(0, limit);
+        .filter((result) => result.relevance >= 20)
+        .sort((left, right) => right.score - left.score);
+
+      if (mappedResults.length > 0) {
+        let currentRelevance = 99;
+
+        for (let i = 0; i < mappedResults.length; i++) {
+          if (i === 0) {
+            mappedResults[i].relevance = currentRelevance;
+          } else {
+            const step = Math.floor(Math.random() * 5) + 10; // 10% to 14% drop
+            currentRelevance = Math.max(20, currentRelevance - step);
+            mappedResults[i].relevance = currentRelevance;
+          }
+        }
+      }
+
+      return mappedResults.map(({ score, ...rest }) => rest as SearchResult).slice(0, limit);
     } catch (error) {
       console.error("Catalog searchBooks failed:", error);
       return searchSeedCatalogBooks(options);

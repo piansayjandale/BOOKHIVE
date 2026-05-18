@@ -1,9 +1,15 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
-import { Bell, Search as SearchIcon, MoreVertical, Sparkles, Mic, Image as ImageIcon } from "lucide-react";
-import { motion } from "framer-motion";
+import React, { useEffect, useState, startTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Bell, Search as SearchIcon, MoreVertical, Sparkles, Paperclip, User, BookOpen } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Badge } from "@/components/ui/badge";
+import { Panel } from "@/components/ui/panel";
+import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import type { SearchResult } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 // Figma Design Color Palette
 const colors = {
@@ -23,7 +29,8 @@ interface DashboardProps {
 }
 
 export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
-  const [selectedCategory, setSelectedCategory] = useState("Circulation");
+  const router = useRouter();
+  const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [summary, setSummary] = useState({
     totalBooks: 0,
@@ -42,6 +49,13 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     storageUsed: 84.2,
     storageTotal: 128,
   });
+
+  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<SearchResult[] | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedBook, setSelectedBook] = useState<SearchResult | null>(null);
+  const PAGE_SIZE = 6;
 
   useEffect(() => {
     async function fetchDashboard() {
@@ -70,6 +84,13 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     fetchDashboard();
   }, []);
 
+  function runSearch(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!searchQuery.trim()) {
+      return;
+    }
+    router.push(`/admin/ai-prompt-search?query=${encodeURIComponent(searchQuery)}&department=${encodeURIComponent(selectedCategory)}`);
+  }
 
   const categories = [
     "Circulation",
@@ -93,90 +114,234 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     },
   ];
 
+  const visibleResults = results ? results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE) : null;
+
   return (
     <>
       {/* Header - TopAppBar removed as it is now provided by AppShell */}
 
       {/* Hero Section */}
       {/* Hero Section */}
+      {/* Hero Section */}
       <motion.section 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
-        className="mb-8 rounded-[32px] border border-white/10 bg-[#152E47] p-8 md:p-12 shadow-xl shadow-black/20"
+        className="rounded-[24px] bg-[#14293E] p-8 md:p-10 mb-8 shadow-xl"
       >
         {/* Section Label */}
-        <div className="mb-6 flex items-center gap-2 text-[#FCD400]">
+        <div className="flex items-center gap-2 text-[#FFD600] mb-4">
           <Sparkles className="h-4 w-4 fill-current" />
-          <span className="text-xs font-bold tracking-widest">
+          <span className="text-xs font-bold tracking-widest uppercase">
             ASK BOOKHIVE
           </span>
         </div>
 
         {/* Main Heading */}
-        <h1 className="mb-10 text-[28px] font-bold leading-tight text-white md:text-[36px]">
+        <h1 className="mb-8 text-[32px] font-bold tracking-tight text-white md:text-[36px]">
           Find resources across the entire STI WNU digital ecosystem.
         </h1>
 
         {/* AI Prompt Search Box */}
-        <div className="mb-8 flex w-full items-center gap-2 rounded-full bg-white py-1.5 pl-6 pr-2 shadow-sm">
-          <SearchIcon size={20} color="#94A3B8" className="flex-shrink-0" />
-          
-          <input
-            type="text"
-            suppressHydrationWarning
-            placeholder="Search by Title, Author, ISBN, or ask a question..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex-1 bg-transparent text-[15px] text-[#1E293B] outline-none placeholder:text-[#94A3B8]"
-          />
-
-          <div className="flex items-center gap-3 border-l border-slate-200 pl-4 pr-1">
-            <button
-              type="button"
+        <form onSubmit={runSearch}>
+          <div className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-[#0B1724] px-4 py-3 shadow-inner mb-2">
+            <SearchIcon className="h-5 w-5 text-slate-400 ml-2" />
+            <input
+              type="text"
               suppressHydrationWarning
-              className="text-[#94A3B8] transition-colors hover:text-slate-700"
-              title="Voice Search"
-            >
-              <Mic size={20} />
-            </button>
-            <button
-              type="button"
-              suppressHydrationWarning
-              className="text-[#94A3B8] transition-colors hover:text-slate-700"
-              title="Upload Image/Context"
-            >
-              <ImageIcon size={20} />
-            </button>
+              placeholder="Search by Title, Author, ISBN, or ask a question..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-500 outline-none"
+            />
             
-            <button
-              type="button"
-              suppressHydrationWarning
-              className="ml-2 rounded-full bg-[#152E47] px-8 py-3.5 text-xs font-bold tracking-widest text-white transition-transform hover:scale-105"
-            >
-              ANALYZE
-            </button>
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer p-2 text-slate-400 hover:text-white transition rounded-full hover:bg-white/5" title="Upload Attachment">
+                <Paperclip className="h-5 w-5" />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
+                  multiple
+                  onChange={(e) => setUploadedFiles(Array.from(e.target.files ?? []))}
+                />
+              </label>
+              
+              <button
+                type="submit"
+                suppressHydrationWarning
+                disabled={searching}
+                className="rounded-full bg-[#FFD600] px-6 py-2.5 text-sm font-bold tracking-wide text-[#0A1624] transition hover:bg-[#FCD400]/90 hover:scale-105 active:scale-95 disabled:opacity-70 disabled:hover:scale-100"
+              >
+                {searching ? "ANALYZING..." : "ANALYZE"}
+              </button>
+            </div>
           </div>
-        </div>
-
-        {/* Category Filter Buttons */}
-        <div className="flex flex-wrap gap-3">
-          {categories.map((category) => (
-            <button
-              key={category}
-              suppressHydrationWarning
-              onClick={() => setSelectedCategory(category)}
-              className={`rounded-[24px] px-6 py-2.5 text-[13px] font-medium transition-colors ${
-                selectedCategory === category
-                  ? "bg-[#1E3445] text-white"
-                  : "bg-[#1E3445] text-[#94A3B8] hover:text-white"
-              }`}
-            >
-              {category}
-            </button>
-          ))}
-        </div>
+        </form>
+        {uploadedFiles.length > 0 && (
+          <div className="mt-5 flex flex-wrap gap-2">
+            {uploadedFiles.map((file) => (
+              <span
+                key={`${file.name}-${file.size}`}
+                className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/65"
+              >
+                {file.name}
+              </span>
+            ))}
+          </div>
+        )}
       </motion.section>
+
+      <AnimatePresence mode="wait">
+        {results === null ? null : results.length === 0 ? (
+          <motion.div
+            key="no-results"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 18 }}
+            className="mb-8 flex items-center justify-center gap-3 rounded-[24px] border border-red-500/20 bg-[#14293E] px-4 py-8 text-sm text-red-400 shadow-xl"
+          >
+            No matching records found. Try adjusting your search prompt.
+          </motion.div>
+        ) : (
+          <motion.div
+            key="results"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 18 }}
+            className="mb-8 flex flex-col gap-6 text-left"
+          >
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {visibleResults?.map((result) => {
+                const relevance = result.relevance;
+                const isHigh = relevance >= 90;
+                const isMedium = relevance >= 75;
+                const relevanceBadgeClass = isHigh
+                  ? "border border-emerald-500/35 bg-emerald-500/10 text-emerald-400 font-extrabold shadow-[0_0_12px_rgba(16,185,129,0.15)] rounded-full px-2.5 py-1 text-xs"
+                  : isMedium
+                  ? "border border-amber-500/35 bg-amber-500/10 text-amber-400 font-extrabold shadow-[0_0_12px_rgba(245,158,11,0.15)] rounded-full px-2.5 py-1 text-xs"
+                  : "border border-slate-500/35 bg-slate-500/10 text-slate-300 font-extrabold rounded-full px-2.5 py-1 text-xs";
+
+                return (
+                  <motion.button
+                    key={result.id}
+                    type="button"
+                    onClick={() => setSelectedBook(result)}
+                    whileHover={{ y: -4, scale: 1.015 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    className="flex flex-col justify-between w-full text-left p-6 bg-gradient-to-br from-[#1E3A5F]/35 to-[#0B1A2C]/65 backdrop-blur-md rounded-[24px] border border-white/[0.06] hover:border-white/10 hover:shadow-[0_12px_24px_-8px_rgba(0,0,0,0.5)] transition-all duration-300 group"
+                  >
+                    <div className="space-y-4">
+                      {/* Top bar with category & relevance */}
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="inline-flex items-center rounded-full bg-white/5 border border-white/5 px-2.5 py-0.5 text-[10px] font-bold tracking-[0.15em] text-[#FFD600] uppercase">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#FFD600] mr-1.5 animate-pulse"></span>
+                          {result.department}
+                        </span>
+                        <span className={relevanceBadgeClass}>
+                          {relevance}% MATCH
+                        </span>
+                      </div>
+
+                      {/* Title & Metadata */}
+                      <div>
+                        <h3 className="text-[17px] font-bold tracking-tight text-white group-hover:text-[#FFD600] transition-colors line-clamp-2 leading-snug">
+                          {result.title}
+                        </h3>
+                        <div className="mt-2.5 space-y-1.5">
+                          <p className="flex items-center gap-1.5 text-xs text-white/70">
+                            <User className="h-3.5 w-3.5 text-slate-400" />
+                            By <span className="font-semibold text-white/90">{result.author}</span>
+                          </p>
+                          <div className="flex items-center flex-wrap gap-2 text-[11px] text-white/40">
+                            <span className="font-mono bg-white/5 border border-white/5 px-1.5 py-0.5 rounded">
+                              ISBN: {result.isbn}
+                            </span>
+                            {result.language && (
+                              <span className="bg-white/5 border border-white/5 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider text-[9px]">
+                                🌐 {result.language}
+                              </span>
+                            )}
+                            {typeof result.rating === "number" && result.rating > 0 && (
+                              <span className="inline-flex items-center gap-0.5 bg-white/5 border border-white/5 px-1.5 py-0.5 rounded text-[#FFD600] font-semibold">
+                                ⭐ {result.rating.toFixed(1)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Book Summary */}
+                      <p className="text-xs text-white/60 leading-relaxed line-clamp-4 border-t border-white/[0.04] pt-3.5 italic">
+                        "{result.summary}"
+                      </p>
+                    </div>
+
+                    {/* Matched explanation details */}
+                    {result.matchedBy && result.matchedBy.length > 0 && (
+                      <div className="mt-4 flex flex-wrap gap-1 pt-3.5 border-t border-white/[0.04]">
+                        {result.matchedBy.map((match) => (
+                          <span
+                            key={match}
+                            className="inline-flex items-center gap-1 text-[9px] font-bold tracking-wide uppercase text-emerald-400/90 bg-emerald-500/10 border border-emerald-500/10 px-2 py-0.5 rounded-full"
+                          >
+                            <Sparkles className="h-2.5 w-2.5 text-emerald-400" />
+                            {match}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </motion.button>
+                );
+              })}
+            </div>
+
+            {results.length > 0 && (
+              <div className="mt-6 flex items-center justify-center gap-2">
+                <button
+                  type="button"
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-[#0A1624]"
+                >
+                  Previous
+                </button>
+                
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.ceil(results.length / PAGE_SIZE) }).map((_, idx) => {
+                    const pageNum = idx + 1;
+                    const isActive = currentPage === pageNum;
+                    return (
+                      <button
+                      key={pageNum}
+                      type="button"
+                      onClick={() => setCurrentPage(pageNum)}
+                      className={cn(
+                        "h-8 w-8 rounded-full text-xs font-bold transition flex items-center justify-center",
+                        isActive
+                          ? "bg-[#FFD600] text-[#0A1624]"
+                          : "border border-white/10 bg-white/5 text-white hover:bg-white/10"
+                      )}
+                    >
+                      {pageNum}
+                    </button>
+                    );
+                  })}
+                </div>
+
+                <button
+                  type="button"
+                  disabled={currentPage === Math.ceil(results.length / PAGE_SIZE)}
+                  onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(results.length / PAGE_SIZE), prev + 1))}
+                  className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/10 disabled:opacity-40 disabled:hover:bg-[#0A1624]"
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Analytics & System Health Row */}
       <div className="mb-8 grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -433,6 +598,12 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           </motion.section>
         </div>
       </div>
-    </>
+
+    <BookDetailModal
+      open={Boolean(selectedBook)}
+      book={selectedBook}
+      onClose={() => setSelectedBook(null)}
+    />
+  </>
   );
 }

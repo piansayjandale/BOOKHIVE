@@ -11,6 +11,9 @@ import {
   History,
   Plus,
   Settings2,
+  Sparkles,
+  Search as SearchIcon,
+  Paperclip,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -103,10 +106,12 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
   const { theme } = useTheme();
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>(categories[0]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [searching, setSearching] = useState(false);
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [results, setResults] = useState<SearchResult[] | null>(null);
   const [selectedBook, setSelectedBook] = useState<SearchResult | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const PAGE_SIZE = 6;
 
   const loadDashboard = useEffectEvent(async () => {
     try {
@@ -148,7 +153,10 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
   const isLight = theme === "light";
   const isLibrarian = variant === "librarian";
   const quickActions = isLibrarian ? librarianActions : adminActions;
-  const topResults = useMemo(() => results.slice(0, 6), [results]);
+  const visibleResults = useMemo(() => {
+    if (!results) return null;
+    return results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  }, [results, currentPage, PAGE_SIZE]);
   const activityPreview = useMemo(() => dashboard?.recentActivity.slice(0, 4) ?? [], [dashboard]);
   const queuePreview = useMemo(() => dashboard?.queue.slice(0, 4) ?? [], [dashboard]);
   const spotlightBook = dashboard?.trending[0] ?? null;
@@ -185,6 +193,7 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
     }
 
     setSearching(true);
+    setCurrentPage(1);
     try {
       const response = await fetch("/api/search", {
         method: "POST",
@@ -205,156 +214,59 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
 
   return (
     <div className="space-y-6">
-      <Panel className="panel-hero relative overflow-hidden px-5 py-6 sm:px-8 sm:py-8">
-        <div
-          className={cn(
-            "pointer-events-none absolute inset-0",
-            isLight
-              ? "bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.98),rgba(255,255,255,0)_42%),radial-gradient(circle_at_bottom_right,rgba(125,211,252,0.34),rgba(125,211,252,0)_36%)]"
-              : "bg-[radial-gradient(circle_at_top_left,rgba(125,211,252,0.14),rgba(125,211,252,0)_36%),radial-gradient(circle_at_bottom_right,rgba(37,99,235,0.22),rgba(37,99,235,0)_32%)]",
-          )}
-        />
+      <section className="rounded-[24px] bg-[#14293E] p-8 md:p-10 mb-8 shadow-xl">
+        {/* Section Label */}
+        <div className="flex items-center gap-2 text-[#FFD600] mb-4">
+          <Sparkles className="h-4 w-4 fill-current" />
+          <span className="text-xs font-bold tracking-widest uppercase">
+            {isLibrarian ? "Librarian Command Desk" : "Ask BookHive"}
+          </span>
+        </div>
 
-        <div className="relative mx-auto w-full max-w-full">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-            <div>
-              <Badge
-                className={cn(
-                  "mx-0 border-0",
-                  isLight
-                    ? "bg-white/80 text-[#1d4ed8] shadow-[0_10px_26px_rgba(37,99,235,0.14)]"
-                    : "bg-[var(--sidebar-accent)]/10 text-[var(--sidebar-accent)]",
-                )}
+        {/* Main Heading */}
+        <h1 className="mb-8 text-[32px] font-bold tracking-tight text-white md:text-[36px]">
+          Find resources across the entire STI WNU digital ecosystem.
+        </h1>
+
+        {/* AI Prompt Search Box */}
+        <form onSubmit={runSearch}>
+          <div className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-[#0B1724] px-4 py-3 shadow-inner mb-2">
+            <SearchIcon className="h-5 w-5 text-slate-400 ml-2" />
+            <input
+              type="text"
+              suppressHydrationWarning
+              placeholder="Search by title, author, ISBN, or ask a question..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-500 outline-none"
+            />
+            
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer p-2 text-slate-400 hover:text-white transition rounded-full hover:bg-white/5" title="Upload Attachment">
+                <Paperclip className="h-5 w-5" />
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
+                  multiple
+                />
+              </label>
+              
+              <button
+                type="submit"
+                suppressHydrationWarning
+                disabled={searching}
+                className="flex items-center gap-2 rounded-full bg-[#FFD600] px-6 py-2.5 text-sm font-bold tracking-wide text-[#0A1624] transition hover:bg-[#FCD400]/90 hover:scale-105 active:scale-95 disabled:opacity-70 disabled:hover:scale-100"
               >
-                {isLibrarian ? "Librarian Command Desk" : "Ask BookHive"}
-              </Badge>
+                {searching ? "ANALYZING..." : "ANALYZE"}
+                {!searching && <ArrowRight className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
 
-              <h1
-                className={cn(
-                  "mt-4 max-w-3xl text-3xl font-bold tracking-tight sm:text-4xl lg:text-[2.7rem]",
-                  isLight ? "text-[#10233a]" : "text-white",
-                )}
-              >
-                Find resources across the entire STI WNU digital ecosystem.
-              </h1>
-
-              <p
-                className={cn(
-                  "mt-3 max-w-2xl text-sm leading-7 sm:text-base",
-                  isLight ? "text-[#36506f]" : "text-white/70",
-                )}
-              >
-                Search by title, author, ISBN, or ask a question...
-              </p>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.16em]",
-                    isLight
-                      ? "border-[#c9d8ef] bg-white/78 text-[#1e3a5f]"
-                      : "border-white/10 bg-white/8 text-white/75",
-                  )}
-                >
-                  {config.title}
-                </span>
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full border px-3 py-1.5 text-xs",
-                    isLight
-                      ? "border-[#c9d8ef] bg-[#eff6ff] text-[#36506f]"
-                      : "border-white/10 bg-white/5 text-white/70",
-                  )}
-                >
-                  {dashboard
-                    ? `${dashboard.metrics.pendingRequests} pending requests`
-                    : "Loading circulation summary"}
-                </span>
-                <span
-                  className={cn(
-                    "inline-flex items-center rounded-full border px-3 py-1.5 text-xs",
-                    isLight
-                      ? "border-[#c9d8ef] bg-[#eff6ff] text-[#36506f]"
-                      : "border-white/10 bg-white/5 text-white/70",
-                  )}
-                >
-                  {spotlightBook ? `Trending: ${spotlightBook.title}` : "Syncing collection insights"}
-                </span>
-              </div>
-
-              <div
-                className={cn(
-                  "mt-7 rounded-[30px] border p-3 shadow-[0_24px_70px_rgba(7,18,37,0.18)] backdrop-blur-xl sm:p-4",
-                  isLight
-                    ? "border-[#cfdef4] bg-white/82"
-                    : "border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.04))]",
-                )}
-              >
-                <form className="flex flex-col gap-3" onSubmit={runSearch}>
-                  <div
-                    className={cn(
-                      "flex flex-col gap-3 rounded-[24px] border p-3 sm:flex-row sm:items-center",
-                      isLight ? "border-[#d8e4f7] bg-[#f8fbff]" : "border-white/10 bg-white/5",
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl cursor-pointer transition-colors",
-                        isLight ? "bg-[#dbeafe] text-[#1d4ed8] hover:bg-[#bfdbfe]" : "bg-white/10 text-sky-200 hover:bg-white/20",
-                      )}
-                    >
-                      <Plus className="h-5 w-5" />
-                    </div>
-                    <input
-                      aria-label="Search resources"
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search by title, author, ISBN, or ask a question..."
-                      className={cn(
-                        "flex-1 bg-transparent text-sm outline-none sm:text-base",
-                        isLight
-                          ? "text-[#0f172a] placeholder:text-[#6b7e95]"
-                          : "text-white placeholder:text-white/45",
-                      )}
-                    />
-                    <button
-                      type="submit"
-                      className={cn(
-                        "inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-xs font-semibold tracking-[0.18em] transition sm:px-6",
-                        isLight
-                          ? "bg-[#1d4ed8] text-white shadow-[0_16px_35px_rgba(29,78,216,0.28)] hover:translate-y-[-1px] hover:bg-[#1e40af]"
-                          : "bg-[#0f2740] text-white hover:bg-[#123155]",
-                      )}
-                    >
-                      {searching ? "ANALYZING..." : "ANALYZE"}
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="flex flex-wrap gap-2">
-                    {categories.map((category) => (
-                      <button
-                        key={category}
-                        type="button"
-                        className={cn(
-                          "rounded-full border px-3 py-1.5 text-sm transition",
-                          selectedCategory === category
-                            ? isLight
-                              ? "border-[#93c5fd] bg-[#dbeafe] text-[#1d4ed8]"
-                              : "border-sky-300/35 bg-sky-300/15 text-white"
-                            : isLight
-                              ? "border-[#d8e4f7] bg-white/80 text-[#48637e] hover:border-[#bfdbfe] hover:bg-[#eff6ff]"
-                              : "border-white/10 bg-white/5 text-white/75 hover:bg-white/12",
-                        )}
-                        onClick={() => setSelectedCategory(category)}
-                      >
-                        {category}
-                      </button>
-                    ))}
-                  </div>
-                </form>
-
-                <AnimatePresence mode="wait">
+      <AnimatePresence mode="wait">
                   <motion.div
                     key={searching ? "searching" : "idle"}
                     initial={{ opacity: 0, y: 8 }}
@@ -398,7 +310,7 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
                   </motion.div>
                 </AnimatePresence>
 
-                {query.trim().length > 0 ? (
+                {results !== null ? (
                   <div
                     className={cn(
                       "mt-5 rounded-[24px] border p-4",
@@ -427,124 +339,226 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
                           isLight ? "bg-[#dbeafe] text-[#1d4ed8]" : "bg-white/10 text-white",
                         )}
                       >
-                        {topResults.length} match{topResults.length === 1 ? "" : "es"}
+                        {results.length} match{results.length === 1 ? "" : "es"}
                       </Badge>
                     </div>
 
-                    {topResults.length === 0 && !searching ? (
+                    {results.length === 0 && !searching ? (
                       <p className={cn("text-sm", isLight ? "text-[#48637e]" : "text-white/70")}>
-                        No matches found for this query.
+                        No matches found for this query. Try adjusting your search prompt.
                       </p>
                     ) : (
-                      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                        {topResults.map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            onClick={() => setSelectedBook(item)}
-                            className={cn(
-                              "group w-full overflow-hidden rounded-[28px] border px-5 py-5 text-left shadow-[0_24px_64px_rgba(7,18,37,0.12)] transition duration-300",
-                              isLight
-                                ? "border-[#e7edf8] bg-white hover:-translate-y-0.5 hover:border-[#93c5fd]"
-                                : "border-white/10 bg-[#071822] hover:-translate-y-0.5 hover:border-sky-300/30",
-                            )}
-                          >
-                            <div className="grid gap-3 lg:grid-cols-[auto_1fr_auto] lg:items-start">
-                              <div
+                      <div className="flex flex-col gap-8">
+                        <div className="mt-4 grid gap-6 sm:grid-cols-2">
+                          {visibleResults?.map((item, idx) => {
+                            const relevance = item.relevance;
+                            const isHigh = relevance >= 90;
+                            const isMedium = relevance >= 75;
+                            
+                            const relevanceBadgeClass = isHigh
+                              ? "border border-emerald-500/35 bg-emerald-500/10 text-emerald-400 font-extrabold shadow-[0_0_12px_rgba(16,185,129,0.25)] rounded-full px-2.5 py-0.5 text-[10px]"
+                              : isMedium
+                              ? "border border-amber-500/35 bg-amber-500/10 text-amber-400 font-extrabold shadow-[0_0_12px_rgba(245,158,11,0.25)] rounded-full px-2.5 py-0.5 text-[10px]"
+                              : "border border-sky-500/35 bg-sky-500/10 text-sky-300 font-extrabold rounded-full px-2.5 py-0.5 text-[10px]";
+
+                            const relevanceBarColor = isHigh
+                              ? "from-emerald-500 to-teal-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                              : isMedium
+                              ? "from-amber-500 to-yellow-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
+                              : "from-sky-500 to-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.4)]";
+
+                            return (
+                              <motion.button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setSelectedBook(item)}
+                                initial={{ opacity: 0, y: 16 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.35, delay: idx * 0.05, ease: "easeOut" }}
+                                whileHover={{ y: -6, scale: 1.015 }}
                                 className={cn(
-                                  "flex h-12 w-12 items-center justify-center rounded-2xl text-xl",
-                                  isLight ? "bg-[#eff6ff] text-[#1d4ed8]" : "bg-sky-500/15 text-sky-200",
+                                  "group w-full overflow-hidden rounded-[28px] border p-5 text-left transition-all duration-300",
+                                  isLight
+                                    ? "border-[#d7e4f6]/80 bg-white hover:border-[#FFD600] hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)]"
+                                    : "border-white/[0.07] bg-gradient-to-b from-[#14283F]/70 to-[#0A1724]/90 hover:border-[#FFD600]/30 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.6)]"
                                 )}
                               >
-                                <BookOpen className="h-5 w-5" />
-                              </div>
+                                <div className="grid gap-3 lg:grid-cols-[auto_1fr_auto] lg:items-start">
+                                  <div
+                                    className={cn(
+                                      "flex h-12 w-12 items-center justify-center rounded-2xl text-xl",
+                                      isLight ? "bg-[#eff6ff] text-[#1d4ed8]" : "bg-sky-500/15 text-sky-200",
+                                    )}
+                                  >
+                                    <BookOpen className="h-5 w-5" />
+                                  </div>
 
-                              <div className="min-w-0">
-                                <p
-                                  className={cn(
-                                    "line-clamp-1 text-base font-semibold",
-                                    isLight ? "text-[#10233a]" : "text-white",
-                                  )}
-                                >
-                                  {item.title}
-                                </p>
-                                <p
-                                  className={cn(
-                                    "mt-2 text-sm",
-                                    isLight ? "text-[#4b6079]" : "text-white/70",
-                                  )}
-                                >
-                                  {item.author}
-                                </p>
-                                <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.18em]">
-                                  <span
-                                    className={cn(
-                                      "rounded-full border px-2 py-1",
-                                      isLight
-                                        ? "border-[#dbe7f7] bg-[#eff6ff] text-[#43617f]"
-                                        : "border-white/10 bg-white/5 text-white/60",
-                                    )}
-                                  >
-                                    {item.department}
-                                  </span>
-                                  <span
-                                    className={cn(
-                                      "rounded-full border px-2 py-1",
-                                      isLight
-                                        ? "border-[#e6f2ff] bg-[#f8fbff] text-[#546a85]"
-                                        : "border-white/10 bg-white/5 text-white/60",
-                                    )}
-                                  >
-                                    ISBN: {item.isbn}
-                                  </span>
+                                  <div className="min-w-0">
+                                    <p
+                                      className={cn(
+                                        "line-clamp-1 text-base font-bold tracking-tight group-hover:text-[#FFD600] transition-colors duration-200",
+                                        isLight ? "text-[#10233a]" : "text-white",
+                                      )}
+                                    >
+                                      {item.title}
+                                    </p>
+                                    <p
+                                      className={cn(
+                                        "mt-1 text-xs",
+                                        isLight ? "text-[#4b6079]/90" : "text-white/80",
+                                      )}
+                                    >
+                                      By <span className="font-semibold text-white/90">{item.author}</span>
+                                    </p>
+                                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider">
+                                      <span
+                                        className={cn(
+                                          "rounded-md border px-2 py-0.5",
+                                          isLight
+                                            ? "border-[#dbe7f7] bg-[#eff6ff] text-[#43617f]"
+                                            : "border-white/5 bg-white/5 text-white/60",
+                                        )}
+                                      >
+                                        {item.department}
+                                      </span>
+                                      <span
+                                        className={cn(
+                                          "rounded-md border px-2 py-0.5",
+                                          isLight
+                                            ? "border-[#e6f2ff] bg-[#f8fbff] text-[#546a85]"
+                                            : "border-white/5 bg-white/5 text-white/60",
+                                        )}
+                                      >
+                                        ISBN: {item.isbn}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex flex-col items-end gap-2">
+                                    <span className={relevanceBadgeClass}>
+                                      {relevance}% MATCH
+                                    </span>
+                                    <Badge
+                                      tone={item.availability === "Available" ? "success" : item.availability === "Limited" ? "warning" : "danger"}
+                                      className="text-[9px] uppercase tracking-[0.18em]"
+                                    >
+                                      {item.availability}
+                                    </Badge>
+                                  </div>
                                 </div>
-                              </div>
 
-                              <div className="flex flex-col items-end gap-3">
-                                <Badge tone="warning" className="text-[11px] uppercase tracking-[0.18em]">
-                                  {item.relevance}% Match
-                                </Badge>
-                                <Badge
-                                  tone={item.availability === "Available" ? "success" : item.availability === "Limited" ? "warning" : "danger"}
-                                  className="text-[11px] uppercase tracking-[0.18em]"
-                                >
-                                  {item.availability}
-                                </Badge>
-                              </div>
+                                {/* Visual Relevance Progress Meter */}
+                                <div className="mt-4 space-y-1">
+                                  <div className="flex items-center justify-between text-[9px] uppercase font-bold tracking-wider text-white/40">
+                                    <span>Relevance Meter</span>
+                                    <span className={isHigh ? "text-emerald-400" : isMedium ? "text-amber-400" : "text-sky-300"}>
+                                      {relevance}%
+                                    </span>
+                                  </div>
+                                  <div className="h-1.5 w-full rounded-full bg-white/[0.04] overflow-hidden border border-white/[0.02]">
+                                    <div
+                                      className={cn("h-full rounded-full bg-gradient-to-r transition-all duration-500", relevanceBarColor)}
+                                      style={{ width: `${relevance}%` }}
+                                    />
+                                  </div>
+                                </div>
+
+                                <div className="mt-4 border-l border-[#FFD600]/30 pl-3 pt-0.5 pb-0.5 text-left">
+                                  <p className="line-clamp-2 text-xs leading-relaxed italic text-white/70">
+                                    "{item.summary}"
+                                  </p>
+                                </div>
+
+                                <div className="mt-4 flex flex-wrap gap-1.5 pt-3.5 border-t border-white/[0.04]">
+                                  {item.matchedBy.slice(0, 3).map((match) => (
+                                    <span
+                                      key={match}
+                                      className="inline-flex items-center gap-1 text-[8px] font-black tracking-widest uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full"
+                                    >
+                                      <Sparkles className="h-2 w-2 text-emerald-400" />
+                                      {match}
+                                    </span>
+                                  ))}
+                                </div>
+                              </motion.button>
+                            );
+                          })}
+                        </div>
+
+                        {results.length > 0 && (
+                          <div className={cn(
+                            "mt-6 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-[20px] border w-full",
+                            isLight
+                              ? "border-[#dbe7f7]/80 bg-[#eff6ff]/30"
+                              : "border-white/[0.05] bg-white/[0.02]"
+                          )}>
+                            {/* Pagination Info */}
+                            <div className="text-xs font-semibold text-white/50 text-left">
+                              Showing <span className={cn(isLight ? "text-[#10233a]" : "text-white")}>{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                              <span className={cn(isLight ? "text-[#10233a]" : "text-white")}>{Math.min(currentPage * PAGE_SIZE, results.length)}</span> of{" "}
+                              <span className="text-[#FFD600]">{results.length}</span> matches found
                             </div>
 
-                            <p
-                              className={cn(
-                                "mt-5 line-clamp-2 text-sm leading-6",
-                                isLight ? "text-[#4b6079]" : "text-white/65",
-                              )}
-                            >
-                              {item.summary}
-                            </p>
+                            {/* Pagination Toggles */}
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={currentPage === 1}
+                                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                className={cn(
+                                  "flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-bold transition active:scale-95 disabled:opacity-30 disabled:active:scale-100",
+                                  isLight
+                                    ? "border-[#dbe7f7] bg-white text-[#43617f] hover:bg-[#eff6ff] disabled:hover:bg-white"
+                                    : "border-white/10 bg-white/5 text-white hover:bg-white/10 hover:border-white/20 disabled:hover:bg-white/5 disabled:hover:border-white/10"
+                                )}
+                              >
+                                Previous
+                              </button>
+                              
+                              <div className="flex items-center gap-1.5">
+                                {Array.from({ length: Math.ceil(results.length / PAGE_SIZE) }).map((_, idx) => {
+                                  const pageNum = idx + 1;
+                                  const isActive = currentPage === pageNum;
+                                  return (
+                                    <button
+                                      key={pageNum}
+                                      type="button"
+                                      onClick={() => setCurrentPage(pageNum)}
+                                      className={cn(
+                                        "h-8 w-8 rounded-full text-xs font-black transition-all flex items-center justify-center",
+                                        isActive
+                                          ? "bg-[#FFD600] text-[#0A1624] shadow-[0_0_12px_rgba(255,214,0,0.35)] scale-110"
+                                          : isLight
+                                            ? "border-[#dbe7f7] bg-white text-[#43617f] hover:bg-[#eff6ff]"
+                                            : "border-white/10 bg-white/5 text-white hover:bg-white/10 hover:border-white/20"
+                                      )}
+                                    >
+                                      {pageNum}
+                                    </button>
+                                  );
+                                })}
+                              </div>
 
-                            <div className="mt-5 flex flex-wrap gap-2">
-                              {item.matchedBy.slice(0, 3).map((match) => (
-                                <Badge
-                                  key={match}
-                                  tone="default"
-                                  className={cn("text-[10px] font-semibold uppercase tracking-[0.18em]")}
-                                >
-                                  {match}
-                                </Badge>
-                              ))}
+                              <button
+                                type="button"
+                                disabled={currentPage === Math.ceil(results.length / PAGE_SIZE)}
+                                onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(results.length / PAGE_SIZE), prev + 1))}
+                                className={cn(
+                                  "flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-bold transition active:scale-95 disabled:opacity-30 disabled:active:scale-100",
+                                  isLight
+                                    ? "border-[#dbe7f7] bg-white text-[#43617f] hover:bg-[#eff6ff] disabled:hover:bg-white"
+                                    : "border-white/10 bg-white/5 text-white hover:bg-white/10 hover:border-white/20 disabled:hover:bg-white/5 disabled:hover:border-white/10"
+                                )}
+                              >
+                                Next
+                              </button>
                             </div>
-                          </button>
-                        ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
                 ) : null}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </Panel>
 
       <section className="rounded-[28px] border border-[var(--line)] bg-[var(--panel)] p-5 shadow-[0_30px_60px_rgba(0,0,0,0.08)]">
         <div className="mb-5 flex items-center justify-between gap-3">

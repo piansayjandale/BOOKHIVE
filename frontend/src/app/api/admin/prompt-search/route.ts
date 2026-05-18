@@ -49,3 +49,16 @@ export async function POST(request: Request) {
     }),
   );
 }
+
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (id) {
+    const updated = await adminRepository.deleteSearchLog(id);
+    return NextResponse.json({ success: true, logs: updated });
+  }
+
+  const updated = await adminRepository.clearSearchLogs();
+  return NextResponse.json({ success: true, logs: updated });
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { startTransition, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowRight,
@@ -12,12 +13,17 @@ import {
   ShieldCheck,
   Sparkles,
   X,
+  Search,
+  Paperclip,
+  User,
+  BookOpen,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Panel } from "@/components/ui/panel";
 import { VirtualizedList } from "@/components/ui/virtualized-list";
+import { BookDetailModal } from "@/components/ui/book-detail-modal";
 import { useLiveActivity } from "@/lib/hooks/use-live-activity";
 import type {
   DashboardPayload,
@@ -37,13 +43,17 @@ const categories = [
 ];
 
 export function DashboardHome() {
+  const router = useRouter();
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [query, setQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("Circulation");
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [results, setResults] = useState<SearchResult[] | null>(null);
   const [searching, setSearching] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [processingQueueId, setProcessingQueueId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedBook, setSelectedBook] = useState<SearchResult | null>(null);
+  const PAGE_SIZE = 6;
 
   useEffect(() => {
     void loadDashboard();
@@ -61,30 +71,12 @@ export function DashboardHome() {
     startTransition(() => setDashboard(payload));
   }
 
-  async function runSearch(event?: React.FormEvent<HTMLFormElement>) {
+  function runSearch(event?: React.FormEvent<HTMLFormElement>) {
     event?.preventDefault();
-    if (!query.trim() && uploadedFiles.length === 0) {
-      setResults([]);
+    if (!query.trim()) {
       return;
     }
-
-    setSearching(true);
-
-    const formData = new FormData();
-    formData.set("query", query);
-    formData.set("department", selectedCategory);
-    for (const file of uploadedFiles) {
-      formData.append("files", file);
-    }
-
-    const response = await fetch("/api/search", {
-      method: "POST",
-      body: formData,
-    });
-
-    const payload = (await response.json()) as { results: SearchResult[] };
-    startTransition(() => setResults(payload.results));
-    setSearching(false);
+    router.push(`/admin/ai-prompt-search?query=${encodeURIComponent(query)}&department=${encodeURIComponent(selectedCategory)}`);
   }
 
   async function updateRequestStatus(id: string, status: TransactionStatus) {
@@ -143,43 +135,35 @@ export function DashboardHome() {
     ];
   }, [dashboard]);
 
+  const visibleResults = results ? results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE) : null;
+
   return (
     <div className="space-y-8">
-      <Panel className="overflow-hidden px-6 py-8 sm:px-8 panel-hero">
-        <div className="mx-auto max-w-5xl text-center">
-          <Badge className="mx-auto">AI Prompt Search</Badge>
-          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-5xl">
-            Ask BookHive
+      <Panel className="overflow-hidden px-6 py-8 sm:px-10 bg-[#14293E] border-none shadow-xl rounded-[24px]">
+        <div className="mx-auto max-w-5xl text-left">
+          <div className="flex items-center gap-2 text-[#FFD600] mb-4">
+             <Sparkles className="h-4 w-4 fill-current" />
+             <span className="text-xs font-bold tracking-widest uppercase">ASK BOOKHIVE</span>
+          </div>
+          <h1 className="mb-8 text-[32px] font-bold tracking-tight text-white md:text-[36px]">
+            Find resources across the entire STI WNU digital ecosystem.
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-base leading-8 text-white/65">
-            Find resources across the entire STI WNU digital ecosystem using title,
-            author, ISBN, natural language prompts, and uploaded academic files.
-          </p>
 
           <form
-            className="mx-auto mt-8 rounded-[34px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-5 shadow-[0_20px_80px_rgba(5,10,30,0.35)]"
+            className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-[#0B1724] px-4 py-3 shadow-inner mb-2"
             onSubmit={runSearch}
           >
-            <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
-              <input
-                className="glass-input w-full rounded-[24px] px-5 py-4 text-base"
-                placeholder="Search by title, author, ISBN, or describe the resource you need..."
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-              />
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center gap-2 rounded-[24px] bg-[linear-gradient(135deg,#57c3ff,#2563eb)] px-6 py-4 text-sm font-semibold text-white shadow-[0_16px_40px_rgba(37,99,235,0.32)] transition hover:translate-y-[-1px]"
-              >
-                {searching ? "Matching..." : "Run AI Search"}
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-sm text-white/65">
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-white/10 bg-white/6 px-4 py-2">
-                <FileUp className="h-4 w-4 text-sky-300" />
-                Upload docs, PDF, images, or PPT
+            <Search className="h-5 w-5 text-slate-400 ml-2" />
+            <input
+              className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-500 outline-none"
+              placeholder="Search by Title, Author, ISBN, or ask a question..."
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+            
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer p-2 text-slate-400 hover:text-white transition rounded-full hover:bg-white/5">
+                <Paperclip className="h-5 w-5" />
                 <input
                   type="file"
                   className="hidden"
@@ -188,102 +172,223 @@ export function DashboardHome() {
                   onChange={(event) => setUploadedFiles(Array.from(event.target.files ?? []))}
                 />
               </label>
-              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/15 bg-emerald-500/10 px-4 py-2 text-emerald-200">
-                <BrainCircuit className="h-4 w-4" />
-                Indexed semantic relevance scoring
-              </span>
+              <button
+                type="submit"
+                className="rounded-full bg-[#FFD600] px-6 py-2.5 text-sm font-bold tracking-wide text-[#0A1624] transition hover:bg-[#FCD400]/90 hover:scale-105 active:scale-95"
+              >
+                {searching ? "ANALYZING..." : "ANALYZE"}
+              </button>
             </div>
-
-            <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  className={cn(
-                    "rounded-full border px-4 py-2 text-sm transition",
-                    selectedCategory === category
-                      ? "border-sky-300/30 bg-sky-400/14 text-white"
-                      : "border-white/10 bg-white/4 text-white/60 hover:bg-white/8 hover:text-white",
-                  )}
-                  onClick={() => setSelectedCategory(category)}
+          </form>
+          {uploadedFiles.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-2">
+              {uploadedFiles.map((file) => (
+                <span
+                  key={`${file.name}-${file.size}`}
+                  className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/65"
                 >
-                  {category}
-                </button>
+                  {file.name}
+                </span>
               ))}
             </div>
-
-            {uploadedFiles.length > 0 ? (
-              <div className="mt-5 flex flex-wrap justify-center gap-2">
-                {uploadedFiles.map((file) => (
-                  <span
-                    key={`${file.name}-${file.size}`}
-                    className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs text-white/65"
-                  >
-                    {file.name}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </form>
-
+          )}
+        
           <AnimatePresence mode="wait">
-            {results.length > 0 ? (
+            {results === null ? (
+              <motion.div
+                key="empty"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                className="mt-8 flex items-center justify-center gap-3 rounded-[24px] border border-dashed border-white/12 bg-black/12 px-4 py-5 text-sm text-white/55"
+              >
+                <Sparkles className="h-4 w-4 text-sky-300" />
+                Search results will appear here with AI match percentages.
+              </motion.div>
+            ) : results.length === 0 ? (
+              <motion.div
+                key="no-results"
+                initial={{ opacity: 0, y: 18 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 18 }}
+                className="mt-8 flex items-center justify-center gap-3 rounded-[24px] border border-red-500/20 bg-red-500/10 px-4 py-8 text-sm text-red-400"
+              >
+                No matching records found. Try adjusting your search prompt.
+              </motion.div>
+            ) : (
               <motion.div
                 key="results"
                 initial={{ opacity: 0, y: 18 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 18 }}
-                className="mt-8 grid gap-4 text-left lg:grid-cols-3"
+                className="mt-8 flex flex-col gap-8 text-left"
               >
-                {results.map((result) => (
-                  <Panel key={result.id} className="p-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/45">
-                          {result.department}
-                        </p>
-                        <h3 className="mt-2 text-lg font-semibold text-white">{result.title}</h3>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {visibleResults?.map((result, idx) => {
+                    const relevance = result.relevance;
+                    const isHigh = relevance >= 90;
+                    const isMedium = relevance >= 75;
+                    const relevanceBadgeClass = isHigh
+                      ? "border border-emerald-500/35 bg-emerald-500/10 text-emerald-400 font-extrabold shadow-[0_0_12px_rgba(16,185,129,0.25)] rounded-full px-2.5 py-0.5 text-[10px]"
+                      : isMedium
+                      ? "border border-amber-500/35 bg-amber-500/10 text-amber-400 font-extrabold shadow-[0_0_12px_rgba(245,158,11,0.25)] rounded-full px-2.5 py-0.5 text-[10px]"
+                      : "border border-sky-500/35 bg-sky-500/10 text-sky-300 font-extrabold rounded-full px-2.5 py-0.5 text-[10px]";
+
+                    const relevanceBarColor = isHigh
+                      ? "from-emerald-500 to-teal-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                      : isMedium
+                      ? "from-amber-500 to-yellow-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
+                      : "from-sky-500 to-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.4)]";
+
+                    return (
+                      <motion.button
+                        key={result.id}
+                        type="button"
+                        onClick={() => setSelectedBook(result)}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.35, delay: idx * 0.05, ease: "easeOut" }}
+                        whileHover={{ y: -6, scale: 1.015 }}
+                        className="flex flex-col justify-between w-full text-left p-5 bg-gradient-to-b from-[#14283F]/70 to-[#0A1724]/90 backdrop-blur-xl rounded-[28px] border border-white/[0.07] hover:border-[#FFD600] hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.6)] transition-all duration-300 group"
+                      >
+                        <div className="space-y-4">
+                          {/* Top bar with category & relevance */}
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="inline-flex items-center rounded-full bg-white/5 border border-white/5 px-2.5 py-0.5 text-[9px] font-black tracking-[0.18em] text-[#FFD600] uppercase">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#FFD600] mr-1.5 animate-pulse"></span>
+                              {result.department}
+                            </span>
+                            <span className={relevanceBadgeClass}>
+                              {relevance}% MATCH
+                            </span>
+                          </div>
+
+                          {/* Title & Metadata */}
+                          <div>
+                            <h3 className="text-base font-bold tracking-tight text-white group-hover:text-[#FFD600] transition-colors duration-200 line-clamp-2 leading-snug text-left">
+                              {result.title}
+                            </h3>
+                            <div className="mt-2 space-y-1.5 text-left">
+                              <p className="flex items-center gap-1.5 text-xs text-white/80">
+                                <User className="h-3.5 w-3.5 text-slate-400" />
+                                By <span className="font-semibold text-white/95">{result.author}</span>
+                              </p>
+                              <div className="flex items-center flex-wrap gap-1.5 text-[10px] text-white/50">
+                                <span className="font-mono bg-white/5 border border-white/5 px-1.5 py-0.5 rounded-md">
+                                  ISBN: {result.isbn}
+                                </span>
+                                {result.language && (
+                                  <span className="bg-white/5 border border-white/5 px-1.5 py-0.5 rounded-md uppercase font-bold tracking-wider text-[8px]">
+                                    🌐 {result.language}
+                                  </span>
+                                )}
+                                {typeof result.rating === "number" && result.rating > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 bg-[#FFD600]/10 border border-[#FFD600]/20 px-1.5 py-0.5 rounded-md text-[#FFD600] font-bold">
+                                    ⭐ {result.rating.toFixed(1)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Visual Relevance Meter */}
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[9px] uppercase font-bold tracking-wider text-white/40">
+                              <span>Relevance Meter</span>
+                              <span className={isHigh ? "text-emerald-400" : isMedium ? "text-amber-400" : "text-sky-300"}>
+                                {relevance}%
+                              </span>
+                            </div>
+                            <div className="h-1.5 w-full rounded-full bg-white/[0.04] overflow-hidden border border-white/[0.02]">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${relevance}%` }}
+                                transition={{ duration: 0.8, ease: "easeOut" }}
+                                className={`h-full rounded-full bg-gradient-to-r ${relevanceBarColor}`}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Book Summary */}
+                          <div className="border-l border-[#FFD600]/30 pl-3 pt-1 pb-0.5 text-left">
+                            <p className="text-xs text-white/70 leading-relaxed line-clamp-3 italic">
+                              "{result.summary}"
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Matched explanation details */}
+                        {result.matchedBy && result.matchedBy.length > 0 && (
+                          <div className="mt-4 flex flex-wrap gap-1 pt-3.5 border-t border-white/[0.04] justify-start">
+                            {result.matchedBy.map((match) => (
+                              <span
+                                key={match}
+                                className="inline-flex items-center gap-1 text-[8px] font-black tracking-widest uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full shadow-sm"
+                              >
+                                <Sparkles className="h-2 w-2 text-emerald-400" />
+                                {match}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </motion.button>
+                    );
+                  })}
+                </div>
+
+                {results.length > 0 && (
+                  <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-[20px] border border-white/[0.05] bg-white/[0.02] w-full">
+                    {/* Pagination Info */}
+                    <div className="text-xs font-semibold text-white/50 text-left">
+                      Showing <span className="text-white">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                      <span className="text-white">{Math.min(currentPage * PAGE_SIZE, results.length)}</span> of{" "}
+                      <span className="text-[#FFD600]">{results.length}</span> matches found
+                    </div>
+
+                    {/* Pagination Toggles */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={currentPage === 1}
+                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                        className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10 hover:border-white/20 active:scale-95 disabled:opacity-30 disabled:hover:bg-white/5 disabled:hover:border-white/10 disabled:active:scale-100"
+                      >
+                        Previous
+                      </button>
+                      
+                      <div className="flex items-center gap-1.5">
+                        {Array.from({ length: Math.ceil(results.length / PAGE_SIZE) }).map((_, idx) => {
+                          const pageNum = idx + 1;
+                          const isActive = currentPage === pageNum;
+                          return (
+                            <button
+                              key={pageNum}
+                              type="button"
+                              onClick={() => setCurrentPage(pageNum)}
+                              className={cn(
+                                "h-8 w-8 rounded-full text-xs font-black transition-all flex items-center justify-center",
+                                isActive
+                                  ? "bg-[#FFD600] text-[#0A1624] shadow-[0_0_12px_rgba(255,214,0,0.35)] scale-110"
+                                  : "border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:border-white/20"
+                              )}
+                            >
+                              {pageNum}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <Badge tone="success">{result.relevance}%</Badge>
+
+                      <button
+                        type="button"
+                        disabled={currentPage === Math.ceil(results.length / PAGE_SIZE)}
+                        onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(results.length / PAGE_SIZE), prev + 1))}
+                        className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10 hover:border-white/20 active:scale-95 disabled:opacity-30 disabled:hover:bg-white/5 disabled:hover:border-white/10 disabled:active:scale-100"
+                      >
+                        Next
+                      </button>
                     </div>
-                    <p className="mt-2 text-sm text-white/60">
-                      {result.author} • {result.isbn}
-                    </p>
-                    <p className="mt-2 text-xs text-white/45">
-                      {result.language ?? "Unknown language"}
-                      {typeof result.rating === "number" ? ` • Rated ${result.rating.toFixed(2)}` : ""}
-                    </p>
-                    <p className="mt-4 line-clamp-3 text-sm leading-7 text-white/62">
-                      {result.summary}
-                    </p>
-                    <div className="mt-5 flex flex-wrap gap-2">
-                      {result.matchedBy.map((match) => (
-                        <span
-                          key={match}
-                          className="rounded-full border border-white/8 bg-white/5 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-white/52"
-                        >
-                          {match}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="mt-5 h-2 rounded-full bg-white/8">
-                      <div
-                        className="h-full rounded-full bg-[linear-gradient(90deg,#60a5fa,#22d3ee)]"
-                        style={{ width: `${result.relevance}%` }}
-                      />
-                    </div>
-                  </Panel>
-                ))}
-              </motion.div>
-            ) : (
-              <motion.div
-                key="empty"
-                initial={{ opacity: 0, y: 18 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mt-8 flex items-center justify-center gap-3 rounded-[24px] border border-dashed border-white/12 bg-black/12 px-4 py-5 text-sm text-white/55"
-              >
-                <Sparkles className="h-4 w-4 text-sky-300" />
-                Search results will appear here with AI match percentages.
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -313,6 +418,12 @@ export function DashboardHome() {
           <LiveTerminal activity={liveActivity} />
         </div>
       </div>
+
+      <BookDetailModal
+        open={Boolean(selectedBook)}
+        book={selectedBook}
+        onClose={() => setSelectedBook(null)}
+      />
     </div>
   );
 }

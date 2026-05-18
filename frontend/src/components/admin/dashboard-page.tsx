@@ -3,7 +3,6 @@
 import React, { useState } from 'react';
 import {
   Search,
-  Mic,
   Upload,
   Zap,
   RefreshCw,
@@ -11,6 +10,8 @@ import {
   Activity,
   FileText,
   MessageCircle,
+  Paperclip,
+  Sparkles,
 } from 'lucide-react';
 
 const DashboardPage = () => {
@@ -81,132 +82,46 @@ const DashboardPage = () => {
   return (
     <div style={{ backgroundColor: colors.background, minHeight: '100vh', padding: '24px' }}>
       {/* Hero Section */}
-      <div
-        style={{
-          backgroundColor: colors.secondaryNavy,
-          borderRadius: '12px',
-          padding: '48px 32px',
-          marginBottom: '32px',
-          color: 'white',
-        }}
-      >
+      <div className="rounded-[24px] bg-[#14293E] p-8 md:p-10 mb-8">
         {/* Yellow Label */}
-        <div
-          style={{
-            display: 'inline-block',
-            backgroundColor: colors.yellow,
-            color: colors.primaryNavy,
-            padding: '6px 12px',
-            borderRadius: '20px',
-            fontSize: '12px',
-            fontWeight: '600',
-            marginBottom: '16px',
-            letterSpacing: '0.5px',
-          }}
-        >
-          ASK GEMINI
+        <div className="flex items-center gap-2 text-[#FFD600] mb-4">
+          <Sparkles className="h-4 w-4 fill-current" />
+          <span className="text-xs font-bold tracking-widest uppercase">
+            ASK BOOKHIVE
+          </span>
         </div>
 
         {/* Main Text */}
-        <h1
-          style={{
-            fontSize: '32px',
-            fontWeight: '700',
-            marginBottom: '32px',
-            lineHeight: '1.4',
-            maxWidth: '600px',
-          }}
-        >
+        <h1 className="mb-8 text-[32px] font-bold tracking-tight text-white md:text-[36px]">
           Find resources across the entire STI WNU digital ecosystem.
         </h1>
 
         {/* Search Box */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            backgroundColor: 'white',
-            borderRadius: '32px',
-            padding: '12px 24px',
-            marginBottom: '24px',
-            gap: '12px',
-          }}
-        >
-          <Search size={20} color={colors.muted} />
+        <div className="flex w-full items-center gap-3 rounded-full border border-white/10 bg-[#0B1724] px-4 py-3 shadow-inner mb-2">
+          <Search className="h-5 w-5 text-slate-400 ml-2" />
           <input
             type="text"
-            placeholder="Search books, authors, subjects..."
-            style={{
-              flex: 1,
-              border: 'none',
-              outline: 'none',
-              fontSize: '14px',
-              color: colors.text,
-            }}
+            placeholder="Search by Title, Author, ISBN, or ask a question..."
+            className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-500 outline-none"
           />
-          <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+          
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer p-2 text-slate-400 hover:text-white transition rounded-full hover:bg-white/5">
+              <Paperclip className="h-5 w-5" />
+              <input
+                type="file"
+                className="hidden"
+                accept=".pdf,.doc,.docx,.ppt,.pptx,image/*,.txt,.md,.csv,.json"
+                multiple
+              />
+            </label>
             <button
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px',
-              }}
+              type="button"
+              className="rounded-full bg-[#FFD600] px-6 py-2.5 text-sm font-bold tracking-wide text-[#0A1624] transition hover:bg-[#FCD400]/90 hover:scale-105 active:scale-95"
             >
-              <Mic size={20} color={colors.muted} />
-            </button>
-            <button
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px',
-              }}
-            >
-              <Upload size={20} color={colors.muted} />
-            </button>
-            <button
-              style={{
-                backgroundColor: colors.yellow,
-                border: 'none',
-                borderRadius: '8px',
-                padding: '8px 16px',
-                color: colors.primaryNavy,
-                fontWeight: '600',
-                cursor: 'pointer',
-                fontSize: '12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-              }}
-            >
-              <Zap size={16} />
-              Analyze
+              ANALYZE
             </button>
           </div>
-        </div>
-
-        {/* Category Pills */}
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-          {['Circulation', 'General Reference', 'Filipiniana', 'Reserve', 'Periodical', 'Special Collections'].map(
-            (category) => (
-              <button
-                key={category}
-                style={{
-                  backgroundColor: 'rgba(255, 214, 0, 0.1)',
-                  border: '1px solid rgba(255, 214, 0, 0.2)',
-                  color: colors.yellow,
-                  borderRadius: '20px',
-                  padding: '8px 16px',
-                  fontSize: '12px',
-                  cursor: 'pointer',
-                  fontWeight: '500',
-                }}
-              >
-                {category}
-              </button>
-            )
-          )}
         </div>
       </div>
 

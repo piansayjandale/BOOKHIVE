@@ -818,6 +818,18 @@ export const adminRepository = {
     return (await getAdminState()).searchLogs;
   },
 
+  async deleteSearchLog(id: string) {
+    const state = await getAdminState();
+    state.searchLogs = state.searchLogs.filter((log) => log.id !== id);
+    return state.searchLogs;
+  },
+
+  async clearSearchLogs() {
+    const state = await getAdminState();
+    state.searchLogs = [];
+    return state.searchLogs;
+  },
+
   async getAnalytics(): Promise<AnalyticsPayload> {
     const transactions = getAllTransactions();
     const books = await catalogRepository.getTrendingBooks(8);
