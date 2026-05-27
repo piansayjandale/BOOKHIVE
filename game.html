@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pocket Quest</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="./game.css" />
+</head>
+<body class="text-white">
+    <div id="app" class="relative h-screen w-screen overflow-hidden bg-slate-950">
+        <div
+            id="container"
+            class="relative h-screen w-screen overflow-hidden bg-center bg-cover bg-no-repeat"
+            style="background-image: url('./backgrounds.jpg');"
+        >
+            <div class="absolute inset-0 bg-gradient-to-b from-emerald-950/25 via-slate-950/20 to-slate-950/45"></div>
+
+            <div id="zone-layer" class="pointer-events-none absolute inset-0 z-0">
+                <div id="grass-a" class="grass-zone absolute rounded-[2rem] border border-emerald-200/30 bg-emerald-500/20 shadow-inner shadow-emerald-950/50">
+                    <div class="absolute left-3 top-3 rounded-full bg-emerald-950/75 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.26em] text-emerald-50">Clover Patch</div>
+                </div>
+                <div id="grass-b" class="grass-zone absolute rounded-[2rem] border border-teal-200/30 bg-teal-500/20 shadow-inner shadow-teal-950/50">
+                    <div class="absolute left-3 top-3 rounded-full bg-teal-950/75 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.26em] text-teal-50">Moss Bend</div>
+                </div>
+                <div id="grass-c" class="grass-zone absolute rounded-[2rem] border border-lime-200/30 bg-lime-500/18 shadow-inner shadow-lime-950/50">
+                    <div class="absolute left-3 top-3 rounded-full bg-lime-950/75 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.26em] text-lime-50">Ember Trail</div>
+                </div>
+
+                <div id="safe-zone" class="safe-zone-glow absolute rounded-[2rem] border border-cyan-200/35 bg-cyan-400/18 shadow-inner shadow-cyan-950/50">
+                    <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-cyan-50">
+                        <div class="rounded-full border border-cyan-100/30 bg-cyan-950/65 px-4 py-1 text-xs font-bold uppercase tracking-[0.28em]">Healing Spring</div>
+                        <div class="text-5xl font-black">+</div>
+                    </div>
+                </div>
+
+                <div id="elite-zone" class="elite-zone-glow absolute rounded-[2rem] border border-amber-200/35 bg-amber-400/16 shadow-inner shadow-amber-950/55">
+                    <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-amber-50">
+                        <div class="rounded-full border border-amber-100/35 bg-amber-950/65 px-4 py-1 text-xs font-bold uppercase tracking-[0.28em]">Sky Hollow</div>
+                        <div class="text-4xl font-black">*</div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="particle-layer" class="pointer-events-none absolute inset-0 z-5"></div>
+            <div id="enemy-layer" class="pointer-events-none absolute inset-0 z-10"></div>
+
+            <div class="absolute left-4 right-4 top-4 z-30 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                <section class="pixel-panel w-full max-w-3xl rounded-[1.6rem] bg-slate-950/75 p-4 backdrop-blur">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <p class="text-xs uppercase tracking-[0.36em] text-emerald-100/75">Adventure</p>
+                            <h1 class="text-2xl font-black text-emerald-50">Pocket Quest</h1>
+                        </div>
+                        <div class="rounded-2xl border border-emerald-100/20 bg-emerald-300/10 px-4 py-2 text-sm font-bold text-emerald-50">
+                            Lv <span id="hud-level">1</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid gap-4 md:grid-cols-2">
+                        <div>
+                            <div class="mb-2 flex items-center justify-between text-sm text-emerald-50/90">
+                                <span>HP</span>
+                                <span id="hud-hp-text">100 / 100</span>
+                            </div>
+                            <div class="h-3 overflow-hidden rounded-full bg-slate-900/80">
+                                <div id="hud-hp-fill" class="hp-fill h-full rounded-full bg-emerald-400" style="width: 100%;"></div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="mb-2 flex items-center justify-between text-sm text-emerald-50/90">
+                                <span>EXP</span>
+                                <span id="hud-exp-text">0 / 60</span>
+                            </div>
+                            <div class="h-3 overflow-hidden rounded-full bg-slate-900/80">
+                                <div id="hud-exp-fill" class="exp-fill h-full rounded-full bg-sky-400" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 grid gap-3 sm:grid-cols-5">
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Attack</p>
+                            <p id="hud-attack" class="mt-2 text-xl font-black text-white">12</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Defense</p>
+                            <p id="hud-defense" class="mt-2 text-xl font-black text-white">5</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Heals</p>
+                            <p id="hud-heals" class="mt-2 text-xl font-black text-white">3</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Focus</p>
+                            <p id="hud-focus" class="mt-2 text-xl font-black text-white">Normal</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Target</p>
+                            <p id="hud-target" class="mt-2 text-xl font-black text-white">Drake</p>
+                        </div>
+                    </div>
+                </section>
+
+                <aside class="pixel-panel-dark w-full max-w-xl rounded-[1.6rem] bg-slate-950/75 p-4 backdrop-blur">
+                    <div class="grid gap-3 md:grid-cols-2">
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Zone</p>
+                            <p id="hud-zone" class="mt-2 text-lg font-black text-white">Trailhead</p>
+                        </div>
+                        <div class="rounded-2xl border border-white/10 bg-white/5 p-3">
+                            <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">State</p>
+                            <p id="hud-state" class="mt-2 text-lg font-black text-white">Explore</p>
+                        </div>
+                    </div>
+                    <div class="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                        <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Objective</p>
+                        <p id="hud-objective" class="mt-2 text-sm leading-6 text-emerald-50">Train in the grass and challenge the drake in Sky Hollow.</p>
+                    </div>
+                    <div class="mt-3 rounded-2xl border border-white/10 bg-white/5 p-3">
+                        <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Status</p>
+                        <p id="hud-status" class="mt-2 text-sm leading-6 text-emerald-50">Walk into tall grass or touch a roaming monster to battle.</p>
+                    </div>
+                </aside>
+            </div>
+
+            <div id="map-toast" class="pointer-events-none absolute bottom-6 left-1/2 z-30 hidden -translate-x-1/2 rounded-full border border-emerald-100/18 bg-slate-950/85 px-5 py-2 text-sm font-semibold text-emerald-50 shadow-xl backdrop-blur">
+                Ready
+            </div>
+            <div id="center-timer" class="pointer-events-none absolute inset-0 z-50 hidden flex items-center justify-center bg-black/0">
+                <div class="rounded-3xl border border-emerald-200/25 bg-slate-950/85 px-6 py-4 text-center text-lg font-black uppercase tracking-[0.22em] text-emerald-100 shadow-2xl backdrop-blur">
+                    <span id="center-timer-text"></span>
+                </div>
+            </div>
+
+            <div id="level-popup" class="pointer-events-none absolute left-1/2 top-28 z-40 hidden -translate-x-1/2 rounded-3xl border border-yellow-200/35 bg-yellow-300/15 px-8 py-4 text-center shadow-2xl backdrop-blur">
+                <p class="retro-font text-xs font-bold uppercase tracking-[0.35em] text-yellow-100">LEVEL UP</p>
+                <p id="level-popup-text" class="mt-2 text-lg font-black text-white">Lv. 2</p>
+            </div>
+
+            <div id="player" class="pointer-events-none absolute left-0 top-0 z-20 w-24">
+                <img
+                    id="character"
+                    src="./down.png"
+                    alt="Player"
+                    draggable="false"
+                    class="block w-full select-none"
+                />
+            </div>
+        </div>
+
+        <div id="transition-overlay" class="pointer-events-none absolute inset-0 z-35 opacity-0" style="background: radial-gradient(circle, rgba(224,255,224,0.72) 0%, rgba(170,255,201,0.14) 48%, rgba(4,12,7,0.96) 100%);"></div>
+
+        <div id="battle-overlay" class="pointer-events-none absolute inset-0 z-40 hidden items-stretch justify-stretch bg-[#0a190d]/92 backdrop-blur-md">
+            <div class="flex h-full w-full flex-col gap-4 p-4 md:p-6">
+                <section id="battle-scene" class="pixel-panel relative flex-1 overflow-hidden rounded-[2rem] bg-[#b9d9a8] text-[#102114]">
+                    <div class="battle-arena-grid absolute inset-0"></div>
+                    <div class="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-[#eaf7db] to-transparent"></div>
+                    <div class="absolute bottom-0 left-0 right-0 h-36 bg-gradient-to-t from-[#6b9b6f] via-[#8dbb87] to-transparent"></div>
+
+                    <div id="battle-hud-overlay" class="absolute inset-x-0 top-6 z-20 px-6">
+                        <div class="battle-status-panel pixel-panel-dark absolute left-6 top-0 w-[min(24rem,46vw)] rounded-3xl bg-[#ebf4e3]/95 p-4 text-[#102114] shadow-2xl backdrop-blur">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="retro-font text-sm font-black uppercase tracking-[0.18em] text-[#1b4b28]">Enemy</p>
+                                    <p id="battle-enemy-meta-small" class="text-xs font-bold uppercase tracking-[0.28em] text-[#456348]">Lv 1 Grass</p>
+                                </div>
+                                <span id="battle-enemy-hp-small-text" class="retro-font text-sm font-bold text-[#102114]">60 / 60</span>
+                            </div>
+                            <div class="mt-3 h-4 overflow-hidden rounded-full bg-[#28402b]/25">
+                                <div id="battle-enemy-hp-small-fill" class="hp-fill h-full rounded-full bg-emerald-500" style="width: 100%;"></div>
+                            </div>
+                        </div>
+                        <div class="battle-status-panel pixel-panel-dark absolute right-6 top-0 w-[min(24rem,46vw)] rounded-3xl bg-[#ebf4e3]/95 p-4 text-[#102114] shadow-2xl backdrop-blur">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <p class="retro-font text-sm font-black uppercase tracking-[0.18em] text-[#1b4b28]">Hero</p>
+                                    <p id="battle-player-meta-small" class="text-xs font-bold uppercase tracking-[0.28em] text-[#456348]">Lv 1 Normal</p>
+                                </div>
+                                <span id="battle-player-hp-small-text" class="retro-font text-sm font-bold text-[#102114]">100 / 100</span>
+                            </div>
+                            <div class="mt-3 h-4 overflow-hidden rounded-full bg-[#28402b]/25">
+                                <div id="battle-player-hp-small-fill" class="hp-fill h-full rounded-full bg-emerald-500" style="width: 100%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="battle-enemy-status" class="pixel-panel-dark absolute left-5 top-20 w-[min(24rem,46vw)] rounded-3xl bg-[#eff8e1]/90 p-4 text-[#102114]">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <p id="battle-enemy-name" class="retro-font text-xl font-black uppercase tracking-[0.18em]">Wild Enemy</p>
+                                <p id="battle-enemy-meta" class="mt-1 text-xs font-bold uppercase tracking-[0.28em] text-[#456348]">Lv 1 Grass</p>
+                            </div>
+                            <span id="battle-enemy-hp-text" class="retro-font text-sm font-bold text-[#102114]">60 / 60</span>
+                        </div>
+                        <div class="mt-3 h-3 overflow-hidden rounded-full bg-[#28402b]/30">
+                            <div id="battle-enemy-hp-fill" class="hp-fill h-full rounded-full bg-emerald-500" style="width: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <div id="battle-player-status" class="pixel-panel-dark absolute right-5 top-20 w-[min(24rem,50vw)] rounded-3xl bg-[#eff8e1]/90 p-4 text-[#102114]">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <p class="retro-font text-xl font-black uppercase tracking-[0.18em]">Hero</p>
+                                <p id="battle-player-meta" class="mt-1 text-xs font-bold uppercase tracking-[0.28em] text-[#456348]">Lv 1 Normal</p>
+                            </div>
+                            <span id="battle-player-hp-text" class="retro-font text-sm font-bold text-[#102114]">100 / 100</span>
+                        </div>
+                        <div class="mt-3 h-3 overflow-hidden rounded-full bg-[#28402b]/30">
+                            <div id="battle-player-hp-fill" class="hp-fill h-full rounded-full bg-emerald-500" style="width: 100%;"></div>
+                        </div>
+                    </div>
+
+                    <div class="battle-platform left-[14%] top-[38%] w-[26%]"></div>
+                    <div class="battle-platform bottom-[22%] right-[10%] w-[30%]"></div>
+
+                    <div id="battle-enemy-wrap" class="absolute left-[10%] top-[18%] flex h-[34rem] w-[34rem] items-center justify-center">
+                        <img id="battle-enemy-image" alt="Enemy" class="battle-sprite w-[92%] h-auto object-contain drop-shadow-2xl" />
+                        <div id="battle-enemy-fallback" class="hidden h-[28rem] w-[28rem] items-center justify-center rounded-[2rem] border-2 border-[#3e5a42] bg-[#d7efc8] px-6 text-center retro-font text-2xl font-black uppercase tracking-[0.18em] text-[#16311a]"></div>
+                    </div>
+
+                    <div id="battle-player-wrap" class="absolute right-[10%] top-[22%] flex h-[28rem] w-[28rem] items-center justify-center">
+                        <img id="battle-player-image" alt="Player" class="battle-sprite max-h-full max-w-full -scale-x-100 object-contain drop-shadow-2xl" />
+                    </div>
+                </section>
+
+                <section class="grid gap-4 lg:grid-cols-[1.45fr_1fr]">
+                    <div id="battle-message-box" class="battle-message-box pixel-panel rounded-[1.8rem] bg-[#eaf7db]/95 p-4 text-[#122617]">
+                        <p class="retro-font text-[11px] font-bold uppercase tracking-[0.32em] text-[#3b593b]">Battle Log</p>
+                        <p id="battle-message" class="retro-font mt-4 text-lg font-bold leading-8 text-[#102114]">A wild enemy appeared.</p>
+                    </div>
+
+                    <div class="pixel-panel rounded-[1.8rem] bg-[#eaf7db]/95 p-4 text-[#102114]">
+                        <p class="retro-font text-[11px] font-bold uppercase tracking-[0.32em] text-[#3b593b]">Action Menu</p>
+                        <div class="mt-4 grid grid-cols-2 gap-3">
+                            <button id="action-attack" type="button" class="pixel-button rounded-2xl bg-emerald-500 px-4 py-4 text-sm font-black uppercase tracking-[0.18em] text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-45">Attack</button>
+                            <button id="action-defend" type="button" class="pixel-button rounded-2xl bg-sky-500 px-4 py-4 text-sm font-black uppercase tracking-[0.18em] text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-45">Defend</button>
+                            <button id="action-heal" type="button" class="pixel-button rounded-2xl bg-amber-500 px-4 py-4 text-sm font-black uppercase tracking-[0.18em] text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-45">Heal</button>
+                            <button id="action-run" type="button" class="pixel-button rounded-2xl bg-rose-500 px-4 py-4 text-sm font-black uppercase tracking-[0.18em] text-white transition-all hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-45">Run</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <div id="ending-overlay" class="pointer-events-none absolute inset-0 z-50 hidden items-center justify-center bg-slate-950/94 p-6">
+            <div class="pixel-panel-dark w-full max-w-2xl rounded-[2rem] bg-slate-950/95 p-8 text-center backdrop-blur">
+                <p id="ending-kicker" class="retro-font text-xs font-bold uppercase tracking-[0.42em] text-emerald-100/65">Adventure End</p>
+                <h2 id="ending-title" class="mt-4 text-4xl font-black text-white">YOU WIN</h2>
+                <p id="ending-message" class="mx-auto mt-4 max-w-xl text-base leading-7 text-emerald-50">The region is safe once more.</p>
+
+                <div class="mt-6 grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">Level</p>
+                        <p id="ending-level" class="mt-2 text-2xl font-black text-white">1</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">EXP</p>
+                        <p id="ending-exp" class="mt-2 text-2xl font-black text-white">0 / 60</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 bg-white/5 p-4">
+                        <p class="text-xs uppercase tracking-[0.25em] text-emerald-100/55">HP</p>
+                        <p id="ending-hp" class="mt-2 text-2xl font-black text-white">100 / 100</p>
+                    </div>
+                </div>
+
+                <button id="restart-button" type="button" class="pixel-button pointer-events-auto mt-8 rounded-2xl bg-emerald-500 px-6 py-3 text-sm font-black uppercase tracking-[0.2em] text-white transition hover:bg-emerald-400">
+                    Restart Adventure
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const container = document.getElementById("container");
+        const playerElement = document.getElementById("player");
+        const character = document.getElementById("character");
+        const enemyLayer = document.getElementById("enemy-layer");
+        const particleLayer = document.getElementById("particle-layer");
+        const mapToast = document.getElementById("map-toast");
+
+        const dom = {
+            hudLevel: document.getElementById("hud-level"),
+            hudHpText: document.getElementById("hud-hp-text"),
+            hudHpFill: document.getElementById("hud-hp-fill"),
+            hudExpText: document.getElementById("hud-exp-text"),
+            hudExpFill: document.getElementById("hud-exp-fill"),
+            hudAttack: document.getElementById("hud-attack"),
+            hudDefense: document.getElementById("hud-defense"),
+            hudHeals: document.getElementById("hud-heals"),
+            hudFocus: document.getElementById("hud-focus"),
+            hudTarget: document.getElementById("hud-target"),
+            hudZone: document.getElementById("hud-zone"),
+            hudState: document.getElementById("hud-state"),
+            hudObjective: document.getElementById("hud-objective"),
+            hudStatus: document.getElementById("hud-status"),
+            centerTimer: document.getElementById("center-timer"),
+            centerTimerText: document.getElementById("center-timer-text"),
+            levelPopup: document.getElementById("level-popup"),
+            levelPopupText: document.getElementById("level-popup-text"),
+            transitionOverlay: document.getElementById("transition-overlay"),
+            battleOverlay: document.getElementById("battle-overlay"),
+            battleScene: document.getElementById("battle-scene"),
+            battleEnemyStatus: document.getElementById("battle-enemy-status"),
+            battlePlayerStatus: document.getElementById("battle-player-status"),
+            battleEnemyName: document.getElementById("battle-enemy-name"),
+            battleEnemyMeta: document.getElementById("battle-enemy-meta"),
+            battleEnemyHpText: document.getElementById("battle-enemy-hp-text"),
+            battleEnemyHpFill: document.getElementById("battle-enemy-hp-fill"),
+            battleEnemyMetaSmall: document.getElementById("battle-enemy-meta-small"),
+            battleEnemyHpSmallText: document.getElementById("battle-enemy-hp-small-text"),
+            battleEnemyHpSmallFill: document.getElementById("battle-enemy-hp-small-fill"),
+            battleEnemyImage: document.getElementById("battle-enemy-image"),
+            battleEnemyFallback: document.getElementById("battle-enemy-fallback"),
+            battleEnemyWrap: document.getElementById("battle-enemy-wrap"),
+            battlePlayerMeta: document.getElementById("battle-player-meta"),
+            battlePlayerHpText: document.getElementById("battle-player-hp-text"),
+            battlePlayerHpFill: document.getElementById("battle-player-hp-fill"),
+            battlePlayerMetaSmall: document.getElementById("battle-player-meta-small"),
+            battlePlayerHpSmallText: document.getElementById("battle-player-hp-small-text"),
+            battlePlayerHpSmallFill: document.getElementById("battle-player-hp-small-fill"),
+            battlePlayerImage: document.getElementById("battle-player-image"),
+            battlePlayerWrap: document.getElementById("battle-player-wrap"),
+            battleMessageBox: document.getElementById("battle-message-box"),
+            battleMessage: document.getElementById("battle-message"),
+            actionAttack: document.getElementById("action-attack"),
+            actionDefend: document.getElementById("action-defend"),
+            actionHeal: document.getElementById("action-heal"),
+            actionRun: document.getElementById("action-run"),
+            centerTimer: document.getElementById("center-timer"),
+            centerTimerText: document.getElementById("center-timer-text"),
+            endingOverlay: document.getElementById("ending-overlay"),
+            endingKicker: document.getElementById("ending-kicker"),
+            endingTitle: document.getElementById("ending-title"),
+            endingMessage: document.getElementById("ending-message"),
+            endingLevel: document.getElementById("ending-level"),
+            endingExp: document.getElementById("ending-exp"),
+            endingHp: document.getElementById("ending-hp"),
+            restartButton: document.getElementById("restart-button")
+        };
+
+        const zoneElements = {
+            "grass-a": document.getElementById("grass-a"),
+            "grass-b": document.getElementById("grass-b"),
+            "grass-c": document.getElementById("grass-c"),
+            "safe-zone": document.getElementById("safe-zone"),
+            "elite-zone": document.getElementById("elite-zone")
+        };
+
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+
+        const spritePaths = {
+            up: "./up.png",
+            left: "./left.png",
+            down: "./down.png",
+            right: "./right.png"
+        };
+
+        const focusByDirection = {
+            up: "water",
+            right: "fire",
+            left: "grass",
+            down: "normal"
+        };
+
+        const typePalette = {
+            grass: {
+                soft: "rgba(16, 185, 129, 0.18)",
+                line: "rgba(167, 243, 208, 0.3)",
+                text: "text-emerald-50"
+            },
+            water: {
+                soft: "rgba(56, 189, 248, 0.2)",
+                line: "rgba(186, 230, 253, 0.3)",
+                text: "text-sky-50"
+            },
+            fire: {
+                soft: "rgba(251, 146, 60, 0.18)",
+                line: "rgba(254, 215, 170, 0.32)",
+                text: "text-orange-50"
+            },
+            rock: {
+                soft: "rgba(180, 132, 77, 0.18)",
+                line: "rgba(234, 179, 8, 0.26)",
+                text: "text-amber-50"
+            },
+            shadow: {
+                soft: "rgba(129, 140, 248, 0.18)",
+                line: "rgba(199, 210, 254, 0.28)",
+                text: "text-indigo-50"
+            },
+            dragon: {
+                soft: "rgba(168, 85, 247, 0.18)",
+                line: "rgba(233, 213, 255, 0.32)",
+                text: "text-fuchsia-50"
+            },
+            normal: {
+                soft: "rgba(148, 163, 184, 0.18)",
+                line: "rgba(226, 232, 240, 0.28)",
+                text: "text-slate-50"
+            }
+        };
+
+        const typeChart = {
+            water: { fire: 1.35, rock: 1.2, grass: 0.8, dragon: 0.9 },
+            fire: { grass: 1.35, shadow: 1.15, water: 0.8, rock: 0.82, dragon: 0.9 },
+            grass: { water: 1.35, rock: 1.2, fire: 0.8, shadow: 0.9, dragon: 0.9 },
+            rock: { fire: 1.2, shadow: 1.12, water: 0.86, grass: 0.95 },
+            shadow: { grass: 1.12, water: 1.08, dragon: 0.95 },
+            dragon: { grass: 1.18, water: 1.18, fire: 1.18, rock: 1.12, shadow: 1.12 },
+            normal: {}
+        };
+
+        const zoneBlueprints = [
+            {
+                id: "grass-a",
+                type: "grass",
+                x: 0.06,
+                y: 0.56,
+                w: 0.28,
+                h: 0.22,
+                name: "Clover Patch",
+                encounterRate: 0.14,
+                enemySlots: 2,
+                spawnTable: [
+                    { id: "sproutle", weight: 4 },
+                    { id: "ripplet", weight: 2 },
+                    { id: "stonepup", weight: 1 }
+                ]
+            },
+            {
+                id: "grass-b",
+                type: "grass",
+                x: 0.36,
+                y: 0.18,
+                w: 0.20,
+                h: 0.18,
+                name: "Moss Bend",
+                encounterRate: 0.17,
+                enemySlots: 2,
+                spawnTable: [
+                    { id: "ripplet", weight: 3 },
+                    { id: "sproutle", weight: 3 },
+                    { id: "embercub", weight: 2 }
+                ]
+            },
+            {
+                id: "grass-c",
+                type: "grass",
+                x: 0.60,
+                y: 0.50,
+                w: 0.22,
+                h: 0.18,
+                name: "Ember Trail",
+                encounterRate: 0.18,
+                enemySlots: 3,
+                spawnTable: [
+                    { id: "embercub", weight: 4 },
+                    { id: "shadebat", weight: 2 },
+                    { id: "stonepup", weight: 2 },
+                    { id: "ripplet", weight: 1 }
+                ]
+            },
+            {
+                id: "safe-zone",
+                type: "safe",
+                x: 0.09,
+                y: 0.15,
+                w: 0.20,
+                h: 0.18,
+                name: "Healing Spring"
+            },
+            {
+                id: "elite-zone",
+                type: "elite",
+                x: 0.78,
+                y: 0.10,
+                w: 0.15,
+                h: 0.24,
+                name: "Sky Hollow",
+                enemySlots: 1,
+                spawnTable: [
+                    { id: "aetherdrake", weight: 1 }
+                ]
+            }
+        ];
+
+        const enemyTemplates = {
+            sproutle: {
+                id: "sproutle",
+                name: "Sproutle",
+                type: "grass",
+                asset: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/1.gif",
+                fallback: "GRASS",
+                baseHp: 56,
+                hpGrowth: 10,
+                baseAttack: 9,
+                attackGrowth: 2,
+                baseDefense: 4,
+                defenseGrowth: 1,
+                expReward: 24,
+                levelBias: 0,
+                worldSpeed: 22,
+                worldSize: 68
+            },
+            ripplet: {
+                id: "ripplet",
+                name: "Ripplet",
+                type: "water",
+                asset: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/7.gif",
+                fallback: "WATER",
+                baseHp: 64,
+                hpGrowth: 11,
+                baseAttack: 10,
+                attackGrowth: 2,
+                baseDefense: 5,
+                defenseGrowth: 1,
+                expReward: 28,
+                levelBias: 0,
+                worldSpeed: 24,
+                worldSize: 70
+            },
+            embercub: {
+                id: "embercub",
+                name: "Embercub",
+                type: "fire",
+                asset: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/4.gif",
+                fallback: "FIRE",
+                baseHp: 72,
+                hpGrowth: 12,
+                baseAttack: 12,
+                attackGrowth: 2,
+                baseDefense: 5,
+                defenseGrowth: 1,
+                expReward: 33,
+                levelBias: 1,
+                worldSpeed: 26,
+                worldSize: 72
+            },
+            stonepup: {
+                id: "stonepup",
+                name: "Stonepup",
+                type: "rock",
+                asset: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/74.gif",
+                fallback: "ROCK",
+                baseHp: 82,
+                hpGrowth: 14,
+                baseAttack: 11,
+                attackGrowth: 2,
+                baseDefense: 7,
+                defenseGrowth: 1,
+                expReward: 38,
+                levelBias: 1,
+                worldSpeed: 18,
+                worldSize: 74
+            },
+            shadebat: {
+                id: "shadebat",
+                name: "Shadebat",
+                type: "shadow",
+                asset: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/92.gif",
+                fallback: "SHADOW",
+                baseHp: 90,
+                hpGrowth: 15,
+                baseAttack: 13,
+                attackGrowth: 2,
+                baseDefense: 6,
+                defenseGrowth: 1,
+                expReward: 46,
+                levelBias: 2,
+                worldSpeed: 30,
+                worldSize: 72
+            },
+            aetherdrake: {
+                id: "aetherdrake",
+                name: "Aether Drake",
+                type: "dragon",
+                asset: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/147.gif",
+                fallback: "DRAKE",
+                baseHp: 180,
+                hpGrowth: 22,
+                baseAttack: 20,
+                attackGrowth: 3,
+                baseDefense: 10,
+                defenseGrowth: 2,
+                expReward: 160,
+                levelBias: 3,
+                worldSpeed: 16,
+                worldSize: 82,
+                winOnDefeat: true
+            }
+        };
+
+        let gameState = "explore";
+        let lastFrameTime = 0;
+
+        const player = {
+            x: 120,
+            y: 420,
+            speed: 245,
+            direction: "down",
+            level: 1,
+            exp: 0,
+            expToNext: 60,
+            maxHp: 100,
+            hp: 100,
+            attack: 12,
+            defense: 5,
+            healCharges: 3,
+            maxHealCharges: 3
+        };
+
+        const world = {
+            zones: [],
+            enemies: [],
+            enemySerial: 0,
+            encounterDistance: 0,
+            encounterCooldown: 0,
+            roamBattleCooldown: 0,
+            zoneEntryDelay: 0,
+            inSafeZone: false,
+            bossDefeated: false,
+            currentZone: "Trailhead",
+            currentZoneId: "field",
+            toastTimer: 0,
+            transitionLock: false,
+            levelPopupTimer: 0
+        };
+
+        const battle = {
+            enemy: null,
+            sourceEnemyId: null,
+            turnLocked: false,
+            playerGuarding: false,
+            enemyGuarding: false,
+            actionCooldown: 0,
+            messageToken: 0
+        };
+
+        function clamp(value, min, max) {
+            return Math.min(Math.max(value, min), max);
+        }
+
+        function sleep(ms) {
+            return new Promise((resolve) => window.setTimeout(resolve, ms));
+        }
+
+        function randomInt(min, max) {
+            return Math.floor(Math.random() * (max - min + 1)) + min;
+        }
+
+        function chooseWeighted(table) {
+            const total = table.reduce((sum, entry) => sum + entry.weight, 0);
+            let roll = Math.random() * total;
+
+            for (const entry of table) {
+                roll -= entry.weight;
+                if (roll <= 0) {
+                    return enemyTemplates[entry.id];
+                }
+            }
+
+            return enemyTemplates[table[table.length - 1].id];
+        }
+
+        function getCharacterWidth() {
+            return playerElement.offsetWidth || 96;
+        }
+
+        function getCharacterHeight() {
+            return playerElement.offsetHeight || 120;
+        }
+
+        function getPlayerFocusType() {
+            return focusByDirection[player.direction] || "normal";
+        }
+
+        function formatType(type) {
+            return type.charAt(0).toUpperCase() + type.slice(1);
+        }
+
+        function getTypeEffectiveness(attackType, defenseType) {
+            const chart = typeChart[attackType] || {};
+            return chart[defenseType] || 1;
+        }
+
+        function getBattleMultiplierText(multiplier) {
+            if (multiplier >= 1.25) {
+                return " It was super effective!";
+            }
+
+            if (multiplier <= 0.85) {
+                return " It was not very effective.";
+            }
+
+            return "";
+        }
+
+        function hpBarClass(fillElement, ratio) {
+            fillElement.classList.remove("bg-emerald-400", "bg-amber-400", "bg-rose-500", "bg-emerald-500", "bg-amber-500");
+
+            if (ratio > 0.6) {
+                fillElement.classList.add(fillElement === dom.hudHpFill ? "bg-emerald-400" : "bg-emerald-500");
+            } else if (ratio > 0.3) {
+                fillElement.classList.add(fillElement === dom.hudHpFill ? "bg-amber-400" : "bg-amber-500");
+            } else {
+                fillElement.classList.add("bg-rose-500");
+            }
+        }
+
+        function setGameState(nextState) {
+            gameState = nextState;
+            const labels = {
+                explore: "Explore",
+                battle: "Battle",
+                win: "Victory",
+                lose: "Defeat"
+            };
+            dom.hudState.textContent = labels[nextState];
+        }
+
+        function setVisible(element, visible, displayClass) {
+            if (visible) {
+                element.classList.remove("hidden");
+                element.classList.remove("pointer-events-none");
+                element.classList.add("pointer-events-auto");
+                if (displayClass) {
+                    element.classList.add(displayClass);
+                }
+            } else {
+                element.classList.add("hidden");
+                element.classList.remove("pointer-events-auto");
+                element.classList.add("pointer-events-none");
+                if (displayClass) {
+                    element.classList.remove(displayClass);
+                }
+            }
+        }
+
+        function setPlayerDirection(direction) {
+            if (player.direction === direction) {
+                return;
+            }
+
+            player.direction = direction;
+            character.src = spritePaths[direction];
+            dom.battlePlayerImage.src = spritePaths[direction];
+            updateHud();
+        }
+
+        function clearInput() {
+            Object.keys(keys).forEach((key) => {
+                keys[key] = false;
+            });
+        }
+
+        function renderPlayer() {
+            playerElement.style.transform = "translate(" + player.x + "px, " + player.y + "px)";
+            dom.battlePlayerImage.src = spritePaths[player.direction];
+        }
+
+        function keepPlayerInBounds() {
+            const maxX = Math.max(0, container.clientWidth - getCharacterWidth());
+            const maxY = Math.max(0, container.clientHeight - getCharacterHeight());
+
+            player.x = clamp(player.x, 0, maxX);
+            player.y = clamp(player.y, 0, maxY);
+        }
+
+        function getPlayerRect() {
+            const width = getCharacterWidth();
+            const height = getCharacterHeight();
+
+            return {
+                x: player.x + width * 0.22,
+                y: player.y + height * 0.28,
+                width: width * 0.56,
+                height: height * 0.5
+            };
+        }
+
+        function overlaps(a, b) {
+            return (
+                a.x < b.x + b.width &&
+                a.x + a.width > b.x &&
+                a.y < b.y + b.height &&
+                a.y + a.height > b.y
+            );
+        }
+
+        function announce(message) {
+            world.toastTimer = 2200;
+            dom.hudStatus.textContent = message;
+            mapToast.textContent = message;
+            mapToast.classList.remove("hidden");
+        }
+
+        function updateToast(delta) {
+            if (world.toastTimer <= 0) {
+                mapToast.classList.add("hidden");
+                return;
+            }
+
+            world.toastTimer = Math.max(0, world.toastTimer - delta);
+
+            if (world.toastTimer <= 0) {
+                mapToast.classList.add("hidden");
+            }
+        }
+
+        function showLevelPopup(lines) {
+            dom.levelPopupText.textContent = lines.join("  ");
+            dom.levelPopup.classList.remove("hidden");
+            dom.levelPopup.classList.add("level-popup-show");
+            world.levelPopupTimer = 1800;
+        }
+
+        function updateLevelPopup(delta) {
+            if (world.levelPopupTimer <= 0) {
+                dom.levelPopup.classList.add("hidden");
+                dom.levelPopup.classList.remove("level-popup-show");
+                return;
+            }
+
+            world.levelPopupTimer = Math.max(0, world.levelPopupTimer - delta);
+
+            if (world.levelPopupTimer <= 0) {
+                dom.levelPopup.classList.add("hidden");
+                dom.levelPopup.classList.remove("level-popup-show");
+            }
+        }
+
+        function updateHud() {
+            const hpRatio = player.hp / player.maxHp;
+            const expRatio = player.exp / player.expToNext;
+            const targetLabel = world.bossDefeated ? "Clear" : "Drake";
+
+            dom.hudLevel.textContent = player.level;
+            dom.hudHpText.textContent = player.hp + " / " + player.maxHp;
+            dom.hudHpFill.style.width = Math.max(0, hpRatio * 100) + "%";
+            hpBarClass(dom.hudHpFill, hpRatio);
+            dom.hudExpText.textContent = player.exp + " / " + player.expToNext;
+            dom.hudExpFill.style.width = Math.max(0, expRatio * 100) + "%";
+            dom.hudAttack.textContent = player.attack;
+            dom.hudDefense.textContent = player.defense;
+            dom.hudHeals.textContent = player.healCharges;
+            dom.hudFocus.textContent = formatType(getPlayerFocusType());
+            dom.hudTarget.textContent = targetLabel;
+            dom.hudZone.textContent = world.currentZone;
+            dom.hudObjective.textContent = world.bossDefeated
+                ? "Champion crowned. Restart to run the route again."
+                : player.level < 5
+                    ? "Train against roaming enemies and random encounters until Lv. 5."
+                    : "Sky Hollow has opened. Defeat the Aether Drake to win.";
+
+            if (world.zoneEntryDelay > 0) {
+                dom.centerTimer.classList.remove("hidden");
+                dom.centerTimerText.textContent = "Monster zone delay: " + (world.zoneEntryDelay / 1000).toFixed(1) + "s";
+            } else {
+                dom.centerTimer.classList.add("hidden");
+            }
+
+            if (gameState === "battle") {
+                refreshActionButtonLabels();
+            }
+        }
+
+        function decorateGrassZone(element, hue) {
+            if (element.dataset.decorated === "true") {
+                return;
+            }
+
+            const bladeOffsets = [6, 18, 32, 46, 61, 76, 88];
+            bladeOffsets.forEach((left, index) => {
+                const blade = document.createElement("span");
+                blade.className = "grass-blade";
+                blade.style.left = left + "%";
+                blade.style.height = randomInt(36, 58) + "%";
+                blade.style.animationDelay = (index * -0.28) + "s";
+                blade.style.animationDuration = (2.8 + index * 0.25) + "s";
+                if (hue === "teal") {
+                    blade.style.background = "linear-gradient(180deg, rgba(153,246,228,0.72) 0%, rgba(13,148,136,0.12) 100%)";
+                }
+                if (hue === "lime") {
+                    blade.style.background = "linear-gradient(180deg, rgba(217,249,157,0.72) 0%, rgba(101,163,13,0.12) 100%)";
+                }
+                element.appendChild(blade);
+            });
+
+            for (let i = 0; i < 8; i += 1) {
+                const particle = document.createElement("span");
+                particle.className = "zone-particle";
+                particle.style.left = randomInt(8, 92) + "%";
+                particle.style.top = randomInt(48, 92) + "%";
+                particle.style.animationDelay = (-Math.random() * 4).toFixed(2) + "s";
+                particle.style.animationDuration = (3.8 + Math.random() * 2.2).toFixed(2) + "s";
+                element.appendChild(particle);
+            }
+
+            element.dataset.decorated = "true";
+        }
+
+        function createBackgroundParticles() {
+            particleLayer.innerHTML = "";
+
+            for (let i = 0; i < 18; i += 1) {
+                const dot = document.createElement("span");
+                dot.className = "zone-particle";
+                dot.style.left = randomInt(4, 96) + "%";
+                dot.style.top = randomInt(8, 92) + "%";
+                dot.style.width = randomInt(3, 6) + "px";
+                dot.style.height = dot.style.width;
+                dot.style.opacity = "0.36";
+                dot.style.animationDuration = (6 + Math.random() * 3).toFixed(2) + "s";
+                dot.style.animationDelay = (-Math.random() * 6).toFixed(2) + "s";
+                particleLayer.appendChild(dot);
+            }
+        }
+
+        function layoutZones() {
+            const mapWidth = container.clientWidth;
+            const mapHeight = container.clientHeight;
+
+            world.zones = zoneBlueprints.map((zone) => {
+                const rect = {
+                    ...zone,
+                    x: zone.x * mapWidth,
+                    y: zone.y * mapHeight,
+                    width: zone.w * mapWidth,
+                    height: zone.h * mapHeight
+                };
+
+                const element = zoneElements[zone.id];
+                element.style.left = rect.x + "px";
+                element.style.top = rect.y + "px";
+                element.style.width = rect.width + "px";
+                element.style.height = rect.height + "px";
+                return rect;
+            });
+        }
+
+        function getZoneInfo() {
+            const playerRect = getPlayerRect();
+            const activeZones = world.zones.filter((zone) => overlaps(playerRect, zone));
+            const safe = activeZones.find((zone) => zone.type === "safe");
+            const elite = activeZones.find((zone) => zone.type === "elite");
+            const grass = activeZones.find((zone) => zone.type === "grass");
+
+            if (elite) {
+                return { type: "elite", zone: elite };
+            }
+
+            if (safe) {
+                return { type: "safe", zone: safe };
+            }
+
+            if (grass) {
+                return { type: "grass", zone: grass };
+            }
+
+            return { type: "field", zone: { name: "Trailhead" } };
+        }
+
+        function setImageWithFallback(imageElement, fallbackElement, src, fallbackLabel, type) {
+            const palette = typePalette[type] || typePalette.normal;
+
+            fallbackElement.textContent = fallbackLabel;
+            fallbackElement.style.background = palette.soft;
+            fallbackElement.style.borderColor = palette.line;
+
+            imageElement.onload = function () {
+                imageElement.classList.remove("hidden");
+                fallbackElement.classList.remove("flex");
+                fallbackElement.classList.add("hidden");
+            };
+
+            imageElement.onerror = function () {
+                imageElement.classList.add("hidden");
+                fallbackElement.classList.remove("hidden");
+                fallbackElement.classList.add("flex");
+            };
+
+            imageElement.src = src;
+        }
+
+        function createWorldEnemy(zone, templateId) {
+            const template = enemyTemplates[templateId];
+            const size = template.worldSize;
+            const padding = 20;
+            const patrol = {
+                minX: zone.x + padding,
+                maxX: zone.x + zone.width - size - padding,
+                minY: zone.y + padding,
+                maxY: zone.y + zone.height - size - padding
+            };
+
+            const enemy = {
+                id: "enemy-" + (++world.enemySerial),
+                zoneId: zone.id,
+                zoneType: zone.type,
+                templateId,
+                template,
+                x: clamp(randomInt(patrol.minX, Math.max(patrol.minX, patrol.maxX)), patrol.minX, patrol.maxX),
+                y: clamp(randomInt(patrol.minY, Math.max(patrol.minY, patrol.maxY)), patrol.minY, patrol.maxY),
+                vx: 0,
+                vy: 0,
+                speed: template.worldSpeed + Math.random() * 8,
+                size,
+                patrol,
+                bob: Math.random() * Math.PI * 2,
+                directionTimer: 0,
+                touchCooldown: 0,
+                respawnTimer: 0,
+                defeated: false,
+                hidden: false,
+                element: null,
+                image: null,
+                fallback: null,
+                tag: null
+            };
+
+            const el = document.createElement("div");
+            el.className = "world-enemy";
+            el.style.width = size + "px";
+            el.style.height = size + "px";
+            el.innerHTML = [
+                '<div class="enemy-tag"></div>',
+                '<div class="enemy-shadow"></div>',
+                '<div class="enemy-shell">',
+                '  <img class="enemy-image" alt="Enemy" draggable="false" />',
+                '  <div class="enemy-fallback"></div>',
+                '</div>'
+            ].join("");
+
+            enemy.element = el;
+            enemy.tag = el.querySelector(".enemy-tag");
+            enemy.image = el.querySelector(".enemy-image");
+            enemy.fallback = el.querySelector(".enemy-fallback");
+            enemy.tag.textContent = template.type;
+
+            const palette = typePalette[template.type] || typePalette.normal;
+            enemy.tag.style.background = palette.soft;
+            enemy.tag.style.borderColor = palette.line;
+            el.querySelector(".enemy-shell").style.background = "linear-gradient(180deg, rgba(255,255,255,0.16) 0%, " + palette.soft + " 100%)";
+
+            setImageWithFallback(enemy.image, enemy.fallback, template.asset, template.fallback, template.type);
+            enemyLayer.appendChild(el);
+
+            chooseNewEnemyVector(enemy, true);
+            renderWorldEnemy(enemy);
+            return enemy;
+        }
+
+        function chooseNewEnemyVector(enemy, forceMove) {
+            const angle = Math.random() * Math.PI * 2;
+            const moving = forceMove || Math.random() > 0.22;
+
+            if (!moving) {
+                enemy.vx = 0;
+                enemy.vy = 0;
+            } else {
+                enemy.vx = Math.cos(angle);
+                enemy.vy = Math.sin(angle);
+            }
+
+            enemy.directionTimer = randomInt(850, 1900);
+        }
+
+        function renderWorldEnemy(enemy) {
+            const bobOffset = Math.sin(enemy.bob) * 4;
+            enemy.element.style.transform = "translate(" + enemy.x + "px, " + (enemy.y + bobOffset) + "px) scaleX(" + (enemy.vx < 0 ? -1 : 1) + ")";
+            enemy.element.style.opacity = enemy.hidden || enemy.defeated ? "0" : "1";
+        }
+
+        function resetWorldEnemies() {
+            enemyLayer.innerHTML = "";
+            world.enemies = [];
+
+            world.zones.forEach((zone) => {
+                if (zone.type !== "grass" && zone.type !== "elite") {
+                    return;
+                }
+
+                if (zone.type === "elite") {
+                    if (world.bossDefeated) {
+                        return;
+                    }
+                    world.enemies.push(createWorldEnemy(zone, "aetherdrake"));
+                    return;
+                }
+
+                for (let slot = 0; slot < zone.enemySlots; slot += 1) {
+                    const template = chooseWeighted(zone.spawnTable);
+                    world.enemies.push(createWorldEnemy(zone, template.id));
+                }
+            });
+        }
+
+        function getEnemyRect(enemy) {
+            return {
+                x: enemy.x + enemy.size * 0.18,
+                y: enemy.y + enemy.size * 0.2,
+                width: enemy.size * 0.64,
+                height: enemy.size * 0.6
+            };
+        }
+
+        function createBattleEnemy(template, context) {
+            const baseLevel = template.winOnDefeat
+                ? Math.max(6, player.level + 1)
+                : Math.max(1, player.level + template.levelBias + randomInt(-1, 1));
+            const level = Math.max(1, baseLevel);
+
+            return {
+                id: template.id,
+                name: template.name,
+                type: template.type,
+                asset: template.asset,
+                fallback: template.fallback,
+                level,
+                maxHp: template.baseHp + (level - 1) * template.hpGrowth,
+                hp: template.baseHp + (level - 1) * template.hpGrowth,
+                attack: template.baseAttack + (level - 1) * template.attackGrowth,
+                defense: template.baseDefense + (level - 1) * template.defenseGrowth,
+                expReward: template.expReward + level * 5,
+                winOnDefeat: Boolean(template.winOnDefeat),
+                source: context.source,
+                zoneId: context.zoneId || null
+            };
+        }
+
+        function updateBattleButtons() {
+            const disabled = gameState !== "battle" || battle.turnLocked || battle.actionCooldown > 0 || !battle.enemy;
+            dom.actionAttack.disabled = disabled;
+            dom.actionDefend.disabled = disabled;
+            dom.actionHeal.disabled = disabled || player.healCharges <= 0 || player.hp === player.maxHp;
+            dom.actionRun.disabled = disabled || (battle.enemy && battle.enemy.winOnDefeat);
+            refreshActionButtonLabels();
+        }
+
+        function refreshActionButtonLabels() {
+            const suffix = battle.actionCooldown > 0 ? " (" + (battle.actionCooldown / 1000).toFixed(1) + "s)" : "";
+            dom.actionAttack.textContent = "Attack" + suffix;
+            dom.actionDefend.textContent = "Defend" + suffix;
+            dom.actionHeal.textContent = "Heal x" + player.healCharges + suffix;
+            dom.actionRun.textContent = "Run" + suffix;
+        }
+
+        function updateBattleUi() {
+            if (!battle.enemy) {
+                return;
+            }
+
+            const enemyRatio = battle.enemy.hp / battle.enemy.maxHp;
+            const playerRatio = player.hp / player.maxHp;
+
+            dom.battleEnemyName.textContent = battle.enemy.name;
+            dom.battleEnemyMeta.textContent = "Lv " + battle.enemy.level + "  " + formatType(battle.enemy.type);
+            dom.battleEnemyHpText.textContent = battle.enemy.hp + " / " + battle.enemy.maxHp;
+            dom.battleEnemyHpFill.style.width = Math.max(0, enemyRatio * 100) + "%";
+            hpBarClass(dom.battleEnemyHpFill, enemyRatio);
+            dom.battleEnemyMetaSmall.textContent = dom.battleEnemyMeta.textContent;
+            dom.battleEnemyHpSmallText.textContent = battle.enemy.hp + " / " + battle.enemy.maxHp;
+            dom.battleEnemyHpSmallFill.style.width = Math.max(0, enemyRatio * 100) + "%";
+            hpBarClass(dom.battleEnemyHpSmallFill, enemyRatio);
+
+            dom.battlePlayerMeta.textContent = "Lv " + player.level + "  " + formatType(getPlayerFocusType());
+            dom.battlePlayerHpText.textContent = player.hp + " / " + player.maxHp;
+            dom.battlePlayerHpFill.style.width = Math.max(0, playerRatio * 100) + "%";
+            hpBarClass(dom.battlePlayerHpFill, playerRatio);
+            dom.battlePlayerMetaSmall.textContent = dom.battlePlayerMeta.textContent;
+            dom.battlePlayerHpSmallText.textContent = player.hp + " / " + player.maxHp;
+            dom.battlePlayerHpSmallFill.style.width = Math.max(0, playerRatio * 100) + "%";
+            hpBarClass(dom.battlePlayerHpSmallFill, playerRatio);
+
+            dom.battlePlayerImage.src = spritePaths[player.direction];
+            setImageWithFallback(dom.battleEnemyImage, dom.battleEnemyFallback, battle.enemy.asset, battle.enemy.fallback, battle.enemy.type);
+            updateBattleButtons();
+        }
+
+        async function typeBattleMessage(message, speed) {
+            const token = ++battle.messageToken;
+            dom.battleMessageBox.classList.add("typing");
+            dom.battleMessage.textContent = "";
+
+            for (let index = 0; index <= message.length; index += 1) {
+                if (token !== battle.messageToken) {
+                    return;
+                }
+
+                dom.battleMessage.textContent = message.slice(0, index);
+                await sleep(speed || 20);
+            }
+
+            if (token === battle.messageToken) {
+                dom.battleMessageBox.classList.remove("typing");
+            }
+        }
+
+        async function say(message, hold) {
+            await typeBattleMessage(message, 18);
+            await sleep(hold || 360);
+        }
+
+        const playerSkillSets = {
+            normal: [
+                { name: "Quick Strike", type: "normal", cssClass: "skill-normal", multiplier: 1.0 },
+                { name: "Rapid Jab", type: "normal", cssClass: "skill-normal", multiplier: 1.05 }
+            ],
+            grass: [
+                { name: "Leaf Slice", type: "grass", cssClass: "skill-leaf", multiplier: 1.08 },
+                { name: "Vine Whip", type: "grass", cssClass: "skill-leaf", multiplier: 1.12 }
+            ],
+            water: [
+                { name: "Aqua Jet", type: "water", cssClass: "skill-water", multiplier: 1.08 },
+                { name: "Bubble Burst", type: "water", cssClass: "skill-water", multiplier: 1.1 }
+            ],
+            fire: [
+                { name: "Flame Kick", type: "fire", cssClass: "skill-fire", multiplier: 1.1 },
+                { name: "Ember Burst", type: "fire", cssClass: "skill-fire", multiplier: 1.14 }
+            ]
+        };
+
+        function choosePlayerSkill(focusType) {
+            const pool = playerSkillSets[focusType] || playerSkillSets.normal;
+            return pool[randomInt(0, pool.length - 1)];
+        }
+
+        async function playPlayerSkillAnimation(skill) {
+            dom.battlePlayerWrap.classList.add("attack-charge");
+            dom.battlePlayerImage.classList.add(skill.cssClass);
+            dom.battleEnemyWrap.classList.add("target-flash");
+            dom.battleEnemyWrap.classList.add("battle-skill-trail");
+            await sleep(300);
+            dom.battlePlayerWrap.classList.remove("attack-charge");
+            dom.battlePlayerImage.classList.remove(skill.cssClass);
+            dom.battleEnemyWrap.classList.remove("target-flash", "battle-skill-trail");
+        }
+
+        async function playEnemySkillAnimation(special) {
+            const effectClass = special ? "skill-shadow" : "skill-normal";
+            dom.battleEnemyWrap.classList.add("attack-charge");
+            dom.battleEnemyImage.classList.add(effectClass);
+            dom.battlePlayerWrap.classList.add("target-flash");
+            await sleep(300);
+            dom.battleEnemyWrap.classList.remove("attack-charge");
+            dom.battleEnemyImage.classList.remove(effectClass);
+            dom.battlePlayerWrap.classList.remove("target-flash");
+        }
+
+        function flashBattle(target) {
+            dom.battleScene.classList.remove("screen-shake");
+            dom.battleEnemyWrap.classList.remove("impact-shake", "flash-hit");
+            dom.battlePlayerWrap.classList.remove("impact-shake", "flash-hit");
+
+            void dom.battleScene.offsetWidth;
+
+            dom.battleScene.classList.add("screen-shake");
+
+            if (target === "enemy") {
+                dom.battleEnemyWrap.classList.add("impact-shake", "flash-hit");
+            } else {
+                dom.battlePlayerWrap.classList.add("impact-shake", "flash-hit");
+            }
+
+            window.setTimeout(() => {
+                dom.battleScene.classList.remove("screen-shake");
+                dom.battleEnemyWrap.classList.remove("impact-shake", "flash-hit");
+                dom.battlePlayerWrap.classList.remove("impact-shake", "flash-hit");
+            }, 260);
+        }
+
+        function calculateDamage(attackerAttack, defenderDefense, attackType, defenseType, multiplier, defending) {
+            const variance = randomInt(-2, 4);
+            const effectiveness = getTypeEffectiveness(attackType, defenseType);
+            let damage = Math.round(attackerAttack * multiplier * effectiveness + variance - defenderDefense * 0.42);
+
+            if (defending) {
+                damage = Math.floor(damage * 0.55);
+            }
+
+            return {
+                damage: Math.max(5, damage),
+                effectiveness
+            };
+        }
+
+        function gainExperience(amount) {
+            player.exp += amount;
+            const summary = [];
+
+            while (player.exp >= player.expToNext) {
+                player.exp -= player.expToNext;
+                player.level += 1;
+                player.expToNext = Math.round(player.expToNext * 1.28);
+                player.maxHp += 18;
+                player.attack += 3;
+                player.defense += 1;
+                player.hp = player.maxHp;
+                if (player.level % 3 === 0 && player.maxHealCharges < 5) {
+                    player.maxHealCharges += 1;
+                }
+                player.healCharges = player.maxHealCharges;
+                summary.push("Lv." + player.level);
+            }
+
+            return summary;
+        }
+
+        function healPlayerAtSpring() {
+            player.hp = player.maxHp;
+            player.healCharges = player.maxHealCharges;
+            updateHud();
+            announce("Healing Spring restored your HP and medicine.");
+        }
+
+        function getWorldEnemyById(id) {
+            return world.enemies.find((enemy) => enemy.id === id) || null;
+        }
+
+        function prepareWorldEnemyAfterBattle(result) {
+            if (!battle.sourceEnemyId) {
+                return;
+            }
+
+            const sourceEnemy = getWorldEnemyById(battle.sourceEnemyId);
+            if (!sourceEnemy) {
+                return;
+            }
+
+            if (result === "defeated") {
+                sourceEnemy.defeated = true;
+                sourceEnemy.hidden = true;
+                sourceEnemy.respawnTimer = sourceEnemy.template.winOnDefeat ? 99999999 : 7000;
+            } else {
+                sourceEnemy.hidden = false;
+                sourceEnemy.touchCooldown = 2600;
+                sourceEnemy.x = clamp(sourceEnemy.x + randomInt(-24, 24), sourceEnemy.patrol.minX, sourceEnemy.patrol.maxX);
+                sourceEnemy.y = clamp(sourceEnemy.y + randomInt(-24, 24), sourceEnemy.patrol.minY, sourceEnemy.patrol.maxY);
+                renderWorldEnemy(sourceEnemy);
+            }
+        }
+
+        async function enterBattle(enemyData, sourceEnemyId) {
+            if (world.transitionLock || gameState !== "explore") {
+                return;
+            }
+
+            world.transitionLock = true;
+            clearInput();
+            battle.enemy = enemyData;
+            battle.sourceEnemyId = sourceEnemyId || null;
+            battle.turnLocked = true;
+            battle.actionCooldown = 0;
+            battle.playerGuarding = false;
+            battle.enemyGuarding = false;
+            setGameState("battle");
+            updateHud();
+            updateBattleUi();
+
+            if (sourceEnemyId) {
+                const sourceEnemy = getWorldEnemyById(sourceEnemyId);
+                if (sourceEnemy) {
+                    sourceEnemy.hidden = true;
+                    renderWorldEnemy(sourceEnemy);
+                }
+            }
+
+            container.classList.add("scene-zoom");
+            dom.transitionOverlay.classList.remove("opacity-0");
+            await sleep(220);
+            setVisible(dom.battleOverlay, true, "flex");
+            await sleep(180);
+            dom.transitionOverlay.classList.add("opacity-0");
+            container.classList.remove("scene-zoom");
+            updateBattleUi();
+            await say("A wild " + enemyData.name + " appeared!", 420);
+            battle.turnLocked = false;
+            updateBattleButtons();
+            world.transitionLock = false;
+        }
+
+        async function leaveBattle(message, result) {
+            battle.turnLocked = true;
+            updateBattleButtons();
+            if (message) {
+                await say(message, 360);
+            }
+
+            setVisible(dom.battleOverlay, false, "flex");
+            prepareWorldEnemyAfterBattle(result);
+            battle.enemy = null;
+            battle.sourceEnemyId = null;
+            battle.playerGuarding = false;
+            battle.enemyGuarding = false;
+            battle.actionCooldown = 0;
+            world.encounterCooldown = 1600;
+            world.roamBattleCooldown = 1600;
+            setGameState("explore");
+            updateHud();
+            updateBattleButtons();
+        }
+
+        function showEnding(kind, message) {
+            setVisible(dom.battleOverlay, false, "flex");
+            setVisible(dom.endingOverlay, true, "flex");
+            setGameState(kind);
+
+            if (kind === "win") {
+                dom.endingKicker.textContent = "Champion";
+                dom.endingTitle.textContent = "YOU WIN";
+                dom.endingMessage.textContent = message;
+            } else {
+                dom.endingKicker.textContent = "Defeat";
+                dom.endingTitle.textContent = "GAME OVER";
+                dom.endingMessage.textContent = message;
+            }
+
+            dom.endingLevel.textContent = player.level;
+            dom.endingExp.textContent = player.exp + " / " + player.expToNext;
+            dom.endingHp.textContent = player.hp + " / " + player.maxHp;
+        }
+
+        async function handleVictory() {
+            const defeatedEnemy = battle.enemy;
+            const expGain = defeatedEnemy.expReward;
+            const levelsGained = gainExperience(expGain);
+            updateHud();
+            updateBattleUi();
+
+            if (defeatedEnemy.winOnDefeat) {
+                world.bossDefeated = true;
+                prepareWorldEnemyAfterBattle("defeated");
+                await say(defeatedEnemy.name + " was defeated. The sky clears!", 460);
+                showEnding("win", "You defeated the Aether Drake and became champion of Pocket Quest.");
+                updateHud();
+                return;
+            }
+
+            let victoryMessage = defeatedEnemy.name + " fainted. +" + expGain + " EXP.";
+            if (levelsGained.length > 0) {
+                showLevelPopup(["LEVEL UP!", levelsGained[levelsGained.length - 1]]);
+                victoryMessage += " LEVEL UP!";
+            }
+
+            await leaveBattle(victoryMessage, "defeated");
+            announce("Victory. Keep exploring for stronger enemies.");
+        }
+
+        function handleDefeat() {
+            player.hp = 0;
+            updateHud();
+            updateBattleUi();
+            prepareWorldEnemyAfterBattle("escaped");
+            showEnding("lose", "Your team collapsed in battle. Rest, regroup, and try again.");
+        }
+
+        async function enemyTurn() {
+            if (gameState !== "battle" || !battle.enemy) {
+                return;
+            }
+
+            battle.turnLocked = true;
+            updateBattleButtons();
+
+            const roll = Math.random();
+            if (roll < 0.18 && !battle.enemyGuarding) {
+                battle.enemyGuarding = true;
+                await say(battle.enemy.name + " braces for your next attack.", 380);
+                battle.turnLocked = false;
+                updateBattleButtons();
+                return;
+            }
+
+            const special = roll > 0.72;
+            const attackType = battle.enemy.type;
+            const result = calculateDamage(
+                battle.enemy.attack,
+                player.defense,
+                attackType,
+                getPlayerFocusType(),
+                special ? 1.18 : 1,
+                battle.playerGuarding
+            );
+
+            await playEnemySkillAnimation(special);
+            flashBattle("player");
+            await sleep(140);
+            player.hp = Math.max(0, player.hp - result.damage);
+            battle.playerGuarding = false;
+            updateHud();
+            updateBattleUi();
+
+            const actionLabel = special ? " used ELEMENT BURST!" : " attacked!";
+            await say(
+                battle.enemy.name + actionLabel + " -" + result.damage + " HP." + getBattleMultiplierText(result.effectiveness),
+                420
+            );
+
+            if (player.hp <= 0) {
+                handleDefeat();
+                return;
+            }
+
+            battle.turnLocked = false;
+            updateBattleButtons();
+        }
+
+        async function usePlayerAction(action) {
+            if (gameState !== "battle" || battle.turnLocked || !battle.enemy) {
+                return;
+            }
+
+            battle.turnLocked = true;
+            battle.actionCooldown = 1000;
+            updateBattleButtons();
+
+            if (action === "attack") {
+                const attackType = getPlayerFocusType();
+                const skill = choosePlayerSkill(attackType);
+                const result = calculateDamage(
+                    player.attack,
+                    battle.enemy.defense,
+                    attackType,
+                    battle.enemy.type,
+                    skill.multiplier,
+                    battle.enemyGuarding
+                );
+
+                battle.enemyGuarding = false;
+                await playPlayerSkillAnimation(skill);
+                flashBattle("enemy");
+                await sleep(140);
+                battle.enemy.hp = Math.max(0, battle.enemy.hp - result.damage);
+                updateBattleUi();
+
+                await say(
+                    "Hero used " + skill.name + "! -" + result.damage + " HP." + getBattleMultiplierText(result.effectiveness),
+                    420
+                );
+
+                if (battle.enemy.hp <= 0) {
+                    await handleVictory();
+                    return;
+                }
+
+                await enemyTurn();
+                return;
+            }
+
+            if (action === "defend") {
+                battle.playerGuarding = true;
+                await say("Hero is guarding. Incoming damage will be reduced.", 360);
+                await enemyTurn();
+                return;
+            }
+
+            if (action === "heal") {
+                if (player.healCharges <= 0 || player.hp === player.maxHp) {
+                    battle.turnLocked = false;
+                    updateBattleButtons();
+                    await say("No heal can be used right now.", 320);
+                    return;
+                }
+
+                player.healCharges -= 1;
+                const healAmount = Math.min(player.maxHp - player.hp, 26 + player.level * 6);
+                player.hp += healAmount;
+                updateHud();
+                updateBattleUi();
+                await say("Hero restored " + healAmount + " HP.", 360);
+                await enemyTurn();
+                return;
+            }
+
+            if (action === "run") {
+                const escapeChance = battle.enemy.winOnDefeat ? 0 : 0.48 + Math.max(0, player.level - battle.enemy.level) * 0.06;
+                if (Math.random() < escapeChance) {
+                    await leaveBattle("You escaped safely.", "escaped");
+                    announce("You escaped. The route is still dangerous.");
+                    return;
+                }
+
+                await say("Could not escape!", 320);
+                await enemyTurn();
+            }
+        }
+
+        function updateWorldEnemies(delta) {
+            const playerRect = getPlayerRect();
+
+            world.enemies.forEach((enemy) => {
+                if (enemy.respawnTimer > 0) {
+                    enemy.respawnTimer = Math.max(0, enemy.respawnTimer - delta);
+                    if (enemy.respawnTimer <= 0 && !enemy.template.winOnDefeat) {
+                        enemy.defeated = false;
+                        enemy.hidden = false;
+                        enemy.touchCooldown = 1800;
+                        enemy.x = clamp(randomInt(enemy.patrol.minX, Math.max(enemy.patrol.minX, enemy.patrol.maxX)), enemy.patrol.minX, enemy.patrol.maxX);
+                        enemy.y = clamp(randomInt(enemy.patrol.minY, Math.max(enemy.patrol.minY, enemy.patrol.maxY)), enemy.patrol.minY, enemy.patrol.maxY);
+                        chooseNewEnemyVector(enemy, true);
+                    }
+                }
+
+                enemy.touchCooldown = Math.max(0, enemy.touchCooldown - delta);
+
+                if (!enemy.defeated) {
+                    enemy.directionTimer -= delta;
+                    if (enemy.directionTimer <= 0) {
+                        chooseNewEnemyVector(enemy, false);
+                    }
+
+                    enemy.x += enemy.vx * enemy.speed * delta / 1000;
+                    enemy.y += enemy.vy * enemy.speed * delta / 1000;
+                    enemy.bob += delta * 0.006;
+
+                    if (enemy.x <= enemy.patrol.minX || enemy.x >= enemy.patrol.maxX) {
+                        enemy.vx *= -1;
+                        enemy.x = clamp(enemy.x, enemy.patrol.minX, enemy.patrol.maxX);
+                    }
+
+                    if (enemy.y <= enemy.patrol.minY || enemy.y >= enemy.patrol.maxY) {
+                        enemy.vy *= -1;
+                        enemy.y = clamp(enemy.y, enemy.patrol.minY, enemy.patrol.maxY);
+                    }
+                }
+
+                renderWorldEnemy(enemy);
+
+                if (
+                    gameState === "explore" &&
+                    !world.transitionLock &&
+                    !enemy.defeated &&
+                    !enemy.hidden &&
+                    enemy.touchCooldown <= 0 &&
+                    world.roamBattleCooldown <= 0 &&
+                    world.zoneEntryDelay <= 0 &&
+                    overlaps(playerRect, getEnemyRect(enemy))
+                ) {
+                    const battleEnemy = createBattleEnemy(enemy.template, { source: "roaming", zoneId: enemy.zoneId });
+                    enemy.touchCooldown = 2400;
+                    enterBattle(battleEnemy, enemy.id);
+                }
+            });
+        }
+
+        function triggerRandomEncounter(zone) {
+            const template = chooseWeighted(zone.spawnTable);
+            const battleEnemy = createBattleEnemy(template, { source: "wild", zoneId: zone.id });
+            enterBattle(battleEnemy, null);
+        }
+
+        function updateWorld(delta, movedDistance) {
+            world.encounterCooldown = Math.max(0, world.encounterCooldown - delta);
+            world.roamBattleCooldown = Math.max(0, world.roamBattleCooldown - delta);
+            world.zoneEntryDelay = Math.max(0, world.zoneEntryDelay - delta);
+
+            const zoneInfo = getZoneInfo();
+            const previousZoneId = world.currentZoneId;
+            world.currentZone = zoneInfo.zone.name;
+            world.currentZoneId = zoneInfo.zone.id || zoneInfo.zone.name;
+            updateHud();
+
+            const enteringMonsterZone = (zoneInfo.type === "grass" || zoneInfo.type === "elite") && world.currentZoneId !== previousZoneId;
+            if (enteringMonsterZone) {
+                world.zoneEntryDelay = 1000;
+            }
+
+            if (zoneInfo.type === "safe" && !world.inSafeZone) {
+                healPlayerAtSpring();
+            }
+
+            world.inSafeZone = zoneInfo.type === "safe";
+
+            if (zoneInfo.type === "elite" && !world.bossDefeated && player.level < 5) {
+                dom.hudStatus.textContent = "Sky Hollow is dangerous. Reach Lv. 5 before challenging the drake.";
+            }
+
+            if (zoneInfo.type === "grass" && movedDistance > 0 && world.encounterCooldown <= 0 && !world.transitionLock && world.zoneEntryDelay <= 0) {
+                world.encounterDistance += movedDistance;
+
+                if (world.encounterDistance >= 112) {
+                    world.encounterDistance = 0;
+                    if (Math.random() < zoneInfo.zone.encounterRate) {
+                        triggerRandomEncounter(zoneInfo.zone);
+                        return;
+                    }
+                }
+            } else if (zoneInfo.type !== "grass") {
+                world.encounterDistance = 0;
+            }
+        }
+
+        function updateMovement(delta) {
+            let dx = 0;
+            let dy = 0;
+
+            if (keys.w) {
+                dy -= 1;
+            }
+            if (keys.s) {
+                dy += 1;
+            }
+            if (keys.a) {
+                dx -= 1;
+            }
+            if (keys.d) {
+                dx += 1;
+            }
+
+            const moving = dx !== 0 || dy !== 0;
+            character.classList.toggle("moving", moving);
+
+            if (!moving) {
+                return 0;
+            }
+
+            const magnitude = Math.hypot(dx, dy) || 1;
+            const moveDistance = player.speed * delta / 1000;
+
+            player.x += dx / magnitude * moveDistance;
+            player.y += dy / magnitude * moveDistance;
+
+            if (dy < 0) {
+                setPlayerDirection("up");
+            } else if (dy > 0) {
+                setPlayerDirection("down");
+            } else if (dx < 0) {
+                setPlayerDirection("left");
+            } else if (dx > 0) {
+                setPlayerDirection("right");
+            }
+
+            keepPlayerInBounds();
+            renderPlayer();
+            return moveDistance;
+        }
+
+        function restartGame() {
+            player.x = 120;
+            player.y = 420;
+            player.direction = "";
+            player.level = 1;
+            player.exp = 0;
+            player.expToNext = 60;
+            player.maxHp = 100;
+            player.hp = 100;
+            player.attack = 12;
+            player.defense = 5;
+            player.healCharges = 3;
+            player.maxHealCharges = 3;
+
+            world.encounterDistance = 0;
+            world.encounterCooldown = 0;
+            world.roamBattleCooldown = 0;
+            world.zoneEntryDelay = 0;
+            world.inSafeZone = false;
+            world.bossDefeated = false;
+            world.currentZone = "Trailhead";
+            world.currentZoneId = "field";
+            world.toastTimer = 0;
+            world.transitionLock = false;
+            world.levelPopupTimer = 0;
+
+            battle.enemy = null;
+            battle.sourceEnemyId = null;
+            battle.turnLocked = false;
+            battle.playerGuarding = false;
+            battle.enemyGuarding = false;
+            battle.actionCooldown = 0;
+            battle.messageToken = 0;
+
+            clearInput();
+            character.classList.remove("moving");
+            setVisible(dom.battleOverlay, false, "flex");
+            setVisible(dom.endingOverlay, false, "flex");
+            dom.transitionOverlay.classList.add("opacity-0");
+            dom.levelPopup.classList.add("hidden");
+            setGameState("explore");
+            setPlayerDirection("down");
+            layoutZones();
+            resetWorldEnemies();
+            keepPlayerInBounds();
+            renderPlayer();
+            updateHud();
+            updateBattleButtons();
+            announce("Walk into tall grass or touch a monster to battle.");
+        }
+
+        function handleKey(event, isPressed) {
+            const key = event.key.toLowerCase();
+
+            if (!(key in keys) || gameState !== "explore") {
+                return;
+            }
+
+            keys[key] = isPressed;
+
+            if (isPressed) {
+                if (key === "w") {
+                    setPlayerDirection("up");
+                } else if (key === "a") {
+                    setPlayerDirection("left");
+                } else if (key === "s") {
+                    setPlayerDirection("down");
+                } else if (key === "d") {
+                    setPlayerDirection("right");
+                }
+            }
+
+            event.preventDefault();
+        }
+
+        function gameLoop(timestamp) {
+            if (!lastFrameTime) {
+                lastFrameTime = timestamp;
+            }
+
+            const delta = Math.min(32, timestamp - lastFrameTime);
+            lastFrameTime = timestamp;
+
+            updateToast(delta);
+            updateLevelPopup(delta);
+            battle.actionCooldown = Math.max(0, battle.actionCooldown - delta);
+            updateHud();
+
+            if (gameState === "explore") {
+                const movedDistance = updateMovement(delta);
+                updateWorld(delta, movedDistance);
+                updateWorldEnemies(delta);
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        character.addEventListener("dragstart", function (event) {
+            event.preventDefault();
+        });
+
+        document.addEventListener("keydown", function (event) {
+            handleKey(event, true);
+        });
+
+        document.addEventListener("keyup", function (event) {
+            handleKey(event, false);
+        });
+
+        window.addEventListener("blur", function () {
+            clearInput();
+            character.classList.remove("moving");
+        });
+
+        window.addEventListener("resize", function () {
+            layoutZones();
+            resetWorldEnemies();
+            createBackgroundParticles();
+            keepPlayerInBounds();
+            renderPlayer();
+            updateHud();
+        });
+
+        dom.actionAttack.addEventListener("click", function () {
+            usePlayerAction("attack");
+        });
+
+        dom.actionDefend.addEventListener("click", function () {
+            usePlayerAction("defend");
+        });
+
+        dom.actionHeal.addEventListener("click", function () {
+            usePlayerAction("heal");
+        });
+
+        dom.actionRun.addEventListener("click", function () {
+            usePlayerAction("run");
+        });
+
+        dom.restartButton.addEventListener("click", function () {
+            restartGame();
+        });
+
+        decorateGrassZone(zoneElements["grass-a"], "emerald");
+        decorateGrassZone(zoneElements["grass-b"], "teal");
+        decorateGrassZone(zoneElements["grass-c"], "lime");
+        createBackgroundParticles();
+        layoutZones();
+        resetWorldEnemies();
+        setGameState("explore");
+        setPlayerDirection("down");
+        keepPlayerInBounds();
+        renderPlayer();
+        updateHud();
+        updateBattleButtons();
+        announce("Walk into tall grass or touch a monster to battle.");
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
