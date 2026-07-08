@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "BookHive Student",
+    "slug": "bookhive-student",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "updates": {
+      "enabled": false,
+      "checkAutomatically": "NEVER"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "./plugins/with-custom-strings.js"
+    ],
+    "scheme": "bookhive",
+    "androidStatusBar": {
+      "barStyle": "light-content",
+      "backgroundColor": "#001B33",
+      "translucent": false
+    },
+    "androidNavigationBar": {
+      "backgroundColor": "#0B1F3A",
+      "barStyle": "light-content"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

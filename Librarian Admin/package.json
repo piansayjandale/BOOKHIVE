@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "dev": "cd BOOKHIVE && npm run dev",
+    "build": "cd BOOKHIVE && npm run build",
+    "start": "cd BOOKHIVE && npm run start",
+    "db:seed": "cd BOOKHIVE && npm run db:seed",
+    "db:import:goodreads": "cd BOOKHIVE && npm run db:import:goodreads"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0"
+  }
+}

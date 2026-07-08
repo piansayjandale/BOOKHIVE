@@ -1,0 +1,30 @@
+{
+  "name": "bookhive-backend",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.js --host 0.0.0.0",
+    "start": "node src/server.js",
+    "db:seed": "cross-env NODE_ENV=development tsx scripts/init-db.js",
+    "db:import:goodreads": "tsx scripts/import-goodreads.ts",
+    "db:import:kaggle": "tsx scripts/import-goodreads.ts --file data/imports/books_1.Best_Books_Ever.csv"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.20.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/pg": "^8.11.0",
+    "cross-env": "^10.1.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5"
+  }
+}

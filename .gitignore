@@ -1,0 +1,46 @@
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Local env files (contain secrets)
+*.env
+.env
+**/*.env
+**/.env
+
+# Testing and coverage
+coverage/
+**/coverage/
+
+# Build, distribution, and cache folders
+.next/
+out/
+build/
+dist/
+.expo/
+**/.next/
+**/out/
+**/build/
+**/dist/
+**/.expo/
+
+# System / IDE files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.git_backup/
+**/.git_backup/
+
+# SQLite / Database/ temporary files
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+backend/data/imports/books.catalog.json
+**/backend/data/imports/books.catalog.json
