@@ -49,9 +49,14 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    borderRadius: 28,
+    borderRadius: 24,
     padding: 24,
     flexGrow: 1,
+    borderWidth: 1,
+    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
   },
 
   setupTitle: {
@@ -103,9 +108,9 @@ const styles = StyleSheet.create({
   },
 
   inputContainer: {
-    height: 56,
+    height: 52,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
@@ -118,23 +123,28 @@ const styles = StyleSheet.create({
   },
 
   submitButton: {
-    height: 56,
-    borderRadius: 16,
+    height: 54,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 12,
+    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
 
   submitButtonText: {
-    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
 
   errorText: {
-    color: "#DC2626",
+    color: "#EF4444",
     marginBottom: 12,
     fontSize: 13,
+    fontWeight: "600",
     textAlign: "center",
   },
   dropdownContainer: {
@@ -512,7 +522,7 @@ export default function CompleteProfileScreen() {
             onPress={handleSetupSubmit}
             disabled={loading}
           >
-            <Text style={styles.submitButtonText}>
+            <Text style={[styles.submitButtonText, { color: isDarkMode ? "#090D16" : "#FFFFFF" }]}>
               {loading ? "Saving Details..." : "Complete Setup"}
             </Text>
           </TouchableOpacity>

@@ -75,9 +75,8 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.notificationButtonRelative}
-            onPress={() =>
-              router.push("/notifications")
-            }
+            onPress={() => router.push("/notifications")}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="notifications-outline"
@@ -95,7 +94,15 @@ export default function ProfileScreen() {
         </View>
 
         {/* PROFILE CARD */}
-        <View style={[styles.profileCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+        <View style={[
+          styles.profileCard,
+          {
+            backgroundColor: theme.cardBg,
+            borderColor: theme.cardBorder,
+            shadowColor: theme.shadowColor,
+            shadowOpacity: isDarkMode ? 0.3 : 0.05,
+          }
+        ]}>
           <Image
             source={{
               uri: profile.avatar,
@@ -118,11 +125,19 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* STATS */}
+        {/* STATS SUMMARY CARDS */}
         <View style={styles.statsRow}>
-          <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+          <View style={[
+            styles.statCard,
+            {
+              backgroundColor: theme.cardBg,
+              borderColor: theme.cardBorder,
+              shadowColor: theme.shadowColor,
+              shadowOpacity: isDarkMode ? 0.3 : 0.05,
+            }
+          ]}>
             <Text style={[styles.statNumber, { color: theme.accentGold }]}>
-              {reservations.filter((book) => book.status === 'Pending' || book.status === 'Upcoming').length}
+              {reservations.filter((book) => book.status === 'Pending' || book.status === 'Upcoming' || book.status === 'Reserved').length}
             </Text>
 
             <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
@@ -130,7 +145,15 @@ export default function ProfileScreen() {
             </Text>
           </View>
 
-          <View style={[styles.statCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+          <View style={[
+            styles.statCard,
+            {
+              backgroundColor: theme.cardBg,
+              borderColor: theme.cardBorder,
+              shadowColor: theme.shadowColor,
+              shadowOpacity: isDarkMode ? 0.3 : 0.05,
+            }
+          ]}>
             <Text style={[styles.statNumber, { color: theme.accentGold }]}>
               {reservations.filter((book) => book.status === 'Approved').length}
             </Text>
@@ -141,114 +164,26 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* RESERVATIONS */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.accentGold }]}>
-            Your Reservations
-          </Text>
-
-          <TouchableOpacity
-            onPress={() =>
-              router.push("/reservations")
-            }
-          >
-            <Text style={styles.viewAll}>
-              View All
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {reservations.filter((book) => book.status === 'Pending' || book.status === 'Upcoming').length === 0 ? (
-          <View style={[styles.emptyCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-            <Ionicons
-              name="book-outline"
-              size={45}
-              color={theme.textSecondary}
-            />
-
-            <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-              No Reservations Yet
-            </Text>
-
-            <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-              Reserved books will appear here.
-            </Text>
-          </View>
-        ) : (
-          reservations.filter((book) => book.status === 'Pending' || book.status === 'Upcoming').map((book: any) => (
-            <TouchableOpacity
-              key={book.id}
-              style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-              onPress={() =>
-                router.push({
-                  pathname: "/book-details",
-                  params: {
-                    from: "profile",
-                    id: book.id,
-                    title: book.title,
-                    author: book.author,
-                    description:
-                      book.description ||
-                      "No description available.",
-                    year: book.year || "2024",
-                    pages: book.pages || "320",
-                    language:
-                      book.language || "EN",
-                    category:
-                      book.category || "CS",
-                    available: 'false',
-                  },
-                })
-              }
-            >
-              <View style={styles.bookLeft}>
-                <View style={[styles.bookIcon, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
-                  <Ionicons
-                    name="book"
-                    size={22}
-                    color={theme.accentGold}
-                  />
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.bookTitle, { color: theme.textPrimary }]}>
-                    {book.title}
-                  </Text>
-
-                  <Text style={[styles.bookAuthor, { color: theme.textSecondary }]}>
-                    {book.author}
-                  </Text>
-
-                  <Text style={styles.pickupText}>
-                    Pickup Schedule:
-                    {" "}
-                    {book.date || "Tomorrow"}
-                  </Text>
-                </View>
-              </View>
-
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={theme.textSecondary}
-              />
-            </TouchableOpacity>
-          ))
-        )}
-
-        {/* SETTINGS */}
+        {/* SETTINGS SECTION (Positioned directly below stats) */}
         <View style={styles.sectionHeader}>
           <Text style={[styles.sectionTitle, { color: theme.accentGold }]}>
             Settings
           </Text>
         </View>
 
-        <View style={[styles.settingsCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+        <View style={[
+          styles.settingsCard,
+          {
+            backgroundColor: theme.cardBg,
+            borderColor: theme.cardBorder,
+            shadowColor: theme.shadowColor,
+            shadowOpacity: isDarkMode ? 0.3 : 0.05,
+          }
+        ]}>
           <TouchableOpacity
             style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-            onPress={() =>
-              router.push('/settings')
-            }
+            onPress={() => router.push('/settings')}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="settings-outline"
@@ -263,9 +198,8 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-            onPress={() =>
-              router.push('/edit-profile')
-            }
+            onPress={() => router.push('/edit-profile')}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="person-outline"
@@ -280,9 +214,8 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-            onPress={() =>
-              router.push('/privacy-security')
-            }
+            onPress={() => router.push('/privacy-security')}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="lock-closed-outline"
@@ -298,6 +231,7 @@ export default function ProfileScreen() {
           <TouchableOpacity
             style={[styles.settingItem, styles.logoutItem]}
             onPress={handleLogout}
+            activeOpacity={0.7}
           >
             <Ionicons
               name="log-out-outline"
@@ -309,7 +243,6 @@ export default function ProfileScreen() {
               Sign Out
             </Text>
           </TouchableOpacity>
-
         </View>
       </ScrollView>
     </AnimatedScreen>
@@ -350,6 +283,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#1E293B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   avatar: {
@@ -404,6 +340,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#1E293B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   statNumber: {
@@ -420,7 +359,7 @@ const styles = StyleSheet.create({
 
   sectionHeader: {
     marginHorizontal: 20,
-    marginTop: 28,
+    marginTop: 24,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -432,94 +371,18 @@ const styles = StyleSheet.create({
     color: "#FCD34D",
   },
 
-  viewAll: {
-    color: "#38BDF8",
-    fontWeight: "700",
-  },
-
-  emptyCard: {
-    backgroundColor: "#111A2E",
-    marginHorizontal: 20,
-    marginTop: 16,
-    borderRadius: 22,
-    padding: 32,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#1E293B",
-  },
-
-  emptyTitle: {
-    marginTop: 14,
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#F8FAFC",
-  },
-
-  emptyText: {
-    marginTop: 6,
-    color: "#94A3B8",
-    textAlign: "center",
-  },
-
-  bookCard: {
-    backgroundColor: "#111A2E",
-    marginHorizontal: 20,
-    marginTop: 14,
-    borderRadius: 20,
-    padding: 18,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#1E293B",
-  },
-
-  bookLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-  },
-
-  bookIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 14,
-    backgroundColor: "#080F1E",
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 14,
-    borderWidth: 1,
-    borderColor: "#1E293B",
-  },
-
-  bookTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#F8FAFC",
-  },
-
-  bookAuthor: {
-    marginTop: 4,
-    color: "#94A3B8",
-    fontSize: 12,
-  },
-
-  pickupText: {
-    marginTop: 6,
-    color: "#38BDF8",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-
   settingsCard: {
     backgroundColor: "#111A2E",
     marginHorizontal: 20,
-    marginTop: 16,
+    marginTop: 14,
     borderRadius: 22,
-    paddingVertical: 10,
+    paddingVertical: 6,
     marginBottom: 40,
     borderWidth: 1,
     borderColor: "#1E293B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2,
   },
 
   settingItem: {

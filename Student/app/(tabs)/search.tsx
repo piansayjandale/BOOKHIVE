@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
 import axios from "axios";
 import * as DocumentPicker from "expo-document-picker";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import { useThemeColors } from "../../hooks/useThemeColors";
 import {
   Feather,
@@ -24,6 +24,7 @@ import {
 } from "@expo/vector-icons";
 import { API_URL, getAuthHeaders } from "../../data/authService";
 import { saveSearchQuery, getNotifications, subscribe, NotificationItem } from "../../data/store";
+import localCatalogBooks from "../../data/books";
 const STOP_WORDS = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", 
   "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "did", "do", 
@@ -55,13 +56,216 @@ const aiSuggestions = [
   "Mobile development books",
 ];
 
+/**
+ * Real-Time Prefix Matching Search Algorithm
+ * Checks if query matches the prefix of any word in the target text,
+ * or if the full text starts with the query (case-insensitive).
+ */
+export const matchesPrefix = (text: string, query: string): boolean => {
+  if (!text || !query) return false;
+
+  const normalizedQuery = query.toLowerCase().trim();
+  if (normalizedQuery.length === 0) return false;
+
+  const normalizedText = text.toLowerCase().trim();
+
+  // 1. Direct prefix match of full string
+  if (normalizedText.startsWith(normalizedQuery)) {
+    return true;
+  }
+
+  // 2. Tokenize text into words (removing non-alphanumeric punctuation)
+  const words = normalizedText
+    .split(/[\s,.:;!?'"()\[\]\/-]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean);
+
+  const queryWords = normalizedQuery
+    .split(/[\s,.:;!?'"()\[\]\/-]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean);
+
+  if (queryWords.length === 0) return false;
+
+  // Single word search: check if any word in title/text starts with search prefix
+  if (queryWords.length === 1) {
+    const q = queryWords[0];
+    return words.some((w) => w.startsWith(q));
+  }
+
+  // Multi-word search: check sequence of word prefixes
+  for (let i = 0; i <= words.length - queryWords.length; i++) {
+    let match = true;
+    for (let j = 0; j < queryWords.length; j++) {
+      if (!words[i + j].startsWith(queryWords[j])) {
+        match = false;
+        break;
+      }
+    }
+    if (match) return true;
+  }
+
+  // Fallback: all query words match prefixes of some words in text
+  return queryWords.every((q) => words.some((w) => w.startsWith(q)));
+};
+
+/**
+ * Dynamic Real-Time Match Percentage Scoring Calculation
+ * Formula: Match Percentage = (Length of Query / Length of Target Title or Matching Word) * 100
+ * Clamped between 0% and 100%.
+ */
+export const calculateMatchPercentage = (
+  title: string,
+  query: string,
+  author: string = ""
+): number => {
+  if (!title || !query) return 0;
+
+  const normalizedQuery = query.toLowerCase().trim();
+  if (normalizedQuery.length === 0) return 0;
+
+  const normalizedTitle = title.toLowerCase().trim();
+
+  const titleWords = normalizedTitle
+    .split(/[\s,.:;!?'"()\[\]\/-]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean);
+
+  const queryWords = normalizedQuery
+    .split(/[\s,.:;!?'"()\[\]\/-]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter(Boolean);
+
+  if (queryWords.length === 0) return 0;
+
+  let highestScore = 0;
+
+  if (queryWords.length === 1) {
+    const q = queryWords[0];
+
+    // Evaluate matching words in title starting with q
+    for (const word of titleWords) {
+      if (word.startsWith(q)) {
+        const ratio = Math.round((q.length / word.length) * 100);
+        if (ratio > highestScore) {
+          highestScore = ratio;
+        }
+      }
+    }
+
+    // Evaluate clean full title prefix match
+    const cleanFullTitle = normalizedTitle.replace(/[^a-z0-9]/g, "");
+    if (cleanFullTitle.startsWith(q)) {
+      const ratio = Math.round((q.length / cleanFullTitle.length) * 100);
+      if (ratio > highestScore) {
+        highestScore = ratio;
+      }
+    }
+
+    // If title has no match but author does
+    if (highestScore === 0 && author) {
+      const authorWords = author
+        .toLowerCase()
+        .split(/[\s,.:;!?'"()\[\]\/-]+/)
+        .map((w) => w.replace(/[^a-z0-9]/g, ""))
+        .filter(Boolean);
+
+      for (const word of authorWords) {
+        if (word.startsWith(q)) {
+          const ratio = Math.round((q.length / word.length) * 100);
+          if (ratio > highestScore) {
+            highestScore = ratio;
+          }
+        }
+      }
+    }
+
+    return Math.min(100, Math.max(0, highestScore));
+  }
+
+  // Multi-word query evaluation
+  const cleanFullTitle = normalizedTitle.replace(/[^a-z0-9\s]/g, "");
+  if (cleanFullTitle.startsWith(normalizedQuery)) {
+    const ratio = Math.round((normalizedQuery.length / cleanFullTitle.length) * 100);
+    highestScore = Math.max(highestScore, ratio);
+  }
+
+  let matchedQueryLen = 0;
+  let matchedTargetLen = 0;
+
+  for (const qWord of queryWords) {
+    const matchedWord = titleWords.find((w) => w.startsWith(qWord));
+    if (matchedWord) {
+      matchedQueryLen += qWord.length;
+      matchedTargetLen += matchedWord.length;
+    }
+  }
+
+  if (matchedTargetLen > 0) {
+    const ratio = Math.round((matchedQueryLen / matchedTargetLen) * 100);
+    highestScore = Math.max(highestScore, ratio);
+  }
+
+  return Math.min(100, Math.max(0, highestScore));
+};
+
+export const extractFileKeywords = async (file: { name: string; uri?: string; mimeType?: string }): Promise<string[]> => {
+  if (!file || !file.name) return [];
+
+  const nameKeywords = file.name
+    .replace(/\.[^/.]+$/, "")
+    .split(/[\s_.\-\/\(\)\[\]]+/)
+    .map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length > 1 && !STOP_WORDS.has(w));
+
+  let textContentKeywords: string[] = [];
+
+  try {
+    const isTextFile =
+      file.mimeType?.includes("text") ||
+      file.mimeType?.includes("json") ||
+      file.name.endsWith(".txt") ||
+      file.name.endsWith(".csv") ||
+      file.name.endsWith(".json") ||
+      file.name.endsWith(".md");
+
+    if (isTextFile && file.uri) {
+      const response = await fetch(file.uri);
+      const text = await response.text();
+      textContentKeywords = text
+        .split(/[\s,.:;!?'"()\[\]\/-]+/)
+        .map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, ""))
+        .filter((w) => w.length > 2 && !STOP_WORDS.has(w))
+        .slice(0, 40);
+    }
+  } catch (e) {
+    console.log("Error reading file text content:", e);
+  }
+
+  return Array.from(new Set([...nameKeywords, ...textContentKeywords]));
+};
+
 export default function SearchScreen() {
   const router = useRouter();
+  const { q, autoFocus, fileName, fileUri, fileKeywords } = useLocalSearchParams<{
+    q?: string;
+    autoFocus?: string;
+    fileName?: string;
+    fileUri?: string;
+    fileKeywords?: string;
+  }>();
+  const inputRef = useRef<TextInput>(null);
   const insets = useSafeAreaInsets();
   const { isDarkMode, theme } = useThemeColors();
   const [searchText, setSearchText] = useState("");
   const [books, setBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  const handleSearchTextChange = (text: string) => {
+    setSearchText(text);
+    setCurrentPage(1);
+  };
   const [notifications, setNotifications] = useState<NotificationItem[]>(getNotifications());
 
   useEffect(() => {
@@ -82,6 +286,7 @@ export default function SearchScreen() {
     name: string;
     size?: number;
     mimeType?: string;
+    keywords?: string[];
   } | null>(null);
 
   const [inputHeight, setInputHeight] = useState(40);
@@ -317,176 +522,266 @@ export default function SearchScreen() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const file = result.assets[0];
+        const keywords = await extractFileKeywords({
+          name: file.name,
+          uri: file.uri,
+          mimeType: file.mimeType,
+        });
+
         setSelectedFile({
           uri: file.uri,
           name: file.name,
           size: file.size,
           mimeType: file.mimeType,
+          keywords,
         });
-
-        Alert.alert(
-          "File Selected",
-          `File '${file.name}' uploaded successfully.`
-        );
       }
     } catch (error) {
       console.log("Document picking error:", error);
     }
   };
 
-  // FETCH BOOKS
+  const defaultCatalogItems = React.useMemo(() => {
+    return (localCatalogBooks || []).map((book: any, index: number) => ({
+      id: book.id || book.isbn || `cat-book-${index}`,
+      isbn: book.isbn || "",
+      local: true,
+      status: book.available !== false ? "Available" : "Borrowed",
+      shelfLocation: book.shelfLocation || "Shelf A-102",
+      volumeInfo: {
+        title: book.title || "",
+        authors: [book.author || "Unknown Author"],
+        description: book.description || book.summary || "",
+        categories: [book.department || "Circulation"],
+        publishedDate: String(book.year || "2024"),
+        pageCount: book.pages || 320,
+        language: "en",
+        imageLinks: {
+          thumbnail: "https://via.placeholder.com/100",
+        },
+      },
+    }));
+  }, []);
+
+  const [masterBooksPool, setMasterBooksPool] = useState<any[]>(defaultCatalogItems);
+
+  // Helper to merge fetched items into local pool without duplicates
+  const mergeBooksPool = useCallback((newItems: any[]) => {
+    setMasterBooksPool((prev) => {
+      const map = new Map<string, any>();
+      prev.forEach((item) => {
+        const key = (item.volumeInfo?.title || "").toLowerCase().trim();
+        if (key) map.set(key, item);
+      });
+      newItems.forEach((item) => {
+        const key = (item.volumeInfo?.title || "").toLowerCase().trim();
+        if (key) map.set(key, item);
+      });
+      return Array.from(map.values());
+    });
+  }, []);
+
+  // Fetch available books on mount to enrich the client-side catalog
+  useEffect(() => {
+    let isMounted = true;
+    const fetchInitialBooks = async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await axios.get(`${API_URL}/api/student/books?limit=100`, headers);
+        if (res.status === 200 && res.data?.books && isMounted) {
+          const mapped = res.data.books.map((b: any) => ({
+            id: String(b.id),
+            isbn: b.isbn || "",
+            local: true,
+            status: b.status || b.availability || "Available",
+            shelfLocation: b.shelfLocation || "Shelf A-102",
+            volumeInfo: {
+              title: b.title || "",
+              authors: [b.author || "Unknown Author"],
+              description: b.description || b.summary || "",
+              categories: [b.category || b.department || "Circulation"],
+              publishedDate: String(b.publicationDate || b.year || "2024"),
+              pageCount: b.pages || 320,
+              language: b.language || "en",
+              imageLinks: {
+                thumbnail: b.coverUrl || b.coverImg || "https://via.placeholder.com/100",
+              },
+            },
+          }));
+          mergeBooksPool(mapped);
+        }
+      } catch (err) {
+        console.log("Initial books fetch error:", err);
+      }
+    };
+    fetchInitialBooks();
+    return () => {
+      isMounted = false;
+    };
+  }, [mergeBooksPool]);
+
+  // FETCH BOOKS FROM BACKEND
   const fetchBooks = useCallback(async (query: string) => {
     try {
       setLoading(true);
-
-      // 1. Fetch from local backend
-      let localItems: any[] = [];
-      try {
-        const headers = await getAuthHeaders();
-        const localRes = await axios.get(
-          `${API_URL}/api/student/books/search?q=${encodeURIComponent(query)}`,
-          headers
-        );
-        if (localRes.status === 200 && localRes.data?.books) {
-          localItems = localRes.data.books.map((book: any) => ({
-            volumeInfo: {
-              title: book.title,
-              authors: [book.author],
-              description: book.description || book.summary || "",
-              categories: [book.category || book.department || "Circulation"],
-              publishedDate: book.publicationDate || book.year || "2024",
-              pageCount: book.pages || 320,
-              language: book.language || "en",
-              imageLinks: {
-                thumbnail: book.coverUrl || book.coverImg || "https://via.placeholder.com/100",
-              },
+      const headers = await getAuthHeaders();
+      const localRes = await axios.get(
+        `${API_URL}/api/student/books/search?q=${encodeURIComponent(query)}`,
+        headers
+      );
+      if (localRes.status === 200 && localRes.data?.books) {
+        const fetchedItems = localRes.data.books.map((book: any) => ({
+          volumeInfo: {
+            title: book.title,
+            authors: [book.author],
+            description: book.description || book.summary || "",
+            categories: [book.category || book.department || "Circulation"],
+            publishedDate: String(book.publicationDate || book.year || "2024"),
+            pageCount: book.pages || 320,
+            language: book.language || "en",
+            imageLinks: {
+              thumbnail: book.coverUrl || book.coverImg || "https://via.placeholder.com/100",
             },
-            id: book.id,
-            isbn: book.isbn,
-            local: true,
-            status: book.status || book.availability || "Available",
-            shelfLocation: book.shelfLocation || "",
-          }));
-        }
-      } catch (err) {
-        console.log("Local search error:", err);
+          },
+          id: String(book.id),
+          isbn: book.isbn,
+          local: true,
+          status: book.status || book.availability || "Available",
+          shelfLocation: book.shelfLocation || "",
+        }));
+        mergeBooksPool(fetchedItems);
       }
-
-      // 2. Local Kaggle dataset items only (Google Books fetch removed)
-      const combinedItems = localItems;
-      setBooks(combinedItems);
-
-      // REAL BOOK TITLES
-      const realSuggestions = combinedItems
-        .slice(0, 5)
-        .map((book: any) => book.volumeInfo.title);
-
-      // AI + REAL SUGGESTIONS
-      const combined = [
-        ...new Set([
-          ...realSuggestions,
-          ...aiSuggestions.filter((item) =>
-            item
-              .toLowerCase()
-              .includes(query.toLowerCase())
-          ),
-        ]),
-      ];
-
-      setSuggestions(combined);
-    } catch (error) {
-      console.log("BOOK API ERROR:", error);
+    } catch (err) {
+      console.log("Local search error:", err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mergeBooksPool]);
 
-  // SEARCH EFFECT
+  // HANDLE INCOMING ROUTE PARAMS (FROM HOME SCREEN SEARCH BAR)
   useEffect(() => {
-    const delayDebounce = setTimeout(() => {
-      if (searchText.trim().length > 1) {
-        fetchBooks(searchText);
-        saveSearchQuery(searchText);
-      } else {
-        setBooks([]);
-        setSuggestions([]);
-      }
-    }, 400);
-
-    return () => clearTimeout(delayDebounce);
-  }, [searchText, fetchBooks]);
-
-  // MATCH %
-  const getMatchPercentage = (
-    title: string,
-    description: string,
-    categories: string[] = []
-  ) => {
-    const query = searchText
-      .toLowerCase()
-      .trim();
-
-    if (!query) return 0;
-
-    const titleText = title.toLowerCase();
-    const descText = (description || "").toLowerCase();
-    const catText = categories.join(" ").toLowerCase();
-
-    // Clean and split query into words, filtering out stop words
-    const rawWords = query.replace(/[^a-z0-9\s]/g, "").split(/\s+/);
-    let queryWords = rawWords.filter(word => word.length > 1 && !STOP_WORDS.has(word));
-    
-    if (queryWords.length === 0) {
-      queryWords = rawWords.filter(word => word.length > 1);
+    if (fileName && typeof fileName === "string") {
+      const kwList = fileKeywords ? fileKeywords.split(",") : [];
+      setSelectedFile({
+        name: fileName,
+        uri: fileUri || "",
+        keywords: kwList,
+      });
     }
-    if (queryWords.length === 0) {
-      queryWords = rawWords.filter(word => word.length > 0);
+    if (q && typeof q === "string" && q.trim().length > 0) {
+      const incomingQuery = q.trim();
+      setSearchText(incomingQuery);
+      fetchBooks(incomingQuery);
+      saveSearchQuery(incomingQuery);
     }
-    
-    if (queryWords.length === 0) return 0;
-
-    let matchedWordsCount = 0;
-
-    // Check how many query words are found in the book's metadata fields
-    queryWords.forEach(word => {
-      const escapedWord = word.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      const regex = new RegExp(escapedWord, 'i');
-      
-      if (
-        regex.test(titleText) || 
-        regex.test(descText) || 
-        regex.test(catText)
-      ) {
-        matchedWordsCount++;
-      }
-    });
-
-    if (matchedWordsCount === 0) {
-      return 0;
+    if (autoFocus === "true") {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 50);
     }
+  }, [q, autoFocus, fileName, fileUri, fileKeywords, fetchBooks]);
 
-    const totalWordsCount = queryWords.length;
-    const percentage = Math.round((matchedWordsCount / totalWordsCount) * 100);
-
-    return Math.min(100, Math.max(0, percentage));
-  };
+  // SAVE SEARCH QUERY EFFECT
+  useEffect(() => {
+    if (searchText.trim().length > 0) {
+      saveSearchQuery(searchText);
+    }
+  }, [searchText]);
 
   // DEPARTMENT CLICK
-  const handleDepartmentPress = (
-    department: string
-  ) => {
+  const handleDepartmentPress = (department: string) => {
     setActiveDepartment(department);
     setSearchText(department);
     fetchBooks(department);
   };
 
-  const activeDepartmentDetails =
-    departments.find(
-      (department) =>
-          department.name === activeDepartment
-      );
-  
-    const visibleBooks = books;
+  const activeQuery = searchText.trim();
+  const isSearchActive = activeQuery.length > 0 || selectedFile !== null;
+
+  // Client-Side Hybrid Multimodal Relevance Match & Scoring
+  const processedBooks = React.useMemo(() => {
+    if (!isSearchActive) return [];
+
+    const fileKw = selectedFile?.keywords || [];
+
+    return masterBooksPool
+      .map((item: any) => {
+        const info = item.volumeInfo || {};
+        const title = info.title || "";
+        const author = (info.authors || []).join(" ") || "";
+        const description = info.description || "";
+        const category = (info.categories || []).join(" ") || "";
+        const bookFullText = `${title} ${author} ${description} ${category}`.toLowerCase();
+
+        // 1. Text Query Match Score
+        let textScore = 0;
+        if (activeQuery.length > 0) {
+          textScore = calculateMatchPercentage(title, activeQuery, author);
+          if (textScore === 0) {
+            if (matchesPrefix(category, activeQuery) || matchesPrefix(description, activeQuery)) {
+              textScore = 40;
+            }
+          }
+        }
+
+        // 2. File Context Match Score
+        let fileScore = 0;
+        if (selectedFile && selectedFile.name) {
+          const kwList = fileKw.length > 0
+            ? fileKw
+            : selectedFile.name.replace(/\.[^/.]+$/, "").split(/[\s_.-]+/).map((w) => w.toLowerCase());
+
+          let kwMatches = 0;
+          for (const kw of kwList) {
+            if (kw && kw.length > 1 && bookFullText.includes(kw.toLowerCase())) {
+              kwMatches++;
+            }
+          }
+          if (kwList.length > 0) {
+            fileScore = Math.min(100, Math.round((kwMatches / Math.min(kwList.length, 3)) * 85) + (kwMatches > 0 ? 15 : 0));
+          } else {
+            fileScore = 50;
+          }
+        }
+
+        // 3. Hybrid Combination Score Calculation
+        let finalScore = 0;
+        if (activeQuery.length > 0 && selectedFile !== null) {
+          // Case C: Hybrid Search (Text + File) - Boost items matching both query AND file context!
+          if (textScore > 0 && fileScore > 0) {
+            finalScore = Math.min(100, Math.round(textScore * 0.5 + fileScore * 0.5) + 20);
+          } else if (textScore > 0) {
+            finalScore = Math.round(textScore * 0.7);
+          } else if (fileScore > 0) {
+            finalScore = Math.round(fileScore * 0.7);
+          }
+        } else if (activeQuery.length > 0) {
+          // Case A: Text Only Search
+          finalScore = textScore;
+        } else if (selectedFile !== null) {
+          // Case B: File Only Search
+          finalScore = fileScore;
+        }
+
+        return { item, match: finalScore };
+      })
+      .filter((entry: any) => entry.match > 0)
+      .sort((a: any, b: any) => {
+        if (b.match !== a.match) {
+          return b.match - a.match;
+        }
+        return (a.item.volumeInfo?.title || "").localeCompare(
+          b.item.volumeInfo?.title || ""
+        );
+      });
+  }, [masterBooksPool, activeQuery, selectedFile, isSearchActive]);
+
+    const itemsPerPage = 5;
+    const totalPages = Math.max(1, Math.ceil(processedBooks.length / itemsPerPage));
+    const paginatedBooks = processedBooks.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
   
     return (
       <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
@@ -524,55 +819,53 @@ export default function SearchScreen() {
         </View>
 
         <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingBottom: 120,
-        }}
-      >
-        {/* HERO */}
-        <View style={[styles.heroCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          <View style={styles.aiRow}>
-            <MaterialCommunityIcons
-              name="robot-outline"
-              size={18}
-              color={theme.accentGold}
-            />
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{
+            paddingBottom: 120,
+          }}
+        >
+          {/* HERO CARD */}
+          <View style={[styles.heroCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+            <View style={styles.aiRow}>
+              <MaterialCommunityIcons
+                name="robot-outline"
+                size={18}
+                color={theme.accentGold}
+              />
 
-            <Text style={[styles.aiText, { color: theme.accentGold }]}>
-              ASK BOOKHIVE
-            </Text>
-          </View>
+              <Text style={[styles.aiText, { color: theme.accentGold }]}>
+                ASK BOOKHIVE
+              </Text>
+            </View>
 
-          <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>
-            Search our entire digital ecosystem
-            with AI intelligence.
-          </Text>
+            {/* UNCOLLAPSED TITLE (EMPTY STATE ONLY) */}
+            {!isSearchActive && (
+              <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>
+                Search our entire digital ecosystem with AI intelligence.
+              </Text>
+            )}
 
-          {/* SEARCH BAR */}
-          <View style={[styles.searchBar, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
-            <Feather
-              name="search"
-              size={18}
-              color={theme.accentGold}
-            />
+            {/* SEARCH BAR */}
+            <View style={[styles.searchBar, { backgroundColor: theme.background, borderColor: theme.cardBorder, marginTop: isSearchActive ? 12 : 20 }]}>
+              <Feather
+                name="search"
+                size={18}
+                color={theme.accentGold}
+              />
 
-            <TextInput
-              value={searchText}
-              onChangeText={setSearchText}
-              placeholder="Search books, AI, Data Science..."
-              placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
-              style={[styles.input, { height: Math.max(40, inputHeight), color: theme.textPrimary }]}
-              multiline={true}
-              onContentSizeChange={(e) => {
-                setInputHeight(e.nativeEvent.contentSize.height);
-              }}
-              blurOnSubmit={true}
-              onSubmitEditing={() => fetchBooks(searchText)}
-              returnKeyType="search"
-            />
+              <TextInput
+                ref={inputRef}
+                value={searchText}
+                onChangeText={handleSearchTextChange}
+                placeholder="Search books..."
+                placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
+                style={[styles.input, { color: theme.textPrimary }]}
+                blurOnSubmit={true}
+                onSubmitEditing={() => fetchBooks(searchText)}
+                returnKeyType="search"
+              />
 
-            {/* ATTACHMENT BUTTON */}
-            {searchText.length === 0 && (
+              {/* ATTACHMENT BUTTON */}
               <TouchableOpacity
                 style={styles.iconButton}
                 onPress={pickDocument}
@@ -583,138 +876,34 @@ export default function SearchScreen() {
                   color={theme.accentGold}
                 />
               </TouchableOpacity>
-            )}
-
-            {/* ANALYZE */}
-            <TouchableOpacity
-              style={[styles.analyzeBtn, { backgroundColor: theme.accentGold }]}
-              onPress={() =>
-                fetchBooks(searchText)
-              }
-            >
-              <Text style={[styles.analyzeText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]}>
-                ANALYZE
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* SELECTED FILE */}
-          {selectedFile && (
-            <View style={[styles.filePreviewCard, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
-              <Ionicons
-                name="document-outline"
-                size={22}
-                color={theme.accentGold}
-              />
-              <Text style={[styles.filePreviewName, { color: theme.textPrimary }]} numberOfLines={1}>
-                {selectedFile.name}
-              </Text>
-              <TouchableOpacity onPress={() => setSelectedFile(null)}>
-                <Ionicons
-                  name="close-circle"
-                  size={20}
-                  color="#EF4444"
-                />
-              </TouchableOpacity>
             </View>
-          )}
 
-          {/* LIVE SUGGESTIONS */}
-          {searchText.length > 0 &&
-            suggestions.length > 0 && (
-              <View
-                style={styles.suggestionContainer}
-              >
-                {suggestions.map(
-                  (item, index) => (
-                    <TouchableOpacity
-                      key={index}
-                      style={[styles.suggestionItem, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                      onPress={() => {
-                        setSearchText(item);
-                        fetchBooks(item);
-                      }}
-                    >
-                      <Feather
-                        name="search"
-                        size={16}
-                        color={theme.accentGold}
-                      />
-
-                      <Text
-                        style={[
-                          styles.suggestionText,
-                          { color: theme.textPrimary }
-                        ]}
-                      >
-                        {item}
-                      </Text>
-                    </TouchableOpacity>
-                  )
-                )}
+            {/* SELECTED FILE PREVIEW */}
+            {selectedFile && (
+              <View style={[styles.filePreviewCard, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
+                <Ionicons
+                  name="document-outline"
+                  size={22}
+                  color={theme.accentGold}
+                />
+                <Text style={[styles.filePreviewName, { color: theme.textPrimary }]} numberOfLines={1}>
+                  {selectedFile.name}
+                </Text>
+                <TouchableOpacity onPress={() => setSelectedFile(null)}>
+                  <Ionicons
+                    name="close-circle"
+                    size={20}
+                    color="#EF4444"
+                  />
+                </TouchableOpacity>
               </View>
             )}
-        </View>
+          </View>
 
-        {/* DEPARTMENTS */}
-        <View style={styles.departmentContainer}>
-          <Text style={[styles.departmentTitle, { color: theme.textSecondary }]}>
-            DEPARTMENTS
-          </Text>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={
-              false
-            }
-          >
-            {departments.map((department) => {
-              const isActive =
-                activeDepartment ===
-                department.name;
-
-              return (
-                <TouchableOpacity
-                  key={department.name}
-                  style={
-                    isActive
-                      ? [styles.activeChip, { backgroundColor: theme.accentGold }]
-                      : [styles.chip, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]
-                  }
-                  onPress={() =>
-                    handleDepartmentPress(
-                      department.name
-                    )
-                  }
-                >
-                  <Text
-                    style={
-                      isActive
-                        ? [styles.activeChipText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]
-                        : [styles.chipText, { color: theme.textSecondary }]
-                    }
-                  >
-                    {department.name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* LOADING */}
-        {loading && (
-          <ActivityIndicator
-            size="large"
-            color={theme.accentGold}
-            style={{ marginTop: 30 }}
-          />
-        )}
-
-        {/* RESULTS */}
-        {searchText.length > 0 &&
-          visibleBooks.length > 0 && (
-            <>
+          {/* SEARCH ACTIVE STATE: RESULTS & PAGINATION */}
+          {isSearchActive && (
+            <View style={styles.resultsContainer}>
+              {/* RESULTS HEADER */}
               <View style={styles.resultHeader}>
                 <Text style={[styles.resultTitle, { color: theme.textSecondary }]}>
                   QUERY RESULTS
@@ -725,26 +914,20 @@ export default function SearchScreen() {
                 </Text>
               </View>
 
-              {visibleBooks
-                .map((item) => {
-                  const info = item.volumeInfo;
-                  const match = getMatchPercentage(
-                    info.title || "",
-                    info.description || "",
-                    info.categories || []
-                  );
-                  return { item, match };
-                })
-                .sort((a, b) => {
-                  // Primary sort: match percentage (highest first)
-                  if (b.match !== a.match) {
-                    return b.match - a.match;
-                  }
-                  // Secondary sort: title alphabetical (for consistent ordering)
-                  return (a.item.volumeInfo.title || "").localeCompare(b.item.volumeInfo.title || "");
-                })
-                .map(({ item, match }, index) => {
-                  const info = item.volumeInfo;
+              {/* LOADING */}
+              {loading && (
+                <ActivityIndicator
+                  size="large"
+                  color={theme.accentGold}
+                  style={{ marginTop: 30, marginBottom: 30 }}
+                />
+              )}
+
+              {/* RESULT CARDS */}
+              {!loading && paginatedBooks.length > 0 && (
+                paginatedBooks.map(({ item, match }: { item: any; match: number }, index: number) => {
+                  const info = item.volumeInfo || {};
+                  const authorNames = info.authors?.join(", ") || info.author || "Unknown Author";
 
                   const classifiedDepartment =
                     classifyBookDepartment(
@@ -756,173 +939,122 @@ export default function SearchScreen() {
                     );
 
                   return (
-                  <TouchableOpacity
-                    key={index}
-                    style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/book-details',
-                        params: {
-                          from: 'search',
-                          id: item.id || '',
-                          title: info.title || '',
-                          author: info.authors?.[0] || 'Unknown Author',
-                          description: info.description || 'No description available.',
-                          available: item.local ? (item.status === 'Available' ? 'true' : 'false') : 'true',
-                          department: classifiedDepartment,
-                          category: info.categories?.[0] || classifiedDepartment,
-                          isbn: item.isbn || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_13')?.identifier || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_10')?.identifier || '',
-                          shelf: item.local ? (item.shelfLocation || 'Shelf A, Row 2') : 'Shelf A-102, 2nd Floor',
-                          year: info.publishedDate ? info.publishedDate.split('-')[0] : '2024',
-                          pages: String(info.pageCount || 320),
-                          language: info.language || 'en',
-                        },
-                      })
-                    }
-                  >
-                    <Image
-                      source={{
-                        uri:
-                          info.imageLinks
-                            ?.thumbnail ||
-                          "https://via.placeholder.com/100",
-                      }}
-                      style={[styles.bookImage, { backgroundColor: theme.background }]}
-                    />
-
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.bookTop}>
+                    <TouchableOpacity
+                      key={item.id || index}
+                      style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/book-details',
+                          params: {
+                            from: 'search',
+                            id: item.id || '',
+                            title: info.title || '',
+                            author: authorNames,
+                            description: info.description || 'No description available.',
+                            available: item.local ? (item.status === 'Available' ? 'true' : 'false') : 'true',
+                            department: classifiedDepartment,
+                            category: info.categories?.[0] || classifiedDepartment,
+                            isbn: item.isbn || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_13')?.identifier || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_10')?.identifier || '',
+                            shelf: item.local ? (item.shelfLocation || 'Shelf A, Row 2') : 'Shelf A-102, 2nd Floor',
+                            year: info.publishedDate ? info.publishedDate.split('-')[0] : '2024',
+                            pages: String(info.pageCount || 320),
+                            language: info.language || 'en',
+                          },
+                        })
+                      }
+                    >
+                      {/* LEFT: TITLE & AUTHOR */}
+                      <View style={styles.cardLeftContent}>
                         <Text
                           style={[styles.bookTitle, { color: theme.textPrimary }]}
+                          numberOfLines={1}
                         >
                           {info.title}
                         </Text>
-
-                        <View
-                          style={[styles.matchBadge, { backgroundColor: theme.accentGold }]}
+                        <Text
+                          style={[styles.authorText, { color: theme.textSecondary }]}
+                          numberOfLines={1}
                         >
-                          <Text
-                            style={[styles.matchText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]}
-                          >
-                            {match}% MATCH
-                          </Text>
-                        </View>
+                          By: {authorNames}
+                        </Text>
                       </View>
 
-                      <Text
-                        style={[styles.authorText, { color: theme.textSecondary }]}
-                      >
-                        {info.authors?.join(
-                          ", "
-                        ) || "Unknown Author"}
-                      </Text>
-
-                      <Text
-                        numberOfLines={3}
-                        style={[styles.description, { color: theme.textSecondary }]}
-                      >
-                        {info.description ||
-                          "No description available."}
-                      </Text>
-
-                      <View
-                        style={[
-                          styles.progressBackground,
-                          { backgroundColor: theme.background, borderColor: theme.cardBorder }
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.progressFill,
-                            {
-                              width: `${match}%`,
-                            },
-                          ]}
-                        />
+                      {/* RIGHT: BRIGHT YELLOW MATCH BADGE */}
+                      <View style={[styles.matchBadge, { backgroundColor: theme.accentGold }]}>
+                        <Text style={[styles.matchPercentText, { color: isDarkMode ? "#080F1E" : "#080F1E" }]}>
+                          {match}%
+                        </Text>
+                        <Text style={[styles.matchLabelText, { color: isDarkMode ? "#080F1E" : "#080F1E" }]}>
+                          MATCH
+                        </Text>
                       </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
 
-                      <View
-                        style={styles.bookBottom}
-                      >
-                        <View style={styles.categoryContainer}>
-                          <Text
-                            style={[
-                              styles.categoryText,
-                              { color: theme.textSecondary }
-                            ]}
-                          >
-                            {item.local ? "BookHive Library" : "Google Books API"}
-                          </Text>
-                          <View style={[styles.departmentTag, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
-                            <Ionicons
-                              name="library-outline"
-                              size={12}
-                              color={theme.accentGold}
-                            />
-                            <Text
-                              style={[styles.departmentTagText, { color: theme.accentGold }]}
-                              numberOfLines={1}
-                            >
-                              {classifiedDepartment}
-                            </Text>
-                          </View>
-                        </View>
+              {/* EMPTY RESULTS STATE */}
+              {!loading && processedBooks.length === 0 && (
+                <View style={styles.emptyBox}>
+                  <MaterialCommunityIcons
+                    name="book-search-outline"
+                    size={50}
+                    color={theme.textSecondary}
+                  />
+                  <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
+                    No books match your query
+                  </Text>
+                  <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
+                    Try searching for another title, author, or keyword.
+                  </Text>
+                </View>
+              )}
 
-                        <View
-                          style={styles.iconRow}
-                        >
-                          <TouchableOpacity>
-                            <Feather
-                              name="bookmark"
-                              size={18}
-                              color={theme.textSecondary}
-                            />
-                          </TouchableOpacity>
-
-                          <TouchableOpacity
-                            style={{
-                              marginLeft: 14,
-                            }}
-                          >
-                            <Feather
-                              name="share-2"
-                              size={18}
-                              color={theme.textSecondary}
-                            />
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    </View>
+              {/* PAGINATION CONTROLS */}
+              {!loading && processedBooks.length > 0 && (
+                <View style={styles.paginationRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.paginationArrowBtn,
+                      currentPage <= 1 && styles.paginationArrowDisabled
+                    ]}
+                    disabled={currentPage <= 1}
+                    onPress={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                  >
+                    <Ionicons
+                      name="chevron-back"
+                      size={24}
+                      color={currentPage > 1 ? theme.accentGold : "#475569"}
+                    />
                   </TouchableOpacity>
-                );
-              })}
-            </>
-          )}
 
-        {/* EMPTY */}
-        {searchText.length > 1 &&
-          !loading &&
-          visibleBooks.length === 0 && (
-            <View style={styles.emptyBox}>
-              <MaterialCommunityIcons
-                name="book-search-outline"
-                size={60}
-                color={theme.textSecondary}
-              />
+                  <View style={[styles.pageNumberBox, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+                    <Text style={[styles.pageNumberText, { color: theme.textPrimary }]}>
+                      {currentPage}
+                    </Text>
+                  </View>
 
-              <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>
-                No books found
-              </Text>
-
-              <Text style={[styles.emptyText, { color: theme.textSecondary }]}>
-                Try another title, keyword,
-                author, or category.
-              </Text>
+                  <TouchableOpacity
+                    style={[
+                      styles.paginationArrowBtn,
+                      currentPage >= totalPages && styles.paginationArrowDisabled
+                    ]}
+                    disabled={currentPage >= totalPages}
+                    onPress={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  >
+                    <Ionicons
+                      name="chevron-forward"
+                      size={24}
+                      color={currentPage < totalPages ? theme.accentGold : "#475569"}
+                    />
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           )}
-      </ScrollView>
-    </AnimatedScreen>
-  );
+        </ScrollView>
+      </AnimatedScreen>
+    );
 }
 
 const styles = StyleSheet.create({
@@ -1129,162 +1261,147 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
+  resultsContainer: {
+    paddingBottom: 20,
+  },
+
   resultHeader: {
-    marginTop: 26,
+    marginTop: 16,
+    marginBottom: 12,
     marginHorizontal: 20,
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
   },
 
   resultTitle: {
     fontSize: 11,
     fontWeight: "800",
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
     color: "#64748B",
+    textTransform: "uppercase",
   },
 
   resultSort: {
     color: "#64748B",
     fontSize: 11,
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
   },
 
   bookCard: {
     backgroundColor: "#111A2E",
     marginHorizontal: 20,
-    marginTop: 16,
-    borderRadius: 22,
-    padding: 18,
+    marginTop: 12,
+    borderRadius: 18,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
     borderWidth: 1,
     borderColor: "#1E293B",
     flexDirection: "row",
-  },
-
-  bookImage: {
-    width: 90,
-    height: 130,
-    borderRadius: 14,
-    marginRight: 16,
-    backgroundColor: "#080F1E",
-  },
-
-  bookTop: {
-    flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
   },
 
-  bookTitle: {
+  cardLeftContent: {
     flex: 1,
-    fontSize: 16,
+    marginRight: 14,
+  },
+
+  bookTitle: {
+    fontSize: 17,
     fontWeight: "800",
     color: "#F8FAFC",
-    paddingRight: 8,
-  },
-
-  matchBadge: {
-    backgroundColor: "#FCD34D",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 10,
-  },
-
-  matchText: {
-    color: "#080F1E",
-    fontWeight: "800",
-    fontSize: 10,
+    marginBottom: 4,
   },
 
   authorText: {
-    marginTop: 6,
     color: "#94A3B8",
     fontStyle: "italic",
     fontSize: 13,
   },
 
-  description: {
-    marginTop: 10,
-    color: "#CBD5E1",
-    fontSize: 13,
-    lineHeight: 20,
-  },
-
-  progressBackground: {
-    marginTop: 14,
-    height: 6,
-    backgroundColor: "#080F1E",
+  matchBadge: {
+    backgroundColor: "#FCD34D",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 10,
-    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 78,
+  },
+
+  matchPercentText: {
+    color: "#080F1E",
+    fontWeight: "900",
+    fontSize: 13,
+    lineHeight: 16,
+  },
+
+  matchLabelText: {
+    color: "#080F1E",
+    fontWeight: "900",
+    fontSize: 10,
+    letterSpacing: 0.5,
+    lineHeight: 13,
+  },
+
+  paginationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 28,
+    marginBottom: 20,
+    gap: 16,
+  },
+
+  paginationArrowBtn: {
+    padding: 8,
+  },
+
+  paginationArrowDisabled: {
+    opacity: 0.3,
+  },
+
+  pageNumberBox: {
+    backgroundColor: "#111A2E",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#1E293B",
-  },
-
-  progressFill: {
-    height: "100%",
-    backgroundColor: "#38BDF8",
-  },
-
-  bookBottom: {
-    marginTop: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
+    minWidth: 48,
     alignItems: "center",
+    justifyContent: "center",
   },
 
-  categoryContainer: {
-    flex: 1,
-    flexDirection: "column",
-    gap: 8,
-  },
-
-  categoryText: {
-    color: "#64748B",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-
-  departmentTag: {
-    backgroundColor: "#080F1E",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    maxWidth: 200,
-    borderWidth: 1,
-    borderColor: "#1E293B",
-  },
-
-  departmentTagText: {
-    color: "#FCD34D",
-    fontSize: 11,
-    fontWeight: "600",
-  },
-
-  iconRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  pageNumberText: {
+    color: "#F8FAFC",
+    fontWeight: "800",
+    fontSize: 18,
   },
 
   emptyBox: {
-    marginTop: 80,
+    marginTop: 60,
     alignItems: "center",
     paddingHorizontal: 40,
   },
 
   emptyTitle: {
-    marginTop: 20,
-    fontSize: 20,
+    marginTop: 16,
+    fontSize: 18,
     fontWeight: "800",
     color: "#F8FAFC",
   },
 
   emptyText: {
-    marginTop: 10,
+    marginTop: 8,
     textAlign: "center",
     color: "#94A3B8",
-    lineHeight: 22,
+    lineHeight: 20,
   },
+
   notificationButtonRelative: {
     position: "relative",
     padding: 4,

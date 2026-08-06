@@ -41,39 +41,46 @@ const styles = StyleSheet.create({
 
   topSection: {
     alignItems: "center",
-    marginBottom: 40,
+    marginBottom: 32,
   },
 
   title: {
-    fontSize: 36,
+    fontSize: 38,
     fontWeight: "800",
     marginTop: 12,
+    letterSpacing: -0.5,
   },
 
   subtitle: {
     marginTop: 6,
-    fontSize: 14,
+    fontSize: 15,
+    fontWeight: "500",
   },
 
   card: {
-    borderRadius: 28,
+    borderRadius: 24,
     padding: 24,
+    borderWidth: 1,
+    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
   },
 
   loginTitle: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "800",
-    marginBottom: 24,
+    marginBottom: 20,
   },
 
   inputContainer: {
-    height: 56,
+    height: 54,
     borderWidth: 1,
-    borderRadius: 16,
+    borderRadius: 14,
     paddingHorizontal: 16,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 18,
+    marginBottom: 16,
   },
 
   input: {
@@ -83,30 +90,36 @@ const styles = StyleSheet.create({
   },
 
   loginButton: {
-    height: 56,
-    borderRadius: 16,
+    height: 54,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 8,
+    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
   },
 
   loginButtonText: {
-    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
 
   errorText: {
-    color: "#DC2626",
+    color: "#EF4444",
     marginBottom: 12,
     fontSize: 13,
+    fontWeight: "600",
     textAlign: "center",
   },
 
   signupText: {
-    marginTop: 22,
+    marginTop: 20,
     textAlign: "center",
     fontWeight: "700",
+    fontSize: 14,
   },
   eyeButton: {
     padding: 8,
@@ -114,9 +127,9 @@ const styles = StyleSheet.create({
   themeToggle: {
     position: "absolute",
     zIndex: 10,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -357,7 +370,7 @@ function LoginScreenContent() {
             onPress={handleLogin}
             disabled={loading}
           >
-            <Text style={styles.loginButtonText}>
+            <Text style={[styles.loginButtonText, { color: isDarkMode ? "#090D16" : "#FFFFFF" }]}>
               {loading ? "Logging in..." : "Log In"}
             </Text>
           </TouchableOpacity>

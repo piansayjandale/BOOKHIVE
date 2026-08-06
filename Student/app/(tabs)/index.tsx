@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
@@ -41,8 +42,58 @@ import {
   saveSearchQuery,
 } from "../../data/store";
 import axios from "axios";
+import * as DocumentPicker from "expo-document-picker";
 import { API_URL, getAuthHeaders } from "../../data/authService";
 import localBooks from "../../data/books";
+
+const STOP_WORDS_SET = new Set([
+  "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", 
+  "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "did", "do", 
+  "does", "doing", "don", "down", "during", "each", "few", "for", "from", "further", "had", "has", "have", 
+  "having", "he", "her", "here", "hers", "him", "himself", "his", "how", "i", "if", "in", "into", "is", "it", 
+  "its", "itself", "just", "me", "more", "most", "my", "myself", "no", "nor", "not", "of", "off", "on", "once", 
+  "only", "or", "other", "our", "ours", "ourselves", "out", "over", "own", "same", "she", "should", "so", "some", 
+  "such", "than", "that", "the", "their", "theirs", "them", "themselves", "then", "there", "these", "they", 
+  "this", "those", "through", "to", "too", "under", "until", "up", "very", "was", "were", "what", "when", 
+  "where", "which", "while", "who", "whom", "why", "with", "you", "your", "yours", "yourself", "yourselves",
+  "find", "me", "book", "books", "show", "search", "get", "read", "want", "please", "library", "recommend"
+]);
+
+export const extractFileKeywords = async (file: { name: string; uri?: string; mimeType?: string }): Promise<string[]> => {
+  if (!file || !file.name) return [];
+
+  const nameKeywords = file.name
+    .replace(/\.[^/.]+$/, "")
+    .split(/[\s_.\-\/\(\)\[\]]+/)
+    .map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length > 1 && !STOP_WORDS_SET.has(w));
+
+  let textContentKeywords: string[] = [];
+
+  try {
+    const isTextFile =
+      file.mimeType?.includes("text") ||
+      file.mimeType?.includes("json") ||
+      file.name.endsWith(".txt") ||
+      file.name.endsWith(".csv") ||
+      file.name.endsWith(".json") ||
+      file.name.endsWith(".md");
+
+    if (isTextFile && file.uri) {
+      const response = await fetch(file.uri);
+      const text = await response.text();
+      textContentKeywords = text
+        .split(/[\s,.:;!?'"()\[\]\/-]+/)
+        .map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, ""))
+        .filter((w) => w.length > 2 && !STOP_WORDS_SET.has(w))
+        .slice(0, 40);
+    }
+  } catch (e) {
+    console.log("Error reading file text content:", e);
+  }
+
+  return Array.from(new Set([...nameKeywords, ...textContentKeywords]));
+};
 
 const monthNames = [
   "Jan",
@@ -91,6 +142,58 @@ const STOP_WORDS = new Set([
   "find", "me", "book", "books", "show", "search", "get", "read", "want", "please", "library", "recommend",
   "recommended", "looking", "for", "about", "describe", "detail", "details", "analyse", "analyze"
 ]);
+
+function BookCoverImage({
+  uri,
+  title,
+  author,
+  style,
+  iconSize = 22,
+  showText = false,
+}: {
+  uri?: string | null;
+  title: string;
+  author: string;
+  style: any;
+  iconSize?: number;
+  showText?: boolean;
+}) {
+  const [imageError, setImageError] = React.useState(false);
+
+  if (uri && !imageError) {
+    return (
+      <Image
+        source={{ uri }}
+        style={style}
+        resizeMode="cover"
+        onError={() => setImageError(true)}
+      />
+    );
+  }
+
+  const { theme } = useThemeColors();
+
+  return (
+    <View
+      style={[
+        style,
+        styles.fallbackCoverContainer,
+        { backgroundColor: theme.bookCoverBg, borderColor: theme.bookCoverBorder },
+      ]}
+    >
+      <MaterialCommunityIcons
+        name="book-open-page-variant"
+        size={iconSize}
+        color={theme.bookCoverIcon}
+      />
+      {showText && (
+        <Text style={[styles.fallbackCoverTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+          {title}
+        </Text>
+      )}
+    </View>
+  );
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -180,6 +283,10 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const [allBooks, setAllBooks] = React.useState<any[]>([]);
+  const [isLoadingBooks, setIsLoadingBooks] = React.useState<boolean>(true);
+  const [activeCarouselIndex, setActiveCarouselIndex] = React.useState<number>(0);
+
   const [trendingBooks, setTrendingBooks] = React.useState<any[]>([
     {
       id: "eb22ebf0-75f5-42af-bc5e-49d068cbf164",
@@ -239,11 +346,149 @@ export default function HomeScreen() {
     },
   ]);
 
+  const fetchBooksPayload = React.useCallback(async () => {
+    setIsLoadingBooks(true);
+    try {
+      const headers = await getAuthHeaders();
+      const response = await axios.get(`${API_URL}/api/admin/books?limit=50`, headers);
+      const booksArray = response.data?.books || response.data?.records;
+
+      let mappedBooks: any[] = [];
+      if (response.status === 200 && Array.isArray(booksArray) && booksArray.length > 0) {
+        mappedBooks = booksArray.map((book: any, idx: number) => {
+          const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
+          const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
+          return {
+            id: book.id || `book-${idx}`,
+            title: book.title || "Untitled Book",
+            author: book.author || "Unknown Author",
+            rating: (book.rating && Number(book.rating) > 0) ? String(book.rating) : String(pseudoRating),
+            category: book.category || book.department || book.genres || "General",
+            department: book.department || book.category || "General",
+            isbn: book.isbn || "",
+            shelf: book.shelfLocation || book.shelf || "General Shelf",
+            available: String(book.availability === "Available" || book.availability === "true" || book.status === "Available"),
+            year: book.publicationDate ? book.publicationDate.substring(0, 4) : "2024",
+            pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
+            language: book.language || "EN",
+            description: book.summary || book.description || "",
+            coverImage: book.coverImage || book.cover || book.imageUrl || book.image || null,
+          };
+        });
+      }
+
+      // Fallback/enrich with local books catalog
+      if (mappedBooks.length === 0 && Array.isArray(localBooks)) {
+        mappedBooks = localBooks.map((book: any, idx: number) => {
+          const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
+          const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
+          const dept = book.department || "General";
+          return {
+            id: `local-book-${idx}`,
+            title: book.title,
+            author: book.author,
+            description: book.description || "",
+            year: String(book.year || "2024"),
+            pages: String(book.pages || "320"),
+            language: "EN",
+            category: dept,
+            department: dept,
+            rating: String(pseudoRating),
+            shelf: "General Shelf",
+            available: String(book.available !== false),
+            coverImage: null,
+          };
+        });
+      }
+
+      setAllBooks(mappedBooks);
+      if (mappedBooks.length > 0) {
+        setTrendingBooks(mappedBooks.slice(0, 5));
+      }
+    } catch (error) {
+      console.log("Error fetching books payload, using catalog fallback:", error);
+      if (Array.isArray(localBooks)) {
+        const fallback = localBooks.map((book: any, idx: number) => {
+          const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
+          const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
+          const dept = book.department || "General";
+          return {
+            id: `local-book-${idx}`,
+            title: book.title,
+            author: book.author,
+            description: book.description || "",
+            year: String(book.year || "2024"),
+            pages: String(book.pages || "320"),
+            language: "EN",
+            category: dept,
+            department: dept,
+            rating: String(pseudoRating),
+            shelf: "General Shelf",
+            available: String(book.available !== false),
+            coverImage: null,
+          };
+        });
+        setAllBooks(fallback);
+        setTrendingBooks(fallback.slice(0, 5));
+      }
+    } finally {
+      setIsLoadingBooks(false);
+    }
+  }, []);
+
+  const getCategoryBooks = React.useCallback((categoryName: string) => {
+    if (!allBooks || allBooks.length === 0) return [];
+    const nameLower = categoryName.toLowerCase();
+
+    if (nameLower === "recommended books") {
+      return allBooks.slice(0, 6);
+    }
+
+    if (nameLower === "circulation") {
+      const filtered = allBooks.filter((b) => {
+        const cat = (b.category || b.department || "").toLowerCase();
+        return cat.includes("computer") || cat.includes("science") || cat.includes("engineering") || cat.includes("business") || cat.includes("circulation");
+      });
+      return filtered.length > 0 ? filtered : allBooks.slice(0, 4);
+    }
+
+    if (nameLower === "general references") {
+      const filtered = allBooks.filter((b) => {
+        const cat = (b.category || b.department || "").toLowerCase();
+        return cat.includes("general") || cat.includes("reference") || cat.includes("arts");
+      });
+      return filtered.length > 0 ? filtered : allBooks.slice(2, 6);
+    }
+
+    if (nameLower === "filipiniana") {
+      return allBooks.filter((b) => {
+        const cat = (b.category || b.department || "").toLowerCase();
+        const title = (b.title || "").toLowerCase();
+        return cat.includes("filipiniana") || cat.includes("philippine") || title.includes("philippine") || title.includes("ilustrado");
+      });
+    }
+
+    if (nameLower === "periodicals") {
+      return allBooks.filter((b) => {
+        const cat = (b.category || b.department || "").toLowerCase();
+        const title = (b.title || "").toLowerCase();
+        return cat.includes("periodical") || cat.includes("journal") || cat.includes("magazine") || title.includes("saturday");
+      });
+    }
+
+    if (nameLower === "special collections") {
+      return allBooks.filter((b) => {
+        const cat = (b.category || b.department || "").toLowerCase();
+        return cat.includes("special") || cat.includes("pedagogy") || cat.includes("education");
+      });
+    }
+
+    return [];
+  }, [allBooks]);
+
   const [searchText, setSearchText] = React.useState("");
   const { isDarkMode, toggleTheme, theme } = useThemeColors();
   const [wordSuggestions, setWordSuggestions] = React.useState<string[]>([]);
-  const [searchResults, setSearchResults] = React.useState<any[]>([]);
-  const [searching, setSearching] = React.useState(false);
 
   // Pre-populate with base terms + dynamic terms from local books
   const vocabulary = React.useMemo(() => {
@@ -307,28 +552,93 @@ export default function HomeScreen() {
     return Array.from(wordsSet);
   }, [trendingBooks]);
 
-  // Suggestions per-word logic
-  const handleSearchTextChange = (text: string) => {
-    setSearchText(text);
+  const [selectedFile, setSelectedFile] = React.useState<{
+    uri: string;
+    name: string;
+    size?: number;
+    mimeType?: string;
+    keywords?: string[];
+  } | null>(null);
 
-    if (!text.trim()) {
-      setWordSuggestions([]);
-      setSearchResults([]);
-      return;
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ["*/*"],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        const keywords = await extractFileKeywords({
+          name: file.name,
+          uri: file.uri,
+          mimeType: file.mimeType,
+        });
+
+        const fileObj = {
+          uri: file.uri,
+          name: file.name,
+          size: file.size,
+          mimeType: file.mimeType,
+          keywords,
+        };
+
+        setSelectedFile(fileObj);
+
+        router.push({
+          pathname: "/search",
+          params: {
+            fileName: file.name,
+            fileUri: file.uri,
+            fileKeywords: keywords.join(","),
+          },
+        });
+      }
+    } catch (error) {
+      console.log("Home document picking error:", error);
     }
+  };
 
-    const words = text.split(/\s+/);
-    const lastWord = words[words.length - 1];
-
-    if (lastWord.length > 0) {
-      const matches = vocabulary.filter(vocabWord => 
-        vocabWord.toLowerCase().startsWith(lastWord.toLowerCase()) &&
-        vocabWord.toLowerCase() !== lastWord.toLowerCase()
-      ).slice(0, 8);
-      
-      setWordSuggestions(matches);
-    } else {
+  // Immediate auto-redirection on input typing
+  const handleSearchTextChange = (text: string) => {
+    if (text.length > 0) {
+      const paramsToPass: any = { q: text, autoFocus: "true" };
+      if (selectedFile) {
+        paramsToPass.fileName = selectedFile.name;
+        paramsToPass.fileUri = selectedFile.uri;
+        if (selectedFile.keywords && selectedFile.keywords.length > 0) {
+          paramsToPass.fileKeywords = selectedFile.keywords.join(",");
+        }
+      }
+      setSearchText("");
       setWordSuggestions([]);
+      router.push({
+        pathname: "/search",
+        params: paramsToPass,
+      });
+    } else {
+      setSearchText(text);
+    }
+  };
+
+  const handleHomeSearchSubmit = (queryToSearch?: string) => {
+    const query = (queryToSearch !== undefined ? queryToSearch : searchText).trim();
+    if (query.length > 0 || selectedFile !== null) {
+      const paramsToPass: any = { q: query };
+      if (selectedFile) {
+        paramsToPass.fileName = selectedFile.name;
+        paramsToPass.fileUri = selectedFile.uri;
+        if (selectedFile.keywords && selectedFile.keywords.length > 0) {
+          paramsToPass.fileKeywords = selectedFile.keywords.join(",");
+        }
+      }
+      setSearchText("");
+      setSelectedFile(null);
+      setWordSuggestions([]);
+      router.push({
+        pathname: "/search",
+        params: paramsToPass,
+      });
     }
   };
 
@@ -336,154 +646,11 @@ export default function HomeScreen() {
     const words = searchText.split(/\s+/);
     if (words.length > 0) {
       words[words.length - 1] = suggestion;
-      const newText = words.join(" ") + " ";
-      setSearchText(newText);
+      const newText = words.join(" ").trim();
       setWordSuggestions([]);
-      performSearch(newText);
+      handleHomeSearchSubmit(newText);
     }
   };
-
-  const getMatchPercentage = React.useCallback((
-    title: string,
-    description: string,
-    category: string = ""
-  ) => {
-    const query = searchText.toLowerCase().trim();
-    if (!query) return 0;
-
-    const titleText = title.toLowerCase();
-    const descText = (description || "").toLowerCase();
-    const catText = category.toLowerCase();
-
-    // Exact match check
-    const cleanTitle = titleText.replace(/[^a-z0-9\s]/g, "").trim().replace(/\s+/g, " ");
-    const cleanQuery = query.replace(/[^a-z0-9\s]/g, "").trim().replace(/\s+/g, " ");
-    if (cleanTitle === cleanQuery) {
-      return 100;
-    }
-
-    const rawWords = query.replace(/[^a-z0-9\s]/g, "").split(/\s+/).filter(word => word.length > 0);
-    let queryWords = rawWords.filter(word => !STOP_WORDS.has(word));
-    
-    if (queryWords.length === 0) {
-      queryWords = rawWords;
-    }
-    
-    if (queryWords.length === 0) return 0;
-
-    let matchedTitleWords = 0;
-    queryWords.forEach(word => {
-      const wordLower = word.toLowerCase();
-      if (titleText.includes(wordLower) || (wordLower.endsWith('s') && titleText.includes(wordLower.slice(0, -1)))) {
-        matchedTitleWords++;
-      }
-    });
-
-    if (matchedTitleWords === 0) {
-      let fallbackMatched = false;
-      queryWords.forEach(word => {
-        const wordLower = word.toLowerCase();
-        if (descText.includes(wordLower) || catText.includes(wordLower)) {
-          fallbackMatched = true;
-        }
-      });
-      return fallbackMatched ? 10 : 0;
-    }
-
-    const percentage = 20 + (matchedTitleWords - 1) * 10;
-    return Math.min(100, percentage);
-  }, [searchText]);
-
-  const filterLocalBooks = React.useCallback((query: string) => {
-    if (!Array.isArray(localBooks)) return;
-    const lowerQuery = query.toLowerCase();
-    const filtered = localBooks.filter(book => 
-      (book.title && book.title.toLowerCase().includes(lowerQuery)) ||
-      (book.author && book.author.toLowerCase().includes(lowerQuery)) ||
-      (book.department && book.department.toLowerCase().includes(lowerQuery))
-    ).map((book, idx) => {
-      const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
-      const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
-      const category = book.department || "General";
-      const matchPercent = getMatchPercentage(book.title || "", book.description || "", category);
-      return {
-        id: `local-find-${idx}`,
-        title: book.title,
-        author: book.author,
-        description: book.description || "",
-        year: String(book.year || "2024"),
-        pages: String(book.pages || "320"),
-        language: "EN",
-        category: category,
-        rating: String(pseudoRating),
-        shelf: "General Shelf",
-        available: String(book.available !== false),
-        matchPercent: matchPercent,
-      };
-    }).sort((a, b) => b.matchPercent - a.matchPercent);
-    setSearchResults(filtered);
-  }, [getMatchPercentage]);
-
-  const performSearch = React.useCallback(async (query: string) => {
-    const trimmed = query.trim();
-    if (trimmed.length <= 1) {
-      setSearchResults([]);
-      return;
-    }
-
-    setSearching(true);
-    try {
-      const headers = await getAuthHeaders();
-      const response = await axios.get(
-        `${API_URL}/api/student/books/search?q=${encodeURIComponent(trimmed)}`,
-        headers
-      );
-
-      if (response.status === 200 && response.data?.books) {
-        const mapped = response.data.books.map((book: any) => {
-          const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
-          const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
-          const category = book.category || book.department || "General";
-          const matchPercent = getMatchPercentage(book.title || "", book.description || book.summary || "", category);
-          return {
-            id: book.id,
-            title: book.title,
-            author: book.author,
-            description: book.description || book.summary || "",
-            year: book.publicationDate ? book.publicationDate.substring(0, 4) : "2024",
-            pages: String(book.pages || 320),
-            language: book.language || "EN",
-            category: category,
-            rating: (book.rating && Number(book.rating) > 0) ? String(book.rating) : String(pseudoRating),
-            shelf: book.shelfLocation || "General Shelf",
-            available: String(book.status === "Available" || book.status === "true" || book.availability === "Available" || book.availability === "true"),
-            matchPercent: matchPercent,
-          };
-        }).sort((a: any, b: any) => b.matchPercent - a.matchPercent);
-        setSearchResults(mapped);
-      } else {
-        filterLocalBooks(trimmed);
-      }
-    } catch (error) {
-      console.log("Dashboard Search API Error, falling back to local filter:", error);
-      filterLocalBooks(trimmed);
-    } finally {
-      setSearching(false);
-    }
-  }, [filterLocalBooks, getMatchPercentage]);
-
-  React.useEffect(() => {
-    const delayDebounce = setTimeout(() => {
-      if (searchText.trim().length > 1) {
-        performSearch(searchText);
-        saveSearchQuery(searchText);
-      } else {
-        setSearchResults([]);
-      }
-    }, 400);
-
-    return () => clearTimeout(delayDebounce);
-  }, [searchText, performSearch]);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
@@ -491,48 +658,8 @@ export default function HomeScreen() {
     React.useCallback(() => {
       // Force sync announcements from backend when tab comes into focus
       syncAnnouncementsWithBackend(true);
-
-      let active = true;
-      const fetchTrending = async () => {
-        try {
-          const headers = await getAuthHeaders();
-          const response = await axios.get(`${API_URL}/api/admin/books?limit=4`, headers);
-          const booksArray = response.data?.books || response.data?.records;
-          if (response.status === 200 && Array.isArray(booksArray)) {
-            const mapped = booksArray.map((book: any) => {
-              // Generate a stable rating between 4.2 and 4.9 based on title if rating is 0 or undefined
-              const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
-              const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
-              const finalRating = (book.rating && Number(book.rating) > 0) ? String(book.rating) : String(pseudoRating);
-              
-              return {
-                id: book.id,
-                title: book.title,
-                author: book.author,
-                rating: finalRating,
-                category: book.category || book.department || "General",
-                isbn: book.isbn || "",
-                shelf: book.shelfLocation || "General Shelf",
-                available: String(book.availability === "Available" || book.availability === "true"),
-                year: book.publicationDate ? book.publicationDate.substring(0, 4) : "2024",
-                pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
-                language: book.language || "EN",
-                description: book.summary || "",
-              };
-            });
-            if (active && mapped.length > 0) {
-              setTrendingBooks(mapped);
-            }
-          }
-        } catch (error: any) {
-          console.error("Error fetching real-time trending books:", error.message || error);
-        }
-      };
-      fetchTrending();
-      return () => {
-        active = false;
-      };
-    }, [])
+      fetchBooksPayload();
+    }, [fetchBooksPayload])
   );
 
   const nextPickupDate = formatDateTime(
@@ -583,10 +710,23 @@ export default function HomeScreen() {
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
       {/* HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top, height: 70 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
-        <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
-          BookHive Monitor
-        </Text>
+      <View style={[styles.header, { paddingTop: insets.top, height: 60 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
+        <View style={styles.headerLeftContainer}>
+          <TouchableOpacity
+            style={styles.hamburgerBtn}
+            onPress={() => router.push("/settings")}
+          >
+            <Ionicons
+              name="menu-outline"
+              size={24}
+              color={theme.accentGold}
+            />
+          </TouchableOpacity>
+
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>
+            BookHive Monitor
+          </Text>
+        </View>
 
         <View style={styles.headerRight}>
           <TouchableOpacity
@@ -629,7 +769,7 @@ export default function HomeScreen() {
       >
         {/* GREETING */}
         <View style={styles.greetingContainer}>
-          <Text style={[styles.helloText, { color: theme.accentGold }]}>
+          <Text style={[styles.helloText, { color: theme.greetingAccent }]}>
             Hello, {displayName}!
           </Text>
 
@@ -641,30 +781,54 @@ export default function HomeScreen() {
         {/* SEARCH FILTER */}
         <View style={styles.searchContainer}>
           <View style={[styles.searchBarWrapper, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-            <Feather
-              name="search"
-              size={18}
-              color={theme.accentGold}
-              style={styles.searchIcon}
-            />
+            <TouchableOpacity onPress={() => handleHomeSearchSubmit()}>
+              <Feather
+                name="search"
+                size={18}
+                color={theme.accentGold}
+                style={styles.searchIcon}
+              />
+            </TouchableOpacity>
             <TextInput
               style={[styles.searchInput, { color: theme.textPrimary }]}
               placeholder="Search books & suggestions..."
               placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
               value={searchText}
               onChangeText={handleSearchTextChange}
+              onFocus={() => {
+                if (searchText.trim().length > 0) {
+                  handleHomeSearchSubmit();
+                }
+              }}
               returnKeyType="search"
-              onSubmitEditing={() => performSearch(searchText)}
+              onSubmitEditing={() => handleHomeSearchSubmit()}
             />
-            {searchText.length > 0 && (
+            {searchText.length > 0 ? (
               <TouchableOpacity
                 onPress={() => handleSearchTextChange("")}
                 style={styles.clearIcon}
               >
                 <Ionicons name="close-circle" size={20} color="#64748B" />
               </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={{ padding: 4 }} onPress={handlePickDocument} activeOpacity={0.7}>
+                <Feather name="paperclip" size={18} color={theme.accentGold} />
+              </TouchableOpacity>
             )}
           </View>
+
+          {/* SELECTED FILE PREVIEW BADGE */}
+          {selectedFile && (
+            <View style={[styles.fileBadgeChip, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+              <Ionicons name="document-text-outline" size={16} color={theme.accentGold} />
+              <Text style={[styles.fileBadgeName, { color: theme.textPrimary }]} numberOfLines={1}>
+                {selectedFile.name}
+              </Text>
+              <TouchableOpacity onPress={() => setSelectedFile(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <Ionicons name="close-circle" size={18} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* WORD SUGGESTIONS */}
@@ -690,101 +854,28 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {searchText.trim().length > 0 ? (
-          <View style={styles.searchResultsContainer}>
-            <View style={styles.searchResultsHeader}>
-              <Text style={[styles.searchResultsTitle, { color: theme.accentGold }]}>
-                {searching ? "Searching Books..." : `Search Results (${searchResults.length})`}
-              </Text>
-              {searching && <ActivityIndicator size="small" color={theme.accentGold} style={{ marginLeft: 8 }} />}
+        {/* STATS (Reordered directly underneath search bar) */}
+        <View style={styles.newStatsRow}>
+          <View style={[styles.newStatCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+            <View style={styles.newStatHeader}>
+              <Ionicons name="book-outline" size={15} color={theme.accentGold} />
+              <Text style={styles.newStatLabel}>BOOKS BORROWED</Text>
             </View>
-
-            {searchResults.length === 0 ? (
-              <View style={[styles.noResultsCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-                <Ionicons name="search-outline" size={32} color="#64748B" style={{ marginBottom: 8 }} />
-                <Text style={[styles.noResultsText, { color: theme.textPrimary }]}>
-                  {searching ? "Finding matching records..." : "No books match your query."}
-                </Text>
-                <Text style={[styles.noResultsSub, { color: theme.textSecondary }]}>
-                  Try typing different keywords or selecting the autocomplete suggestions.
-                </Text>
-              </View>
-            ) : (
-              <View style={styles.resultsGrid}>
-                {searchResults.map((book, index) => (
-                  <TouchableOpacity
-                    key={index}
-                    style={[styles.resultBookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                    activeOpacity={0.8}
-                    onPress={() =>
-                      router.push({
-                        pathname: "/book-details",
-                        params: {
-                          id: book.id,
-                          title: book.title,
-                          author: book.author,
-                          description: book.description,
-                          year: book.year,
-                          pages: book.pages,
-                          language: book.language,
-                          category: book.category,
-                          rating: book.rating,
-                          shelf: book.shelf,
-                          available: book.available,
-                          matchPercent: book.matchPercent,
-                        },
-                      })
-                    }
-                  >
-                    <View style={styles.resultBookHeader}>
-                      <Text style={styles.resultBookCategory} numberOfLines={1}>
-                        {book.category.toUpperCase()}
-                      </Text>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        {book.matchPercent !== undefined && book.matchPercent > 0 && (
-                          <View style={styles.matchBadge}>
-                            <Text style={styles.matchText}>
-                              {book.matchPercent}% MATCH
-                            </Text>
-                          </View>
-                        )}
-                        <View style={[
-                          styles.statusBadge,
-                          book.available === "true" ? styles.statusAvail : styles.statusUnavail
-                        ]}>
-                          <Text style={[styles.statusText, { color: book.available === "true" ? "#22C55E" : "#EF4444" }]}>
-                            {book.available === "true" ? "AVAILABLE" : "RESERVED"}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-
-                    <Text style={[styles.resultBookTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                      {book.title}
-                    </Text>
-
-                    <Text style={[styles.resultBookAuthor, { color: theme.textSecondary }]} numberOfLines={1}>
-                      by {book.author}
-                    </Text>
-
-                    <View style={[styles.resultBookFooter, { borderTopColor: theme.cardBorder }]}>
-                      <View style={styles.resultRatingRow}>
-                        <Ionicons name="star" size={12} color="#FFD700" />
-                        <Text style={[styles.resultRatingText, { color: theme.textSecondary }]}>
-                          {book.rating}
-                        </Text>
-                      </View>
-                      <Text style={[styles.resultBookShelf, { color: theme.textSecondary }]} numberOfLines={1}>
-                        Shelf: {book.shelf}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
+            <Text style={[styles.newStatNumber, { color: theme.accentGold }]}>
+              {borrowHistory.filter((item) => item.status === "Approved").length || 1}
+            </Text>
           </View>
-        ) : (
-          <>
+
+          <View style={[styles.newStatCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+            <View style={styles.newStatHeader}>
+              <MaterialCommunityIcons name="qrcode-scan" size={15} color={theme.accentGold} />
+              <Text style={styles.newStatLabel}>BOOKS RESERVED</Text>
+            </View>
+            <Text style={[styles.newStatNumber, { color: theme.accentGold }]}>
+              {activeReservations.length || 2}
+            </Text>
+          </View>
+        </View>
 
         {/* ANNOUNCEMENTS */}
         {announcements.length > 0 && (
@@ -836,292 +927,188 @@ export default function HomeScreen() {
           </View>
         )}
 
-        {/* TRENDING BOOKS */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.accentGold }]}>
+        {/* TRENDING BOOKS SECTION */}
+        <View style={styles.sectionHeaderMonospace}>
+          <Text style={[styles.sectionTitleMonospace, { color: theme.textPrimary }]}>
             Trending Books
           </Text>
-
-          <TouchableOpacity
-            onPress={() => {
-              setBooksTabOverride("Trending");
-              router.push("/(tabs)/books");
-            }}
-          >
-            <Text style={styles.seeAll}>
-              See All
-            </Text>
-          </TouchableOpacity>
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            styles.booksRow
-          }
-        >
-          {trendingBooks.map(
-            (book, index) => (
-              <TouchableOpacity
-                key={index}
-                style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                onPress={() =>
-                  router.push({
-                    pathname: "/book-details",
-                    params: {
-                      id: book.id,
-                      title: book.title,
-                      author: book.author,
-                      description: book.description,
-                      year: book.year,
-                      pages: book.pages,
-                      language: book.language,
-                      category: book.category,
-                      rating: book.rating,
-                      shelf: book.shelf,
-                      available: book.available,
-                    },
-                  })
-                }
+        <View style={[styles.featuredPlaceholderCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+          {isLoadingBooks ? (
+            <View style={styles.categoryLoadingBox}>
+              <ActivityIndicator size="small" color={theme.accentGold} />
+              <Text style={styles.loadingText}>Loading Trending Books...</Text>
+            </View>
+          ) : (
+            <>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onScroll={(e) => {
+                  const contentOffsetX = e.nativeEvent.contentOffset.x;
+                  const carouselWidth = Dimensions.get("window").width - 40;
+                  const idx = Math.min(
+                    4,
+                    Math.max(0, Math.round(contentOffsetX / carouselWidth))
+                  );
+                  setActiveCarouselIndex(idx);
+                }}
+                scrollEventThrottle={16}
+                style={{ width: Dimensions.get("window").width - 40 }}
               >
-                <Text style={[styles.bookTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                  {book.title}
-                </Text>
-
-                <Text
-                  style={[styles.bookAuthor, { color: theme.textSecondary }]}
-                  numberOfLines={1}
-                >
-                  {book.author}
-                </Text>
-
-                <View
-                  style={styles.ratingRow}
-                >
-                  <Ionicons
-                    name="star"
-                    size={12}
-                    color="#FFD700"
-                  />
-
-                  <Text
-                    style={[styles.ratingText, { color: theme.textSecondary }]}
-                  >
-                    {book.rating} | 158 Reviews
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )
-          )}
-        </ScrollView>
-
-        {/* RESERVATIONS */}
-        <Text
-          style={[styles.reservationTitle, { color: theme.accentGold }]}
-        >
-          Your Reservations
-        </Text>
-
-        {activeReservations.filter((book) => book.status === 'Pending' || book.status === 'Upcoming').length === 0 ? (
-          <View style={[styles.noReservationsCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-            <Ionicons name="bookmark-outline" size={24} color="#64748B" />
-            <Text style={[styles.noReservationsText, { color: theme.textSecondary }]}>No active reservations at this time.</Text>
-          </View>
-        ) : (
-          activeReservations
-            .filter((book) => book.status === 'Pending' || book.status === 'Upcoming')
-            .map((book) => {
-            if (book.status === 'Approved') {
-              return (
-                <TouchableOpacity
-                  key={book.id}
-                  style={[styles.reservationCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                  activeOpacity={0.8}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/reservation-details",
-                      params: {
-                        id: book.id,
-                        title: book.title,
-                        author: book.author,
-                        status: "Ready for Pickup",
-                        pickupDate: book.date || "",
-                      },
-                    })
-                  }
-                >
-                  <View style={styles.circleShape} />
-
-                  <View style={styles.pickupRow}>
-                    <View style={styles.bookIcon}>
-                      <Ionicons
-                        name="book-outline"
-                        size={18}
-                        color={theme.accentGold}
-                      />
-                    </View>
-
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={styles.nextPickup}
-                      >
-                        READY FOR PICKUP
-                      </Text>
-
-                      <Text
-                        style={[
-                          styles.reservationBook,
-                          { color: theme.textPrimary }
-                        ]}
-                        numberOfLines={2}
-                      >
-                        {book.title.toUpperCase()}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View
-                    style={
-                      styles.bottomReservation
+                {trendingBooks.slice(0, 5).map((book, idx) => (
+                  <TouchableOpacity
+                    key={idx}
+                    activeOpacity={0.85}
+                    style={[styles.carouselSlide, { width: Dimensions.get("window").width - 40 }]}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/book-details",
+                        params: {
+                          id: book.id,
+                          title: book.title,
+                          author: book.author,
+                          description: book.description,
+                          year: book.year,
+                          pages: book.pages,
+                          language: book.language,
+                          category: book.category,
+                          rating: book.rating,
+                          shelf: book.shelf,
+                          available: book.available,
+                        },
+                      })
                     }
                   >
-                    <View style={styles.dateRow}>
-                      <Feather
-                        name="calendar"
-                        size={14}
-                        color="#64748B"
-                      />
-
-                      <Text
-                        style={[styles.dateText, { color: theme.textSecondary }]}
-                      >
-                        Pickup: {book.date}
-                      </Text>
-                    </View>
-
-                    <View
-                      style={styles.readyButton}
-                    >
-                      <Text
-                        style={styles.readyText}
-                      >
-                        Ready
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            } else {
-              return (
-                <TouchableOpacity
-                  key={book.id}
-                  style={[styles.queueCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                  activeOpacity={0.8}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/queue-details",
-                      params: {
-                        id: book.id,
-                        title: book.title,
-                        author: book.author,
-                        description: book.description || "",
-                        year: String(book.year || ""),
-                        pages: String(book.pages || ""),
-                        language: book.language || "",
-                        category: book.category || "",
-                        available: book.available || "false",
-                        queuePosition: book.queuePosition || "1",
-                        estimatedWait: book.estimatedWait || "Pending approval",
-                        shelf: book.shelf || "General Shelf",
-                      },
-                    })
-                  }
-                >
-                  <View style={styles.queueLeft}>
-                    <View style={styles.queueIcon}>
-                      <FontAwesome5
-                        name="hourglass-half"
-                        size={14}
-                        color={theme.accentGold}
-                      />
-                    </View>
-
-                    <View style={{ flex: 1, paddingRight: 8 }}>
-                      <Text style={[styles.queueTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                    <BookCoverImage
+                      uri={book.coverImage}
+                      title={book.title}
+                      author={book.author}
+                      style={styles.carouselCoverImage}
+                      iconSize={32}
+                      showText={true}
+                    />
+                    <View style={styles.carouselContentRight}>
+                      <View style={[styles.carouselCategoryBadge, { backgroundColor: theme.badgeCategoryBg }]}>
+                        <Text style={[styles.carouselCategoryText, { color: theme.badgeCategoryText }]}>
+                          {(book.category || "TRENDING").toUpperCase()}
+                        </Text>
+                      </View>
+                      <Text style={[styles.carouselTitleText, { color: theme.textPrimary }]} numberOfLines={2}>
                         {book.title}
                       </Text>
-
-                      <Text style={styles.queueSub}>
-                        Pending approval {book.queuePosition ? `(Queue #${book.queuePosition})` : ''}
+                      <Text style={[styles.carouselAuthorText, { color: theme.textSecondary }]} numberOfLines={1}>
+                        by {book.author}
                       </Text>
+                      <View style={styles.carouselRatingRow}>
+                        <Ionicons name="star" size={12} color={theme.accentGold} />
+                        <Text style={[styles.carouselRatingText, { color: theme.accentGold }]}>{book.rating}</Text>
+                      </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
 
-                  <Feather
-                    name="chevron-right"
-                    size={18}
-                    color="#94A3B8"
+              <View style={styles.paginationDotsContainer}>
+                {trendingBooks.slice(0, 5).map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.paginationDot,
+                      idx === activeCarouselIndex
+                        ? [styles.paginationDotActive, { backgroundColor: theme.accentGold }]
+                        : [styles.paginationDotInactive, { backgroundColor: theme.badgeCategoryBorder }],
+                    ]}
                   />
-                </TouchableOpacity>
-              );
-            }
-          })
-        )}
-
-        {/* STATS */}
-        <View style={styles.statsRow}>
-          <View
-            style={[styles.borrowedCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-          >
-            <Ionicons
-              name="library-outline"
-              size={18}
-              color={theme.textPrimary}
-            />
-
-            <Text
-              style={[
-                styles.borrowedNumber,
-                { color: theme.accentGold }
-              ]}
-            >
-              {borrowHistory.filter((item) => item.status === "Approved").length}
-            </Text>
-
-            <Text
-              style={styles.borrowedText}
-            >
-              BOOKS BORROWED
-            </Text>
-          </View>
-
-          <View style={[styles.pointsCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-            <View style={styles.pointsIcon}>
-              <MaterialCommunityIcons
-                name="qrcode-scan"
-                size={16}
-                color={theme.accentGold}
-              />
-            </View>
-
-            <Text
-              style={[styles.pointsNumber, { color: theme.accentGold }]}
-            >
-              {libraryPoints}
-            </Text>
-
-            <Text
-              style={styles.pointsText}
-            >
-              LIBRARY POINTS
-            </Text>
-          </View>
+                ))}
+              </View>
+            </>
+          )}
         </View>
-          </>
-        )}
+
+        {/* NEW CATEGORY SECTIONS */}
+        {[
+          "Recommended Books",
+          "Circulation",
+          "General References",
+          "Filipiniana",
+          "Periodicals",
+          "Special Collections",
+        ].map((categoryTitle, cIndex) => {
+          const categoryBooks = getCategoryBooks(categoryTitle);
+
+          return (
+            <View key={cIndex} style={styles.categorySection}>
+              <Text style={[styles.sectionTitleMonospace, { color: theme.textPrimary }]}>
+                {categoryTitle}
+              </Text>
+              {isLoadingBooks ? (
+                <View style={styles.categoryLoadingBox}>
+                  <ActivityIndicator size="small" color={theme.accentGold} />
+                </View>
+              ) : categoryBooks.length === 0 ? (
+                <View style={[styles.emptyCategoryCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+                  <Ionicons name="folder-open-outline" size={16} color="#64748B" style={{ marginRight: 6 }} />
+                  <Text style={styles.emptyCategoryText}>No books available in this category</Text>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryCardsRow}
+                >
+                  {categoryBooks.map((book, cardIdx) => (
+                    <TouchableOpacity
+                      key={cardIdx}
+                      activeOpacity={0.85}
+                      style={[
+                        styles.categoryCard,
+                        { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+                      ]}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/book-details",
+                          params: {
+                            id: book.id,
+                            title: book.title,
+                            author: book.author,
+                            description: book.description,
+                            year: book.year,
+                            pages: book.pages,
+                            language: book.language,
+                            category: book.category,
+                            rating: book.rating,
+                            shelf: book.shelf,
+                            available: book.available,
+                          },
+                        })
+                      }
+                    >
+                      <BookCoverImage
+                        uri={book.coverImage}
+                        title={book.title}
+                        author={book.author}
+                        style={styles.categoryCardImage}
+                        iconSize={18}
+                        showText={false}
+                      />
+                      <View style={styles.categoryCardTextOverlay}>
+                        <Text style={[styles.categoryCardTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {book.title}
+                        </Text>
+                        <Text style={[styles.categoryCardAuthor, { color: theme.textSecondary }]} numberOfLines={1}>
+                          {book.author}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+          );
+        })}
 
         <View style={{ height: 120 }} />
       </ScrollView>
@@ -1239,22 +1226,32 @@ const styles = StyleSheet.create({
   },
 
   header: {
-    height: 70,
+    height: 60,
     backgroundColor: "#080F1E",
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
     paddingHorizontal: 20,
-    paddingBottom: 15,
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#111A2E",
+  },
+
+  headerLeftContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+
+  hamburgerBtn: {
+    padding: 2,
   },
 
   headerTitle: {
     color: "#F8FAFC",
     fontSize: 18,
     fontWeight: "800",
-    letterSpacing: 1.2,
+    letterSpacing: 0.8,
   },
 
   headerRight: {
@@ -1323,46 +1320,136 @@ const styles = StyleSheet.create({
 
   greetingContainer: {
     paddingHorizontal: 20,
-    marginTop: 18,
+    marginTop: 14,
   },
 
   helloText: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "800",
-    color: "#FCD34D",
+    letterSpacing: -0.3,
+    lineHeight: 30,
   },
 
   subText: {
-    marginTop: 4,
-    color: "#94A3B8",
-    fontSize: 14,
+    marginTop: 2,
+    fontSize: 13,
+    fontWeight: "500",
   },
 
   searchContainer: {
     paddingHorizontal: 20,
-    marginTop: 18,
+    marginTop: 14,
+  },
+
+  newStatsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 20,
+    marginTop: 16,
+    gap: 12,
+  },
+
+  newStatCard: {
+    flex: 1,
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  newStatHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+
+  newStatLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#8E9DAE",
+    fontFamily: "monospace",
+    letterSpacing: 0.3,
+  },
+
+  newStatNumber: {
+    fontSize: 32,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+
+  sectionHeaderMonospace: {
+    marginTop: 22,
+    marginHorizontal: 20,
+  },
+
+  sectionTitleMonospace: {
+    fontSize: 15,
+    fontWeight: "700",
+    fontFamily: "monospace",
+    color: "#8E9DAE",
+  },
+
+  featuredPlaceholderCard: {
+    marginHorizontal: 20,
+    marginTop: 12,
+    height: 170,
+    borderRadius: 16,
+    borderWidth: 1,
+    justifyContent: "flex-end",
+    alignItems: "center",
+    paddingBottom: 12,
+  },
+
+  paginationDotsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  paginationDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+
+  categorySection: {
+    marginTop: 22,
+    paddingLeft: 20,
+  },
+
+  categoryCardsRow: {
+    paddingRight: 20,
+    paddingTop: 10,
+    gap: 12,
+    flexDirection: "row",
+  },
+
+  categoryPlaceholderCard: {
+    width: 125,
+    height: 75,
+    borderRadius: 14,
+    borderWidth: 1,
   },
 
   askBox: {
-    height: 58,
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
+    height: 50,
+    borderRadius: 14,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "#1E293B",
   },
 
   askText: {
     flex: 1,
-    color: "#94A3B8",
-    marginLeft: 12,
+    marginLeft: 10,
     fontSize: 14,
   },
 
   sectionHeader: {
-    marginTop: 28,
+    marginTop: 22,
     marginHorizontal: 20,
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1370,40 +1457,42 @@ const styles = StyleSheet.create({
   },
 
   sectionTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
-    color: "#FCD34D",
   },
 
   seeAll: {
     color: "#38BDF8",
-    fontWeight: "600",
+    fontWeight: "700",
+    fontSize: 13,
   },
 
   booksRow: {
     paddingLeft: 20,
-    paddingTop: 14,
+    paddingRight: 20,
+    paddingTop: 12,
   },
 
   bookCard: {
-    width: 150,
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
+    width: 165,
+    borderRadius: 16,
     padding: 14,
-    marginRight: 14,
+    marginRight: 12,
     borderWidth: 1,
-    borderColor: "#1E293B",
+    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
 
   bookTitle: {
-    color: "#F8FAFC",
     fontSize: 14,
     fontWeight: "700",
+    lineHeight: 18,
   },
 
   bookAuthor: {
-    color: "#94A3B8",
-    fontSize: 11,
+    fontSize: 12,
     marginTop: 4,
   },
 
@@ -1414,38 +1503,35 @@ const styles = StyleSheet.create({
   },
 
   ratingText: {
-    color: "#CBD5E1",
-    fontSize: 10,
+    fontSize: 11,
     marginLeft: 6,
+    fontWeight: "600",
   },
 
   reservationTitle: {
-    marginTop: 28,
+    marginTop: 22,
     marginHorizontal: 20,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "800",
-    color: "#FCD34D",
   },
 
   reservationCard: {
-    marginTop: 16,
+    marginTop: 12,
     marginHorizontal: 20,
-    backgroundColor: "#111A2E",
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 18,
+    padding: 16,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#1E293B",
   },
 
   circleShape: {
     position: "absolute",
-    width: 130,
-    height: 130,
-    borderRadius: 80,
-    backgroundColor: "rgba(255,255,255,0.02)",
-    top: -40,
-    right: -35,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(245, 158, 11, 0.04)",
+    top: -30,
+    right: -25,
   },
 
   pickupRow: {
@@ -1454,33 +1540,29 @@ const styles = StyleSheet.create({
   },
 
   bookIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#080F1E",
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#1E293B",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 14,
+    marginRight: 12,
   },
 
   nextPickup: {
     fontSize: 10,
     fontWeight: "800",
-    color: "#38BDF8",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
   },
 
   reservationBook: {
-    marginTop: 6,
-    fontSize: 24,
+    marginTop: 4,
+    fontSize: 18,
     fontWeight: "800",
-    color: "#F8FAFC",
   },
 
   bottomReservation: {
-    marginTop: 18,
+    marginTop: 14,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -1493,33 +1575,30 @@ const styles = StyleSheet.create({
 
   dateText: {
     marginLeft: 6,
-    color: "#94A3B8",
-    fontSize: 13,
+    fontSize: 12,
   },
 
   readyButton: {
-    backgroundColor: "#F59E0B",
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 10,
   },
 
   readyText: {
     color: "#080F1E",
-    fontWeight: "700",
+    fontWeight: "800",
+    fontSize: 12,
   },
 
   queueCard: {
-    marginTop: 18,
+    marginTop: 12,
     marginHorizontal: 20,
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: 16,
+    padding: 16,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#1E293B",
   },
 
   queueLeft: {
@@ -1528,12 +1607,10 @@ const styles = StyleSheet.create({
   },
 
   queueIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "#080F1E",
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "#1E293B",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
@@ -1542,92 +1619,93 @@ const styles = StyleSheet.create({
   queueTitle: {
     fontSize: 14,
     fontWeight: "700",
-    color: "#F8FAFC",
   },
 
   queueSub: {
-    marginTop: 4,
+    marginTop: 2,
     fontSize: 12,
-    color: "#94A3B8",
   },
 
   statsRow: {
     flexDirection: "row",
     marginHorizontal: 20,
-    marginTop: 20,
+    marginTop: 16,
     justifyContent: "space-between",
   },
 
   borrowedCard: {
     width: "48%",
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "#1E293B",
+    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
   },
 
   borrowedNumber: {
-    marginTop: 12,
-    fontSize: 34,
+    marginTop: 8,
+    fontSize: 28,
     fontWeight: "800",
-    color: "#FCD34D",
   },
 
   borrowedText: {
-    marginTop: 4,
-    color: "#94A3B8",
-    fontSize: 11,
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
 
   pointsCard: {
     width: "48%",
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
-    padding: 18,
+    borderRadius: 16,
+    padding: 16,
     borderWidth: 1,
-    borderColor: "#1E293B",
+    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
   },
 
   pointsIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#080F1E",
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#1E293B",
     justifyContent: "center",
     alignItems: "center",
   },
 
   pointsNumber: {
-    marginTop: 12,
-    fontSize: 34,
+    marginTop: 8,
+    fontSize: 28,
     fontWeight: "800",
-    color: "#FCD34D",
   },
 
   pointsText: {
-    marginTop: 4,
-    fontSize: 11,
-    color: "#94A3B8",
+    marginTop: 2,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
 
   floatingButton: {
     position: "absolute",
-    right: 24,
-    bottom: 95,
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#FCD34D",
+    right: 20,
+    bottom: 15,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: "#FFD700",
     justifyContent: "center",
     alignItems: "center",
-    elevation: 6,
-    shadowColor: "#000",
+    elevation: 10,
+    shadowColor: "#FFD700",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 8,
+    zIndex: 99,
   },
 
   announcementsContainer: {
@@ -2010,5 +2088,146 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#64748B",
     maxWidth: "70%",
+  },
+  carouselSlide: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    paddingBottom: 24,
+    height: 170,
+  },
+  carouselCoverImage: {
+    width: 90,
+    height: 125,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  carouselContentRight: {
+    flex: 1,
+    marginLeft: 14,
+    justifyContent: "center",
+  },
+  carouselCategoryBadge: {
+    backgroundColor: "rgba(255, 215, 0, 0.15)",
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    marginBottom: 6,
+  },
+  carouselCategoryText: {
+    color: "#FFD700",
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  carouselTitleText: {
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  carouselAuthorText: {
+    fontSize: 12,
+    marginBottom: 8,
+  },
+  carouselRatingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  carouselRatingText: {
+    color: "#FFD700",
+    fontSize: 11,
+    fontWeight: "700",
+    marginLeft: 4,
+  },
+  paginationDotActive: {
+    width: 16,
+    backgroundColor: "#FFD700",
+  },
+  paginationDotInactive: {
+    width: 6,
+    backgroundColor: "rgba(255, 215, 0, 0.3)",
+  },
+  categoryCard: {
+    width: 130,
+    height: 115,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  categoryCardImage: {
+    width: "100%",
+    height: 72,
+  },
+  categoryCardTextOverlay: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    justifyContent: "center",
+  },
+  categoryCardTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  categoryCardAuthor: {
+    fontSize: 9,
+  },
+  fallbackCoverContainer: {
+    backgroundColor: "#0B162C",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 6,
+  },
+  fallbackCoverTitle: {
+    color: "#8E9DAE",
+    fontSize: 9,
+    fontWeight: "700",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  emptyCategoryCard: {
+    marginRight: 20,
+    marginTop: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCategoryText: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "600",
+    fontFamily: "monospace",
+  },
+  categoryLoadingBox: {
+    paddingVertical: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  loadingText: {
+    color: "#8E9DAE",
+    fontSize: 12,
+    fontWeight: "600",
+    fontFamily: "monospace",
+  },
+  fileBadgeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    gap: 8,
+    alignSelf: "flex-start",
+  },
+  fileBadgeName: {
+    fontSize: 12,
+    fontWeight: "600",
+    maxWidth: 220,
   },
 });

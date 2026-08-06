@@ -256,17 +256,7 @@ export default function BookDetailsScreen() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleBack = () => {
-    if (from === 'home') {
-      router.replace('/');
-    } else if (from === 'search') {
-      router.replace('/search');
-    } else if (from === 'reservations') {
-      router.replace('/reservations');
-    } else if (from === 'profile') {
-      router.replace('/profile');
-    } else {
-      router.replace('/');
-    }
+    router.replace("/(tabs)");
   };
 
   const handleCopyCitation = async () => {
