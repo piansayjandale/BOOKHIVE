@@ -16,13 +16,14 @@ import {
   RefreshCcw,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
+import { Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis, Cell } from "recharts";
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
 import type { SearchResult, Department, BookRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/components/providers/session-provider";
+import { transformDepartmentData, type DepartmentData } from "@/lib/department-transformer";
 
 // Figma Design Color Palette
 const colors = {
@@ -126,10 +127,17 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     };
   }, [announcementsList]);
 
+  const formattedDepartments = useMemo(() => {
+    return transformDepartmentData(departmentUsage);
+  }, [departmentUsage]);
+
   const fetchDashboardData = useCallback(async () => {
     try {
       const res = await fetch("/api/admin/dashboard");
-      if (!res.ok) throw new Error("Failed to fetch dashboard data");
+      if (!res.ok) {
+        console.warn("Failed to fetch dashboard data, status:", res.status);
+        return;
+      }
       const data = await res.json();
       if (data.summary) {
         setSummary({
@@ -146,7 +154,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
       if (data.latestTransactions) setLatestTransactions(data.latestTransactions);
       if (data.systemHealth) setSystemHealth(data.systemHealth);
     } catch (err) {
-      console.error("Error fetching dashboard:", err);
+      console.warn("Error fetching dashboard:", err);
     }
   }, []);
 
@@ -593,42 +601,68 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
               transition={{ duration: 0.5, delay: 0.4 }}
               className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--card-bg)] p-6 shadow-sm"
             >
-              <div className="mb-8">
+              <div className="mb-6">
                 <h2 className="text-[22px] font-bold text-white tracking-wide">Most Active Departments</h2>
-                <p className="mt-2 text-[15px] font-light text-slate-300">Transaction volume by department.</p>
+                <p className="mt-1 text-[15px] font-light text-slate-300">Student enrollment count by department.</p>
               </div>
 
-              <div className="h-[280px] w-full flex items-center justify-center">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={
-                        departmentUsage.length > 0
-                          ? departmentUsage
-                          : [{ department: "No Data", usage: 1 }]
-                      }
-                      dataKey="usage"
-                      nameKey="department"
-                      innerRadius={0}
-                      outerRadius={110}
-                      fill="#2563eb"
-                      stroke="#ffffff"
-                      strokeWidth={1}
-                      isAnimationActive={false}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: "#0F1D29",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        color: "#fff",
-                        borderRadius: "12px",
-                        fontSize: "12px",
-                        boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
-                      }}
-                      itemStyle={{ color: "#fff", fontWeight: "bold" }}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
+              <div className="h-[280px] w-full flex flex-row items-center justify-between gap-4">
+                <div className="h-full flex-1 min-w-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={formattedDepartments}
+                        dataKey="count"
+                        nameKey="code"
+                        innerRadius={55}
+                        outerRadius={95}
+                        paddingAngle={3}
+                        stroke="#0F1D29"
+                        strokeWidth={2}
+                        isAnimationActive={true}
+                      >
+                        {formattedDepartments.map((entry: DepartmentData) => (
+                          <Cell key={`cell-${entry.code}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(value: any, name: any, props: any) => [
+                          `${value} Students`,
+                          `${props?.payload?.code ?? name} (${props?.payload?.mascot ?? ""})`,
+                        ]}
+                        contentStyle={{
+                          backgroundColor: "#0F1D29",
+                          border: "1px solid rgba(255,255,255,0.1)",
+                          color: "#fff",
+                          borderRadius: "12px",
+                          fontSize: "12px",
+                          boxShadow: "0 10px 25px rgba(0,0,0,0.5)",
+                        }}
+                        itemStyle={{ color: "#fff", fontWeight: "bold" }}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Legend list beside the chart matching Picture 2 layout */}
+                <div className="w-[195px] flex flex-col gap-2.5 overflow-y-auto max-h-full pr-1 border-l border-white/10 pl-4 justify-center self-center">
+                  {formattedDepartments.map((item: DepartmentData) => (
+                    <div key={item.code} className="flex items-start gap-2.5">
+                      <div
+                        className="h-3 w-3 rounded-full shrink-0 mt-0.5"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xs font-bold text-white leading-none truncate">
+                          {item.code}
+                        </span>
+                        <span className="text-[11px] text-slate-400 font-normal mt-1 truncate">
+                          {item.mascot} ({item.count})
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </motion.section>
 

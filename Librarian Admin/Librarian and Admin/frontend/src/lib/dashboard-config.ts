@@ -17,7 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export type DashboardVariant = "admin" | "librarian";
+export type DashboardVariant = "admin" | "librarian" | "technical" | "circulation";
 
 export interface DashboardNavItem {
   href: string;
@@ -52,20 +52,47 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
       { href: "/admin/settings", label: "Settings", icon: Settings2 },
     ],
   },
+  technical: {
+    label: "BOOKHIVE",
+    title: "TECHNICAL LIBRARIAN",
+    description: "CATALOGING & ACQUISITIONS",
+    profileLabel: "Technical Librarian",
+    basePath: "/technical",
+    navItems: [
+      { href: "/technical", label: "Home", icon: Home },
+      { href: "/technical/records", label: "Add & Manage Books", icon: ClipboardList },
+      { href: "/technical/history", label: "Catalog History", icon: History },
+      { href: "/technical/settings", label: "Settings", icon: Settings },
+    ],
+  },
+  circulation: {
+    label: "BOOKHIVE",
+    title: "CIRCULATION LIBRARIAN",
+    description: "CIRCULATION & LOANS CONTROL",
+    profileLabel: "Circulation Librarian",
+    basePath: "/circulation",
+    navItems: [
+      { href: "/circulation", label: "Home", icon: Home },
+      { href: "/circulation/records", label: "Catalog View", icon: ClipboardList },
+      { href: "/circulation/transactions", label: "Transactions", icon: Sparkles },
+      { href: "/circulation/reminders", label: "Violations & Reminders", icon: BellRing },
+      { href: "/circulation/history", label: "History", icon: History },
+      { href: "/circulation/settings", label: "Settings", icon: Settings },
+    ],
+  },
   librarian: {
     label: "BOOKHIVE",
-    title: "BOOKHIVE LIBRARIAN",
+    title: "CIRCULATION LIBRARIAN",
     description: "CIRCULATION CONTROL",
-    profileLabel: "Librarian",
+    profileLabel: "Circulation Librarian",
     basePath: "/librarian",
     navItems: [
       { href: "/librarian", label: "Home", icon: Home },
-      { href: "/librarian/records", label: "Records", icon: ClipboardList },
+      { href: "/librarian/records", label: "Catalog View", icon: ClipboardList },
       { href: "/librarian/transactions", label: "Transactions", icon: Sparkles },
       { href: "/librarian/reminders", label: "Violations & Reminders", icon: BellRing },
       { href: "/librarian/history", label: "History", icon: History },
       { href: "/librarian/settings", label: "Settings", icon: Settings },
     ],
   },
-
 };

@@ -140,7 +140,7 @@ export default function Layout() {
       <Tabs.Screen
         name="reservations"
         options={{
-          title: "Reservations",
+          title: "Book Card",
           tabBarIcon: ({ color, focused }) => (
             <View
               style={
@@ -162,7 +162,7 @@ export default function Layout() {
               }
             >
               <MaterialCommunityIcons
-                name="bookmark-outline"
+                name={focused ? "card-bulleted" : "card-bulleted-outline"}
                 size={22}
                 color={focused ? activeColor : color}
               />

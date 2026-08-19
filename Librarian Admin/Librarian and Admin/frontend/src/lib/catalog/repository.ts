@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 
+import dashboardSocket from "@/lib/socket";
 import { getCatalogDb } from "@/lib/catalog/db";
 import { readCatalogImportSnapshot, writeCatalogImportSnapshot } from "@/lib/catalog/import-snapshot";
 import {
@@ -1012,7 +1013,9 @@ export const catalogRepository = {
       const database = await getCatalogDb();
       const book = createInsertedBookInput(input);
       const row = await insertBookRow(database, book);
-      return mapBookRow(row);
+      const result = mapBookRow(row);
+      dashboardSocket.publishBookAdded(result);
+      return result;
     } catch (error) {
       console.error("Catalog addBook failed, falling back to in-memory:", error);
       return this.addBookInMemory(input);
@@ -1030,6 +1033,7 @@ export const catalogRepository = {
     const current = getSeedCatalogBooks();
     current.push(mapped);
     writeCatalogImportSnapshot(current);
+    dashboardSocket.publishBookAdded(mapped);
     return mapped;
   },
 

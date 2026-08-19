@@ -1,11 +1,13 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../components/AnimatedScreen";
 import { useThemeColors } from "../hooks/useThemeColors";
@@ -84,10 +86,20 @@ export default function RequestConfirmation() {
     studentIDImage: (params.studentIDImage as string) || "",
   };
 
-  const handleConfirm = () => {
-    addReservation(book);
-    addLibraryPoints(isBorrow ? 50 : 30); // Award 50 pts for borrowing, 30 pts for reserving
-    router.replace("/reservations");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleConfirm = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await addReservation(book);
+      addLibraryPoints(isBorrow ? 50 : 30); // Award 50 pts for borrowing, 30 pts for reserving
+      router.replace("/reservations");
+    } catch (err) {
+      console.error("Confirmation error:", err);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -195,24 +207,36 @@ export default function RequestConfirmation() {
           </View>
 
           <TouchableOpacity
-            style={[styles.confirmBtn, { backgroundColor: theme.accentGold }]}
+            style={[
+              styles.confirmBtn,
+              { backgroundColor: theme.accentGold },
+              isSubmitting && { opacity: 0.6 }
+            ]}
+            disabled={isSubmitting}
             onPress={handleConfirm}
           >
-            <Ionicons
-              name="checkmark-circle"
-              size={22}
-              color={isDarkMode ? "#080F1E" : "#FFFFFF"}
-            />
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color={isDarkMode ? "#080F1E" : "#FFFFFF"} />
+            ) : (
+              <>
+                <Ionicons
+                  name="checkmark-circle"
+                  size={22}
+                  color={isDarkMode ? "#080F1E" : "#FFFFFF"}
+                />
 
-            <Text style={[styles.confirmText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]}>
-              {isBorrow ? 'Confirm Borrow Request' : 'Confirm Reservation'}
-            </Text>
+                <Text style={[styles.confirmText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]}>
+                  {isBorrow ? 'Confirm Borrow Request' : 'Confirm Reservation'}
+                </Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
       </ScrollView>
     </AnimatedScreen>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {

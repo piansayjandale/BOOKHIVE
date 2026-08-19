@@ -19,6 +19,8 @@ import {
   ClipboardList,
   BellRing,
   History as HistoryIcon,
+  FileUp,
+  Tag,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis, Cell, LabelList } from "recharts";
@@ -28,6 +30,7 @@ import { BookDetailModal } from "@/components/ui/book-detail-modal";
 import type { SearchResult, Department, BookRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/components/providers/session-provider";
+import { transformDepartmentData, type DepartmentData } from "@/lib/department-transformer";
 
 // Figma Design Color Palette
 const colors = {
@@ -41,6 +44,9 @@ const colors = {
   textGray: "#94A3B8", // RGB(148, 163, 184)
   lightBg: "#F1F5F9", // RGB(241, 245, 249)
 };
+
+// Warm Amber/Orange Palette matching System Accent & Most Active Books Chart
+const amberPalette = ["#FF9F1C", "#F39C12", "#E67E22", "#D35400", "#FFB703", "#FB8500", "#B45309"];
 
 const emptyBookForm = {
   title: "",
@@ -64,7 +70,7 @@ const emptyAnnouncementForm = {
 };
 
 interface DashboardProps {
-  variant?: "librarian" | "admin";
+  variant?: "librarian" | "admin" | "technical" | "circulation";
 }
 
 export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
@@ -110,20 +116,17 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   const loadAnnouncementStats = useCallback(async () => {
     try {
       const res = await fetch("/api/announcements");
-      if (res.status === 401) {
-        await logout();
+      if (!res.ok) {
         return;
       }
-      if (res.ok) {
-        const data = await res.json();
-        if (data.announcements) {
-          setAnnouncementsList(data.announcements);
-        }
+      const data = await res.json();
+      if (data.announcements) {
+        setAnnouncementsList(data.announcements);
       }
     } catch (err) {
       console.error(err);
     }
-  }, [logout]);
+  }, []);
 
   useEffect(() => {
     void loadAnnouncementStats();
@@ -137,14 +140,17 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     };
   }, [announcementsList]);
 
+  const formattedDepartments = useMemo(() => {
+    return transformDepartmentData(departmentUsage);
+  }, [departmentUsage]);
+
   const fetchDashboardData = useCallback(async () => {
     try {
       const res = await fetch("/api/dashboard");
-      if (res.status === 401) {
-        await logout();
+      if (!res.ok) {
+        console.warn("Failed to fetch dashboard data, status:", res.status);
         return;
       }
-      if (!res.ok) throw new Error("Failed to fetch dashboard data");
       const data = await res.json();
       if (data.summary) {
         setSummary({
@@ -161,9 +167,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
       if (data.latestTransactions) setLatestTransactions(data.latestTransactions);
       if (data.systemHealth) setSystemHealth(data.systemHealth);
     } catch (err) {
-      console.error("Error fetching dashboard:", err);
+      console.warn("Error fetching dashboard:", err);
     }
-  }, [logout]);
+  }, []);
 
   const [newArrivals, setNewArrivals] = useState<any[]>([]);
   const [trendingTab, setTrendingTab] = useState<"trending" | "new">("trending");
@@ -195,7 +201,14 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     if (!searchQuery.trim()) {
       return;
     }
-    const basePath = variant === "admin" ? "/admin" : "/librarian";
+    const basePath =
+      variant === "admin"
+        ? "/admin"
+        : variant === "technical"
+        ? "/technical"
+        : variant === "circulation"
+        ? "/circulation"
+        : "/librarian";
     router.push(
       `${basePath}/ai-prompt-search?query=${encodeURIComponent(searchQuery)}&department=${encodeURIComponent(
         selectedCategory,
@@ -621,8 +634,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
         {/* Left Column (Span 2) */}
         <div className="flex flex-col gap-6 lg:col-span-2">
           {/* Charts Row */}
-          {variant !== "librarian" && (
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {/* Most Active Departments */}
             <motion.section
               initial={{ opacity: 0, x: -20 }}
@@ -630,9 +642,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
               transition={{ duration: 0.5, delay: 0.4 }}
               className="flex flex-col rounded-2xl border border-[var(--line)] bg-[var(--card-bg)] p-6 shadow-sm"
             >
-              <div className="mb-8">
+              <div className="mb-6">
                 <h2 className="text-[22px] font-bold text-white tracking-wide">Most Active Departments</h2>
-                <p className="mt-2 text-[15px] font-light text-slate-300">Student enrollment count by department.</p>
+                <p className="mt-1 text-[15px] font-light text-slate-300">Student enrollment count by department.</p>
               </div>
 
               <div className="h-[280px] w-full flex flex-row items-center justify-between gap-4">
@@ -640,21 +652,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                       <Pie
-                        data={
-                          departmentUsage.length > 0
-                            ? departmentUsage
-                            : [
-                                { department: "College of Information and Communications Technology (CICT)", key: "CICT", usage: 45, color: "#EF4444", team: "Red Sentinels" },
-                                { department: "College of Engineering (COE)", key: "COE", usage: 35, color: "#F97316", team: "Orange Erudites" },
-                                { department: "College of Business Management and Accountancy (CBMA)", key: "CBMA", usage: 28, color: "#FACC15", team: "Yellow Tycoons" },
-                                { department: "College of Arts and Sciences (CAS)", key: "CAS", usage: 22, color: "#10B981", team: "Green Titans" },
-                                { department: "College of Education (CED)", key: "CED", usage: 18, color: "#3B82F6", team: "Blue Guardians" },
-                                { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", usage: 15, color: "#EC4899", team: "Pink Vikings" },
-                                { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", usage: 12, color: "#8B5CF6", team: "Purple Wizards" }
-                              ]
-                        }
-                        dataKey="usage"
-                        nameKey="department"
+                        data={formattedDepartments}
+                        dataKey="count"
+                        nameKey="code"
                         innerRadius={55}
                         outerRadius={95}
                         paddingAngle={3}
@@ -662,15 +662,15 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         strokeWidth={2}
                         isAnimationActive={true}
                       >
-                        {(departmentUsage.length > 0 ? departmentUsage : [
-                          { color: "#EF4444" }, { color: "#F97316" }, { color: "#FACC15" }, 
-                          { color: "#10B981" }, { color: "#3B82F6" }, { color: "#EC4899" }, { color: "#8B5CF6" }
-                        ]).map((entry: any, index: number) => (
-                           <Cell key={`cell-${index}`} fill={entry.color || "#2563eb"} />
+                        {formattedDepartments.map((entry: DepartmentData) => (
+                          <Cell key={`cell-${entry.code}`} fill={entry.color} />
                         ))}
                       </Pie>
                       <Tooltip
-                        formatter={(value) => [value, "Students"]}
+                        formatter={(value: any, name: any, props: any) => [
+                          `${value} Students`,
+                          `${props?.payload?.code ?? name} (${props?.payload?.mascot ?? ""})`,
+                        ]}
                         contentStyle={{
                           backgroundColor: "#0F1D29",
                           border: "1px solid rgba(255,255,255,0.1)",
@@ -685,25 +685,20 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   </ResponsiveContainer>
                 </div>
 
-                {/* Legend list beside the chart */}
-                <div className="w-[190px] flex flex-col gap-2.5 overflow-y-auto max-h-full pr-1 border-l border-white/5 pl-3 self-center">
-                  {(departmentUsage.length > 0 ? departmentUsage : [
-                    { department: "College of Information and Communications Technology (CICT)", key: "CICT", usage: 45, color: "#EF4444", team: "Red Sentinels" },
-                    { department: "College of Engineering (COE)", key: "COE", usage: 35, color: "#F97316", team: "Orange Erudites" },
-                    { department: "College of Business Management and Accountancy (CBMA)", key: "CBMA", usage: 28, color: "#FACC15", team: "Yellow Tycoons" },
-                    { department: "College of Arts and Sciences (CAS)", key: "CAS", usage: 22, color: "#10B981", team: "Green Titans" },
-                    { department: "College of Education (CED)", key: "CED", usage: 18, color: "#3B82F6", team: "Blue Guardians" },
-                    { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", usage: 15, color: "#EC4899", team: "Pink Vikings" },
-                    { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", usage: 12, color: "#8B5CF6", team: "Purple Wizards" }
-                  ]).map((item: any, index: number) => (
-                    <div key={index} className="flex items-start gap-2">
-                      <div className="h-2.5 w-2.5 rounded-full shrink-0 mt-0.5" style={{ backgroundColor: item.color }} />
+                {/* Legend list beside the chart matching Picture 2 layout */}
+                <div className="w-[195px] flex flex-col gap-2.5 overflow-y-auto max-h-full pr-1 border-l border-white/10 pl-4 justify-center self-center">
+                  {formattedDepartments.map((item: DepartmentData) => (
+                    <div key={item.code} className="flex items-start gap-2.5">
+                      <div
+                        className="h-3 w-3 rounded-full shrink-0 mt-0.5"
+                        style={{ backgroundColor: item.color }}
+                      />
                       <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-bold text-white leading-none truncate" title={item.department}>
-                          {item.key || item.department.split("(")[1]?.replace(")", "") || item.department}
+                        <span className="text-xs font-bold text-white leading-none truncate">
+                          {item.code}
                         </span>
-                        <span className="text-[9px] text-slate-400 font-light mt-0.5 truncate" title={item.team}>
-                          {item.team} ({item.usage})
+                        <span className="text-[11px] text-slate-400 font-normal mt-1 truncate">
+                          {item.mascot} ({item.count})
                         </span>
                       </div>
                     </div>
@@ -768,7 +763,6 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
               </div>
             </motion.section>
           </div>
-          )}
 
           {/* Command Shortcuts */}
           <motion.section
@@ -836,19 +830,35 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 </button>
               )}
 
-              <button
-                suppressHydrationWarning
-                onClick={() => router.push(variant === "admin" ? "/admin/transactions" : "/librarian/transactions")}
-                className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
-              >
-                <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
-                <div className="z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-400 shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]">
-                  <Sparkles className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
-                </div>
-                <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
-                  CIRCULATION
-                </span>
-              </button>
+              {variant === "technical" ? (
+                <button
+                  suppressHydrationWarning
+                  onClick={() => router.push("/technical/records?action=import")}
+                  className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                  <div className="z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-400 shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]">
+                    <FileUp className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
+                  </div>
+                  <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
+                    BATCH_IMPORT
+                  </span>
+                </button>
+              ) : (
+                <button
+                  suppressHydrationWarning
+                  onClick={() => router.push(variant === "admin" ? "/admin/transactions" : "/librarian/transactions")}
+                  className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                  <div className="z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-400 shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]">
+                    <Sparkles className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
+                  </div>
+                  <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
+                    CIRCULATION
+                  </span>
+                </button>
+              )}
 
               {variant === "admin" ? (
                 <button
@@ -875,6 +885,20 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   </div>
                   <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
                     ANNOUNCEMENTS
+                  </span>
+                </button>
+              ) : variant === "technical" ? (
+                <button
+                  suppressHydrationWarning
+                  onClick={() => router.push("/technical/records")}
+                  className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                  <div className="z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-400 shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]">
+                    <Tag className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
+                  </div>
+                  <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
+                    CATALOG_METADATA
                   </span>
                 </button>
               ) : (
@@ -958,7 +982,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                                 "inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border",
                                 book.availability === "Available" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
                                 book.availability === "Reserved" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                                "bg-sky-500/10 text-sky-400 border-sky-500/20"
+                                "bg-red-500/10 text-red-400 border-red-500/20"
                               )}>
                                 {book.availability}
                               </span>
@@ -979,7 +1003,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                                 "inline-flex items-center rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider border",
                                 book.availability === "Available" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
                                 book.availability === "Reserved" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                                "bg-sky-500/10 text-sky-400 border-sky-500/20"
+                                "bg-red-500/10 text-red-400 border-red-500/20"
                               )}>
                                 {book.availability}
                               </span>
@@ -987,6 +1011,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                           </tr>
                         ))
                       )}
+
 
                       {((trendingTab === "trending" && topBooks.length === 0) || 
                         (trendingTab === "new" && newArrivals.length === 0)) && (

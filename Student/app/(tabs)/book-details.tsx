@@ -8,7 +8,9 @@ import {
   Alert,
   Modal,
   TouchableWithoutFeedback,
+  ActivityIndicator,
 } from "react-native";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
 import * as Clipboard from "expo-clipboard";
@@ -59,9 +61,13 @@ export default function BookDetailsScreen() {
     (params.author as string) ||
     "Unknown Author";
 
+  const isbn =
+    (params.isbn as string) || "";
+
   const description =
     (params.description as string) ||
     "No description available.";
+
 
   const year =
     (params.year as string) || "2024";
@@ -88,9 +94,6 @@ export default function BookDetailsScreen() {
     (params.shelf as string) ||
     "Shelf A-102, 2nd Floor";
 
-  const available =
-    (params.available as string) === "true";
-
   const [reservations, setReservations] =
     useState<ReservationBook[]>(
       getReservations()
@@ -98,6 +101,76 @@ export default function BookDetailsScreen() {
 
   const [isFav, setIsFav] = useState(isBookFavorite(id));
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cancelModalVisible, setCancelModalVisible] = useState(false);
+
+  const activeRequest = reservations.find(
+    (book) =>
+      book.id === id ||
+      (isbn && book.isbn === isbn) ||
+      (params.isbn && book.isbn === params.isbn) ||
+      (book.title && title && book.title.toLowerCase() === title.toLowerCase())
+  );
+  const isReserved = !!activeRequest;
+  const requestStatus = activeRequest?.status; // 'Approved', 'Pending', 'Upcoming', etc.
+  const isPendingApproval = isReserved && requestStatus !== 'Approved' && requestStatus !== 'Completed';
+  const isApprovedLoan = isReserved && requestStatus === 'Approved';
+
+  const rawStatus = (params.status as string) || "";
+  const rawAvailable = (params.available as string) || "";
+
+  // Available condition: check if explicit available flag, status, or active loan
+  const isExplicitlyUnavailable =
+    rawAvailable === "false" ||
+    rawAvailable.toLowerCase() === "unavailable" ||
+    rawStatus.toLowerCase() === "unavailable" ||
+    rawStatus.toLowerCase() === "declined" ||
+    isApprovedLoan;
+
+  const isReservedByOther =
+    !isExplicitlyUnavailable &&
+    (rawAvailable.toLowerCase() === "reserved" ||
+      rawStatus.toLowerCase() === "reserved" ||
+      isPendingApproval);
+
+  const isAvailable =
+    !isExplicitlyUnavailable &&
+    !isReservedByOther &&
+    (rawAvailable === "true" ||
+      rawAvailable.toLowerCase() === "available" ||
+      rawStatus.toLowerCase() === "available" ||
+      (!rawAvailable && !rawStatus && !isReserved));
+
+  const getStatusBadgeStyle = () => {
+    if (isExplicitlyUnavailable || (!isAvailable && !isReservedByOther)) {
+      return {
+        label: "Currently Unavailable",
+        dot: "#EF4444",
+        border: "#EF4444",
+        bg: "rgba(239, 68, 68, 0.15)",
+        text: "#EF4444",
+      };
+    }
+    if (isReservedByOther) {
+      return {
+        label: "Reserved",
+        dot: "#F97316",
+        border: "#F97316",
+        bg: "rgba(249, 115, 22, 0.15)",
+        text: "#F97316",
+      };
+    }
+    return {
+      label: "Available",
+      dot: "#22C55E",
+      border: "#22C55E",
+      bg: "rgba(34, 197, 94, 0.15)",
+      text: "#22C55E",
+    };
+  };
+
+  const badgeStyle = getStatusBadgeStyle();
+
 
   useEffect(() => {
     if (!hasBookDetails) {
@@ -119,7 +192,7 @@ export default function BookDetailsScreen() {
       language,
       category,
       shelf,
-      available: String(available),
+      available: String(isAvailable),
       rating,
       reviews,
     };
@@ -131,7 +204,7 @@ export default function BookDetailsScreen() {
     });
 
     return unsubscribe;
-  }, [hasBookDetails, router, id]);
+  }, [hasBookDetails, router, id, isAvailable]);
 
   const toggleFav = () => {
     const currentBookObj = {
@@ -144,7 +217,7 @@ export default function BookDetailsScreen() {
       language,
       category,
       shelf,
-      available: String(available),
+      available: String(isAvailable),
       rating,
       reviews,
     };
@@ -228,11 +301,8 @@ export default function BookDetailsScreen() {
   const from =
     (params.from as string) || "search";
 
-  const activeRequest = reservations.find((book) => book.id === id);
-  const isReserved = !!activeRequest;
-  const requestStatus = activeRequest?.status; // 'Approved', 'Pending', 'Upcoming', etc.
-
   const citationFormats = [
+
     { key: "APA_7", label: "APA 7th Citation", format: () => `${author} (${year}). ${title}. BookHive Academic Library.` },
     { key: "APA_6", label: "APA (Sixth Edition)", format: () => `${author}. (${year}). ${title}. BookHive Academic Library.` },
     { key: "Chicago_17", label: "Chicago 17th Citation", format: () => `${author}, ${title} (BookHive Academic Library, ${year}).` },
@@ -273,38 +343,9 @@ export default function BookDetailsScreen() {
   };
 
   const handleReservation = async () => {
-    if (isReserved) {
-      if (requestStatus === 'Approved') {
-        Alert.alert(
-          "Active Loan",
-          `You currently have an active loan for "${title}". Please return the book to the library when finished.`
-        );
-        return;
-      }
+    if (isSubmitting) return;
 
-      Alert.alert(
-        "Cancel Request",
-        `Are you sure you want to cancel your request for "${title}"?`,
-        [
-          { text: "No", style: "cancel" },
-          {
-            text: "Yes",
-            style: "destructive",
-            onPress: async () => {
-              await removeReservation(id);
-              setReservations(getReservations());
-              Alert.alert(
-                "Request Cancelled",
-                `Your request for "${title}" has been cancelled.`
-              );
-            }
-          }
-        ]
-      );
-      return;
-    }
-
-    if (available) {
+    if (isAvailable) {
       router.push({
         pathname: '/borrow',
         params: {
@@ -315,43 +356,48 @@ export default function BookDetailsScreen() {
           action: 'Borrow',
         },
       });
-    } else {
-      try {
-        const reservationDate = new Date();
-        const returnDate = new Date();
-        returnDate.setDate(returnDate.getDate() + 7);
-        
-        const formattedResDate = reservationDate.toISOString().replace('T', ' ').substring(0, 16);
-        const formattedReturnDate = returnDate.toISOString().split('T')[0];
+      return;
+    }
 
-        const profile = getStudentProfile();
+    setIsSubmitting(true);
+    try {
+      const reservationDate = new Date();
+      const returnDate = new Date();
+      returnDate.setDate(returnDate.getDate() + 7);
+      
+      const formattedResDate = reservationDate.toISOString().replace('T', ' ').substring(0, 16);
+      const formattedReturnDate = returnDate.toISOString().split('T')[0];
 
-        await addReservation({
-          id: id,
-          title: title,
-          author: author,
-          isbn: (params.isbn as string) || '',
-          category: category,
-          date: formattedReturnDate,
-          pickupDate: formattedResDate,
-          returnDate: formattedReturnDate,
-          status: 'Pending',
-          action: 'Reserve',
-          studentName: profile?.name || 'Bernadette Ramos',
-          studentId: profile?.studentId || '2025-0001',
-          department: departmentLocation || 'Circulation Section',
-        });
+      const profile = getStudentProfile();
 
-        Alert.alert(
-          "Book Reserved Successfully",
-          `You have reserved "${title}". You will be notified when it becomes available.`
-        );
-        setReservations(getReservations());
-      } catch (error) {
-        console.error("Direct reservation failed:", error);
-      }
+      await addReservation({
+        id: id,
+        title: title,
+        author: author,
+        isbn: (params.isbn as string) || '',
+        category: category,
+        date: formattedReturnDate,
+        pickupDate: formattedResDate,
+        returnDate: formattedReturnDate,
+        status: 'Pending',
+        action: 'Reserve',
+        studentName: profile?.name || 'Student',
+        studentId: profile?.studentId || '2025-0001',
+        department: departmentLocation || 'Circulation Section',
+      });
+
+      Alert.alert(
+        "Book Reserved Successfully",
+        `You have reserved "${title}". You will be notified when it becomes available.`
+      );
+      setReservations(getReservations());
+    } catch (error) {
+      console.error("Direct reservation failed:", error);
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
 
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
@@ -405,22 +451,43 @@ export default function BookDetailsScreen() {
 
             <View style={{ alignItems: "flex-end", gap: 6 }}>
               <View
-                style={
-                  styles.availableBadge
-                }
+                style={[
+                  styles.availableBadge,
+                  {
+                    backgroundColor: badgeStyle.bg,
+                    borderColor: badgeStyle.border,
+                  },
+                ]}
               >
                 <View
-                  style={styles.greenDot}
+                  style={[styles.statusDot, { backgroundColor: badgeStyle.dot }]}
                 />
 
                 <Text
-                  style={
-                    styles.availableText
-                  }
+                  style={[
+                    styles.availableText,
+                    { color: badgeStyle.text },
+                  ]}
                 >
-                  {available ? 'Available' : 'Currently Unavailable'}
+                  {badgeStyle.label}
                 </Text>
               </View>
+
+              {/* Active Loan status badge moved below Currently Unavailable */}
+              {isApprovedLoan && (
+                <View style={styles.topActiveLoanBadge}>
+                  <Ionicons name="checkmark-circle-outline" size={13} color="#10B981" style={{ marginRight: 4 }} />
+                  <Text style={styles.topActiveLoanText}>Active Loan</Text>
+                </View>
+              )}
+
+              {/* Pending Approval Badge directly underneath top availability status indicator */}
+              {isPendingApproval && (
+                <View style={styles.topPendingApprovalBadge}>
+                  <Ionicons name="time-outline" size={13} color="#F59E0B" style={{ marginRight: 4 }} />
+                  <Text style={styles.topPendingApprovalText}>Pending Approval</Text>
+                </View>
+              )}
 
               {params.matchPercent !== undefined && Number(params.matchPercent) > 0 && (
                 <View style={styles.matchBadge}>
@@ -430,6 +497,7 @@ export default function BookDetailsScreen() {
                 </View>
               )}
             </View>
+
           </View>
 
           {/* RATING */}
@@ -513,20 +581,25 @@ export default function BookDetailsScreen() {
           </View>
 
           {/* LOCATION */}
-          <View style={[styles.locationBox, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
-            <View
-              style={styles.locationRow}
-            >
-              <Feather
-                name="map-pin"
+          <View
+            style={[
+              styles.locationBox,
+              {
+                backgroundColor: theme.background,
+                borderColor: theme.cardBorder,
+              },
+            ]}
+          >
+            <View style={styles.locationRow}>
+              <Ionicons
+                name="location-outline"
                 size={16}
-                color="#64748B"
+                color={theme.accentGold}
               />
-
               <Text
                 style={[
                   styles.locationLabel,
-                  { color: theme.textSecondary }
+                  { color: theme.accentGold },
                 ]}
               >
                 SHELF LOCATION
@@ -553,48 +626,56 @@ export default function BookDetailsScreen() {
             </View>
           </View>
 
-          {/* RESERVE BUTTON */}
-          <TouchableOpacity
-            style={[
-              styles.reserveButton,
-              isReserved &&
-                (requestStatus === 'Approved' ? styles.approvedButton : styles.pendingButton),
-            ]}
-            onPress={
-              handleReservation
-            }
-          >
-            <Ionicons
-              name={
-                isReserved
-                  ? (requestStatus === 'Approved' ? "checkmark-circle-outline" : "time-outline")
-                  : available
-                  ? "cart-outline"
-                  : "bookmark-outline"
-              }
-              size={18}
-              color={
-                isReserved
-                  ? (requestStatus === 'Approved' ? "#10B981" : "#F59E0B")
-                  : "#FFFFFF"
-              }
-            />
 
-            <Text
+          {/* MAIN ACTION AREA */}
+          {isReserved ? (
+            <TouchableOpacity
               style={[
-                styles.reserveText,
-                isReserved && {
-                  color: requestStatus === 'Approved' ? "#10B981" : "#F59E0B"
-                }
+                styles.cancelReservationSolidBtn,
+                isSubmitting && { opacity: 0.6 },
               ]}
+              disabled={isSubmitting}
+              onPress={() => setCancelModalVisible(true)}
+              activeOpacity={0.85}
             >
-              {isReserved
-                ? (requestStatus === 'Approved' ? "Active Loan" : "Pending Approval")
-                : available
-                ? "Borrow Book"
-                : "Reserve Book"}
-            </Text>
-          </TouchableOpacity>
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="close-circle-outline" size={19} color="#FFFFFF" />
+                  <Text style={styles.cancelReservationSolidBtnText}>
+                    {isApprovedLoan ? "Cancel Loan" : "Cancel Reservation"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[
+                styles.reserveButton,
+                isSubmitting && { opacity: 0.6 },
+              ]}
+              disabled={isSubmitting}
+              onPress={handleReservation}
+              activeOpacity={0.85}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={isAvailable ? "cart-outline" : "bookmark-outline"}
+                    size={18}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.reserveText}>
+                    {isAvailable ? "Borrow Book" : "Reserve Book"}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
         </View>
 
         {/* ABOUT */}
@@ -749,6 +830,75 @@ export default function BookDetailsScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      {/* CANCEL RESERVATION CONFIRMATION MODAL */}
+      <Modal
+        visible={cancelModalVisible}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setCancelModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setCancelModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.modalContent, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, maxWidth: 360 }]}>
+                <View style={styles.cancelModalIconCircle}>
+                  <Ionicons name="alert-circle-outline" size={36} color="#DC2626" />
+                </View>
+
+                <Text style={[styles.cancelModalTitle, { color: theme.textPrimary }]}>
+                  {isApprovedLoan ? "Cancel Active Loan?" : "Cancel Reservation?"}
+                </Text>
+
+                <Text style={[styles.cancelModalSubtitle, { color: theme.textSecondary }]}>
+                  {isApprovedLoan
+                    ? `Are you sure you want to cancel your active loan for "${title}"? Please ensure the book is returned to the circulation desk.`
+                    : `Are you sure you want to cancel your reservation for "${title}"? You will lose your current spot in the queue.`}
+                </Text>
+
+                <View style={styles.cancelModalButtonRow}>
+                  <TouchableOpacity
+                    style={[styles.keepReservationBtn, { borderColor: theme.cardBorder, backgroundColor: theme.background }]}
+                    onPress={() => setCancelModalVisible(false)}
+                    disabled={isSubmitting}
+                  >
+                    <Text style={[styles.keepReservationBtnText, { color: theme.textPrimary }]}>
+                      Keep Request
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.confirmCancelBtn, isSubmitting && { opacity: 0.6 }]}
+                    disabled={isSubmitting}
+                    onPress={async () => {
+                      setIsSubmitting(true);
+                      try {
+                        await removeReservation(activeRequest?.id || id);
+                        setReservations(getReservations());
+                        setCancelModalVisible(false);
+                        Alert.alert(
+                          isApprovedLoan ? "Loan Cancelled" : "Reservation Cancelled",
+                          `Your ${isApprovedLoan ? "loan" : "reservation"} for "${title}" has been successfully cancelled.`
+                        );
+                      } catch (err) {
+                        console.warn("Cancel reservation failed:", err);
+                      } finally {
+                        setIsSubmitting(false);
+                      }
+                    }}
+                  >
+                    {isSubmitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.confirmCancelBtnText}>Yes, Cancel</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </AnimatedScreen>
   );
 }
@@ -756,19 +906,23 @@ export default function BookDetailsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#080F1E",
+    backgroundColor: "#0B1528",
   },
 
   header: {
     height: 70,
-    backgroundColor: "#080F1E",
+    backgroundColor: "#0B1528",
     flexDirection: "row",
     alignItems: "center",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#111A2E",
+  },
+
+  headerTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    fontWeight: "800",
+    letterSpacing: 0.8,
   },
 
   logo: {
@@ -779,25 +933,33 @@ const styles = StyleSheet.create({
   },
 
   card: {
-    backgroundColor: "#111A2E",
-    margin: 20,
+    backgroundColor: "#111C35",
+    marginHorizontal: 20,
     borderRadius: 24,
-    padding: 18,
+    padding: 22,
     borderWidth: 1,
-    borderColor: "#1E293B",
+    borderColor: "#1E2D4A",
   },
 
   titleRow: {
     flexDirection: "row",
-    justifyContent:
-      "space-between",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
   },
 
   bookTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: "800",
-    color: "#FCD34D",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
     flexShrink: 1,
+  },
+
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.3,
   },
 
   author: {
@@ -809,28 +971,115 @@ const styles = StyleSheet.create({
   availableBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(6, 78, 59, 0.4)",
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     marginLeft: 12,
     borderWidth: 1,
-    borderColor: "#059669",
-    alignSelf: "flex-start",
+    borderColor: "#EF4444",
+    alignSelf: "flex-end",
+  },
+
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#EF4444",
+    marginRight: 6,
   },
 
   greenDot: {
     width: 8,
     height: 8,
     borderRadius: 10,
-    backgroundColor: "#34D399",
+    backgroundColor: "#22C55E",
     marginRight: 6,
   },
 
   availableText: {
-    color: "#34D399",
+    color: "#EF4444",
     fontWeight: "700",
     fontSize: 12,
+  },
+
+  topActiveLoanBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderWidth: 1,
+    borderColor: "#10B981",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    alignSelf: "flex-end",
+  },
+
+  topActiveLoanText: {
+    color: "#10B981",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+
+  topPendingApprovalBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    borderWidth: 1,
+    borderColor: "#F59E0B",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    alignSelf: "flex-end",
+  },
+
+  topPendingApprovalText: {
+    color: "#F59E0B",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+
+  cancelReservationSolidBtn: {
+    marginTop: 22,
+    backgroundColor: "#DC2626",
+    height: 54,
+    borderRadius: 16,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#B91C1C",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+
+  cancelReservationSolidBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    marginLeft: 8,
+    fontSize: 15,
+  },
+
+  activeLoanContainer: {
+    marginTop: 22,
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    height: 54,
+    borderRadius: 16,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#10B981",
+  },
+
+  activeLoanText: {
+    color: "#10B981",
+    fontWeight: "700",
+    marginLeft: 8,
+    fontSize: 15,
   },
 
   ratingRow: {
@@ -1123,4 +1372,56 @@ const styles = StyleSheet.create({
     color: "#FCD34D",
     fontWeight: "600",
   },
-});
+  cancelModalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(220, 38, 38, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+    alignSelf: "center",
+  },
+  cancelModalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  cancelModalSubtitle: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 22,
+  },
+  cancelModalButtonRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  keepReservationBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+  },
+  keepReservationBtnText: {
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#DC2626",
+  },
+  confirmCancelBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+});

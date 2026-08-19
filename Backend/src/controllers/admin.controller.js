@@ -3,7 +3,10 @@ import jwt from "jsonwebtoken";
 
 import { env } from "../config/env.js";
 import { adminModel } from "../models/admin.model.js";
+import { studentModel } from "../models/student.model.js";
 import { pool } from "../db/pool.js";
+import { emitBookAdded, emitTransactionDecided } from "../socket.js";
+
 
 const DEV_CREDENTIALS = {
   "yana.palmares@stiwnu.edu.ph": {
@@ -85,6 +88,42 @@ export const adminController = {
         role: user.role,
         department: user.department,
         course: user.course,
+      },
+    });
+  },
+
+  async resetPassword(req, res) {
+    const { identifier, email, newPassword } = req.body;
+    const target = identifier || email;
+
+    if (!target || !newPassword) {
+      return res.status(400).json({ message: "Identifier (email or ID number) and new password are required." });
+    }
+
+    if (String(newPassword).trim().length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters long." });
+    }
+
+    const user = await adminModel.findUserByIdentifier(target);
+    if (!user) {
+      return res.status(404).json({ message: "No existing account found with that email or ID number." });
+    }
+
+    const newPasswordHash = await bcrypt.hash(String(newPassword).trim(), 10);
+    const updated = await studentModel.updateUserPassword(target, newPasswordHash);
+
+    if (!updated) {
+      return res.status(500).json({ message: "Failed to update password." });
+    }
+
+    return res.json({
+      success: true,
+      message: "Password reset successfully. You may now log in with your new password.",
+      user: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        idNumber: updated.idNumber,
       },
     });
   },
@@ -229,6 +268,10 @@ export const adminController = {
       detail: `Catalog record created at shelf ${book.shelfLocation}.`,
     });
     await adminModel.addActivityLog(`Book added: ${book.title}`, "success", req.user.name);
+    
+    // Broadcast real-time WebSocket event to Student App and dashboards
+    emitBookAdded(book);
+
     return res.status(201).json({ book });
   },
 
@@ -442,10 +485,14 @@ export const adminController = {
       return res.status(400).json({ message: 'Invalid status.' });
     }
 
+    const decidedBy = req.user?.sub || null;
+    const actorName = req.user?.name || "Librarian";
+    const actorRole = req.user?.role || "Librarian";
+
     const transaction = await adminModel.decideTransaction({
       transactionId,
       status,
-      decidedBy: req.user.sub,
+      decidedBy,
       comment,
     });
 
@@ -453,7 +500,10 @@ export const adminController = {
       return res.status(404).json({ message: 'Transaction not found.' });
     }
 
-    const actorLabel = `${req.user.role} ${req.user.name}`;
+    // Broadcast real-time WebSocket event to Student App and dashboards
+    emitTransactionDecided(transaction);
+
+    const actorLabel = `${actorRole} ${actorName}`;
     await adminModel.addHistoryLog({
       actor: actorLabel,
       action: `${status} transaction`,
@@ -464,11 +514,12 @@ export const adminController = {
     await adminModel.addActivityLog(
       `${transaction.type} ${status.toLowerCase()} for ${transaction.studentId}`,
       status === "Declined" ? "warning" : "success",
-      req.user.name
+      actorName
     );
 
     return res.json({ transaction });
   },
+
 
   async createTransaction(req, res) {
     const transaction = await adminModel.createTransaction(req.body);

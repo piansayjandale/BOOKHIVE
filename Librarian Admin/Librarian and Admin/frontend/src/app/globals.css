@@ -262,7 +262,7 @@ html[data-theme="light"] {
   }
   input::placeholder {
     color: var(--muted) !important;
-    opacity: 0.82 !important;
+    opacity: 0.4 !important;
   }
   
   /* Accent borders left-width retention */

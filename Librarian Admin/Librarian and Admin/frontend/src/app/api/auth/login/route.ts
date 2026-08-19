@@ -9,20 +9,68 @@ import type { SessionUser } from "@/lib/types";
 export const runtime = "nodejs";
 
 // Fallback dev credentials when database is not available
-const DEV_CREDENTIALS = {
+const DEV_CREDENTIALS: Record<string, any> = {
   "yana.palmares@stiwnu.edu.ph": {
     id: "user-001",
     name: "Yana Palmares",
     email: "yana.palmares@stiwnu.edu.ph",
     role: "Admin",
     password: "BookHiveAdmin!2026",
+    idNumber: "ADM-2026-0001",
+  },
+  "adm-2026-0001": {
+    id: "user-001",
+    name: "Yana Palmares",
+    email: "yana.palmares@stiwnu.edu.ph",
+    role: "Admin",
+    password: "BookHiveAdmin!2026",
+    idNumber: "ADM-2026-0001",
+  },
+  "user-yana-001": {
+    id: "user-001",
+    name: "Yana Palmares",
+    email: "yana.palmares@stiwnu.edu.ph",
+    role: "Admin",
+    password: "BookHiveAdmin!2026",
+    idNumber: "ADM-2026-0001",
   },
   "joseph.tan@stiwnu.edu.ph": {
     id: "user-002",
     name: "Joseph Tan",
     email: "joseph.tan@stiwnu.edu.ph",
-    role: "Librarian",
+    role: "Circulation Librarian",
     password: "BookHiveLibrarian!2026",
+    idNumber: "LIB-2026-002",
+  },
+  "lib-2026-002": {
+    id: "user-002",
+    name: "Joseph Tan",
+    email: "joseph.tan@stiwnu.edu.ph",
+    role: "Circulation Librarian",
+    password: "BookHiveLibrarian!2026",
+    idNumber: "LIB-2026-002",
+  },
+  "user-joseph-001": {
+    id: "user-002",
+    name: "Joseph Tan",
+    email: "joseph.tan@stiwnu.edu.ph",
+    role: "Circulation Librarian",
+    password: "BookHiveLibrarian!2026",
+    idNumber: "LIB-2026-002",
+  },
+  "technical.librarian@stiwnu.edu.ph": {
+    id: "user-003",
+    name: "Maria Santos",
+    email: "technical.librarian@stiwnu.edu.ph",
+    role: "Technical Librarian",
+    password: "TechnicalLibrarian!2026",
+  },
+  "circulation.librarian@stiwnu.edu.ph": {
+    id: "user-004",
+    name: "Juan Cruz",
+    email: "circulation.librarian@stiwnu.edu.ph",
+    role: "Circulation Librarian",
+    password: "CirculationLibrarian!2026",
   },
 };
 

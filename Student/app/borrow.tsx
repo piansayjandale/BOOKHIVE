@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../components/AnimatedScreen';
@@ -17,6 +18,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { getStudentProfile } from '../data/store';
+
 
 export default function BorrowScreen() {
   const router = useRouter();
@@ -68,6 +70,7 @@ export default function BorrowScreen() {
 
   const [studentIDImage, setStudentIDImage] =
     useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // 📅 AUTO RETURN DATE
   const computeReturnDate = (
@@ -140,6 +143,8 @@ export default function BorrowScreen() {
 
   // 🚨 SUBMIT
   const handleSubmit = () => {
+    if (isSubmitting) return;
+
     if (
       !name ||
       !studentId ||
@@ -168,6 +173,7 @@ export default function BorrowScreen() {
       return;
     }
 
+    setIsSubmitting(true);
     router.push({
       pathname:
         '/request-confirmation',
@@ -185,7 +191,9 @@ export default function BorrowScreen() {
         studentIDImage,
       },
     });
+    setTimeout(() => setIsSubmitting(false), 1000);
   };
+
 
   return (
     <AnimatedScreen style={{ flex: 1, backgroundColor: theme.background, paddingTop: insets.top }}>
@@ -406,20 +414,30 @@ export default function BorrowScreen() {
 
       {/* SUBMIT */}
       <TouchableOpacity
-        style={[styles.button, { backgroundColor: theme.accentGold }]}
+        style={[
+          styles.button,
+          { backgroundColor: theme.accentGold },
+          isSubmitting && { opacity: 0.6 }
+        ]}
+        disabled={isSubmitting}
         onPress={handleSubmit}
       >
-        <Text
-          style={{
-            color: isDarkMode ? "#080F1E" : "#FFFFFF",
-            fontWeight: 'bold',
-          }}
-        >
-          {isBorrow
-            ? 'Submit Borrow Request'
-            : 'Submit Reservation'}
-        </Text>
+        {isSubmitting ? (
+          <ActivityIndicator size="small" color={isDarkMode ? "#080F1E" : "#FFFFFF"} />
+        ) : (
+          <Text
+            style={{
+              color: isDarkMode ? "#080F1E" : "#FFFFFF",
+              fontWeight: 'bold',
+            }}
+          >
+            {isBorrow
+              ? 'Submit Borrow Request'
+              : 'Submit Reservation'}
+          </Text>
+        )}
       </TouchableOpacity>
+
 
       <View style={{ height: 40 }} />
       </ScrollView>

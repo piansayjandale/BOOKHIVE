@@ -114,8 +114,10 @@
   transition: border-color 0.18s;
 }
 
-.input::placeholder {
+.input::placeholder,
+.login-input::placeholder {
   color: #bfc3cb;
+  opacity: 0.4;
   font-size: 16px;
 }
 

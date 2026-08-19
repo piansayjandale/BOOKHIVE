@@ -292,7 +292,7 @@ export async function authenticateAccountUser(identifier: string, password: stri
     return null;
   }
 
-  if (!["Admin", "Librarian"].includes(row.role) || !verifyAdminPassword(password, row.passwordHash ?? "")) {
+  if (!["Admin", "Librarian", "Technical Librarian", "Circulation Librarian"].includes(row.role) || !verifyAdminPassword(password, row.passwordHash ?? "")) {
     return null;
   }
 

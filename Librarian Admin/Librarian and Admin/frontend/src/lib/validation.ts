@@ -53,7 +53,7 @@ export const settingsSchema = z.object({
 export const userSchema = z.object({
   name: z.string().min(3),
   email: z.email(),
-  role: z.enum(["Admin", "Librarian", "Student"]),
+  role: z.enum(["Admin", "Librarian", "Technical Librarian", "Circulation Librarian", "Student"]),
   department: z.enum([
     "Circulation",
     "General Reference",
@@ -82,7 +82,7 @@ export const adminUserFormSchema = z.object({
   name: z.string().min(3),
   idNumber: z.string().min(4),
   email: z.email(),
-  role: z.enum(["Admin", "Librarian", "Student"]),
+  role: z.enum(["Admin", "Librarian", "Technical Librarian", "Circulation Librarian", "Student"]),
   department: z.enum([
     "Circulation",
     "General Reference",

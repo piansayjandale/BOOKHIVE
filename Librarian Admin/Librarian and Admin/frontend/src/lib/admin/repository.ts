@@ -377,7 +377,7 @@ export const adminRepository = {
       users.find((user) => user.email.toLowerCase() === normalizedIdentifier) ??
       users.find((user) => user.idNumber.toLowerCase() === normalizedIdentifier);
 
-    if (!matchedUser || !["Admin", "Librarian"].includes(matchedUser.role)) {
+    if (!matchedUser || !["Admin", "Librarian", "Technical Librarian", "Circulation Librarian"].includes(matchedUser.role)) {
       return null;
     }
 
@@ -642,8 +642,9 @@ export const adminRepository = {
     const category = options.category ?? "All";
     const status = options.status ?? "All";
     const page = Math.max(1, options.page ?? 1);
-    const pageSize = Math.max(1, Math.min(100, options.pageSize ?? 10));
-    const baseBooks: AdminBookRecord[] = (await store.listBooks(search, department, 500, 0, true)).books.map(
+    const pageSize = Math.max(1, Math.min(200, options.pageSize ?? 10));
+    const catalogResult = await store.listBooks(search, department, 100000, 0, true);
+    const baseBooks: AdminBookRecord[] = catalogResult.books.map(
       (book: BookRecord) => toAdminBook(book, state),
     );
 
@@ -656,11 +657,15 @@ export const adminRepository = {
       })
       .sort((left: AdminBookRecord, right: AdminBookRecord) => left.title.localeCompare(right.title));
 
+    const total = catalogResult.total > filtered.length && category === "All" && status === "All"
+      ? catalogResult.total
+      : filtered.length;
+
     const start = (page - 1) * pageSize;
 
     return {
       books: filtered.slice(start, start + pageSize),
-      total: filtered.length,
+      total,
       page,
       pageSize,
     };
@@ -892,7 +897,7 @@ export const adminRepository = {
 
   async getRecordsCatalog(options: { department?: string; search?: string }): Promise<RecordsCatalogPayload> {
     const state = await getAdminState();
-    const base = (await store.listBooks(options.search ?? "", options.department ?? "All", 300, 0, true)).books;
+    const base = (await store.listBooks(options.search ?? "", options.department ?? "All", 100000, 0, true)).books;
     const records: AdminBookRecord[] = base
       .map((book: BookRecord) => toAdminBook(book, state))
       .sort((left: AdminBookRecord, right: AdminBookRecord) => left.title.localeCompare(right.title));

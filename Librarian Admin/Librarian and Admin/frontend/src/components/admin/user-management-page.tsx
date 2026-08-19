@@ -236,7 +236,9 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
             >
               <option value="All">All Roles</option>
               <option value="Admin">Admin</option>
-              <option value="Librarian">Librarian</option>
+              <option value="Technical Librarian">Technical Librarian</option>
+              <option value="Circulation Librarian">Circulation Librarian</option>
+              <option value="Librarian">Librarian (Legacy)</option>
               <option value="Student">Student</option>
             </select>
           </div>
@@ -337,62 +339,95 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
 
       <AdminModal
         open={open}
-        title={editingUser && editingUser.role === "Student" ? `Student Activity: ${editingUser.name}` : (editingUser ? "View / Edit User" : "Invite Librarian to Admin")}
-        description={editingUser && editingUser.role === "Student" ? "View book borrowing and reservation logs for this student." : (editingUser ? "View or manage directory details and role-based access for the shared BookHive system." : "Enter a Librarian's Gmail address to invite and promote them to an Admin account.")}
+        title={editingUser && editingUser.role === "Student" ? `Student Library Record: ${editingUser.name}` : (editingUser ? "View / Edit User" : "Invite Librarian to Admin")}
+        description={editingUser && editingUser.role === "Student" ? "Restricted View: Library Card (Book Card) and Violation Records." : (editingUser ? "View or manage directory details and role-based access for the shared BookHive system." : "Enter a Librarian's Gmail address to invite and promote them to an Admin account.")}
         onClose={() => setOpen(false)}
       >
         {editingUser && editingUser.role === "Student" ? (
-          <div className="space-y-5 text-slate-300">
-            <div className="grid grid-cols-2 gap-4 border-b border-[var(--line)] pb-5 text-sm">
-              <div>
-                <p className="text-xs text-[var(--topbar-muted)] font-bold uppercase tracking-wider">Student Email</p>
-                <p className="font-semibold text-white mt-1">{editingUser.email}</p>
+          <div className="space-y-6 text-slate-300">
+            {/* 1. LIBRARY CARD VIEW */}
+            <div className="rounded-2xl border border-[var(--line)] bg-[#131E33] p-5 shadow-lg">
+              <div className="flex items-center justify-between pb-3 border-b border-[#24334C] mb-4">
+                <span className="text-xs font-extrabold uppercase tracking-widest text-[#FCD34D]">OFFICIAL BOOK CARD</span>
+                <span className="text-xs text-slate-400 font-mono">QR: {editingUser.qrCode || `e1a1-${editingUser.idNumber || "default"}`}</span>
               </div>
-              <div>
-                <p className="text-xs text-[var(--topbar-muted)] font-bold uppercase tracking-wider">Student ID / Course</p>
-                <p className="font-semibold text-white mt-1">{editingUser.idNumber} · {editingUser.course}</p>
+
+              {/* Data Table */}
+              <div className="rounded-xl border border-[#2E3F5C] overflow-hidden text-xs">
+                {/* Row 1: Fullname */}
+                <div className="flex border-b border-[#2E3F5C] bg-[#16233B]/70">
+                  <div className="w-[32%] px-3 py-2 border-r border-[#2E3F5C] font-semibold text-slate-300">Fullname:</div>
+                  <div className="flex-1 px-3 py-2 font-bold text-white">{editingUser.name}</div>
+                </div>
+
+                {/* Row 2: Course & Section */}
+                <div className="flex border-b border-[#2E3F5C] bg-[#16233B]/70">
+                  <div className="w-[32%] px-3 py-2 border-r border-[#2E3F5C] font-semibold text-slate-300">Course & Section:</div>
+                  <div className="flex-1 px-3 py-2 font-bold text-white">{editingUser.course || "General Program"} {editingUser.department ? `· ${editingUser.department}` : ""}</div>
+                </div>
+
+                {/* Row 3: Column Headers */}
+                <div className="flex border-b-2 border-[#3B4E70] bg-[#1C2C4A] text-[11px] font-extrabold text-slate-200">
+                  <div className="w-[28%] px-3 py-2.5 border-r border-[#2E3F5C]">Borrow Date:</div>
+                  <div className="w-[28%] px-3 py-2.5 border-r border-[#2E3F5C]">Due Return Date:</div>
+                  <div className="flex-1 px-3 py-2.5">Book Title</div>
+                </div>
+
+                {/* Data Rows */}
+                {loadingTxns ? (
+                  <div className="p-4 text-center text-slate-400 italic">Loading library card records...</div>
+                ) : studentTxns.filter((t) => t.type === "Borrow").length === 0 ? (
+                  <div className="p-4 text-center text-slate-400 italic">No borrow records on library card.</div>
+                ) : (
+                  studentTxns
+                    .filter((t) => t.type === "Borrow")
+                    .map((tx, idx) => (
+                      <div
+                        key={tx.id || idx}
+                        className="flex border-b border-[#24334C] last:border-b-0 hover:bg-white/[0.02]"
+                      >
+                        <div className="w-[28%] px-3 py-2 border-r border-[#24334C] text-slate-300">
+                          {tx.requestedAt ? new Date(tx.requestedAt).toLocaleDateString() : "—"}
+                        </div>
+                        <div className="w-[28%] px-3 py-2 border-r border-[#24334C] text-amber-300 font-medium">
+                          {tx.dueDate ? new Date(tx.dueDate).toLocaleDateString() : (tx.status === "Approved" ? "Active Loan" : "—")}
+                        </div>
+                        <div className="flex-1 px-3 py-2 font-semibold text-white truncate">
+                          {tx.resourceTitle}
+                        </div>
+                      </div>
+                    ))
+                )}
               </div>
             </div>
 
+            {/* 2. VIOLATION RECORD */}
             <div className="space-y-3">
-              <h4 className="text-xs font-bold text-white uppercase tracking-wider">Transaction Records</h4>
-              {loadingTxns && studentTxns.length === 0 ? (
-                <p className="text-sm text-slate-500 italic">Loading records...</p>
-              ) : studentTxns.length === 0 ? (
-                <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] p-6 text-center text-amber-400 italic">
-                  (no record)
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+                <h4 className="text-xs font-bold text-rose-400 uppercase tracking-wider">Violation Record</h4>
+              </div>
+
+              {studentTxns.filter((t) => t.type === "Borrow" && t.status === "Approved" && t.dueDate && new Date(t.dueDate) < new Date()).length === 0 ? (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 flex items-center gap-3 text-xs text-emerald-400">
+                  <span className="font-bold">✓ Clear Record:</span>
+                  <span>Student has no active overdue loans or penalty violations.</span>
                 </div>
               ) : (
-                <div className="max-h-[300px] overflow-y-auto rounded-xl border border-[var(--line)] bg-[var(--surface-muted)]">
-                  <table className="min-w-full text-xs text-left">
-                    <thead className="bg-[var(--table-header-bg)] text-[10px] uppercase font-bold tracking-wider text-[var(--table-header-foreground)]">
-                      <tr>
-                        <th className="px-4 py-3">Book Title</th>
-                        <th className="px-4 py-3">Type</th>
-                        <th className="px-4 py-3">Status</th>
-                        <th className="px-4 py-3">Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {studentTxns.map((tx) => (
-                        <tr key={tx.id} className="border-t border-[var(--line)] hover:bg-white/[0.02]">
-                          <td className="px-4 py-3 font-medium text-white">{tx.resourceTitle}</td>
-                          <td className="px-4 py-3 font-semibold text-[#ffd166]">{tx.type}</td>
-                          <td className="px-4 py-3">
-                            <span className={cn(
-                              "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
-                              STATUS_STYLE[tx.status] || "text-slate-400 border-white/10 bg-white/5"
-                            )}>
-                              {tx.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-slate-400">
-                            {new Date(tx.requestedAt).toLocaleDateString()}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="space-y-2">
+                  {studentTxns
+                    .filter((t) => t.type === "Borrow" && t.status === "Approved" && t.dueDate && new Date(t.dueDate) < new Date())
+                    .map((ov) => (
+                      <div key={ov.id} className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-3.5 flex items-center justify-between text-xs">
+                        <div>
+                          <p className="font-bold text-rose-400">Overdue Loan: {ov.resourceTitle}</p>
+                          <p className="text-[11px] text-rose-300/70 mt-0.5">Due date was {new Date(ov.dueDate).toLocaleDateString()}. Policy fine applied.</p>
+                        </div>
+                        <span className="rounded-lg bg-rose-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-rose-300">
+                          Active Fine
+                        </span>
+                      </div>
+                    ))}
                 </div>
               )}
             </div>
@@ -441,7 +476,8 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
                 className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] py-2.5 px-4 text-sm text-white focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
               >
                 <option value="Admin">Admin</option>
-                <option value="Librarian">Librarian</option>
+                <option value="Technical Librarian">Technical Librarian</option>
+                <option value="Circulation Librarian">Circulation Librarian</option>
                 <option value="Student">Student</option>
               </select>
             </FieldLabel>

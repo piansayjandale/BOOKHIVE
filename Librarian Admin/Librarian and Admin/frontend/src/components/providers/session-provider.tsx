@@ -32,9 +32,14 @@ export function SessionProvider({
       user,
       setUser,
       logout: async () => {
-        await fetch("/api/auth/logout", { method: "POST" });
-        setUser(null);
-        window.location.assign("/login");
+        try {
+          await fetch("/api/auth/logout", { method: "POST" });
+        } catch (err) {
+          console.warn("Logout request failed or interrupted:", err);
+        } finally {
+          setUser(null);
+          window.location.assign("/login");
+        }
       },
     }),
     [user],

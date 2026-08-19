@@ -34,7 +34,19 @@ export async function middleware(request: NextRequest) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
     if (pathname.startsWith("/api/admin") && session?.role !== "Admin") {
-      if (pathname === "/api/admin/prompt-search" && session?.role === "Librarian") {
+      const allowedLibrarianApis = [
+        "/api/admin/prompt-search",
+        "/api/admin/announcements",
+        "/api/admin/dashboard",
+        "/api/admin/books",
+        "/api/admin/history",
+        "/api/admin/transactions",
+        "/api/admin/profile",
+        "/api/admin/records-catalog",
+        "/api/admin/reminders",
+      ];
+      const isAllowed = allowedLibrarianApis.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+      if (isAllowed && ["Librarian", "Technical Librarian", "Circulation Librarian"].includes(session?.role ?? "")) {
         return NextResponse.next();
       }
       return NextResponse.json({ message: "Forbidden" }, { status: 403 });
@@ -54,7 +66,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(sessionDashboardPath, request.url));
   }
 
-  if (isLibrarianDashboardPath(pathname) && (!session || !["Admin", "Librarian"].includes(session.role))) {
+  if (isLibrarianDashboardPath(pathname) && (!session || !["Admin", "Librarian", "Technical Librarian", "Circulation Librarian"].includes(session.role))) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 

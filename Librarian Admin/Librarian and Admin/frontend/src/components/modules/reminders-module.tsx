@@ -21,6 +21,7 @@ import {
 
 import type { TransactionRecord, TransactionStatus } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
+import { StudentViolationModal } from "@/components/modals/student-violation-modal";
 
 type TabId = "violators" | "due" | "dueToday";
 type SortKey = "studentName" | "resourceTitle" | "dueDate" | "requestedAt";
@@ -76,6 +77,15 @@ export function RemindersModule() {
   const [sortBy, setSortBy] = useState<SortKey | null>("dueDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [loading, setLoading] = useState(false);
+
+  // Interactive Student Violation Modal State
+  const [selectedStudentForViolation, setSelectedStudentForViolation] = useState<{
+    name: string;
+    studentId: string;
+    department?: string;
+    course?: string;
+    currentTransaction?: TransactionRecord;
+  } | null>(null);
 
   const deferredSearch = useDeferredValue(search);
 
@@ -350,15 +360,33 @@ export function RemindersModule() {
                   >
                     {/* Student */}
                     <td className="px-5 py-3.5 max-w-[200px]">
-                      <div className="font-semibold text-white leading-snug line-clamp-1">
-                        {txn.studentName}
-                      </div>
-                      <div className="text-xs text-slate-400 mt-0.5 font-mono">
-                        {txn.studentId}
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-0.5">
-                        {txn.department}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSelectedStudentForViolation({
+                            name: txn.studentName,
+                            studentId: txn.studentId,
+                            department: txn.department,
+                            course: (txn as any).course || txn.department || "Circulation",
+                            currentTransaction: txn,
+                          })
+                        }
+                        className="group text-left block w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 hover:bg-rose-500/10 hover:border hover:border-rose-500/30 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                        title={`Click to view Violation Record for ${txn.studentName}`}
+                      >
+                        <div className="font-semibold text-white leading-snug line-clamp-1 group-hover:text-rose-300 transition-colors flex items-center gap-1">
+                          <span>{txn.studentName}</span>
+                          <span className="text-[9px] text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                            ↗
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5 font-mono group-hover:text-slate-200">
+                          {txn.studentId}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 group-hover:text-slate-400 line-clamp-1">
+                          {txn.department}
+                        </div>
+                      </button>
                     </td>
 
                     {/* Resource / Book */}
@@ -443,6 +471,14 @@ export function RemindersModule() {
           Auto-refreshing every 10s
         </span>
       </div>
+
+      {/* ── Interactive Student Violation Modal ────────────────────── */}
+      <StudentViolationModal
+        open={selectedStudentForViolation !== null}
+        onClose={() => setSelectedStudentForViolation(null)}
+        student={selectedStudentForViolation}
+        transactions={transactions}
+      />
     </div>
   );
 }

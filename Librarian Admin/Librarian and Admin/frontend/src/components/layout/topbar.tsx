@@ -1,18 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Bell, AlertTriangle, Search, Sun, Moon, X, ArrowLeft } from "lucide-react";
+import { Bell, AlertTriangle, Search, Sun, Moon, X, ArrowLeft, ExternalLink, CheckCheck } from "lucide-react";
 import { createPortal } from "react-dom";
+import { useRouter, usePathname } from "next/navigation";
 
 import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
 import { dashboardVariantConfig, type DashboardVariant } from "@/lib/dashboard-config";
+import dashboardSocket from "@/lib/socket";
+import { subscribeToActivity } from "@/lib/live";
 
 export function Topbar({
   variant = "admin",
 }: {
   variant?: DashboardVariant;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const { user } = useSession();
   const { theme, toggleTheme } = useTheme();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -25,6 +30,79 @@ export function Topbar({
   const [isDecliningWithComment, setIsDecliningWithComment] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const config = dashboardVariantConfig[variant];
+
+  const [clearedAt, setClearedAt] = useState<number>(0);
+  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("bookhive_notifications_cleared_at");
+      if (saved) {
+        setClearedAt(parseInt(saved, 10));
+      }
+      try {
+        const savedRead = localStorage.getItem("bookhive_librarian_read_notifications");
+        if (savedRead) {
+          setReadIds(new Set(JSON.parse(savedRead)));
+        }
+      } catch (e) {
+        console.warn("Failed to load read notifications from storage:", e);
+      }
+    }
+  }, []);
+
+  const handleClearAll = () => {
+    const now = Date.now();
+    setClearedAt(now);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("bookhive_notifications_cleared_at", now.toString());
+    }
+    setNotifications([]);
+  };
+
+  const handleNotificationItemClick = (item: any) => {
+    const rawId = item.id.replace("due-today-", "");
+    
+    // 1. Mark clicked notification as read in active client store & persist
+    setReadIds((prev) => {
+      const next = new Set(prev);
+      next.add(item.id);
+      next.add(rawId);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("bookhive_librarian_read_notifications", JSON.stringify(Array.from(next)));
+        } catch (e) {
+          console.warn("Failed to persist read notifications:", e);
+        }
+      }
+      return next;
+    });
+
+    setNotifications((prev) =>
+      prev.map((n) =>
+        n.id === item.id || n.id === rawId || n.id === `due-today-${rawId}`
+          ? { ...n, unread: false, is_read: true }
+          : n
+      )
+    );
+
+    // 2. Open detail/approval modal
+    setSelectedNotification({ ...item, unread: false, is_read: true });
+    setNotificationsOpen(false);
+
+    // 3. Dispatch client-side custom event for row focus & deep-linking
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("highlight-transaction", { detail: { id: rawId } })
+      );
+    }
+
+    // 4. Check if active route is /transactions; if not, trigger client-side navigation
+    const targetPath = `${config.basePath}/transactions`;
+    if (pathname !== targetPath && !pathname.endsWith("/transactions")) {
+      router.push(`${targetPath}?highlight=${rawId}`);
+    }
+  };
 
   const handleCloseModal = () => {
     setSelectedNotification(null);
@@ -39,7 +117,9 @@ export function Topbar({
   const fetchNotifications = useCallback(async () => {
     try {
       const res = await fetch("/api/transactions?status=All");
-      if (!res.ok) return;
+      if (!res.ok) {
+        throw new Error(`Transactions fetch failed with HTTP ${res.status}`);
+      }
       const data = await res.json();
       if (data.transactions) {
         const txns = data.transactions as any[];
@@ -55,47 +135,69 @@ export function Topbar({
           );
         };
 
+        // Saved read IDs from storage
+        let storedReadIds: Set<string> = new Set();
+        if (typeof window !== "undefined") {
+          try {
+            const raw = localStorage.getItem("bookhive_librarian_read_notifications");
+            if (raw) storedReadIds = new Set(JSON.parse(raw));
+          } catch (e) {}
+        }
+
         // Map transactions to notification items:
         // - Pending borrows/reservations
+        // - Cancelled reservations
         // - Recently returned items
         // - Borrowed items due today
         const items = txns
           .filter(
             (t) =>
               t.status === "Pending" ||
+              t.status === "Cancelled" ||
               t.status === "Returned" ||
               (t.status === "Approved" && t.type === "Borrow" && isToday(t.dueDate))
           )
           .map((t) => {
             const isPending = t.status === "Pending";
+            const isCancelled = t.status === "Cancelled";
             const isReturned = t.status === "Returned";
             const isDueToday = t.status === "Approved" && t.type === "Borrow" && isToday(t.dueDate);
+            const itemId = isDueToday ? `due-today-${t.id}` : t.id;
             
-            let title = "Notification";
+            let title = "NOTIFICATION";
             let description = "";
             let unread = false;
 
             if (isPending) {
-              const isBorrow = t.type === "Borrow";
-              title = isBorrow ? "New borrow request" : "New reservation request";
-              description = `${t.studentName} requested to borrow "${t.resourceTitle}"`;
-              unread = true;
+              const isBorrow = t.type === "Borrow" || t.type === "Borrowing";
+              title = isBorrow ? "NEW BORROW REQUEST" : "NEW RESERVATION REQUEST";
+              description = isBorrow
+                ? `${t.studentName} requested to borrow "${t.resourceTitle}"`
+                : `${t.studentName} requested to reserve "${t.resourceTitle}"`;
+              unread = !storedReadIds.has(itemId) && !storedReadIds.has(t.id);
+            } else if (isCancelled) {
+              title = "RESERVATION CANCELLED";
+              description = `Student ${t.studentName} cancelled reservation for "${t.resourceTitle}"`;
+              unread = !storedReadIds.has(itemId) && !storedReadIds.has(t.id);
             } else if (isReturned) {
-              title = "Book returned";
+              title = "BOOK RETURNED";
               description = `${t.studentName} returned "${t.resourceTitle}"`;
               unread = false;
             } else if (isDueToday) {
-              title = "Book Return Due Today";
+              title = "BOOK DUE TODAY";
               description = `"${t.resourceTitle}" borrowed by ${t.studentName} is due today.`;
-              unread = true;
+              unread = !storedReadIds.has(itemId) && !storedReadIds.has(t.id);
             }
 
+            const is_read = storedReadIds.has(itemId) || storedReadIds.has(t.id) || !unread;
+
             return {
-              id: isDueToday ? `due-today-${t.id}` : t.id,
+              id: itemId,
               title,
               description,
               timestamp: isDueToday ? t.dueDate : (t.requestedAt || new Date().toISOString()),
               unread,
+              is_read,
               // Raw transaction fields for the details popup
               studentName: t.studentName,
               studentId: t.studentId,
@@ -111,16 +213,160 @@ export function Topbar({
 
         // Sort by timestamp descending
         items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-        setNotifications(items.slice(0, 15));
+
+        // Filter out items older than clearedAt timestamp
+        const clearedTime = typeof window !== "undefined"
+          ? parseInt(localStorage.getItem("bookhive_notifications_cleared_at") || "0", 10)
+          : 0;
+
+        const visibleItems = clearedTime > 0
+          ? items.filter((item) => new Date(item.timestamp).getTime() > clearedTime)
+          : items;
+
+        setNotifications(visibleItems.slice(0, 15));
+        return true;
       }
+      return false;
     } catch (err) {
       console.warn("Failed to fetch notifications:", err instanceof Error ? err.message : String(err));
+      return false;
     }
   }, []);
 
+  // Real-time notification handler (instantly prepends incoming socket payloads)
+  const handleRealtimeNotification = useCallback((data: any) => {
+    if (!data) return;
+
+    // Check if cleared
+    const clearedTime = typeof window !== "undefined"
+      ? parseInt(localStorage.getItem("bookhive_notifications_cleared_at") || "0", 10)
+      : 0;
+    const nowTime = Date.now();
+    if (clearedTime > 0 && nowTime <= clearedTime) return;
+
+    const rawId = data.id || `notif-${Date.now()}`;
+    const isCancel = data.isCancelled || data.eventName === "reservation:cancelled" || data.status === "Cancelled";
+    const isBorrow = !isCancel && (data.type === "Borrow" || data.type === "Borrowing" || data.action !== "Reservation");
+
+    let title = "NEW BORROW REQUEST";
+    let description = `${data.studentName || "Student"} requested to borrow "${data.resourceTitle || data.title || "Book"}"`;
+
+    if (isCancel) {
+      title = "RESERVATION CANCELLED";
+      description = `Student ${data.studentName || "Student"} cancelled reservation for "${data.resourceTitle || data.title || "Book"}"`;
+    } else if (!isBorrow) {
+      title = "NEW RESERVATION REQUEST";
+      description = `${data.studentName || "Student"} requested to reserve "${data.resourceTitle || data.title || "Book"}"`;
+    }
+
+    // Check if previously read
+    let isRead = false;
+    if (typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("bookhive_librarian_read_notifications");
+        if (raw) {
+          const set = new Set(JSON.parse(raw));
+          isRead = set.has(rawId);
+        }
+      } catch (e) {}
+    }
+
+    const newItem = {
+      id: rawId,
+      title,
+      description,
+      timestamp: data.requestedAt || new Date().toISOString(),
+      unread: !isRead,
+      is_read: isRead,
+      studentName: data.studentName,
+      studentId: data.studentId,
+      resourceTitle: data.resourceTitle || data.title,
+      isbn: data.isbn,
+      status: isCancel ? "Cancelled" : (data.status || "Pending"),
+      type: data.type || (isBorrow ? "Borrow" : "Reservation"),
+      requestedAt: data.requestedAt || new Date().toISOString(),
+      dueDate: data.dueDate,
+      studentIdImage: data.studentIdImage,
+    };
+
+    setNotifications((prev) => {
+      // Remove any existing copy with the same ID and prepend the newest at the top
+      const filtered = prev.filter((item) => item.id !== rawId && item.id !== `due-today-${rawId}`);
+      return [newItem, ...filtered].slice(0, 15);
+    });
+
+    // Schedule background synchronization to keep server and cache consistent
+    setTimeout(() => {
+      void fetchNotifications();
+    }, 1200);
+  }, [fetchNotifications]);
+
   useEffect(() => {
+    // Initial fetch
     void fetchNotifications();
-    const intervalId = setInterval(fetchNotifications, 10000);
+
+    // Resilient Polling with Exponential Backoff & Page Visibility API
+    let timeoutId: any = null;
+    let currentInterval = 6000;
+    const baseInterval = 6000;
+    const maxInterval = 30000;
+    let isRunning = true;
+
+    const poll = async () => {
+      if (!isRunning) return;
+      if (typeof document !== "undefined" && document.hidden) {
+        // Tab is inactive, postpone polling until visible
+        return;
+      }
+
+      const success = await fetchNotifications();
+      if (success) {
+        currentInterval = baseInterval;
+      } else {
+        currentInterval = Math.min(currentInterval * 1.5, maxInterval);
+      }
+
+      if (isRunning && (!document.hidden || typeof document === "undefined")) {
+        timeoutId = setTimeout(poll, currentInterval);
+      }
+    };
+
+    timeoutId = setTimeout(poll, currentInterval);
+
+    // Page Visibility listener to pause/resume polling cleanly
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        if (timeoutId) clearTimeout(timeoutId);
+      } else {
+        // Immediate sync when librarian returns to the tab
+        currentInterval = baseInterval;
+        void fetchNotifications();
+        if (timeoutId) clearTimeout(timeoutId);
+        timeoutId = setTimeout(poll, currentInterval);
+      }
+    };
+
+    if (typeof document !== "undefined") {
+      document.addEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    // Real-time socket listeners
+    const unsubscribeSocket = dashboardSocket.subscribeToBorrowRequest((data) => {
+      handleRealtimeNotification(data);
+    });
+
+    const unsubscribeCancelSocket = dashboardSocket.subscribeToCancelRequest((data) => {
+      handleRealtimeNotification(data);
+    });
+
+    const unsubscribeNotificationSocket = dashboardSocket.subscribeToNotification((data) => {
+      handleRealtimeNotification(data);
+    });
+
+    // Real-time activity listener
+    const unsubscribeActivity = subscribeToActivity(() => {
+      void fetchNotifications();
+    });
 
     // Subscribe to SSE stream for live notification triggers
     let eventSource: EventSource | undefined;
@@ -134,27 +380,23 @@ export function Topbar({
     }
 
     return () => {
-      clearInterval(intervalId);
+      isRunning = false;
+      if (timeoutId) clearTimeout(timeoutId);
+      if (typeof document !== "undefined") {
+        document.removeEventListener("visibilitychange", handleVisibilityChange);
+      }
+      unsubscribeSocket();
+      unsubscribeCancelSocket();
+      unsubscribeNotificationSocket();
+      unsubscribeActivity();
       eventSource?.close();
     };
-  }, [fetchNotifications]);
+  }, [fetchNotifications, handleRealtimeNotification]);
 
-  useEffect(() => {
-    const unread = notifications.some((n) => n.unread);
-    if (unread) {
-      setHasUnread(true);
-    }
-  }, [notifications]);
-
-  useEffect(() => {
-    if (notificationsOpen) {
-      setHasUnread(false);
-    }
-  }, [notificationsOpen]);
-
+  // Derive unread count strictly from items where unread is true and not yet read
   const notificationsCount = useMemo(() => {
-    return hasUnread ? notifications.filter((n) => n.unread).length : 0;
-  }, [notifications, hasUnread]);
+    return notifications.filter((n) => !n.is_read && n.unread).length;
+  }, [notifications]);
 
   useEffect(() => {
     if (!notificationsOpen) {
@@ -173,21 +415,31 @@ export function Topbar({
 
   const handleDecide = async (id: string, nextStatus: "Approved" | "Declined", comment?: string) => {
     setIsDeciding(true);
+    // Optimistically remove item from local notifications state
+    setNotifications((prev) =>
+      prev.filter((n) => n.id !== id && n.id !== `due-today-${id}`)
+    );
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("transaction-updated", { detail: { id, status: nextStatus } })
+      );
+    }
+    handleCloseModal();
+
     try {
-      const res = await fetch(`/api/transactions/${id}`, {
+      const rawId = id.replace("due-today-", "");
+      const res = await fetch(`/api/transactions/${rawId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: nextStatus, comment: comment || null }),
       });
-      if (res.ok) {
-        await fetchNotifications();
-        handleCloseModal();
-      } else {
+      if (!res.ok) {
         console.error("Failed to update transaction status:", await res.text());
       }
     } catch (err) {
       console.error("Error updating transaction status:", err instanceof Error ? err.message : String(err));
     } finally {
+      await fetchNotifications();
       setIsDeciding(false);
     }
   };
@@ -424,68 +676,136 @@ export function Topbar({
           {mounted && theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </button>
 
-        <div ref={panelRef} className="relative">
-          <button
-            type="button"
-            suppressHydrationWarning
-            className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--line)] bg-transparent text-[var(--topbar-foreground)] transition-all duration-300 ease-out hover:bg-[var(--surface-hover)]"
-            aria-label="Open notifications"
-            aria-expanded={notificationsOpen}
-            onClick={() => setNotificationsOpen((current) => !current)}
-            title="Notifications"
-          >
-            <Bell className="h-4 w-4" />
-            {notificationsCount > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-semibold text-[var(--background)]">
-                {notificationsCount}
-              </span>
-            ) : null}
-          </button>
+        {variant !== "technical" && user?.role !== "Technical Librarian" && (
+          <div ref={panelRef} className="relative">
+            <button
+              type="button"
+              suppressHydrationWarning
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-[10px] border border-[var(--line)] bg-transparent text-[var(--topbar-foreground)] transition-all duration-300 ease-out hover:bg-[var(--surface-hover)]"
+              aria-label="Open notifications"
+              aria-expanded={notificationsOpen}
+              onClick={() => setNotificationsOpen((current) => !current)}
+              title="Notifications"
+            >
+              <Bell className="h-4 w-4" />
+              {notificationsCount > 0 ? (
+                <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-semibold text-[var(--background)]">
+                  {notificationsCount}
+                </span>
+              ) : null}
+            </button>
 
-          {notificationsOpen ? (
-            <div className="absolute right-0 z-30 mt-3 w-80 rounded-[24px] border border-[var(--line)] bg-[var(--card-bg)] p-4 shadow-2xl backdrop-blur-md transition-all duration-300">
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-sm font-semibold text-[var(--topbar-title-color)]">Notifications</p>
-                <button
-                  type="button"
-                  suppressHydrationWarning
-                  className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--topbar-muted)] transition hover:text-[var(--topbar-title-color)]"
-                  onClick={() => setNotificationsOpen(false)}
-                >
-                  Close
-                </button>
-              </div>
-              <div className="space-y-3 max-h-[320px] overflow-y-auto pr-1">
-                {notifications.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      setSelectedNotification(item);
-                      setNotificationsOpen(false);
-                    }}
-                    className="w-full text-left rounded-2xl border border-[var(--line)] bg-[var(--background-muted)] p-3 transition hover:bg-[var(--surface-hover)]"
-                  >
-                    <p className="text-sm font-semibold text-[var(--topbar-title-color)] flex items-center justify-between">
-                      <span>{item.title}</span>
-                      {item.unread && (
-                        <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
-                      )}
-                    </p>
-                    <p className="mt-1 text-xs leading-5 text-[var(--topbar-muted)]">
-                      {item.description}
-                    </p>
-                  </button>
-                ))}
-                {notifications.length === 0 && (
-                  <div className="py-8 text-center text-xs text-[var(--topbar-muted)]">
-                    <Bell className="mx-auto mb-2 h-6 w-6 opacity-30" />
-                    No new notifications
+            {notificationsOpen ? (
+              <div className="absolute right-0 z-30 mt-3 w-88 rounded-[24px] border border-[var(--line)] bg-[var(--card-bg)] p-4 shadow-2xl backdrop-blur-md transition-all duration-300">
+                {/* Header with Clear All and Close */}
+                <div className="mb-3 flex items-center justify-between border-b border-[var(--line)] pb-3">
+                  <p className="text-sm font-bold text-[var(--topbar-title-color)]">Notifications</p>
+                  <div className="flex items-center gap-2">
+                    {notifications.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          suppressHydrationWarning
+                          className="text-[11px] font-bold uppercase tracking-[0.14em] text-[var(--accent)] hover:underline transition"
+                          onClick={handleClearAll}
+                          title="Clear all notifications"
+                        >
+                          Clear All
+                        </button>
+                        <span className="text-xs text-[var(--topbar-muted)]">|</span>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      suppressHydrationWarning
+                      className="text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--topbar-muted)] transition hover:text-[var(--topbar-title-color)]"
+                      onClick={() => setNotificationsOpen(false)}
+                    >
+                      CLOSE
+                    </button>
                   </div>
-                )}
+                </div>
+
+                {/* Notifications Cards Container */}
+                <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
+                  {notifications.map((item) => {
+                    const isRead = item.is_read || !item.unread;
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => handleNotificationItemClick(item)}
+                        className={`group relative flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-200 focus:outline-none ${
+                          isRead
+                            ? "border-[var(--line)]/50 bg-[var(--background-muted)]/40 opacity-60 hover:opacity-90 hover:bg-[var(--surface-hover)]"
+                            : "border-[var(--line)] bg-[var(--background-muted)] shadow-md hover:border-[var(--accent)]/50 hover:bg-[var(--surface-hover)] hover:shadow-lg hover:shadow-[var(--accent)]/5"
+                        }`}
+                      >
+                        {/* Left title column with vertical bar */}
+                        <div className="flex flex-shrink-0 items-center gap-2 max-w-[110px]">
+                          <span
+                            className={`text-[11px] font-extrabold uppercase leading-snug tracking-tight ${
+                              isRead
+                                ? "text-[var(--topbar-muted)]"
+                                : "text-[var(--topbar-title-color)]"
+                            }`}
+                          >
+                            {item.title}
+                          </span>
+                          <span
+                            className={`h-7 w-1 rounded-full flex-shrink-0 ${
+                              isRead ? "bg-slate-600/50" : "bg-[var(--accent)]"
+                            }`}
+                          />
+                        </div>
+
+                        {/* Right description column */}
+                        <div className="flex-1 min-w-0">
+                          <p
+                            className={`text-xs leading-relaxed transition-colors ${
+                              isRead
+                                ? "text-[var(--topbar-muted)]"
+                                : "text-[var(--topbar-foreground)] group-hover:text-white"
+                            }`}
+                          >
+                            {item.description}
+                          </p>
+                        </div>
+
+                        {!isRead && (
+                          <span className="h-2 w-2 flex-shrink-0 rounded-full bg-[var(--accent)]" />
+                        )}
+                      </button>
+                    );
+                  })}
+
+
+                  {notifications.length === 0 && (
+                    <div className="py-8 text-center text-xs text-[var(--topbar-muted)]">
+                      <Bell className="mx-auto mb-2 h-6 w-6 opacity-30" />
+                      No new notifications
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer with Full View link */}
+                <div className="mt-3 pt-3 border-t border-[var(--line)]">
+                  <button
+                    type="button"
+                    suppressHydrationWarning
+                    onClick={() => {
+                      setNotificationsOpen(false);
+                      router.push(`${config.basePath}/transactions`);
+                    }}
+                    className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--accent)] transition-all duration-200 hover:border-[var(--accent)]/60 hover:bg-[var(--accent)]/20 active:scale-95"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                    <span>View All Notifications</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        )}
       </div>
 
       {/* Render detailed modal inside a Portal to body to secure screen centering and backdrop blur */}

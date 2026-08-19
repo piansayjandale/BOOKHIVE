@@ -45,6 +45,7 @@ import axios from "axios";
 import * as DocumentPicker from "expo-document-picker";
 import { API_URL, getAuthHeaders } from "../../data/authService";
 import localBooks from "../../data/books";
+import socketService from "../../services/socketService";
 
 const STOP_WORDS_SET = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", 
@@ -286,6 +287,7 @@ export default function HomeScreen() {
   const [allBooks, setAllBooks] = React.useState<any[]>([]);
   const [isLoadingBooks, setIsLoadingBooks] = React.useState<boolean>(true);
   const [activeCarouselIndex, setActiveCarouselIndex] = React.useState<number>(0);
+  const [liveBanner, setLiveBanner] = React.useState<{ title: string; body: string } | null>(null);
 
   const [trendingBooks, setTrendingBooks] = React.useState<any[]>([
     {
@@ -656,11 +658,32 @@ export default function HomeScreen() {
 
   useFocusEffect(
     React.useCallback(() => {
-      // Force sync announcements from backend when tab comes into focus
+      // Force sync state and backend when tab comes into focus
+      setActiveReservations(getUpcomingReservations());
+      setBorrowHistory(getReservationHistory());
+      setNotifications(getNotifications());
+      setLibraryPoints(getLibraryPoints());
       syncAnnouncementsWithBackend(true);
       fetchBooksPayload();
     }, [fetchBooksPayload])
   );
+
+  React.useEffect(() => {
+    const unsubscribe = socketService.subscribeToBookAdded((newBook: any) => {
+      if (newBook && newBook.title) {
+        setLiveBanner({
+          title: "New Book Added by Librarian!",
+          body: `"${newBook.title}" was added to the STI Library catalog.`,
+        });
+        fetchBooksPayload();
+        setTimeout(() => setLiveBanner(null), 6000);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [fetchBooksPayload]);
 
   const nextPickupDate = formatDateTime(
     new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
@@ -764,6 +787,29 @@ export default function HomeScreen() {
         </View>
       </View>
 
+      {liveBanner && (
+        <TouchableOpacity
+          style={{
+            backgroundColor: "#059669",
+            marginHorizontal: 16,
+            marginTop: 8,
+            padding: 12,
+            borderRadius: 10,
+            flexDirection: "row",
+            alignItems: "center",
+            elevation: 4,
+          }}
+          onPress={() => setLiveBanner(null)}
+        >
+          <Ionicons name="notifications-outline" size={22} color="#FFFFFF" style={{ marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "#FFFFFF", fontWeight: "bold", fontSize: 13 }}>{liveBanner.title}</Text>
+            <Text style={{ color: "#E0E7FF", fontSize: 12 }}>{liveBanner.body}</Text>
+          </View>
+          <Ionicons name="close" size={18} color="#FFFFFF" />
+        </TouchableOpacity>
+      )}
+
       <ScrollView
         showsVerticalScrollIndicator={false}
       >
@@ -862,7 +908,7 @@ export default function HomeScreen() {
               <Text style={styles.newStatLabel}>BOOKS BORROWED</Text>
             </View>
             <Text style={[styles.newStatNumber, { color: theme.accentGold }]}>
-              {borrowHistory.filter((item) => item.status === "Approved").length || 1}
+              {activeReservations.filter((book) => book.status === "Approved").length}
             </Text>
           </View>
 
@@ -872,7 +918,7 @@ export default function HomeScreen() {
               <Text style={styles.newStatLabel}>BOOKS RESERVED</Text>
             </View>
             <Text style={[styles.newStatNumber, { color: theme.accentGold }]}>
-              {activeReservations.length || 2}
+              {activeReservations.filter((book) => book.status === "Pending" || book.status === "Upcoming" || book.status === "Reserved").length}
             </Text>
           </View>
         </View>

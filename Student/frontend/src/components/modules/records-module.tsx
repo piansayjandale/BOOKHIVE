@@ -27,6 +27,63 @@ import {
 import { useRouter } from "next/navigation";
 import type { BookRecord, Department } from "@/lib/types";
 
+export type NormalizedStatus = "Available" | "Reserved" | "Unavailable";
+
+export function normalizeStatus(rawStatus?: string | null): NormalizedStatus {
+  if (!rawStatus) return "Available";
+  const s = rawStatus.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (s === "available" || s === "instock" || s === "in_stock") {
+    return "Available";
+  }
+  if (s === "reserved" || s === "pending" || s === "hold" || s === "onhold") {
+    return "Reserved";
+  }
+  if (
+    s === "unavailable" ||
+    s === "notavailable" ||
+    s === "limited" ||
+    s === "borrowed" ||
+    s === "checkedout" ||
+    s === "onloan" ||
+    s === "lost" ||
+    s === "archived"
+  ) {
+    return "Unavailable";
+  }
+  return "Available";
+}
+
+export function computeBookCopyStats(book: BookRecord | { copies?: number; availability?: string } | null | undefined) {
+  const status = normalizeStatus(book?.availability);
+  const totalCopies = Math.max(1, Number(book?.copies) || 1);
+
+  let availableCopies = totalCopies;
+  let reservedCopies = 0;
+  let unavailableCopies = 0;
+
+  if (status === "Unavailable") {
+    availableCopies = 0;
+    reservedCopies = 0;
+    unavailableCopies = totalCopies;
+  } else if (status === "Reserved") {
+    reservedCopies = 1;
+    availableCopies = Math.max(0, totalCopies - 1);
+    unavailableCopies = 0;
+  } else {
+    availableCopies = totalCopies;
+    reservedCopies = 0;
+    unavailableCopies = 0;
+  }
+
+  return {
+    totalCopies,
+    availableCopies,
+    reservedCopies,
+    unavailableCopies,
+    status,
+  };
+}
+
 const departmentOptions: Array<Department | "All"> = [
   "All",
   "Circulation",
@@ -56,17 +113,31 @@ const emptyBookForm = {
   shelfLocation: "",
   summary: "",
   availability: "Available" as BookRecord["availability"],
+  genres: "",
+  copies: 1,
 };
 
-function AvailBadge({ status }: { status: BookRecord["availability"] }) {
-  const map = {
-    Available: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-    Limited:   "bg-red-500/15 text-red-300 border-red-500/30",
-    Reserved:  "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  } as const;
+function AvailBadge({ status }: { status: BookRecord["availability"] | "Unavailable" | string }) {
+  const normalized = normalizeStatus(status);
+  const map: Record<NormalizedStatus, { badge: string; dot: string }> = {
+    Available: {
+      badge: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+      dot: "bg-emerald-400",
+    },
+    Reserved: {
+      badge: "bg-amber-500/15 text-amber-300 border-amber-500/30",
+      dot: "bg-amber-400",
+    },
+    Unavailable: {
+      badge: "bg-rose-500/15 text-rose-300 border-rose-500/30",
+      dot: "bg-rose-400",
+    },
+  };
+  const config = map[normalized];
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${map[status]}`}>
-      {status}
+    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${config.badge}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${config.dot}`} />
+      {normalized}
     </span>
   );
 }
@@ -84,6 +155,34 @@ export function RecordsModule() {
   const [suggestions, setSuggestions] = useState<BookRecord[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedBookDetails, setSelectedBookDetails] = useState<BookRecord | null>(null);
+
+  const [dashboardSummary, setDashboardSummary] = useState<{
+    totalBooks: number;
+    activeBorrowedBooks: number;
+    pendingRequests: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchSummary() {
+      try {
+        const res = await fetch("/api/dashboard");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (isMounted && data.summary) {
+          setDashboardSummary({
+            totalBooks: data.summary.totalBooks || 0,
+            activeBorrowedBooks: data.summary.activeBorrowedBooks || 0,
+            pendingRequests: data.summary.pendingRequests || 0,
+          });
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void fetchSummary();
+    return () => { isMounted = false; };
+  }, []);
 
   const deferredSearch = useDeferredValue(search);
   const pageSize = 60;
@@ -168,7 +267,10 @@ export function RecordsModule() {
     await fetch("/api/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify({
+        ...form,
+        availability: normalizeStatus(form.availability),
+      }),
     });
     setForm(emptyBookForm);
     setShowModal(false);
@@ -181,8 +283,60 @@ export function RecordsModule() {
     router.push("/admin/book-management?tab=archived");
   }
 
-  const available = books.filter(b => b.availability === "Available").length;
-  const limited   = books.filter(b => b.availability !== "Available").length;
+  // Inventory Summary Metrics (accurate client synchronization)
+  const stats = useMemo(() => {
+    if ((search.trim() !== "" || department !== "All") && totalBooks <= books.length && books.length > 0) {
+      let totalCopies = 0;
+      let availCopies = 0;
+      let resCopies = 0;
+      let unavailCopies = 0;
+      let availRecords = 0;
+      let resRecords = 0;
+      let unavailRecords = 0;
+
+      for (const b of books) {
+        const c = computeBookCopyStats(b);
+        totalCopies += c.totalCopies;
+        availCopies += c.availableCopies;
+        resCopies += c.reservedCopies;
+        unavailCopies += c.unavailableCopies;
+
+        if (c.status === "Available") availRecords++;
+        else if (c.status === "Reserved") resRecords++;
+        else unavailRecords++;
+      }
+
+      return {
+        total: totalBooks,
+        totalCopies: totalCopies || totalBooks,
+        available: availRecords,
+        reserved: resRecords,
+        unavailable: unavailRecords,
+        availableCopies: availCopies,
+        reservedCopies: resCopies,
+        unavailableCopies: unavailCopies,
+      };
+    }
+
+    const unavailable = dashboardSummary?.activeBorrowedBooks ?? books.filter(b => normalizeStatus(b.availability) === "Unavailable").length;
+    const reserved = dashboardSummary?.pendingRequests ?? books.filter(b => normalizeStatus(b.availability) === "Reserved").length;
+    const safeUnavailable = Math.min(totalBooks, unavailable);
+    const safeReserved = Math.min(Math.max(0, totalBooks - safeUnavailable), reserved);
+    const available = Math.max(0, totalBooks - safeUnavailable - safeReserved);
+
+    const avgCopies = books.length > 0
+      ? books.reduce((acc, b) => acc + (Math.max(1, Number(b.copies) || 1)), 0) / books.length
+      : 1;
+    const totalCopies = Math.round(totalBooks * avgCopies);
+
+    return {
+      total: totalBooks,
+      totalCopies: Math.max(totalBooks, totalCopies),
+      available,
+      reserved: safeReserved,
+      unavailable: safeUnavailable,
+    };
+  }, [books, totalBooks, search, department, dashboardSummary]);
 
   return (
     <div className="flex h-full flex-col gap-6 px-1">
@@ -205,19 +359,42 @@ export function RecordsModule() {
         </button>
       </div>
 
-      {/* ── Stat pills ─────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* ── Stat pills / Inventory Summary Metric Cards ─────── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: "Total Records", value: totalBooks.toLocaleString(), color: "#FCD400" },
-          { label: "Available",     value: available.toLocaleString(),  color: "#6EE7B7" },
-          { label: "Not Available", value: limited.toLocaleString(),    color: "#FCA5A5" },
-        ].map(stat => (
-          <div key={stat.label}
-            className="rounded-2xl border border-white/8 bg-[#152E47]/60 px-5 py-4 backdrop-blur"
+          {
+            label: "TOTAL RECORDS",
+            value: stats.total.toLocaleString(),
+            sublabel: `${(stats.totalCopies ?? stats.total).toLocaleString()} Total Copies`,
+            color: "#FCD400",
+          },
+          {
+            label: "AVAILABLE",
+            value: stats.available.toLocaleString(),
+            sublabel: "Ready for Checkout",
+            color: "#6EE7B7",
+          },
+          {
+            label: "RESERVED",
+            value: stats.reserved.toLocaleString(),
+            sublabel: "On Hold / Pending",
+            color: "#FCD34D",
+          },
+          {
+            label: "UNAVAILABLE",
+            value: stats.unavailable.toLocaleString(),
+            sublabel: "Borrowed / On Loan",
+            color: "#FCA5A5",
+          },
+        ].map((stat) => (
+          <div
+            key={stat.label}
+            className="rounded-2xl border border-white/8 bg-[#152E47]/60 px-5 py-4 backdrop-blur transition-all duration-200 hover:bg-[#152E47]/80"
             style={{ borderLeftColor: stat.color, borderLeftWidth: 4 }}
           >
             <p className="text-[10px] font-bold tracking-[0.18em] text-slate-400 uppercase">{stat.label}</p>
             <p className="mt-1 text-2xl font-black text-white">{stat.value}</p>
+            <p className="mt-0.5 text-[11px] font-medium text-slate-400">{stat.sublabel}</p>
           </div>
         ))}
       </div>
@@ -276,21 +453,23 @@ export function RecordsModule() {
       <div className="flex-1 overflow-hidden rounded-2xl border border-white/8 bg-[#0F1D29]/80 backdrop-blur">
         <div className="overflow-auto h-full">
           <table className="min-w-full text-sm">
-            <thead>
-              <tr className="border-b border-white/8 bg-[#152E47]/60">
-                {["Title / Author", "Department", "ISBN", "Shelf", "Availability", ""].map(h => (
-                  <th key={h} className="px-5 py-3.5 text-left text-[11px] font-bold tracking-[0.15em] text-slate-400 uppercase whitespace-nowrap">
-                    {h}
-                  </th>
-                ))}
+            <thead className="sticky top-0 z-20 bg-[#0F1D29]/95 backdrop-blur border-b border-white/10 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              <tr>
+                <th className="px-5 py-3 text-left">Book / Author</th>
+                <th className="px-5 py-3 text-left">Department</th>
+                <th className="px-5 py-3 text-left">ISBN</th>
+                <th className="px-5 py-3 text-left">Shelf Location</th>
+                <th className="px-5 py-3 text-left">Copy Tracking</th>
+                <th className="px-5 py-3 text-left">Status</th>
+                <th className="px-5 py-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody>
               {groupedRows.map((row, i) => {
                 if (row.type === "letter") {
                   return (
-                    <tr key={`letter-${row.letter}-${i}`}>
-                      <td colSpan={6} className="px-5 py-2 bg-[#152E47]/30">
+                    <tr key={`letter-${row.letter}-${i}`} className="border-t border-b border-white/5 bg-white/[0.01]">
+                      <td colSpan={7} className="px-5 py-2.5 text-center">
                         <span className="text-[11px] font-black tracking-[0.25em] text-[#FCD400] uppercase">
                           — {row.letter} —
                         </span>
@@ -299,11 +478,16 @@ export function RecordsModule() {
                   );
                 }
                 const book = row.book;
+                const copyStats = computeBookCopyStats(book);
                 const deptColor = DEPT_COLORS[book.department] ?? "#94A3B8";
                 return (
-                  <tr key={book.id} className="border-b border-white/5 transition hover:bg-white/3 cursor-pointer" onClick={() => setSelectedBookDetails(book)}>
+                  <tr
+                    key={book.id}
+                    className="border-b border-white/5 transition hover:bg-white/[0.04] cursor-pointer group"
+                    onClick={() => setSelectedBookDetails(book)}
+                  >
                     <td className="px-5 py-3.5 max-w-[260px]">
-                      <div className="font-semibold text-white leading-snug line-clamp-1">{book.title}</div>
+                      <div className="font-semibold text-white leading-snug line-clamp-1 group-hover:text-[#FCD400] transition-colors">{book.title}</div>
                       <div className="text-xs text-slate-400 mt-0.5 line-clamp-1">{book.author}</div>
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap">
@@ -313,13 +497,30 @@ export function RecordsModule() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 font-mono text-xs text-slate-400">{book.isbn}</td>
-                    <td className="px-5 py-3.5 text-xs text-slate-400">{book.shelfLocation}</td>
-                    <td className="px-5 py-3.5"><AvailBadge status={book.availability} /></td>
-                    <td className="px-5 py-3.5">
+                    <td className="px-5 py-3.5 text-xs text-slate-300">
+                      {book.shelfLocation ? (
+                        <span>{book.shelfLocation}</span>
+                      ) : (
+                        <span className="text-slate-500 italic">Unavailable</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <div className="inline-flex items-center gap-1.5 rounded-lg border border-white/8 bg-white/[0.03] px-2.5 py-1 text-xs">
+                        <BookOpen className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="font-semibold text-white">{copyStats.availableCopies}</span>
+                        <span className="text-slate-400">/</span>
+                        <span className="text-slate-300">{copyStats.totalCopies}</span>
+                        <span className="text-[10px] text-slate-400 uppercase font-medium">Available</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap">
+                      <AvailBadge status={copyStats.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-center">
                       <button
                         onClick={(e) => { e.stopPropagation(); void handleDelete(book.id); }}
                         suppressHydrationWarning
-                        className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-slate-400 hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400 transition"
+                        className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-1.5 text-orange-400 hover:bg-orange-500/15 hover:border-orange-500/30 transition active:scale-95"
                         title="Archive"
                       >
                         <Archive className="h-3.5 w-3.5" />
@@ -330,7 +531,7 @@ export function RecordsModule() {
               })}
               {groupedRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-20 text-center text-slate-500">
+                  <td colSpan={7} className="py-20 text-center text-slate-500">
                     <Library className="mx-auto mb-3 h-8 w-8 opacity-30" />
                     No records found.
                   </td>
@@ -435,7 +636,7 @@ export function RecordsModule() {
                   <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Status</span>
                   <select suppressHydrationWarning className="modal-input" value={form.availability}
                     onChange={e => setForm(f => ({ ...f, availability: e.target.value as BookRecord["availability"] }))}>
-                    {["Available", "Limited", "Reserved"].map(s => (
+                    {["Available", "Reserved", "Unavailable"].map(s => (
                       <option key={s} value={s} className="bg-[#0F1D29]">{s}</option>
                     ))}
                   </select>
@@ -447,6 +648,30 @@ export function RecordsModule() {
                 <input suppressHydrationWarning className="modal-input" value={form.shelfLocation}
                   onChange={e => setForm(f => ({ ...f, shelfLocation: e.target.value }))} />
               </label>
+
+              <div className="grid grid-cols-3 gap-4">
+                <label className="grid gap-1.5 col-span-2">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Genre</span>
+                  <input
+                    suppressHydrationWarning
+                    className="modal-input"
+                    value={form.genres}
+                    onChange={(e) => setForm((f) => ({ ...f, genres: e.target.value }))}
+                    placeholder="e.g. Science Fiction, Tech"
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Copies</span>
+                  <input
+                    suppressHydrationWarning
+                    type="number"
+                    min={1}
+                    className="modal-input"
+                    value={form.copies}
+                    onChange={(e) => setForm((f) => ({ ...f, copies: parseInt(e.target.value) || 1 }))}
+                  />
+                </label>
+              </div>
 
               <label className="grid gap-1.5">
                 <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Summary</span>
@@ -490,120 +715,196 @@ export function RecordsModule() {
         }
       `}</style>
 
-      {/* ── Book Details Modal ─────────────────────────────────── */}
-      {selectedBookDetails && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-            onClick={() => setSelectedBookDetails(null)}
-          />
+      {/* ── Book Details Modal ("Book Archive Details") ─────── */}
+      {selectedBookDetails && (() => {
+        const modalCopyStats = computeBookCopyStats(selectedBookDetails);
+        const percentAvailable = Math.round((modalCopyStats.availableCopies / (modalCopyStats.totalCopies || 1)) * 100);
+        const percentReserved = Math.round((modalCopyStats.reservedCopies / (modalCopyStats.totalCopies || 1)) * 100);
+        const percentUnavailable = Math.max(0, 100 - percentAvailable - percentReserved);
 
-          {/* Panel */}
-          <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-white/12 bg-[#0A1624] shadow-2xl shadow-black/60 overflow-hidden">
-            {/* Header */}
-            <div className="flex items-start justify-between border-b border-white/8 px-8 py-6 relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-[#14283F] to-transparent opacity-30" />
-              <div className="relative z-10">
-                <p className="text-[10px] font-bold tracking-[0.25em] text-[#FCD400] uppercase mb-2">Book Archive Details</p>
-                <h2 className="text-3xl font-black text-white tracking-tight">{selectedBookDetails.title}</h2>
-                <p className="mt-1 text-sm text-slate-400">By {selectedBookDetails.author}</p>
-                <div className="mt-4">
-                  <AvailBadge status={selectedBookDetails.availability} />
-                </div>
-              </div>
-              <button
-                suppressHydrationWarning
-                onClick={() => setSelectedBookDetails(null)}
-                className="relative z-10 rounded-lg p-2 text-slate-400 hover:bg-white/8 hover:text-white transition"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {/* Backdrop */}
+            <div
+              className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+              onClick={() => setSelectedBookDetails(null)}
+            />
 
-            {/* Body */}
-            <div className="p-8 grid gap-6 max-h-[70vh] overflow-y-auto">
-              {/* Info Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
-                    <Tag className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">ISBN</p>
-                    <p className="text-sm font-bold text-white">{selectedBookDetails.isbn}</p>
+            {/* Panel */}
+            <div className="relative z-10 w-full max-w-2xl rounded-2xl border border-white/12 bg-[#0A1624] shadow-2xl shadow-black/60 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-white/8 px-8 py-6 relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-br from-[#14283F] to-transparent opacity-30" />
+                <div className="relative z-10">
+                  <p className="text-[10px] font-bold tracking-[0.25em] text-[#FCD400] uppercase mb-2">Book Archive Details</p>
+                  <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">{selectedBookDetails.title}</h2>
+                  <p className="mt-1 text-sm text-slate-400">By {selectedBookDetails.author}</p>
+                  <div className="mt-3">
+                    <AvailBadge status={modalCopyStats.status} />
                   </div>
                 </div>
-
-                <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
-                    <Info className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Department</p>
-                    <p className="text-sm font-bold text-white">{selectedBookDetails.department}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
-                    <Clock className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Shelf Location</p>
-                    <p className="text-sm font-bold text-white">{selectedBookDetails.shelfLocation || "Not available"}</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
-                    <Tag className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Genre</p>
-                    <p className="text-sm font-bold text-white">{selectedBookDetails.genres || "Not specified"}</p>
-                  </div>
-                </div>
+                <button
+                  suppressHydrationWarning
+                  onClick={() => setSelectedBookDetails(null)}
+                  className="relative z-10 rounded-lg p-2 text-slate-400 hover:bg-white/8 hover:text-white transition"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
 
-              {/* Citation */}
-              <div className="rounded-xl border border-white/5 bg-white/[0.02] p-5">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-[11px] font-bold tracking-widest text-[#FCD400] uppercase">APA Scholarly Citation</h3>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const text = `${selectedBookDetails.author}. (n.d.). ${selectedBookDetails.title}. STI West Negros University Library.`;
-                      void navigator.clipboard.writeText(text);
-                      alert("Citation copied to clipboard!");
-                    }}
-                    className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-white/10 hover:text-white"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                    COPY TEXT
-                  </button>
-                </div>
-                <div className="rounded-lg bg-black/40 p-4 font-mono text-sm leading-relaxed text-slate-300">
-                  {selectedBookDetails.author}. (n.d.). {selectedBookDetails.title}. STI West Negros University Library.
-                </div>
-              </div>
+              {/* Body */}
+              <div className="p-8 grid gap-6 max-h-[70vh] overflow-y-auto">
+                {/* Dedicated Copy Inventory & Availability Section */}
+                <div className="rounded-2xl border border-[#FCD400]/20 bg-gradient-to-br from-[#152E47]/70 to-[#0F1D29]/90 p-5 shadow-lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#FCD400]/15 text-[#FCD400]">
+                        <BookOpen className="h-4 w-4" />
+                      </div>
+                      <h3 className="text-xs font-black tracking-widest text-[#FCD400] uppercase">
+                        Copy Inventory & Availability
+                      </h3>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-slate-300">
+                      {modalCopyStats.availableCopies} of {modalCopyStats.totalCopies} Available
+                    </span>
+                  </div>
 
-              {/* Summary */}
-              {selectedBookDetails.summary && (
+                  {/* 3-metric copy breakdown cards */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="rounded-xl border border-white/8 bg-black/25 p-3 text-center">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Total Physical</p>
+                      <p className="mt-1 text-lg font-black text-white">{modalCopyStats.totalCopies}</p>
+                      <p className="text-[10px] text-slate-500">In System</p>
+                    </div>
+
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-3 text-center">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-emerald-400">Available</p>
+                      <p className="mt-1 text-lg font-black text-emerald-300">{modalCopyStats.availableCopies}</p>
+                      <p className="text-[10px] text-emerald-400/70">For Checkout</p>
+                    </div>
+
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 text-center">
+                      <p className="text-[9px] font-bold uppercase tracking-wider text-amber-400">Reserved / Loan</p>
+                      <p className="mt-1 text-lg font-black text-amber-300">{modalCopyStats.reservedCopies + modalCopyStats.unavailableCopies}</p>
+                      <p className="text-[10px] text-amber-400/70">Active Holds</p>
+                    </div>
+                  </div>
+
+                  {/* Visual availability progress bar */}
+                  <div className="mt-4 space-y-1.5">
+                    <div className="flex justify-between text-[10px] text-slate-400 font-medium">
+                      <span>Stock Allocation</span>
+                      <span>{percentAvailable}% In Circulation Ready</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-white/5 overflow-hidden flex border border-white/5">
+                      {modalCopyStats.availableCopies > 0 && (
+                        <div
+                          className="bg-emerald-500 transition-all duration-300"
+                          style={{ width: `${percentAvailable}%` }}
+                          title={`Available: ${modalCopyStats.availableCopies}`}
+                        />
+                      )}
+                      {modalCopyStats.reservedCopies > 0 && (
+                        <div
+                          className="bg-amber-500 transition-all duration-300"
+                          style={{ width: `${percentReserved}%` }}
+                          title={`Reserved: ${modalCopyStats.reservedCopies}`}
+                        />
+                      )}
+                      {modalCopyStats.unavailableCopies > 0 && (
+                        <div
+                          className="bg-rose-500 transition-all duration-300"
+                          style={{ width: `${percentUnavailable}%` }}
+                          title={`Unavailable: ${modalCopyStats.unavailableCopies}`}
+                        />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Info Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
+                      <Tag className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">ISBN</p>
+                      <p className="text-sm font-bold text-white font-mono">{selectedBookDetails.isbn}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
+                      <Info className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Department</p>
+                      <p className="text-sm font-bold text-white">{selectedBookDetails.department}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
+                      <Clock className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Shelf Location</p>
+                      <p className="text-sm font-bold text-white">{selectedBookDetails.shelfLocation || "Unavailable"}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-white/[0.02] p-4">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFD600]/10 text-[#FFD600]">
+                      <Tag className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Genre</p>
+                      <p className="text-sm font-bold text-white">{selectedBookDetails.genres || "Not specified"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Citation */}
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-5">
-                  <h3 className="mb-3 text-[11px] font-bold tracking-widest text-slate-500 uppercase">Summary Description</h3>
-                  <p className="text-sm leading-relaxed text-slate-300">
-                    {selectedBookDetails.summary}
-                  </p>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[11px] font-bold tracking-widest text-[#FCD400] uppercase">APA Scholarly Citation</h3>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `${selectedBookDetails.author}. (n.d.). ${selectedBookDetails.title}. STI West Negros University Library.`;
+                        void navigator.clipboard.writeText(text);
+                        alert("Citation copied to clipboard!");
+                      }}
+                      className="flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      COPY TEXT
+                    </button>
+                  </div>
+                  <div className="rounded-lg bg-black/40 p-4 font-mono text-sm leading-relaxed text-slate-300 select-all">
+                    {selectedBookDetails.author}. (n.d.). {selectedBookDetails.title}. STI West Negros University Library.
+                  </div>
                 </div>
-              )}
+
+                {/* Summary */}
+                {selectedBookDetails.summary && (
+                  <div className="rounded-xl border border-white/5 bg-white/[0.02] p-5">
+                    <h3 className="mb-3 text-[11px] font-bold tracking-widest text-slate-500 uppercase">Summary Description</h3>
+                    <p className="text-sm leading-relaxed text-slate-300">
+                      {selectedBookDetails.summary}
+                    </p>
+                  </div>
+                )}
+              </div>
+              
+              {/* Scrollbar style indication */}
+              <div className="absolute right-0 top-0 bottom-0 w-1 bg-[#FCD400]/80 rounded-l" />
             </div>
-            
-            {/* Scrollbar style indication from screenshot (yellow right border) */}
-            <div className="absolute right-0 top-0 bottom-0 w-1 bg-[#FCD400]/80 rounded-l" />
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

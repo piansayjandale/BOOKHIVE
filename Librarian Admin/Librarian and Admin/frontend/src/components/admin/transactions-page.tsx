@@ -19,6 +19,7 @@ import { requestJson } from "@/lib/admin/client";
 import type { AdminTransactionsPayload } from "@/lib/admin/types";
 import type { TransactionStatus } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
+import { StudentLibraryCardModal } from "@/components/modals/student-library-card-modal";
 
 /* ── Constants ───────────────────────────────────────────────────────────── */
 
@@ -57,6 +58,13 @@ export function TransactionsPage() {
   const [payload, setPayload] = useState<AdminTransactionsPayload | null>(null);
   const [tab, setTab]         = useState<TransactionTab>("borrow");
   const [search, setSearch]   = useState("");
+  const [selectedStudentForCard, setSelectedStudentForCard] = useState<{
+    name: string;
+    studentId: string;
+    department?: string;
+    course?: string;
+    qrCode?: string;
+  } | null>(null);
 
   async function loadTransactions() {
     const next = await requestJson<AdminTransactionsPayload>("/api/admin/transactions");
@@ -97,27 +105,33 @@ export function TransactionsPage() {
       })
     : allRows;
 
+  // Flatten all transactions for the modal
+  const combinedHistory = [
+    ...(payload?.borrowRequests ?? []),
+    ...(payload?.returnRecords ?? []),
+    ...(payload?.reservations ?? []),
+    ...(payload?.transactionHistory ?? []),
+  ];
+
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col gap-6 overflow-hidden px-4 py-5 md:px-8">
+    <div className="flex h-full flex-col gap-6 px-1">
 
       {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-bold tracking-[0.2em] text-[#FCD400] uppercase">
-            Administration · Transactions
+            Admin · Circulation
           </p>
           <h1 className="mt-1 text-2xl font-black text-white tracking-tight">
-            Transaction Workspace
+            Transaction Oversight
           </h1>
           <p className="mt-0.5 text-sm text-slate-400">
-            Review borrow requests, returns, and reservations.
-            {payload?.allowAdminControl
-              ? " Admin override is enabled."
-              : " View-only — enable admin control in Settings."}
+            Real-time status overview across all active borrows, returns, and reservations.
           </p>
         </div>
         <button
           suppressHydrationWarning
+          type="button"
           onClick={() => void loadTransactions()}
           className="flex items-center gap-2 rounded-xl bg-[#FCD400] px-5 py-2.5 text-sm font-bold text-[#0b1c2c] shadow-lg shadow-[#FCD400]/20 transition hover:brightness-110 active:scale-95"
         >
@@ -126,47 +140,76 @@ export function TransactionsPage() {
         </button>
       </div>
 
-      {/* ── Stat pills ──────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {/* ── Metric Cards ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
-          { label: "Pending",  value: payload?.summary?.pending ?? "…",  color: "#FBBF24", icon: Clock },
-          { label: "Approved", value: payload?.summary?.approved ?? "…", color: "#6EE7B7", icon: Check },
-          { label: "Declined", value: payload?.summary?.declined ?? "…", color: "#FCA5A5", icon: X },
-          { label: "Returned", value: payload?.summary?.returned ?? "…", color: "#7DD3FC", icon: RefreshCcw },
-        ].map((stat) => (
+          {
+            label: "Borrow Requests",
+            count: payload?.borrowRequests.length ?? 0,
+            color: "text-amber-400",
+            border: "border-amber-500/20",
+            bg: "bg-amber-500/5",
+            icon: Clock,
+          },
+          {
+            label: "Return Records",
+            count: payload?.returnRecords.length ?? 0,
+            color: "text-sky-400",
+            border: "border-sky-500/20",
+            bg: "bg-sky-500/5",
+            icon: RefreshCcw,
+          },
+          {
+            label: "Reservations",
+            count: payload?.reservations.length ?? 0,
+            color: "text-violet-400",
+            border: "border-violet-500/20",
+            bg: "bg-violet-500/5",
+            icon: SlidersHorizontal,
+          },
+          {
+            label: "Total History",
+            count: payload?.transactionHistory.length ?? 0,
+            color: "text-slate-300",
+            border: "border-white/10",
+            bg: "bg-white/5",
+            icon: ArrowDownUp,
+          },
+        ].map((c) => (
           <div
-            key={stat.label}
-            className="rounded-2xl border border-white/8 bg-[#152E47]/60 px-5 py-4 backdrop-blur"
-            style={{ borderLeftColor: stat.color, borderLeftWidth: 4 }}
+            key={c.label}
+            className={`flex items-center justify-between rounded-2xl border ${c.border} ${c.bg} p-4`}
           >
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-bold tracking-[0.18em] text-slate-400 uppercase">{stat.label}</p>
-              <stat.icon className="h-3.5 w-3.5 text-slate-500" />
+            <div>
+              <p className="text-[11px] font-semibold text-slate-400">{c.label}</p>
+              <p className={`mt-1 text-2xl font-black ${c.color}`}>
+                {payload ? c.count.toLocaleString() : "—"}
+              </p>
             </div>
-            <p className="mt-1 text-2xl font-black text-white">{stat.value}</p>
+            <c.icon className={`h-6 w-6 opacity-30 ${c.color}`} />
           </div>
         ))}
       </div>
 
-      {/* ── Tab pills + Search ──────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1.5">
+      {/* ── Tabs & Search Bar ────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/8 pb-4">
+        <div className="flex gap-2">
           {TABS.map((t) => (
             <button
               key={t.value}
-              suppressHydrationWarning
               type="button"
               onClick={() => setTab(t.value)}
-              className={`rounded-xl px-4 py-2 text-xs font-bold tracking-wide transition ${
+              className={`rounded-xl px-4 py-2 text-xs font-bold transition ${
                 tab === t.value
                   ? "bg-[#FCD400] text-[#0b1c2c] shadow-lg shadow-[#FCD400]/20"
-                  : "border border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                  : "text-slate-400 hover:bg-white/5 hover:text-white"
               }`}
             >
               {t.label}
             </button>
           ))}
         </div>
+
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
           <input
@@ -202,8 +245,30 @@ export function TransactionsPage() {
                   className="border-b border-white/5 transition hover:bg-white/[0.03]"
                 >
                   <td className="px-5 py-3.5 max-w-[200px]">
-                    <div className="font-semibold text-white leading-snug line-clamp-1">{item.studentName}</div>
-                    <div className="text-xs text-slate-400 mt-0.5 font-mono">{item.studentId}</div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedStudentForCard({
+                          name: item.studentName,
+                          studentId: item.studentId,
+                          department: (item as any).department,
+                          course: (item as any).course || (item as any).department || "General Program",
+                          qrCode: (item as any).qrCode || `e1a1-${item.studentId || "default"}`,
+                        })
+                      }
+                      className="group text-left block w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 hover:bg-[#FCD400]/10 hover:border hover:border-[#FCD400]/30 focus:outline-none focus:ring-1 focus:ring-[#FCD400] cursor-pointer"
+                      title={`Click to view Library Card for ${item.studentName}`}
+                    >
+                      <div className="font-semibold text-white leading-snug line-clamp-1 group-hover:text-[#FCD400] transition-colors flex items-center gap-1">
+                        <span>{item.studentName}</span>
+                        <span className="text-[9px] text-[#FCD400] opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                          ↗
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-0.5 font-mono group-hover:text-slate-200">
+                        {item.studentId}
+                      </div>
+                    </button>
                   </td>
                   <td className="px-5 py-3.5 max-w-[260px]">
                     <div className="font-semibold text-white leading-snug line-clamp-1">{item.resourceTitle}</div>
@@ -266,6 +331,14 @@ export function TransactionsPage() {
           {payload?.allowAdminControl ? "Admin override active" : "View-only mode"}
         </span>
       </div>
+
+      {/* ── Student Library Card Modal ───────────────────────────────── */}
+      <StudentLibraryCardModal
+        open={selectedStudentForCard !== null}
+        onClose={() => setSelectedStudentForCard(null)}
+        student={selectedStudentForCard}
+        transactions={combinedHistory}
+      />
     </div>
   );
 }

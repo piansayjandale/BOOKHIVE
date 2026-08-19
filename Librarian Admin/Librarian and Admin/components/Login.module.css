@@ -99,7 +99,8 @@
 }
 
 .login-form input::placeholder {
-  color: #bbbbbb;
+  color: #9ca3af;
+  opacity: 0.4;
 }
 
 .login-form input:focus {

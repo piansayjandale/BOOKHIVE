@@ -32,6 +32,7 @@ export interface AdminUserRecord {
   course: string;
   status: "Active" | "Suspended";
   lastActive: string;
+  qrCode?: string;
 }
 
 export interface AdminBookRecord {

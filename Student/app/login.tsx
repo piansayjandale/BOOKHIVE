@@ -10,6 +10,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Modal,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -140,16 +141,21 @@ function LoginScreenContent() {
   const insets = useSafeAreaInsets();
   const { theme, isDarkMode, toggleTheme } = useThemeColors();
 
-  const { login } = useAuth();
+  const { login, resetPassword } = useAuth();
 
   const [email, setEmail] = useState("");
-
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-
   const [errorMessage, setErrorMessage] = useState("");
-
   const [loading, setLoading] = useState(false);
+
+  // Forgot password modal state
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetIdentifier, setResetIdentifier] = useState("");
+  const [resetNewPassword, setResetNewPassword] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
 
   useEffect(() => {
     const backAction = () => {
@@ -175,60 +181,32 @@ function LoginScreenContent() {
   const handleLogin = async () => {
     try {
       setLoading(true);
-
       setErrorMessage("");
 
-      const trimmedEmail = email
-        .trim()
-        .toLowerCase();
-
+      const trimmedEmail = email.trim();
       const trimmedPassword = password.trim();
 
       if (!trimmedEmail) {
-        const message =
-          "Please enter your school email.";
-
+        const message = "Please enter your school email or Student ID.";
         setErrorMessage(message);
-
-        showAlert("Invalid email", message);
-
+        showAlert("Missing input", message);
         return;
       }
 
       if (!trimmedPassword) {
-        const message =
-          "Please enter your password.";
-
+        const message = "Please enter your password.";
         setErrorMessage(message);
-
         showAlert("Missing password", message);
-
         return;
       }
 
-      if (!isValidEmail(trimmedEmail)) {
-        const message =
-          "Please enter a valid school email.";
-
-        setErrorMessage(message);
-
-        showAlert(
-          "Invalid email format",
-          message
-        );
-
-        return;
-      }
-
-      if (!isSchoolEmail(trimmedEmail)) {
-        const message =
-          "Please use your school email (e.g., @sti.edu.ph or @wnu.sti.edu.ph).";
-
-        setErrorMessage(message);
-
-        showAlert("Invalid email", message);
-
-        return;
+      if (trimmedEmail.includes("@")) {
+        if (!isValidEmail(trimmedEmail)) {
+          const message = "Please enter a valid school email address (e.g., student@sti.edu.ph or @wnu.sti.edu.ph).";
+          setErrorMessage(message);
+          showAlert("Invalid email format", message);
+          return;
+        }
       }
 
       const result = await login(
@@ -244,13 +222,7 @@ function LoginScreenContent() {
           "Logged in successfully."
         );
 
-        const hasTempId = !result.user || !result.user.studentId || result.user.studentId.startsWith("STI-") || result.user.studentId.startsWith("MS-") || !result.user.studentId.includes("-");
-        if (hasTempId) {
-          router.replace("/complete-profile");
-        } else {
-          router.replace("/(tabs)");
-        }
-
+        router.replace("/(tabs)");
         return;
       }
 
@@ -270,6 +242,41 @@ function LoginScreenContent() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    if (!resetIdentifier.trim()) {
+      setResetError("Please enter your school email or Student ID.");
+      return;
+    }
+    if (!resetNewPassword.trim() || resetNewPassword.trim().length < 6) {
+      setResetError("New password must be at least 6 characters long.");
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      setResetError("");
+      setResetSuccess("");
+
+      const res = await resetPassword(resetIdentifier.trim(), resetNewPassword.trim());
+      if (res.success) {
+        setResetSuccess(res.message || "Password reset successfully!");
+        setTimeout(() => {
+          setShowResetModal(false);
+          setEmail(resetIdentifier.trim());
+          setResetIdentifier("");
+          setResetNewPassword("");
+          setResetSuccess("");
+        }, 1500);
+      } else {
+        setResetError(res.message || "Failed to reset password.");
+      }
+    } catch (err: any) {
+      setResetError("An error occurred during password reset.");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -319,14 +326,14 @@ function LoginScreenContent() {
             <Ionicons name="mail-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder="School Email"
-              placeholderTextColor={theme.textSecondary}
+              placeholder="School Email or Student ID"
+              placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={email}
               onChangeText={(value) => {
                 setEmail(value);
                 setErrorMessage("");
               }}
-              keyboardType="email-address"
+              keyboardType="default"
               autoCapitalize="none"
               autoCorrect={false}
             />
@@ -336,8 +343,8 @@ function LoginScreenContent() {
             <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder="Password"
-              placeholderTextColor={theme.textSecondary}
+              placeholder="••••••••"
+              placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={password}
               onChangeText={(value) => {
                 setPassword(value);
@@ -358,6 +365,20 @@ function LoginScreenContent() {
               />
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity
+            style={{ alignSelf: "flex-end", marginBottom: 16, marginTop: -4 }}
+            onPress={() => {
+              setResetIdentifier(email);
+              setResetError("");
+              setResetSuccess("");
+              setShowResetModal(true);
+            }}
+          >
+            <Text style={{ color: theme.accentGold, fontSize: 13, fontWeight: "600" }}>
+              Forgot Password?
+            </Text>
+          </TouchableOpacity>
 
           {errorMessage ? (
             <Text style={styles.errorText}>
@@ -382,6 +403,72 @@ function LoginScreenContent() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* Reset Password Modal */}
+      <Modal
+        visible={showResetModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowResetModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "center", alignItems: "center", padding: 20 }}>
+          <View style={{ width: "100%", maxWidth: 400, backgroundColor: theme.cardBg, borderRadius: 16, padding: 24, borderWidth: 1, borderColor: theme.cardBorder }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <Text style={{ fontSize: 18, fontWeight: "700", color: theme.textPrimary }}>Reset Password</Text>
+              <TouchableOpacity onPress={() => setShowResetModal(false)}>
+                <Ionicons name="close" size={24} color={theme.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 13, color: theme.textSecondary, marginBottom: 16 }}>
+              Enter your registered School Email or Student ID and a new password to recover access.
+            </Text>
+
+            <View style={[styles.inputContainer, { borderColor: theme.cardBorder, marginBottom: 12 }]}>
+              <Ionicons name="person-outline" size={20} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.input, { color: theme.textPrimary }]}
+                placeholder="School Email or Student ID"
+                placeholderTextColor={theme.textSecondary}
+                value={resetIdentifier}
+                onChangeText={setResetIdentifier}
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={[styles.inputContainer, { borderColor: theme.cardBorder, marginBottom: 16 }]}>
+              <Ionicons name="key-outline" size={20} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.input, { color: theme.textPrimary }]}
+                placeholder="New Password (min 6 chars)"
+                placeholderTextColor={theme.textSecondary}
+                value={resetNewPassword}
+                onChangeText={setResetNewPassword}
+                secureTextEntry
+                autoCapitalize="none"
+              />
+            </View>
+
+            {resetError ? (
+              <Text style={[styles.errorText, { marginBottom: 12 }]}>{resetError}</Text>
+            ) : null}
+
+            {resetSuccess ? (
+              <Text style={{ color: "#10B981", fontSize: 13, marginBottom: 12, textAlign: "center" }}>{resetSuccess}</Text>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.loginButton, { backgroundColor: theme.accentGold, marginTop: 4 }]}
+              onPress={handleResetPassword}
+              disabled={resetLoading}
+            >
+              <Text style={[styles.loginButtonText, { color: isDarkMode ? "#090D16" : "#FFFFFF" }]}>
+                {resetLoading ? "Resetting..." : "Reset Password"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       </KeyboardAvoidingView>
     </AnimatedScreen>
   );

@@ -14,7 +14,8 @@ export type BookAvailability = "Available" | "Limited" | "Reserved";
 
 export type TransactionType = "Borrow" | "Return" | "Reservation";
 
-export type TransactionStatus = "Pending" | "Approved" | "Declined" | "Returned";
+export type TransactionStatus = "Pending" | "Approved" | "Declined" | "Returned" | "Cancelled";
+
 
 export type ActivityLevel = "info" | "success" | "warning";
 

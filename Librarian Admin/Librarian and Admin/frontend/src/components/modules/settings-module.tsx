@@ -119,7 +119,7 @@ export function SettingsModule() {
   const userCounts = useMemo(
     () => ({
       admins: users.filter((user) => user.role === "Admin").length,
-      librarians: users.filter((user) => user.role === "Librarian").length,
+      librarians: users.filter((user) => ["Librarian", "Technical Librarian", "Circulation Librarian"].includes(user.role)).length,
       students: users.filter((user) => user.role === "Student").length,
     }),
     [users],

@@ -57,9 +57,10 @@ const aiSuggestions = [
 ];
 
 /**
- * Real-Time Prefix Matching Search Algorithm
- * Checks if query matches the prefix of any word in the target text,
- * or if the full text starts with the query (case-insensitive).
+/**
+ * Real-Time Prefix Matching Search Algorithm (Title-Exclusive)
+ * Checks if query matches the title (case-insensitive).
+ * Omits author, description, category, synopsis, etc.
  */
 export const matchesPrefix = (text: string, query: string): boolean => {
   if (!text || !query) return false;
@@ -69,8 +70,8 @@ export const matchesPrefix = (text: string, query: string): boolean => {
 
   const normalizedText = text.toLowerCase().trim();
 
-  // 1. Direct prefix match of full string
-  if (normalizedText.startsWith(normalizedQuery)) {
+  // 1. Direct substring match
+  if (normalizedText.includes(normalizedQuery)) {
     return true;
   }
 
@@ -87,32 +88,19 @@ export const matchesPrefix = (text: string, query: string): boolean => {
 
   if (queryWords.length === 0) return false;
 
-  // Single word search: check if any word in title/text starts with search prefix
+  // Single word search: check if any word starts with or contains search prefix
   if (queryWords.length === 1) {
     const q = queryWords[0];
-    return words.some((w) => w.startsWith(q));
+    return words.some((w) => w.startsWith(q) || w.includes(q));
   }
 
-  // Multi-word search: check sequence of word prefixes
-  for (let i = 0; i <= words.length - queryWords.length; i++) {
-    let match = true;
-    for (let j = 0; j < queryWords.length; j++) {
-      if (!words[i + j].startsWith(queryWords[j])) {
-        match = false;
-        break;
-      }
-    }
-    if (match) return true;
-  }
-
-  // Fallback: all query words match prefixes of some words in text
-  return queryWords.every((q) => words.some((w) => w.startsWith(q)));
+  // Multi-word search: check if query words match text words
+  return queryWords.every((q) => words.some((w) => w.startsWith(q) || w.includes(q)));
 };
 
 /**
  * Dynamic Real-Time Match Percentage Scoring Calculation
- * Formula: Match Percentage = (Length of Query / Length of Target Title or Matching Word) * 100
- * Clamped between 0% and 100%.
+ * Computes relevance match percentage based on title, author, and metadata overlap.
  */
 export const calculateMatchPercentage = (
   title: string,
@@ -125,8 +113,42 @@ export const calculateMatchPercentage = (
   if (normalizedQuery.length === 0) return 0;
 
   const normalizedTitle = title.toLowerCase().trim();
+  const normalizedAuthor = (author || "").toLowerCase().trim();
+  const combinedText = `${normalizedTitle} ${normalizedAuthor}`;
 
-  const titleWords = normalizedTitle
+  // If query is not in title or author at all, return 0% match
+  if (!matchesPrefix(normalizedTitle, normalizedQuery) && !matchesPrefix(normalizedAuthor, normalizedQuery) && !matchesPrefix(combinedText, normalizedQuery)) {
+    return 0;
+  }
+
+  // 1. Exact Title Match -> 100% Match
+  if (normalizedTitle === normalizedQuery || normalizedAuthor === normalizedQuery) {
+    return 100;
+  }
+
+  const cleanTitle = normalizedTitle.replace(/[^a-z0-9]/g, "");
+  const cleanQuery = normalizedQuery.replace(/[^a-z0-9]/g, "");
+
+  if (cleanTitle.length === 0 || cleanQuery.length === 0) return 50;
+
+  if (cleanTitle === cleanQuery) {
+    return 100;
+  }
+
+  // 2. Title starts with query -> High Match %
+  if (normalizedTitle.startsWith(normalizedQuery) || cleanTitle.startsWith(cleanQuery)) {
+    const ratio = (cleanQuery.length / cleanTitle.length) * 100;
+    return Math.min(100, Math.max(80, Math.round(75 + ratio * 0.25)));
+  }
+
+  // 3. Title or combined text contains substring -> Proportional Match %
+  if (normalizedTitle.includes(normalizedQuery) || cleanTitle.includes(cleanQuery) || combinedText.includes(normalizedQuery)) {
+    const ratio = (cleanQuery.length / cleanTitle.length) * 100;
+    return Math.min(95, Math.max(50, Math.round(50 + ratio * 0.45)));
+  }
+
+  // 4. Tokenized word overlap
+  const titleWords = combinedText
     .split(/[\s,.:;!?'"()\[\]\/-]+/)
     .map((w) => w.replace(/[^a-z0-9]/g, ""))
     .filter(Boolean);
@@ -136,77 +158,20 @@ export const calculateMatchPercentage = (
     .map((w) => w.replace(/[^a-z0-9]/g, ""))
     .filter(Boolean);
 
-  if (queryWords.length === 0) return 0;
-
-  let highestScore = 0;
-
-  if (queryWords.length === 1) {
-    const q = queryWords[0];
-
-    // Evaluate matching words in title starting with q
-    for (const word of titleWords) {
-      if (word.startsWith(q)) {
-        const ratio = Math.round((q.length / word.length) * 100);
-        if (ratio > highestScore) {
-          highestScore = ratio;
-        }
-      }
-    }
-
-    // Evaluate clean full title prefix match
-    const cleanFullTitle = normalizedTitle.replace(/[^a-z0-9]/g, "");
-    if (cleanFullTitle.startsWith(q)) {
-      const ratio = Math.round((q.length / cleanFullTitle.length) * 100);
-      if (ratio > highestScore) {
-        highestScore = ratio;
-      }
-    }
-
-    // If title has no match but author does
-    if (highestScore === 0 && author) {
-      const authorWords = author
-        .toLowerCase()
-        .split(/[\s,.:;!?'"()\[\]\/-]+/)
-        .map((w) => w.replace(/[^a-z0-9]/g, ""))
-        .filter(Boolean);
-
-      for (const word of authorWords) {
-        if (word.startsWith(q)) {
-          const ratio = Math.round((q.length / word.length) * 100);
-          if (ratio > highestScore) {
-            highestScore = ratio;
-          }
-        }
-      }
-    }
-
-    return Math.min(100, Math.max(0, highestScore));
-  }
-
-  // Multi-word query evaluation
-  const cleanFullTitle = normalizedTitle.replace(/[^a-z0-9\s]/g, "");
-  if (cleanFullTitle.startsWith(normalizedQuery)) {
-    const ratio = Math.round((normalizedQuery.length / cleanFullTitle.length) * 100);
-    highestScore = Math.max(highestScore, ratio);
-  }
-
-  let matchedQueryLen = 0;
-  let matchedTargetLen = 0;
-
+  let totalMatchedChars = 0;
   for (const qWord of queryWords) {
-    const matchedWord = titleWords.find((w) => w.startsWith(qWord));
-    if (matchedWord) {
-      matchedQueryLen += qWord.length;
-      matchedTargetLen += matchedWord.length;
+    const matchingTitleWord = titleWords.find((w) => w.startsWith(qWord) || w.includes(qWord));
+    if (matchingTitleWord) {
+      totalMatchedChars += Math.min(qWord.length, matchingTitleWord.length);
     }
   }
 
-  if (matchedTargetLen > 0) {
-    const ratio = Math.round((matchedQueryLen / matchedTargetLen) * 100);
-    highestScore = Math.max(highestScore, ratio);
+  if (totalMatchedChars > 0 && cleanTitle.length > 0) {
+    const ratio = (totalMatchedChars / cleanTitle.length) * 100;
+    return Math.min(90, Math.max(30, Math.round(40 + ratio * 0.5)));
   }
 
-  return Math.min(100, Math.max(0, highestScore));
+  return 50;
 };
 
 export const extractFileKeywords = async (file: { name: string; uri?: string; mimeType?: string }): Promise<string[]> => {
@@ -681,12 +646,17 @@ export default function SearchScreen() {
     }
   }, [q, autoFocus, fileName, fileUri, fileKeywords, fetchBooks]);
 
-  // SAVE SEARCH QUERY EFFECT
+  // SAVE SEARCH QUERY EFFECT & AUTOMATIC LIVE BACKEND SEARCH
   useEffect(() => {
-    if (searchText.trim().length > 0) {
-      saveSearchQuery(searchText);
+    const trimmed = searchText.trim();
+    if (trimmed.length > 0) {
+      saveSearchQuery(trimmed);
+      const timer = setTimeout(() => {
+        fetchBooks(trimmed);
+      }, 250);
+      return () => clearTimeout(timer);
     }
-  }, [searchText]);
+  }, [searchText, fetchBooks]);
 
   // DEPARTMENT CLICK
   const handleDepartmentPress = (department: string) => {

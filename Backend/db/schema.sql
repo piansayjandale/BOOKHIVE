@@ -15,8 +15,15 @@ BEGIN
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'transaction_status') THEN
-    CREATE TYPE transaction_status AS ENUM ('Pending', 'Approved', 'Declined', 'Returned');
+    CREATE TYPE transaction_status AS ENUM ('Pending', 'Approved', 'Declined', 'Returned', 'Cancelled');
+  ELSE
+    BEGIN
+      ALTER TYPE transaction_status ADD VALUE IF NOT EXISTS 'Cancelled';
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END;
   END IF;
+
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'log_severity') THEN
     CREATE TYPE log_severity AS ENUM ('info', 'success', 'warning');
@@ -34,10 +41,29 @@ CREATE TABLE IF NOT EXISTS users (
   course TEXT NOT NULL,
   status user_status NOT NULL DEFAULT 'Active',
   avatar TEXT,
+  qr_code UUID UNIQUE NOT NULL DEFAULT gen_random_uuid(),
   last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS violations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  student_id TEXT NOT NULL,
+  student_name TEXT,
+  book_title TEXT NOT NULL,
+  isbn TEXT,
+  violation_type TEXT NOT NULL DEFAULT 'Overdue Book Return',
+  penalty_amount NUMERIC NOT NULL DEFAULT 0.00,
+  status TEXT NOT NULL DEFAULT 'Active',
+  remarks TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_violations_student_id ON violations(student_id);
+CREATE INDEX IF NOT EXISTS idx_users_qr_code ON users(qr_code);
 
 CREATE TABLE IF NOT EXISTS admin_profiles (
   user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

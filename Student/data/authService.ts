@@ -14,6 +14,8 @@ export type User = {
   course?: string;
   status?: string;
   token?: string;
+  avatar?: string;
+  qrCode?: string;
 };
 
 const CURRENT_USER_KEY = "CURRENT_USER";
@@ -40,24 +42,74 @@ const getBackendUrl = () => {
 
 export const API_URL = getBackendUrl();
 
-const isValidEmail = (email: string) =>
+export const isValidEmail = (email: string) =>
   /\S+@\S+\.\S+/.test(email);
 
-const isSchoolEmail = (email: string) =>
+export const isSchoolEmail = (email: string) =>
   isValidEmail(email) &&
   (email.toLowerCase().endsWith("@sti.edu.ph") ||
    email.toLowerCase().endsWith("@stiwnu.edu.ph") ||
-   email.toLowerCase().endsWith("@wnu.sti.edu.ph"));
+   email.toLowerCase().endsWith("@wnu.sti.edu.ph") ||
+   email.toLowerCase().includes(".sti."));
+
+/**
+ * Normalizes legacy, nested, or partial user objects into a uniform User model.
+ * Prevents runtime errors when reading older schema structures from AsyncStorage.
+ */
+export function normalizeUserSession(rawData: any): User | null {
+  if (!rawData) return null;
+
+  let parsed = rawData;
+  if (typeof rawData === "string") {
+    try {
+      parsed = JSON.parse(rawData);
+    } catch {
+      return null;
+    }
+  }
+
+  if (!parsed || typeof parsed !== "object") return null;
+
+  // Extract nested user payload if present (e.g. { user: { ... }, token: "..." })
+  const base = parsed.user && typeof parsed.user === "object" ? { ...parsed.user } : { ...parsed };
+  const rootToken = parsed.token || parsed.accessToken || parsed.jwt || parsed.authToken;
+  const userToken = base.token || base.accessToken || base.jwt || rootToken;
+
+  const id = base.id || base.sub || base.userId || base.user_id || `usr-${Date.now()}`;
+  const fullName = base.fullName || base.name || base.studentName || base.displayName || "Student";
+  const studentId = base.studentId || base.idNumber || base.id_number || base.student_id || base.id || "";
+  const email = base.email || base.userEmail || base.identifier || "";
+  const role = base.role || "Student";
+  const department = base.department || "WNU STI";
+  const course = base.course || "General Program";
+  const status = base.status || "Active";
+  const avatar = base.avatar || "";
+  const qrCode = base.qrCode || base.qr_code || "";
+
+  return {
+    id: String(id),
+    fullName: String(fullName).trim(),
+    studentId: String(studentId).trim(),
+    email: String(email).trim().toLowerCase(),
+    role: String(role),
+    department: String(department),
+    course: String(course),
+    status: String(status),
+    token: userToken ? String(userToken).trim() : undefined,
+    avatar: avatar ? String(avatar) : undefined,
+    qrCode: qrCode ? String(qrCode) : undefined,
+  };
+}
 
 export const getAuthHeaders = async () => {
   try {
     const userJson = await AsyncStorage.getItem(CURRENT_USER_KEY);
     if (userJson) {
-      const userObj = JSON.parse(userJson);
-      if (userObj && userObj.token) {
+      const user = normalizeUserSession(userJson);
+      if (user && user.token) {
         return {
           headers: {
-            Authorization: `Bearer ${userObj.token}`,
+            Authorization: `Bearer ${user.token}`,
           },
         };
       }
@@ -138,52 +190,75 @@ export const authService = {
     }
   },
 
-  login: async (email: string, password: string) => {
+  login: async (identifierInput: string, password: string) => {
     try {
-      const trimmedEmail = email.trim().toLowerCase();
+      const trimmedIdentifier = identifierInput.trim();
       const trimmedPassword = password.trim();
 
-      if (!isValidEmail(trimmedEmail)) {
+      if (!trimmedIdentifier) {
         return {
           success: false,
-          message: "Invalid email format.",
+          message: "Please enter your school email or Student ID.",
         };
       }
 
-      if (!isSchoolEmail(trimmedEmail)) {
+      if (!trimmedPassword) {
         return {
           success: false,
-          message: "Please use a school email (e.g., @sti.edu.ph or @wnu.sti.edu.ph).",
+          message: "Please enter your password.",
         };
       }
 
-      // Call Express login API
+      // Check if input is formatted as an email
+      const isEmailFormat = trimmedIdentifier.includes("@");
+      if (isEmailFormat) {
+        const lowerEmail = trimmedIdentifier.toLowerCase();
+        if (!isValidEmail(lowerEmail)) {
+          return {
+            success: false,
+            message: "Invalid email format.",
+          };
+        }
+      }
+
+      // Call Express student login endpoint
       const response = await axios.post(`${API_URL}/api/student/login`, {
-        email: trimmedEmail,
+        email: trimmedIdentifier.toLowerCase(),
+        identifier: trimmedIdentifier,
         password: trimmedPassword,
       });
 
-      if (response.status === 200 && response.data?.token) {
-        const backendUser = response.data.user;
-        const clientUser: User = {
-          fullName: backendUser.name,
-          studentId: backendUser.idNumber,
-          email: backendUser.email,
-          id: backendUser.id,
-          role: backendUser.role,
-          department: backendUser.department,
-          course: backendUser.course,
-          status: backendUser.status,
-          token: response.data.token,
-        };
+      if (response.status === 200 && response.data) {
+        const normalized = normalizeUserSession(response.data);
 
-        await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
+        if (normalized && normalized.token) {
+          // Persist session to AsyncStorage
+          await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(normalized));
 
-        return {
-          success: true,
-          user: clientUser,
-          message: "Login successful.",
-        };
+          // Also update cached STUDENT_PROFILE for immediate synchronization
+          try {
+            const currentProfileStr = await AsyncStorage.getItem("STUDENT_PROFILE");
+            const existingProfile = currentProfileStr ? JSON.parse(currentProfileStr) : {};
+            const mergedProfile = {
+              ...existingProfile,
+              name: normalized.fullName,
+              email: normalized.email,
+              studentId: normalized.studentId,
+              department: normalized.department,
+              course: normalized.course,
+              avatar: normalized.avatar || existingProfile.avatar,
+            };
+            await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(mergedProfile));
+          } catch (profileSyncErr) {
+            console.warn("Failed to pre-sync STUDENT_PROFILE:", profileSyncErr);
+          }
+
+          return {
+            success: true,
+            user: normalized,
+            message: "Login successful.",
+          };
+        }
       }
 
       return {
@@ -192,7 +267,53 @@ export const authService = {
       };
     } catch (error: any) {
       console.log("Login Error:", error);
-      const msg = error.response?.data?.message || "Invalid email or password.";
+      const msg = error.response?.data?.message || "Invalid credentials.";
+      return {
+        success: false,
+        message: msg,
+      };
+    }
+  },
+
+  resetPassword: async (identifierInput: string, newPassword: string) => {
+    try {
+      const trimmedIdentifier = identifierInput.trim();
+      const trimmedPassword = newPassword.trim();
+
+      if (!trimmedIdentifier || !trimmedPassword) {
+        return {
+          success: false,
+          message: "Identifier (email or Student ID) and new password are required.",
+        };
+      }
+
+      if (trimmedPassword.length < 6) {
+        return {
+          success: false,
+          message: "Password must be at least 6 characters long.",
+        };
+      }
+
+      const response = await axios.post(`${API_URL}/api/student/reset-password`, {
+        identifier: trimmedIdentifier,
+        email: trimmedIdentifier,
+        newPassword: trimmedPassword,
+      });
+
+      if (response.status === 200 && response.data?.success) {
+        return {
+          success: true,
+          message: response.data.message || "Password reset successfully.",
+        };
+      }
+
+      return {
+        success: false,
+        message: response.data?.message || "Failed to reset password.",
+      };
+    } catch (error: any) {
+      console.log("Reset Password Error:", error);
+      const msg = error.response?.data?.message || "Failed to reset password. Please check your email or Student ID.";
       return {
         success: false,
         message: msg,
@@ -215,26 +336,15 @@ export const authService = {
         });
         
         if (signupRes.status === 201) {
-          const backendUser = signupRes.data.user;
-          const clientUser: User = {
-            fullName: backendUser.name,
-            studentId: backendUser.idNumber,
-            email: backendUser.email,
-            id: backendUser.id,
-            role: backendUser.role,
-            department: backendUser.department,
-            course: backendUser.course,
-            status: backendUser.status,
-            token: signupRes.data.token,
-          };
-          
-          await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
-          
-          return {
-            success: true,
-            user: clientUser,
-            message: "Account created via Microsoft.",
-          };
+          const clientUser = normalizeUserSession(signupRes.data);
+          if (clientUser) {
+            await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
+            return {
+              success: true,
+              user: clientUser,
+              message: "Account created via Microsoft.",
+            };
+          }
         }
       } catch (signupErr: any) {
         // If email already exists, try to log in
@@ -245,26 +355,15 @@ export const authService = {
           });
           
           if (loginRes.status === 200 && loginRes.data?.token) {
-            const backendUser = loginRes.data.user;
-            const clientUser: User = {
-              fullName: backendUser.name,
-              studentId: backendUser.idNumber,
-              email: backendUser.email,
-              id: backendUser.id,
-              role: backendUser.role,
-              department: backendUser.department,
-              course: backendUser.course,
-              status: backendUser.status,
-              token: loginRes.data.token,
-            };
-            
-            await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
-            
-            return {
-              success: true,
-              user: clientUser,
-              message: "Login successful.",
-            };
+            const clientUser = normalizeUserSession(loginRes.data);
+            if (clientUser) {
+              await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
+              return {
+                success: true,
+                user: clientUser,
+                message: "Login successful.",
+              };
+            }
           }
         }
         throw signupErr;
@@ -289,7 +388,13 @@ export const authService = {
       if (!user) {
         return null;
       }
-      return JSON.parse(user);
+      const normalized = normalizeUserSession(user);
+      if (normalized && normalized.token) {
+        // Update stored session if structure was normalized
+        await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(normalized));
+        return normalized;
+      }
+      return null;
     } catch (error) {
       console.log("Init Auth Error:", error);
       return null;
@@ -311,9 +416,9 @@ export const authService = {
   },
 
   clearAllUsers: async () => {
-    // No-op for DB backed mode since users live in database
     return {
       success: true,
     };
   },
 };
+

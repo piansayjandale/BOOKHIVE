@@ -1,25 +1,13 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { authService } from "./authService";
+import { authService, type User, normalizeUserSession } from "./authService";
 import { clearLocalCache } from "./store";
-
-type User = {
-  fullName: string;
-  studentId: string;
-  email: string;
-  password?: string;
-  id?: string;
-  role?: string;
-  department?: string;
-  course?: string;
-  status?: string;
-  token?: string;
-};
 
 type AuthContextType = {
   user: User | null;
   isSignedIn: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<any>;
+  resetPassword: (identifier: string, newPassword: string) => Promise<any>;
   signup: (
     fullName: string,
     studentId: string,
@@ -70,6 +58,10 @@ export const AuthProvider = ({ children }: any) => {
     return result;
   };
 
+  const resetPassword = async (identifier: string, newPassword: string) => {
+    return await authService.resetPassword(identifier, newPassword);
+  };
+
   const signup = async (
     fullName: string,
     studentId: string,
@@ -114,6 +106,7 @@ export const AuthProvider = ({ children }: any) => {
     isSignedIn: !!user,
     loading,
     login,
+    resetPassword,
     signup,
     logout,
     clearAllUsers,

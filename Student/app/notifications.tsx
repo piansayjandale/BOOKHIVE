@@ -76,50 +76,96 @@ export default function NotificationsScreen() {
     }
   };
 
+  // Helper to extract reason/comment from body text
+  const parseNotificationBody = (body: string) => {
+    if (!body) return { mainText: '', reasonText: null, reasonPrefix: 'Reason' };
+
+    // Match patterns like: "... Reason: <comment>" or "... Note: <comment>" or "... Comment: <comment>"
+    const match = body.match(/^(.*?)(?:\.\s*|\s+)(Reason|Note|Comment|Librarian Reason|Librarian Note|Decline Reason|Declined Reason)[\s:]+(.+)$/i);
+    if (match && match[3]) {
+      let mainText = match[1].trim();
+      if (mainText && !mainText.endsWith('.')) {
+        mainText += '.';
+      }
+      return {
+        mainText,
+        reasonPrefix: match[2].trim(),
+        reasonText: match[3].trim(),
+      };
+    }
+
+    // Match if body starts directly with "Reason: <comment>"
+    const startsWithReason = body.match(/^(Reason|Note|Comment|Librarian Reason|Librarian Note|Decline Reason)[\s:]+(.+)$/i);
+    if (startsWithReason) {
+      return {
+        mainText: '',
+        reasonPrefix: startsWithReason[1].trim(),
+        reasonText: startsWithReason[2].trim(),
+      };
+    }
+
+    return { mainText: body, reasonText: null, reasonPrefix: 'Reason' };
+  };
+
   const getNotificationConfig = (title: string) => {
     const t = title.toLowerCase();
     if (t.includes("added") || t.includes("new book")) {
       return {
         icon: "book-outline" as const,
-        color: "#38BDF8", // Sky Blue
-        bgColor: "rgba(56, 189, 248, 0.08)",
-        borderColor: "rgba(56, 189, 248, 0.25)",
+        color: isDarkMode ? "#38BDF8" : "#0284C7", // Sky Blue
+        bgColor: isDarkMode ? "rgba(56, 189, 248, 0.12)" : "#F0F9FF",
+        borderColor: isDarkMode ? "rgba(56, 189, 248, 0.3)" : "#BAE6FD",
         badge: "NEW BOOK",
+        badgeBg: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE",
+        badgeText: isDarkMode ? "#38BDF8" : "#0369A1",
+        isAlert: false,
       };
     }
     if (t.includes("returned") || t.includes("success") || t.includes("approved")) {
       return {
         icon: "checkmark-circle-outline" as const,
-        color: "#34D399", // Emerald Green
-        bgColor: "rgba(52, 211, 153, 0.08)",
-        borderColor: "rgba(52, 211, 153, 0.25)",
+        color: isDarkMode ? "#34D399" : "#059669", // Emerald Green
+        bgColor: isDarkMode ? "rgba(52, 211, 153, 0.12)" : "#ECFDF5",
+        borderColor: isDarkMode ? "rgba(52, 211, 153, 0.3)" : "#A7F3D0",
         badge: "SUCCESS",
+        badgeBg: isDarkMode ? "rgba(52, 211, 153, 0.15)" : "#D1FAE5",
+        badgeText: isDarkMode ? "#34D399" : "#047857",
+        isAlert: false,
       };
     }
     if (t.includes("pending") || t.includes("request") || t.includes("reservation")) {
       return {
         icon: "time-outline" as const,
-        color: "#FCD34D", // Gold (Pending)
-        bgColor: "rgba(252, 211, 77, 0.08)",
-        borderColor: "rgba(252, 211, 77, 0.25)",
+        color: isDarkMode ? "#FCD34D" : "#D97706", // Gold/Amber (Pending)
+        bgColor: isDarkMode ? "rgba(252, 211, 77, 0.12)" : "#FFFBEB",
+        borderColor: isDarkMode ? "rgba(252, 211, 77, 0.3)" : "#FDE68A",
         badge: "PENDING",
+        badgeBg: isDarkMode ? "rgba(252, 211, 77, 0.15)" : "#FEF3C7",
+        badgeText: isDarkMode ? "#FCD34D" : "#B45309",
+        isAlert: false,
       };
     }
     if (t.includes("declined") || t.includes("failed") || t.includes("cancel")) {
       return {
         icon: "close-circle-outline" as const,
-        color: "#F87171", // Rose Red
-        bgColor: "rgba(248, 113, 113, 0.08)",
-        borderColor: "rgba(248, 113, 113, 0.25)",
+        color: isDarkMode ? "#F87171" : "#EF4444", // Rose Red
+        bgColor: isDarkMode ? "rgba(248, 113, 113, 0.12)" : "#FEF2F2",
+        borderColor: isDarkMode ? "rgba(248, 113, 113, 0.3)" : "#FECACA",
         badge: "ALERT",
+        badgeBg: isDarkMode ? "rgba(248, 113, 113, 0.15)" : "#FEE2E2",
+        badgeText: isDarkMode ? "#F87171" : "#DC2626",
+        isAlert: true,
       };
     }
     return {
       icon: "sparkles-outline" as const,
-      color: "#A78BFA", // Purple
-      bgColor: "rgba(167, 139, 250, 0.08)",
-      borderColor: "rgba(167, 139, 250, 0.25)",
+      color: isDarkMode ? "#A78BFA" : "#7C3AED", // Purple
+      bgColor: isDarkMode ? "rgba(167, 139, 250, 0.12)" : "#F5F3FF",
+      borderColor: isDarkMode ? "rgba(167, 139, 250, 0.3)" : "#DDD6FE",
       badge: "GENERAL",
+      badgeBg: isDarkMode ? "rgba(167, 139, 250, 0.15)" : "#EDE9FE",
+      badgeText: isDarkMode ? "#A78BFA" : "#6D28D9",
+      isAlert: false,
     };
   };
 
@@ -150,12 +196,10 @@ export default function NotificationsScreen() {
   }).length;
 
   const filteredNotifications = notifications.filter(item => {
-    // Search filter
     const textMatch = item.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                       item.body.toLowerCase().includes(searchQuery.toLowerCase());
     if (!textMatch) return false;
 
-    // Tab filter
     const titleLower = item.title.toLowerCase();
     const isBook = titleLower.includes("added") || titleLower.includes("new book");
     const isUpdate = titleLower.includes("returned") || titleLower.includes("success") || 
@@ -169,7 +213,7 @@ export default function NotificationsScreen() {
     if (activeTab === 'books') return isBook;
     if (activeTab === 'updates') return isUpdate;
     if (activeTab === 'general') return isGeneral;
-    return true; // all
+    return true;
   });
 
   const tabs = [
@@ -195,7 +239,7 @@ export default function NotificationsScreen() {
         </Text>
 
         {notifications.length > 0 ? (
-          <TouchableOpacity style={styles.clearBtn} onPress={handleClearAll}>
+          <TouchableOpacity style={[styles.clearBtn, { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.25)' : '#FECACA' }]} onPress={handleClearAll}>
             <Text style={styles.clearText}>Clear All</Text>
           </TouchableOpacity>
         ) : (
@@ -237,16 +281,51 @@ export default function NotificationsScreen() {
                 key={tab.key}
                 onPress={() => setActiveTab(tab.key)}
                 style={[
-                  [styles.tabButton, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }],
-                  isActive && [styles.tabButtonActive, { backgroundColor: isDarkMode ? "rgba(252, 211, 77, 0.08)" : "rgba(11, 90, 142, 0.08)", borderColor: theme.accentGold }],
+                  styles.tabButton,
+                  {
+                    backgroundColor: isActive 
+                      ? (isDarkMode ? "rgba(252, 211, 77, 0.15)" : "#FEF3C7") 
+                      : theme.cardBg,
+                    borderColor: isActive 
+                      ? (isDarkMode ? "#FCD34D" : "#F59E0B") 
+                      : theme.cardBorder,
+                  },
                 ]}
               >
-                <Text style={[styles.tabLabel, { color: theme.textSecondary }, isActive && [styles.tabLabelActive, { color: theme.accentGold }]]}>
+                <Text
+                  style={[
+                    styles.tabLabel,
+                    {
+                      color: isActive 
+                        ? (isDarkMode ? "#FCD34D" : "#B45309") 
+                        : theme.textSecondary,
+                      fontWeight: isActive ? "700" : "600",
+                    },
+                  ]}
+                >
                   {tab.label}
                 </Text>
                 {tab.count > 0 && (
-                  <View style={[styles.tabBadge, { backgroundColor: theme.cardBorder }, isActive && [styles.tabBadgeActive, { backgroundColor: theme.accentGold }]]}>
-                    <Text style={[styles.tabBadgeText, { color: theme.textSecondary }, isActive && [styles.tabBadgeTextActive, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]]}>
+                  <View
+                    style={[
+                      styles.tabBadge,
+                      {
+                        backgroundColor: isActive 
+                          ? (isDarkMode ? "#FCD34D" : "#D97706") 
+                          : (isDarkMode ? "#334155" : "#E2E8F0"),
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.tabBadgeText,
+                        {
+                          color: isActive 
+                            ? (isDarkMode ? "#080F1E" : "#FFFFFF") 
+                            : (isDarkMode ? "#94A3B8" : "#475569"),
+                        },
+                      ]}
+                    >
                       {tab.count}
                     </Text>
                   </View>
@@ -294,60 +373,82 @@ export default function NotificationsScreen() {
         ) : (
           filteredNotifications.map((item) => {
             const config = getNotificationConfig(item.title);
+            const parsed = parseNotificationBody(item.body);
+
+            // Callout styling based on alert type
+            const calloutBg = config.isAlert
+              ? (isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2')
+              : (isDarkMode ? 'rgba(245, 158, 11, 0.12)' : '#FFFBEB');
+            const calloutBorder = config.isAlert ? '#EF4444' : '#F59E0B';
+            const calloutTextColor = config.isAlert
+              ? (isDarkMode ? '#FCA5A5' : '#991B1B')
+              : (isDarkMode ? '#FDE047' : '#B45309');
+            const calloutIconName = config.isAlert ? "alert-circle" : "chatbubble-ellipses";
+
             return (
               <TouchableOpacity
                 key={item.id}
-                activeOpacity={0.85}
+                activeOpacity={0.88}
                 onPress={() => handleNotificationPress(item)}
                 style={[
                   styles.notificationCard,
                   {
-                    borderLeftColor: item.read ? theme.cardBorder : config.color,
+                    backgroundColor: theme.cardBg,
                     borderColor: theme.cardBorder,
-                    backgroundColor: item.read ? theme.cardBg : (isDarkMode ? '#111C30' : '#E2E8F0'),
+                    shadowColor: isDarkMode ? "#000000" : "#0F172A",
                   },
                 ]}
               >
-                {/* Accent background tint for unread notifications */}
+                {/* Unread Indicator Ribbon / Tint */}
                 {!item.read && (
-                  <View style={[styles.cardTint, { backgroundColor: config.bgColor }]} />
+                  <View style={[styles.unreadRibbon, { backgroundColor: config.color }]} />
                 )}
 
+                {/* HEADER ROW */}
                 <View style={styles.cardHeader}>
                   <View style={styles.iconAndBadgeRow}>
-                    <View style={[styles.iconWrapper, { backgroundColor: item.read ? 'rgba(51, 65, 85, 0.2)' : config.bgColor }]}>
+                    <View style={[styles.iconWrapper, { backgroundColor: config.bgColor }]}>
                       <Ionicons
                         name={config.icon}
                         size={16}
-                        color={item.read ? '#64748B' : config.color}
+                        color={config.color}
                       />
                     </View>
-                    <View style={[styles.badgeContainer, { backgroundColor: item.read ? 'rgba(51, 65, 85, 0.1)' : config.bgColor }]}>
-                      <Text style={[styles.badgeText, { color: item.read ? '#64748B' : config.color }]}>
+                    <View style={[styles.badgeContainer, { backgroundColor: config.badgeBg }]}>
+                      <Text style={[styles.badgeText, { color: config.badgeText }]}>
                         {config.badge}
                       </Text>
                     </View>
                   </View>
 
+                  {/* QUICK ACTION BUTTONS */}
                   <View style={styles.actionRow}>
                     {!item.read && (
                       <TouchableOpacity
-                        style={[styles.actionIconButton, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}
-                        onPress={() => handleMarkRead(item.id)}
+                        style={[styles.actionIconButton, { backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9', borderColor: theme.cardBorder }]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          handleMarkRead(item.id);
+                        }}
                       >
-                        <Ionicons name="checkmark-done" size={16} color="#34D399" />
+                        <Ionicons name="checkmark-done" size={15} color="#059669" />
                       </TouchableOpacity>
                     )}
                     <TouchableOpacity
-                      style={[styles.actionIconButton, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}
-                      onPress={() => handleDelete(item.id)}
+                      style={[styles.actionIconButton, { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEE2E2', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.25)' : '#FECACA' }]}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        handleDelete(item.id);
+                      }}
                     >
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      <Ionicons name="trash-outline" size={15} color="#DC2626" />
                     </TouchableOpacity>
                   </View>
                 </View>
 
+                {/* CARD BODY */}
                 <View style={styles.cardBody}>
+                  {/* TITLE */}
                   <View style={styles.titleRow}>
                     <Text style={[styles.notificationTitle, { color: theme.textPrimary }, item.read && styles.notificationTitleRead]}>
                       {item.title}
@@ -356,13 +457,33 @@ export default function NotificationsScreen() {
                       <View style={[styles.unreadDot, { backgroundColor: config.color }]} />
                     )}
                   </View>
-                  <Text style={[styles.notificationBody, { color: theme.textPrimary }, item.read && styles.notificationBodyRead]}>
-                    {item.body}
-                  </Text>
-                  
+
+                  {/* MAIN DESCRIPTION */}
+                  {parsed.mainText ? (
+                    <Text style={[styles.notificationBody, { color: isDarkMode ? '#9CA3AF' : '#475569' }, item.read && styles.notificationBodyRead]}>
+                      {parsed.mainText}
+                    </Text>
+                  ) : null}
+
+                  {/* LIBRARIAN COMMENT / REASON CALLOUT BOX */}
+                  {parsed.reasonText && (
+                    <View style={[styles.reasonContainer, { backgroundColor: calloutBg, borderLeftColor: calloutBorder }]}>
+                      <View style={styles.reasonHeaderRow}>
+                        <Ionicons name={calloutIconName} size={14} color={calloutBorder} style={{ marginRight: 6 }} />
+                        <Text style={[styles.reasonHeaderLabel, { color: calloutBorder }]}>
+                          {parsed.reasonPrefix}:
+                        </Text>
+                      </View>
+                      <Text style={[styles.reasonBodyText, { color: calloutTextColor }]}>
+                        {parsed.reasonText}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* TIMESTAMP FOOTER */}
                   <View style={styles.footerRow}>
-                    <Ionicons name="time-outline" size={12} color={theme.textSecondary} style={{ marginRight: 4 }} />
-                    <Text style={[styles.notificationTime, { color: theme.textSecondary }]}>
+                    <Ionicons name="time-outline" size={13} color={isDarkMode ? '#64748B' : '#94A3B8'} style={{ marginRight: 4 }} />
+                    <Text style={[styles.notificationTime, { color: isDarkMode ? '#64748B' : '#94A3B8' }]}>
                       {item.timestamp}
                     </Text>
                   </View>
@@ -379,26 +500,20 @@ export default function NotificationsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#080F1E',
   },
   header: {
-    backgroundColor: '#080F1E',
     paddingHorizontal: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderBottomWidth: 1,
-    borderBottomColor: '#0F172A',
   },
   backBtn: {
     padding: 8,
     borderRadius: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.02)',
     borderWidth: 1,
-    borderColor: '#1E293B',
   },
   headerTitle: {
-    color: '#F8FAFC',
     fontWeight: '800',
     fontSize: 14,
     letterSpacing: 1.5,
@@ -407,9 +522,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 10,
-    backgroundColor: 'rgba(239, 68, 68, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(239, 68, 68, 0.2)',
   },
   clearText: {
     color: '#EF4444',
@@ -424,19 +537,16 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#0F172A',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
     paddingHorizontal: 12,
-    height: 40,
+    height: 42,
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    color: '#F8FAFC',
     fontSize: 13,
     paddingVertical: 0,
   },
@@ -454,43 +564,23 @@ const styles = StyleSheet.create({
   tabButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
     borderRadius: 20,
-    backgroundColor: '#0F172A',
     borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  tabButtonActive: {
-    backgroundColor: 'rgba(252, 211, 77, 0.08)',
-    borderColor: '#FCD34D',
   },
   tabLabel: {
-    color: '#94A3B8',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  tabLabelActive: {
-    color: '#FCD34D',
-    fontWeight: '700',
+    fontSize: 12.5,
   },
   tabBadge: {
     marginLeft: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 1,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 10,
-    backgroundColor: '#334155',
-  },
-  tabBadgeActive: {
-    backgroundColor: '#FCD34D',
   },
   tabBadgeText: {
-    color: '#94A3B8',
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-  },
-  tabBadgeTextActive: {
-    color: '#080F1E',
   },
   content: {
     padding: 16,
@@ -498,22 +588,29 @@ const styles = StyleSheet.create({
   },
   notificationCard: {
     borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
-    borderLeftWidth: 4,
     position: 'relative',
     overflow: 'hidden',
+    // Soft elevation
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  cardTint: {
-    ...StyleSheet.absoluteFillObject,
+  unreadRibbon: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: 4,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
-    zIndex: 2,
+    marginBottom: 12,
   },
   iconAndBadgeRow: {
     flexDirection: 'row',
@@ -521,21 +618,21 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   iconWrapper: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },
   badgeContainer: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 6,
   },
   badgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
   },
   actionRow: {
     flexDirection: 'row',
@@ -543,53 +640,75 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionIconButton: {
-    padding: 6,
+    width: 30,
+    height: 30,
     borderRadius: 8,
-    backgroundColor: '#1E293B',
     borderWidth: 1,
-    borderColor: '#334155',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   cardBody: {
     paddingLeft: 2,
-    zIndex: 2,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   notificationTitle: {
     fontWeight: '700',
-    color: '#F8FAFC',
-    fontSize: 14,
+    fontSize: 15,
     flex: 1,
+    letterSpacing: -0.2,
   },
   notificationTitleRead: {
-    color: '#64748B',
-    fontWeight: '600',
+    opacity: 0.8,
   },
   unreadDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
     marginLeft: 8,
   },
   notificationBody: {
-    color: '#94A3B8',
-    fontSize: 12.5,
-    lineHeight: 18,
-    marginBottom: 8,
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 10,
   },
   notificationBodyRead: {
-    color: '#475569',
+    opacity: 0.75,
+  },
+  // REASON CALLOUT BOX
+  reasonContainer: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderLeftWidth: 4,
+    marginVertical: 8,
+  },
+  reasonHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 3,
+  },
+  reasonHeaderLabel: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  reasonBodyText: {
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 4,
   },
   notificationTime: {
-    color: '#475569',
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: '600',
   },
   emptyBox: {
@@ -601,22 +720,18 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: 'rgba(252, 211, 77, 0.04)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: 'rgba(252, 211, 77, 0.1)',
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '800',
-    color: '#F8FAFC',
     marginBottom: 6,
   },
   emptySubtitle: {
     fontSize: 12.5,
-    color: '#64748B',
     textAlign: 'center',
     lineHeight: 18,
     marginBottom: 16,
@@ -625,12 +740,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 10,
-    backgroundColor: 'rgba(252, 211, 77, 0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(252, 211, 77, 0.2)',
   },
   resetBtnText: {
-    color: '#FCD34D',
     fontWeight: '700',
     fontSize: 12,
   },

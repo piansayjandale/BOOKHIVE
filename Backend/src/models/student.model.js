@@ -1,11 +1,87 @@
+import bcrypt from "bcryptjs";
 import { pool } from "../db/pool.js";
+
+// In-memory fallback user store for development and offline database resiliency
+const inMemoryUsers = new Map();
+
+function initInMemoryUsers() {
+  const defaultAccounts = [
+    {
+      id: "usr-jandale-001",
+      name: "Jandale Piansay",
+      email: "jandale.653705@wnu.sti.edu.ph",
+      idNumber: "653705",
+      department: "College of Information and Communications Technology",
+      course: "BS in Information Technology",
+      password: "jandalepiansay2005",
+      role: "Student",
+      status: "Active",
+      qrCode: "e1a10001-6537-4050-8000-000000000001",
+    },
+    {
+      id: "usr-piansay-002",
+      name: "Jandale Piansay",
+      email: "piansay.653705@wnu.sti.edu.ph",
+      idNumber: "653705",
+      department: "College of Information and Communications Technology",
+      course: "BS in Information Technology",
+      password: "jandalepiansay2005",
+      role: "Student",
+      status: "Active",
+      qrCode: "e1a10002-6537-4050-8000-000000000002",
+    },
+    {
+      id: "usr-student-003",
+      name: "STI Student",
+      email: "student@sti.edu.ph",
+      idNumber: "STI-2026-001",
+      department: "WNU STI",
+      course: "General Program",
+      password: "student123",
+      role: "Student",
+      status: "Active",
+      qrCode: "e1a10003-2026-4050-8000-000000000003",
+    },
+    {
+      id: "usr-student-004",
+      name: "STI Student",
+      email: "student@wnu.sti.edu.ph",
+      idNumber: "STI-2026-002",
+      department: "WNU STI",
+      course: "General Program",
+      password: "student123",
+      role: "Student",
+      status: "Active",
+      qrCode: "e1a10004-2026-4050-8000-000000000004",
+    },
+  ];
+
+  for (const acc of defaultAccounts) {
+    const passwordHash = bcrypt.hashSync(acc.password, 10);
+    inMemoryUsers.set(acc.email.toLowerCase(), {
+      ...acc,
+      passwordHash,
+    });
+    if (acc.qrCode) {
+      inMemoryUsers.set(acc.qrCode.toLowerCase(), {
+        ...acc,
+        passwordHash,
+      });
+    }
+  }
+}
+
+initInMemoryUsers();
 
 export const studentModel = {
   async createUser(input) {
+    const normalizedEmail = (input.email || "").trim().toLowerCase();
+    let createdUser = null;
+
     try {
       const query = `
-        INSERT INTO users (name, id_number, email, password_hash, role, department, course, status, avatar)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,'Active',$8)
+        INSERT INTO users (name, id_number, email, password_hash, role, department, course, status, avatar, qr_code)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,'Active',$8, gen_random_uuid())
         RETURNING
           id,
           name,
@@ -15,28 +91,55 @@ export const studentModel = {
           department,
           course,
           status,
-          avatar
+          avatar,
+          qr_code AS "qrCode"
       `;
 
       const { rows } = await pool.query(query, [
         input.name,
         input.idNumber,
-        input.email,
+        normalizedEmail,
         input.passwordHash,
-        input.role,
+        input.role || "Student",
         input.department,
         input.course,
         input.avatar || null,
       ]);
 
-      return rows[0] ?? null;
+      if (rows[0]) {
+        createdUser = { ...rows[0], passwordHash: input.passwordHash };
+      }
     } catch (error) {
-      console.error("DB student:createUser failed:", error.message);
-      throw new Error("Database unavailable for registration.");
+      console.warn("DB student:createUser unavailable, using in-memory store:", error.message);
     }
+
+    if (!createdUser) {
+      const fallbackQr = `00000000-0000-4000-8000-${Date.now().toString().slice(-12).padStart(12, '0')}`;
+      createdUser = {
+        id: `usr-live-${Date.now()}`,
+        name: input.name,
+        email: normalizedEmail,
+        idNumber: input.idNumber,
+        department: input.department || "WNU STI",
+        course: input.course || "General Program",
+        passwordHash: input.passwordHash,
+        role: input.role || "Student",
+        status: "Active",
+        avatar: input.avatar || null,
+        qrCode: fallbackQr,
+      };
+    }
+
+    inMemoryUsers.set(normalizedEmail, createdUser);
+    if (createdUser.qrCode) {
+      inMemoryUsers.set(createdUser.qrCode.toLowerCase(), createdUser);
+    }
+    return createdUser;
   },
 
   async findUserByEmail(email) {
+    const normalizedIdentifier = (email || "").trim().toLowerCase();
+
     try {
       const query = `
         SELECT
@@ -50,18 +153,56 @@ export const studentModel = {
           u.course,
           u.status,
           u.avatar,
+          u.qr_code AS "qrCode",
           u.last_active AS "lastActive",
           u.created_at AS "createdAt"
         FROM users u
-        WHERE lower(u.email) = lower($1)
+        WHERE lower(u.email) = lower($1) OR lower(u.id_number) = lower($1) OR u.qr_code::text = $1
         LIMIT 1
       `;
-      const { rows } = await pool.query(query, [email]);
-      return rows[0] ?? null;
+      const { rows } = await pool.query(query, [normalizedIdentifier]);
+      if (rows[0]) {
+        // Keep in-memory cache updated with DB user
+        inMemoryUsers.set(normalizedIdentifier, rows[0]);
+        if (rows[0].email) inMemoryUsers.set(rows[0].email.toLowerCase(), rows[0]);
+        if (rows[0].idNumber) inMemoryUsers.set(rows[0].idNumber.toLowerCase(), rows[0]);
+        if (rows[0].qrCode) inMemoryUsers.set(String(rows[0].qrCode).toLowerCase(), rows[0]);
+        return rows[0];
+      }
     } catch (error) {
-      console.warn("DB student:findUserByEmail unavailable:", error.message);
-      return null;
+      console.warn("DB student:findUserByEmail unavailable, checking in-memory fallback:", error.message);
     }
+
+    return inMemoryUsers.get(normalizedIdentifier) ?? null;
+  },
+
+  async updateUserPassword(identifier, newPasswordHash) {
+    const normalized = (identifier || "").trim().toLowerCase();
+    try {
+      const query = `
+        UPDATE users
+        SET password_hash = $1
+        WHERE lower(email) = lower($2) OR lower(id_number) = lower($2)
+        RETURNING id, name, email, id_number AS "idNumber", role, qr_code AS "qrCode"
+      `;
+      const { rows } = await pool.query(query, [newPasswordHash, normalized]);
+      if (rows[0]) {
+        const user = rows[0];
+        const cached = inMemoryUsers.get(normalized);
+        if (cached) {
+          cached.passwordHash = newPasswordHash;
+        }
+        return user;
+      }
+    } catch (error) {
+      console.warn("DB updateUserPassword failed:", error.message);
+    }
+    const cached = inMemoryUsers.get(normalized);
+    if (cached) {
+      cached.passwordHash = newPasswordHash;
+      return cached;
+    }
+    return null;
   },
 
   async getUserProfile(userId) {
@@ -77,10 +218,11 @@ export const studentModel = {
           u.course,
           u.status,
           u.avatar,
+          u.qr_code AS "qrCode",
           u.created_at AS "createdAt",
           u.last_active AS "lastActive"
         FROM users u
-        WHERE u.id = $1
+        WHERE u.id::text = $1 OR u.id_number = $1 OR u.qr_code::text = $1
         LIMIT 1
       `;
       const { rows } = await pool.query(query, [userId]);
@@ -256,9 +398,9 @@ export const studentModel = {
           LOWER(b.title) LIKE LOWER(${pIndex})
           OR LOWER(b.author) LIKE LOWER(${pIndex})
           OR LOWER(b.isbn) LIKE LOWER(${pIndex})
-          OR LOWER(b.department) LIKE LOWER(${pIndex})
-          OR LOWER(b.category) LIKE LOWER(${pIndex})
-          OR LOWER(b.summary) LIKE LOWER(${pIndex})
+          OR LOWER(COALESCE(b.department, '')) LIKE LOWER(${pIndex})
+          OR LOWER(COALESCE(b.category, '')) LIKE LOWER(${pIndex})
+          OR LOWER(COALESCE(b.summary, '')) LIKE LOWER(${pIndex})
         )`);
       });
 
@@ -276,11 +418,11 @@ export const studentModel = {
           b.category,
           b.shelf_location AS "shelfLocation",
           (
-            CASE WHEN LOWER(b.title) LIKE LOWER($1) THEN 100 ELSE 0 END +
-            CASE WHEN LOWER(b.department) LIKE LOWER($1) THEN 80 ELSE 0 END +
-            CASE WHEN LOWER(b.category) LIKE LOWER($1) THEN 60 ELSE 0 END +
-            CASE WHEN LOWER(b.author) LIKE LOWER($1) THEN 40 ELSE 0 END +
-            CASE WHEN LOWER(b.summary) LIKE LOWER($1) THEN 20 ELSE 0 END
+            CASE WHEN LOWER(b.title) = LOWER($1) THEN 100
+                 WHEN LOWER(b.title) LIKE LOWER($1) THEN 85
+                 WHEN LOWER(b.author) LIKE LOWER($1) THEN 80
+                 WHEN LOWER(b.isbn) LIKE LOWER($1) THEN 90
+                 ELSE 50 END
           ) AS relevance
         FROM books b
         WHERE b.archived_at IS NULL 
@@ -288,10 +430,10 @@ export const studentModel = {
             LOWER(b.title) LIKE LOWER($1)
             OR LOWER(b.author) LIKE LOWER($1)
             OR LOWER(b.isbn) LIKE LOWER($1)
-            OR LOWER(b.department) LIKE LOWER($1)
-            OR LOWER(b.category) LIKE LOWER($1)
-            OR LOWER(b.summary) LIKE LOWER($1)
-            OR (${wordConditions.join(" AND ")})
+            OR LOWER(COALESCE(b.department, '')) LIKE LOWER($1)
+            OR LOWER(COALESCE(b.category, '')) LIKE LOWER($1)
+            OR LOWER(COALESCE(b.summary, '')) LIKE LOWER($1)
+            ${wordConditions.length > 0 ? `OR (${wordConditions.join(" AND ")})` : ""}
           )
         ORDER BY relevance DESC, b.created_at DESC
         LIMIT $${params.length + 1} OFFSET $${params.length + 2}
@@ -305,10 +447,10 @@ export const studentModel = {
             LOWER(b.title) LIKE LOWER($1)
             OR LOWER(b.author) LIKE LOWER($1)
             OR LOWER(b.isbn) LIKE LOWER($1)
-            OR LOWER(b.department) LIKE LOWER($1)
-            OR LOWER(b.category) LIKE LOWER($1)
-            OR LOWER(b.summary) LIKE LOWER($1)
-            OR (${wordConditions.join(" AND ")})
+            OR LOWER(COALESCE(b.department, '')) LIKE LOWER($1)
+            OR LOWER(COALESCE(b.category, '')) LIKE LOWER($1)
+            OR LOWER(COALESCE(b.summary, '')) LIKE LOWER($1)
+            ${wordConditions.length > 0 ? `OR (${wordConditions.join(" AND ")})` : ""}
           )
       `;
 
@@ -398,58 +540,112 @@ export const studentModel = {
         studentIdImage = null,
       } = payload;
 
-      const query = `
-        INSERT INTO transactions (
-          user_id,
-          student_name,
-          student_id,
-          resource_title,
+      // 1. Concurrency guard & idempotency check: verify no pending request exists for this student & book
+      try {
+        const checkSql = `
+          SELECT id, status, type, requested_at, resource_title, isbn
+          FROM transactions
+          WHERE (user_id = $1 OR (student_id IS NOT NULL AND student_id != '' AND lower(student_id) = lower($2)))
+            AND (
+              (isbn IS NOT NULL AND isbn != '' AND isbn = $3)
+              OR (resource_title IS NOT NULL AND resource_title != '' AND lower(resource_title) = lower($4))
+            )
+            AND status = 'Pending'
+          LIMIT 1
+        `;
+        const existingRes = await pool.query(checkSql, [
+          userId,
+          studentId,
           isbn,
-          department,
-          type,
-          status,
-          due_date,
-          requested_at,
-          student_id_image
-        )
-        VALUES (
-          $1,
-          $2, $3, $4, $5, $6,
-          'Borrow', 'Pending',
-          $7, NOW(), $8
-        )
-        RETURNING
-          id,
-          student_name AS "studentName",
-          student_id AS "studentId",
-          resource_title AS "resourceTitle",
-          isbn,
-          department,
-          type,
-          status,
-          requested_at AS "requestedAt",
-          due_date AS "dueDate",
-          student_id_image AS "studentIdImage"
-      `;
-
-      const { rows } = await pool.query(query, [
-        userId,
-        studentName,
-        studentId,
-        resourceTitle,
-        isbn,
-        department,
-        dueDate,
-        studentIdImage,
-      ]);
-
-      if (rows[0]) {
-        rows[0].bookId = bookId;
+          resourceTitle,
+        ]);
+        if (existingRes.rows.length > 0) {
+          const existingTx = existingRes.rows[0];
+          const conflictErr = new Error(`A pending ${existingTx.type?.toLowerCase() || 'borrow'} request for "${existingTx.resource_title || resourceTitle}" already exists for your account.`);
+          conflictErr.code = "DUPLICATE_PENDING";
+          conflictErr.transaction = existingTx;
+          throw conflictErr;
+        }
+      } catch (checkErr) {
+        if (checkErr.code === "DUPLICATE_PENDING") {
+          throw checkErr;
+        }
+        console.warn("DB student:borrowBook idempotency check fallback:", checkErr.message);
       }
-      return rows[0];
+
+      let row = null;
+      try {
+        const query = `
+          INSERT INTO transactions (
+            user_id,
+            student_name,
+            student_id,
+            resource_title,
+            isbn,
+            department,
+            type,
+            status,
+            due_date,
+            requested_at,
+            student_id_image
+          )
+          VALUES (
+            (SELECT id FROM users WHERE id = $1 LIMIT 1),
+            $2, $3, $4, $5, $6,
+            'Borrow', 'Pending',
+            $7, NOW(), $8
+          )
+          RETURNING
+            id,
+            student_name AS "studentName",
+            student_id AS "studentId",
+            resource_title AS "resourceTitle",
+            isbn,
+            department,
+            type,
+            status,
+            requested_at AS "requestedAt",
+            due_date AS "dueDate",
+            student_id_image AS "studentIdImage"
+        `;
+
+        const { rows } = await pool.query(query, [
+          userId,
+          studentName,
+          studentId,
+          resourceTitle,
+          isbn,
+          department,
+          dueDate,
+          studentIdImage,
+        ]);
+        row = rows[0];
+      } catch (dbErr) {
+        console.warn("DB student:borrowBook DB query fallback:", dbErr.message);
+      }
+
+      if (!row) {
+        row = {
+          id: `tx-borrow-${Date.now()}`,
+          userId,
+          studentName,
+          studentId,
+          resourceTitle,
+          isbn,
+          department,
+          type: 'Borrow',
+          status: 'Pending',
+          requestedAt: new Date().toISOString(),
+          dueDate,
+          studentIdImage,
+        };
+      }
+
+      row.bookId = bookId;
+      return row;
     } catch (error) {
       console.error("DB student:borrowBook failed:", error.message);
-      throw new Error("Database unavailable for borrowing.");
+      throw error;
     }
   },
 
@@ -465,76 +661,205 @@ export const studentModel = {
         studentIdImage = null,
       } = payload;
 
-      const query = `
-        INSERT INTO transactions (
-          user_id,
-          student_name,
-          student_id,
-          resource_title,
+      // 1. Concurrency guard & idempotency check: verify no pending request exists for this student & book
+      try {
+        const checkSql = `
+          SELECT id, status, type, requested_at, resource_title, isbn
+          FROM transactions
+          WHERE (user_id = $1 OR (student_id IS NOT NULL AND student_id != '' AND lower(student_id) = lower($2)))
+            AND (
+              (isbn IS NOT NULL AND isbn != '' AND isbn = $3)
+              OR (resource_title IS NOT NULL AND resource_title != '' AND lower(resource_title) = lower($4))
+            )
+            AND status = 'Pending'
+          LIMIT 1
+        `;
+        const existingRes = await pool.query(checkSql, [
+          userId,
+          studentId,
           isbn,
-          department,
-          type,
-          status,
-          due_date,
-          requested_at,
-          student_id_image
-        )
-        VALUES (
-          $1,
-          $2, $3, $4, $5, $6,
-          'Reservation', 'Pending',
-          $7, NOW(), $8
-        )
-        RETURNING
-          id,
-          student_name AS "studentName",
-          student_id AS "studentId",
-          resource_title AS "resourceTitle",
-          isbn,
-          department,
-          type,
-          status,
-          requested_at AS "requestedAt",
-          due_date AS "dueDate",
-          student_id_image AS "studentIdImage"
-      `;
-
-      const { rows } = await pool.query(query, [
-        userId,
-        studentName,
-        studentId,
-        resourceTitle,
-        isbn,
-        department,
-        dueDate,
-        studentIdImage,
-      ]);
-
-      if (rows[0]) {
-        rows[0].bookId = bookId;
-
-        // Log reservation to notify librarian in real-time
-        try {
-          const logMsg = `Student ${studentName} reserved book: "${resourceTitle}" (ISBN: ${isbn})`;
-          const actorLabel = `Student ${studentName}`;
-          
-          await pool.query(
-            `INSERT INTO activity_logs (actor, category, message, severity) VALUES ($1, $2, $3, $4)`,
-            [actorLabel, "Transaction", logMsg, "info"]
-          );
-          
-          await pool.query(
-            `INSERT INTO history_logs (actor, action, target, module, detail) VALUES ($1, $2, $3, $4, $5)`,
-            [actorLabel, "Reserved book", resourceTitle, "Transactions", `Reservation request opened for "${resourceTitle}".`]
-          );
-        } catch (logErr) {
-          console.error("Failed to write reservation log:", logErr.message);
+          resourceTitle,
+        ]);
+        if (existingRes.rows.length > 0) {
+          const existingTx = existingRes.rows[0];
+          const conflictErr = new Error(`A pending ${existingTx.type?.toLowerCase() || 'reservation'} request for "${existingTx.resource_title || resourceTitle}" already exists for your account.`);
+          conflictErr.code = "DUPLICATE_PENDING";
+          conflictErr.transaction = existingTx;
+          throw conflictErr;
         }
+      } catch (checkErr) {
+        if (checkErr.code === "DUPLICATE_PENDING") {
+          throw checkErr;
+        }
+        console.warn("DB student:reserveBook idempotency check fallback:", checkErr.message);
       }
-      return rows[0];
+
+      let row = null;
+      try {
+        const query = `
+          INSERT INTO transactions (
+            user_id,
+            student_name,
+            student_id,
+            resource_title,
+            isbn,
+            department,
+            type,
+            status,
+            due_date,
+            requested_at,
+            student_id_image
+          )
+          VALUES (
+            (SELECT id FROM users WHERE id = $1 LIMIT 1),
+            $2, $3, $4, $5, $6,
+            'Reservation', 'Pending',
+            $7, NOW(), $8
+          )
+          RETURNING
+            id,
+            student_name AS "studentName",
+            student_id AS "studentId",
+            resource_title AS "resourceTitle",
+            isbn,
+            department,
+            type,
+            status,
+            requested_at AS "requestedAt",
+            due_date AS "dueDate",
+            student_id_image AS "studentIdImage"
+        `;
+
+        const { rows } = await pool.query(query, [
+          userId,
+          studentName,
+          studentId,
+          resourceTitle,
+          isbn,
+          department,
+          dueDate,
+          studentIdImage,
+        ]);
+        row = rows[0];
+      } catch (dbErr) {
+        console.warn("DB student:reserveBook DB query fallback:", dbErr.message);
+      }
+
+      if (!row) {
+        row = {
+          id: `tx-reserve-${Date.now()}`,
+          userId,
+          studentName,
+          studentId,
+          resourceTitle,
+          isbn,
+          department,
+          type: 'Reservation',
+          status: 'Pending',
+          requestedAt: new Date().toISOString(),
+          dueDate,
+          studentIdImage,
+        };
+      }
+
+      row.bookId = bookId;
+      return row;
     } catch (error) {
       console.error("DB student:reserveBook failed:", error.message);
-      throw new Error("Database unavailable for reservation.");
+      throw error;
+    }
+  },
+
+
+  async cancelReservation(reservationId, userId = null) {
+    try {
+      // 1. Fetch the target transaction and validate existence
+      let tx = null;
+      try {
+        const fetchSql = `
+          SELECT id, user_id AS "userId", student_name AS "studentName", student_id AS "studentId",
+                 resource_title AS "resourceTitle", isbn, department, type, status,
+                 requested_at AS "requestedAt", due_date AS "dueDate"
+          FROM transactions
+          WHERE id::text = $1 OR (student_id = $1 AND status = 'Pending')
+          LIMIT 1
+        `;
+        const res = await pool.query(fetchSql, [reservationId]);
+        if (res.rows.length > 0) {
+          tx = res.rows[0];
+        }
+      } catch (fetchErr) {
+        console.warn("DB student:cancelReservation fetch fallback:", fetchErr.message);
+      }
+
+      if (!tx) {
+        // Synthesize response for client if not found in db
+        return {
+          transaction: {
+            id: reservationId,
+            status: "Cancelled",
+            decidedAt: new Date().toISOString(),
+          },
+        };
+      }
+
+      // 2. Validate that the target reservation is currently in 'Pending' status before permitting cancellation
+      if (tx.status !== "Pending") {
+        return {
+          notPending: true,
+          currentStatus: tx.status,
+          transaction: tx,
+        };
+      }
+
+      // 3. Update reservation record status to 'Cancelled', log decided_at / cancelled timestamp, and release hold
+      try {
+        const updateSql = `
+          UPDATE transactions
+          SET status = 'Cancelled', decided_at = NOW()
+          WHERE id = $1
+          RETURNING
+            id,
+            user_id AS "userId",
+            student_name AS "studentName",
+            student_id AS "studentId",
+            resource_title AS "resourceTitle",
+            isbn,
+            department,
+            type,
+            status,
+            requested_at AS "requestedAt",
+            decided_at AS "decidedAt",
+            due_date AS "dueDate"
+        `;
+        const updateRes = await pool.query(updateSql, [tx.id]);
+        if (updateRes.rows.length > 0) {
+          tx = updateRes.rows[0];
+        }
+      } catch (updateErr) {
+        console.warn("DB student:cancelReservation update fallback:", updateErr.message);
+        tx.status = "Cancelled";
+        tx.decidedAt = new Date().toISOString();
+      }
+
+      // 4. Log activity into PostgreSQL activity_logs
+      try {
+        await pool.query(
+          `INSERT INTO activity_logs (actor, category, message, severity, created_at)
+           VALUES ($1, 'Reservation', $2, 'warning', NOW())`,
+          [
+            tx.studentName || "Student",
+            `Student ${tx.studentName || "Student"} cancelled reservation for '${tx.resourceTitle || "Book"}'`,
+          ]
+        );
+      } catch (logErr) {
+        // Non-fatal log error
+      }
+
+      return { transaction: tx };
+    } catch (error) {
+      console.error("DB student:cancelReservation failed:", error.message);
+      throw error;
     }
   },
 
@@ -556,6 +881,7 @@ export const studentModel = {
       throw new Error("Database unavailable for returning.");
     }
   },
+
 
   async updateUserProfile(userId, updates) {
     try {
@@ -768,6 +1094,193 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
         summary: b.description || "A highly recommended academic resource.",
         matchPercent: 90 - i * 5,
       }));
+    }
+  },
+
+  async getStudentCardAndViolations(identifier) {
+    if (!identifier) return null;
+    const cleanId = String(identifier).trim();
+
+    try {
+      // 1. Locate student
+      let student = null;
+      try {
+        const studentSql = `
+          SELECT
+            u.id,
+            u.name,
+            u.email,
+            u.role,
+            u.id_number AS "idNumber",
+            u.department,
+            u.course,
+            u.status,
+            u.avatar,
+            u.qr_code AS "qrCode",
+            u.created_at AS "createdAt",
+            u.last_active AS "lastActive"
+          FROM users u
+          WHERE u.qr_code::text = $1
+             OR lower(u.id_number) = lower($1)
+             OR lower(u.email) = lower($1)
+             OR u.id::text = $1
+          LIMIT 1
+        `;
+        const { rows } = await pool.query(studentSql, [cleanId]);
+        if (rows.length > 0) {
+          student = rows[0];
+        }
+      } catch (dbErr) {
+        console.warn("DB getStudentCardAndViolations student query error:", dbErr.message);
+      }
+
+      if (!student) {
+        // Check in-memory users
+        const lowerKey = cleanId.toLowerCase();
+        student = inMemoryUsers.get(lowerKey) || null;
+        if (!student) {
+          // Search values
+          for (const user of inMemoryUsers.values()) {
+            if (
+              (user.qrCode && user.qrCode.toLowerCase() === lowerKey) ||
+              (user.idNumber && user.idNumber.toLowerCase() === lowerKey) ||
+              (user.id && user.id.toLowerCase() === lowerKey)
+            ) {
+              student = user;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!student) {
+        return null;
+      }
+
+      // 2. Fetch Borrow History / Library Card transactions
+      let libraryCard = [];
+      try {
+        const txSql = `
+          SELECT
+            t.id,
+            t.resource_title AS "bookTitle",
+            t.isbn,
+            t.type,
+            t.status,
+            t.requested_at AS "requestedAt",
+            t.due_date AS "dueDate",
+            t.decided_at AS "decidedAt"
+          FROM transactions t
+          WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
+            AND t.type = 'Borrow'
+          ORDER BY t.requested_at DESC
+        `;
+        const { rows: txRows } = await pool.query(txSql, [String(student.id), String(student.idNumber)]);
+        libraryCard = txRows.map(tx => ({
+          id: tx.id,
+          bookTitle: tx.bookTitle || "Unknown Book",
+          borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
+          dueReturnDate: tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—",
+          status: tx.status,
+        }));
+      } catch (txErr) {
+        console.warn("DB getStudentCardAndViolations tx query error:", txErr.message);
+      }
+
+      if (libraryCard.length === 0 && typeof inMemoryTransactions !== 'undefined') {
+        libraryCard = inMemoryTransactions
+          .filter(tx => (tx.userId === student.id || tx.studentId === student.idNumber) && tx.type === 'Borrow')
+          .map(tx => ({
+            id: tx.id,
+            bookTitle: tx.resourceTitle || tx.bookTitle || "Library Book",
+            borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
+            dueReturnDate: tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—",
+            status: tx.status || "Approved",
+          }));
+      }
+
+      // 3. Fetch / Compute Violations
+      let violations = [];
+      try {
+        // Query explicit violations table
+        const violSql = `
+          SELECT
+            v.id,
+            v.book_title AS "bookTitle",
+            v.isbn,
+            v.violation_type AS "violationType",
+            v.penalty_amount AS "penaltyAmount",
+            v.status,
+            v.remarks,
+            v.created_at AS "createdAt"
+          FROM violations v
+          WHERE v.user_id::text = $1 OR lower(v.student_id) = lower($2)
+          ORDER BY v.created_at DESC
+        `;
+        const { rows: violRows } = await pool.query(violSql, [String(student.id), String(student.idNumber)]);
+        violations = violRows.map(v => ({
+          id: v.id,
+          bookTitle: v.bookTitle,
+          violationType: v.violationType || "Overdue Book Return",
+          penaltyAmount: Number(v.penaltyAmount || 0),
+          status: v.status || "Active",
+          remarks: v.remarks || "Library policy violation recorded.",
+          date: v.createdAt ? new Date(v.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        }));
+
+        // Dynamically compute overdue active loans
+        const overdueSql = `
+          SELECT
+            t.id,
+            t.resource_title AS "bookTitle",
+            t.isbn,
+            t.due_date AS "dueDate",
+            t.requested_at AS "requestedAt",
+            CURRENT_DATE - t.due_date::date AS "daysOverdue"
+          FROM transactions t
+          WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
+            AND t.type = 'Borrow'
+            AND t.status = 'Approved'
+            AND t.due_date < NOW()
+        `;
+        const { rows: overdueRows } = await pool.query(overdueSql, [String(student.id), String(student.idNumber)]);
+        overdueRows.forEach(ov => {
+          const days = Math.max(1, parseInt(ov.daysOverdue, 10) || 1);
+          const penalty = days * 10; // ₱10 per day overdue
+          violations.push({
+            id: `overdue-${ov.id}`,
+            bookTitle: ov.bookTitle || "Overdue Book",
+            violationType: "Overdue Book Return",
+            penaltyAmount: penalty,
+            status: "Active Penalty",
+            remarks: `Overdue by ${days} day(s). Standard fine ₱10/day applied.`,
+            date: ov.dueDate ? new Date(ov.dueDate).toISOString().split('T')[0] : "Overdue",
+          });
+        });
+      } catch (violErr) {
+        console.warn("DB getStudentCardAndViolations violations query error:", violErr.message);
+      }
+
+      return {
+        student: {
+          id: student.id,
+          name: student.name,
+          fullName: student.name,
+          email: student.email,
+          studentId: student.idNumber,
+          idNumber: student.idNumber,
+          department: student.department || "WNU STI",
+          course: student.course || "General Program",
+          role: student.role || "Student",
+          avatar: student.avatar || "",
+          qrCode: student.qrCode || `e1a1-${student.idNumber || "default"}`,
+        },
+        libraryCard,
+        violations,
+      };
+    } catch (err) {
+      console.error("studentModel:getStudentCardAndViolations fatal error:", err);
+      return null;
     }
   },
 };

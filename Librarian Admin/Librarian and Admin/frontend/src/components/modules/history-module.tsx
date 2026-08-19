@@ -75,13 +75,22 @@ export function HistoryModule() {
   const deferredSearch = useDeferredValue(search);
 
   const loadHistory = useCallback(async () => {
-    const params = new URLSearchParams({
-      search: deferredSearch,
-      module,
-    });
-    const response = await fetch(`/api/history?${params.toString()}`);
-    const payload = (await response.json()) as { history: HistoryEntry[] };
-    startTransition(() => setHistory(payload.history));
+    try {
+      const params = new URLSearchParams({
+        search: deferredSearch,
+        module,
+      });
+      const response = await fetch(`/api/history?${params.toString()}`);
+      if (!response.ok) {
+        startTransition(() => setHistory([]));
+        return;
+      }
+      const payload = await response.json();
+      const list = Array.isArray(payload?.history) ? payload.history : Array.isArray(payload) ? payload : [];
+      startTransition(() => setHistory(list));
+    } catch {
+      startTransition(() => setHistory([]));
+    }
   }, [deferredSearch, module]);
 
   useEffect(() => {
@@ -89,11 +98,12 @@ export function HistoryModule() {
   }, [loadHistory]);
 
   const counts = useMemo(() => {
+    const safeHistory = Array.isArray(history) ? history : [];
     return {
-      total: history.length,
-      records: history.filter((h) => h.module === "Records").length,
-      transactions: history.filter((h) => h.module === "Transactions").length,
-      other: history.filter((h) => h.module !== "Records" && h.module !== "Transactions").length,
+      total: safeHistory.length,
+      records: safeHistory.filter((h) => h.module === "Records").length,
+      transactions: safeHistory.filter((h) => h.module === "Transactions").length,
+      other: safeHistory.filter((h) => h.module !== "Records" && h.module !== "Transactions").length,
     };
   }, [history]);
 
@@ -174,7 +184,7 @@ export function HistoryModule() {
       <div className="flex-1 overflow-hidden rounded-2xl border border-white/8 bg-[#0F1D29]/80 backdrop-blur">
         <div className="p-3">
           <VirtualizedList
-            items={history}
+            items={history || []}
             height={660}
             itemHeight={96}
             renderItem={(entry) => {

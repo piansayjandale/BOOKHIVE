@@ -1,8 +1,13 @@
+import { useEffect } from "react";
 import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "../data/AuthContext";
 
 export default function RootLayout() {
+  useEffect(() => {
+    // OTA update checks disabled for 100% reliable local & bundle execution
+  }, []);
+
   return (
     <SafeAreaProvider>
       <AuthProvider>

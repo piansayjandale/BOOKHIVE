@@ -11,13 +11,8 @@ export default function Index() {
     if (!loading) {
       // Small timeout to allow the navigation context to settle
       const timer = setTimeout(() => {
-        if (isSignedIn) {
-          const isTempId = !user || !user.studentId || user.studentId.startsWith("STI-") || user.studentId.startsWith("MS-") || !user.studentId.includes("-");
-          if (isTempId) {
-            router.replace("/complete-profile");
-          } else {
-            router.replace("/(tabs)");
-          }
+        if (isSignedIn && user) {
+          router.replace("/(tabs)");
         } else {
           router.replace("/login");
         }

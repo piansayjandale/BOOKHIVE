@@ -1,10 +1,12 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 
 import {
@@ -16,16 +18,48 @@ import {
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useThemeColors } from "../hooks/useThemeColors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { cancelReservation } from "../data/store";
 
 export default function ReservationDetailsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDarkMode } = useThemeColors();
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const params = useLocalSearchParams();
+  const reservationId = (params.id as string) || "";
   const queuePosition = params.queuePosition ? String(params.queuePosition) : "1";
   const estimatedWait = params.estimatedWait ? String(params.estimatedWait) : "Pending approval";
   const studentsAhead = Math.max(0, Number(queuePosition) - 1);
+
+  const handleCancel = () => {
+    Alert.alert(
+      "Cancel Reservation?",
+      `Are you sure you want to cancel your reservation for "${params.title}"? You will lose your current spot in the queue.`,
+      [
+        { text: "Keep Request", style: "cancel" },
+        {
+          text: "Cancel Reservation",
+          style: "destructive",
+          onPress: async () => {
+            setIsSubmitting(true);
+            try {
+              if (reservationId) {
+                await cancelReservation(reservationId);
+              }
+              Alert.alert("Reservation Cancelled", `Your reservation for "${params.title}" has been cancelled.`);
+              router.back();
+            } catch (err) {
+              console.warn("Failed to cancel reservation:", err);
+            } finally {
+              setIsSubmitting(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -175,11 +209,21 @@ export default function ReservationDetailsScreen() {
       </View>
 
       {/* ACTION BUTTON */}
-      <TouchableOpacity style={styles.cancelButton}>
-        <Text style={styles.cancelButtonText}>
-          Cancel Reservation
-        </Text>
+      <TouchableOpacity
+        style={[styles.cancelButton, isSubmitting && { opacity: 0.6 }]}
+        disabled={isSubmitting}
+        onPress={handleCancel}
+        activeOpacity={0.85}
+      >
+        {isSubmitting ? (
+          <ActivityIndicator size="small" color="#FFFFFF" />
+        ) : (
+          <Text style={styles.cancelButtonText}>
+            Cancel Reservation
+          </Text>
+        )}
       </TouchableOpacity>
+
 
       <View style={{ height: 40 }} />
     </ScrollView>

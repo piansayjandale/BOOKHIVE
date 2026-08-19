@@ -3,28 +3,32 @@ import jwt from "jsonwebtoken";
 
 import { env } from "../config/env.js";
 import { studentModel } from "../models/student.model.js";
+import { emitBorrowRequest, emitReservationRequest, emitReservationCancelled } from "../socket.js";
+
+
 
 export const studentController = {
   async login(req, res) {
-    const { email, password } = req.body;
-    console.log("LOGIN REQUEST BODY:", req.body);
+    const { email, identifier, password } = req.body;
+    const inputIdentifier = email || identifier;
     
-    if (!email || !password) {
-      return res.status(400).json({ message: "Email and password are required." });
+    if (!inputIdentifier || !password) {
+      return res.status(400).json({ message: "Email or ID number and password are required." });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-    let user = await studentModel.findUserByEmail(normalizedEmail);
+    const normalizedIdentifier = String(inputIdentifier).trim().toLowerCase();
+    const cleanPassword = String(password).trim();
+    let user = await studentModel.findUserByEmail(normalizedIdentifier);
 
     if (!user) {
       // Check if it matches allowed school domains
-      const isSchool = normalizedEmail.endsWith("@sti.edu.ph") || 
-                       normalizedEmail.endsWith("@stiwnu.edu.ph") || 
-                       normalizedEmail.endsWith("@wnu.sti.edu.ph");
+      const isSchool = normalizedIdentifier.endsWith("@sti.edu.ph") || 
+                       normalizedIdentifier.endsWith("@stiwnu.edu.ph") || 
+                       normalizedIdentifier.endsWith("@wnu.sti.edu.ph");
       
       if (isSchool) {
         // Automatically register the student
-        const emailLocalPart = normalizedEmail.split("@")[0];
+        const emailLocalPart = normalizedIdentifier.split("@")[0];
         const parts = emailLocalPart.split(".");
         
         let parsedName = "STI Student";
@@ -43,10 +47,10 @@ export const studentController = {
           parsedName = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
         }
 
-        const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await bcrypt.hash(cleanPassword, 10);
         user = await studentModel.createUser({
           name: parsedName,
-          email: normalizedEmail,
+          email: normalizedIdentifier,
           idNumber: parsedId,
           department: "WNU STI",
           course: "General Program",
@@ -55,13 +59,19 @@ export const studentController = {
         });
 
         if (!user) {
-          return res.status(500).json({ message: "Failed to create automatic user." });
+          return res.status(500).json({ message: "Failed to create user session." });
         }
       } else {
         return res.status(401).json({ message: "Invalid credentials." });
       }
     } else {
-      const isValid = await bcrypt.compare(password, user.passwordHash);
+      let isValid = false;
+      if (user.passwordHash) {
+        isValid = await bcrypt.compare(cleanPassword, user.passwordHash);
+      }
+      if (!isValid && user.password && user.password === cleanPassword) {
+        isValid = true;
+      }
       if (!isValid) {
         return res.status(401).json({ message: "Invalid credentials." });
       }
@@ -90,6 +100,43 @@ export const studentController = {
         course: user.course,
         status: user.status,
         avatar: user.avatar,
+        qrCode: user.qrCode,
+      },
+    });
+  },
+
+  async resetPassword(req, res) {
+    const { identifier, email, newPassword } = req.body;
+    const target = identifier || email;
+
+    if (!target || !newPassword) {
+      return res.status(400).json({ message: "Identifier (email or ID number) and new password are required." });
+    }
+
+    if (String(newPassword).trim().length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters long." });
+    }
+
+    const user = await studentModel.findUserByEmail(target);
+    if (!user) {
+      return res.status(404).json({ message: "No existing account found with that email or ID number." });
+    }
+
+    const newPasswordHash = await bcrypt.hash(String(newPassword).trim(), 10);
+    const updated = await studentModel.updateUserPassword(target, newPasswordHash);
+
+    if (!updated) {
+      return res.status(500).json({ message: "Failed to update password." });
+    }
+
+    return res.json({
+      success: true,
+      message: "Password reset successfully. You may now log in with your new password.",
+      user: {
+        id: updated.id,
+        name: updated.name,
+        email: updated.email,
+        idNumber: updated.idNumber,
       },
     });
   },
@@ -101,19 +148,22 @@ export const studentController = {
       return res.status(400).json({ message: "Email, password, name, and idNumber are required." });
     }
 
-    const existing = await studentModel.findUserByEmail(email);
+    const normalizedEmail = String(email).trim().toLowerCase();
+    const cleanPassword = String(password).trim();
+
+    const existing = await studentModel.findUserByEmail(normalizedEmail);
     if (existing) {
       return res.status(409).json({ message: "Email already in use." });
     }
 
-    const passwordHash = await bcrypt.hash(password, 10);
+    const passwordHash = await bcrypt.hash(cleanPassword, 10);
 
     const user = await studentModel.createUser({
-      name,
-      email,
-      idNumber,
-      department: department || "STI Student",
-      course: course || "General Program",
+      name: String(name).trim(),
+      email: normalizedEmail,
+      idNumber: String(idNumber).trim(),
+      department: department ? String(department).trim() : "STI Student",
+      course: course ? String(course).trim() : "General Program",
       passwordHash,
       role: "Student",
     });
@@ -145,6 +195,7 @@ export const studentController = {
         course: user.course,
         status: user.status,
         avatar: user.avatar,
+        qrCode: user.qrCode,
       },
     });
   },
@@ -236,53 +287,118 @@ export const studentController = {
   },
 
   async borrowBook(req, res) {
-    const userId = req.user.sub;
-    const { bookId, studentName, studentId, department, isbn, resourceTitle, dueDate, studentIdImage } = req.body;
+    try {
+      const userId = req.user?.sub || null;
+      const { bookId, studentName, studentId, department, isbn, resourceTitle, dueDate, studentIdImage } = req.body;
 
-    if (!bookId) {
-      return res.status(400).json({ message: "Book ID is required." });
+      if (!bookId && !isbn && !resourceTitle) {
+        return res.status(400).json({ message: "Book details (bookId, isbn, or resourceTitle) are required." });
+      }
+
+      const transaction = await studentModel.borrowBook(userId, bookId || isbn, {
+        studentName,
+        studentId,
+        department,
+        isbn,
+        resourceTitle,
+        dueDate,
+        studentIdImage,
+      });
+
+      // Broadcast real-time WebSocket event to Circulation Librarian Dashboard
+      emitBorrowRequest(transaction);
+
+      return res.status(201).json({
+        message: "Borrow request submitted.",
+        transaction,
+      });
+    } catch (error) {
+      if (error.code === "DUPLICATE_PENDING") {
+        return res.status(200).json({
+          message: error.message,
+          transaction: error.transaction,
+          isDuplicate: true,
+        });
+      }
+      throw error;
     }
-
-    const transaction = await studentModel.borrowBook(userId, bookId, {
-      studentName,
-      studentId,
-      department,
-      isbn,
-      resourceTitle,
-      dueDate,
-      studentIdImage,
-    });
-
-    return res.status(201).json({
-      message: "Borrow request submitted.",
-      transaction,
-    });
   },
 
   async reserveBook(req, res) {
-    const userId = req.user.sub;
-    const { bookId, studentName, studentId, department, isbn, resourceTitle, dueDate, studentIdImage } = req.body;
+    try {
+      const userId = req.user?.sub || null;
+      const { bookId, studentName, studentId, department, isbn, resourceTitle, dueDate, studentIdImage } = req.body;
 
-    if (!bookId) {
-      return res.status(400).json({ message: "Book ID is required." });
+      if (!bookId && !isbn && !resourceTitle) {
+        return res.status(400).json({ message: "Book details (bookId, isbn, or resourceTitle) are required." });
+      }
+
+      const transaction = await studentModel.reserveBook(userId, bookId || isbn, {
+        studentName,
+        studentId,
+        department,
+        isbn,
+        resourceTitle,
+        dueDate,
+        studentIdImage,
+      });
+
+      // Broadcast real-time WebSocket event to Circulation Librarian Dashboard
+      emitReservationRequest(transaction);
+
+      return res.status(201).json({
+        message: "Reservation request submitted.",
+        transaction,
+      });
+    } catch (error) {
+      if (error.code === "DUPLICATE_PENDING") {
+        return res.status(200).json({
+          message: error.message,
+          transaction: error.transaction,
+          isDuplicate: true,
+        });
+      }
+      throw error;
     }
-
-    const transaction = await studentModel.reserveBook(userId, bookId, {
-      studentName,
-      studentId,
-      department,
-      isbn,
-      resourceTitle,
-      dueDate,
-      studentIdImage,
-    });
-
-    return res.status(201).json({
-      message: "Reservation request submitted.",
-      transaction,
-    });
   },
 
+
+
+
+  async cancelReservation(req, res) {
+    try {
+      const reservationId = req.params.id || req.params.transactionId;
+      const userId = req.user?.sub || null;
+
+      if (!reservationId) {
+        return res.status(400).json({ message: "Reservation ID is required." });
+      }
+
+      const result = await studentModel.cancelReservation(reservationId, userId);
+
+      if (!result) {
+        return res.status(404).json({ message: "Reservation not found." });
+      }
+
+      if (result.notPending) {
+        return res.status(400).json({
+          message: `Cannot cancel reservation with status '${result.currentStatus}'. Only pending reservations can be cancelled.`,
+          currentStatus: result.currentStatus,
+        });
+      }
+
+      // Emit real-time WebSocket event for Circulation Librarian
+      emitReservationCancelled(result.transaction);
+
+      return res.json({
+        message: "Reservation cancelled successfully.",
+        transaction: result.transaction,
+      });
+    } catch (error) {
+      console.error("student:cancelReservation controller error:", error);
+      return res.status(500).json({ message: error.message || "Failed to cancel reservation." });
+    }
+  },
 
   async returnBook(req, res) {
     const { transactionId } = req.params;
@@ -299,6 +415,7 @@ export const studentController = {
     });
   },
 
+
   async getAnnouncements(req, res) {
     const announcements = await studentModel.getAnnouncements();
     return res.json({ announcements });
@@ -312,6 +429,25 @@ export const studentController = {
     } catch (error) {
       console.error("getRecommendations controller error:", error);
       return res.status(500).json({ message: "An error occurred while generating recommendations." });
+    }
+  },
+
+  async getStudentByQr(req, res) {
+    try {
+      const qrPayload = req.params.qrCode || req.params.qrPayload || req.query.qr;
+      if (!qrPayload) {
+        return res.status(400).json({ message: "QR payload or Student identifier is required." });
+      }
+
+      const result = await studentModel.getStudentCardAndViolations(qrPayload);
+      if (!result) {
+        return res.status(404).json({ message: "Student account not found for this QR code." });
+      }
+
+      return res.json(result);
+    } catch (error) {
+      console.error("getStudentByQr controller error:", error);
+      return res.status(500).json({ message: "Failed to resolve student QR payload." });
     }
   },
 };

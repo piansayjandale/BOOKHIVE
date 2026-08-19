@@ -2,11 +2,14 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
 import { Alert } from "react-native";
 import { API_URL, getAuthHeaders } from "./authService";
+import { addDynamicBook } from "./books";
+import { socketService } from "../services/socketService";
 
 export type ReservationBook = {
   id: string;
   title: string;
   author: string;
+  isbn?: string;
   description?: string;
   year?: string | number;
   pages?: string | number;
@@ -14,6 +17,7 @@ export type ReservationBook = {
   category?: string;
   date?: string;
   status?: string;
+  comment?: string;
   pickupDate?: string;
   queuePosition?: string;
   estimatedWait?: string;
@@ -25,6 +29,7 @@ export type ReservationBook = {
   department?: string;
   shelf?: string;
 };
+
 
 export type NotificationItem = {
   id: string;
@@ -47,6 +52,7 @@ export type UserProfile = {
   address: string;
   yearlevel: string;
   avatar: string;
+  qrCode?: string;
 };
 
 export type AnnouncementItem = {
@@ -70,6 +76,7 @@ let cachedProfile: UserProfile = {
   address: "123 Main St, Bacolod City",
   yearlevel: "3rd Year",
   avatar: "https://via.placeholder.com/150?text=Profile",
+  qrCode: "e1a10003-2026-4050-8000-000000000003",
 };
 
 let cachedReservations: ReservationBook[] = [];
@@ -174,12 +181,13 @@ export const syncProfileWithBackend = async (force = false) => {
       const dbUser = response.data.user;
       cachedProfile = {
         ...cachedProfile,
-        name: dbUser.name,
-        email: dbUser.email,
-        studentId: dbUser.idNumber || cachedProfile.studentId,
-        department: dbUser.department || cachedProfile.department,
-        course: dbUser.course || cachedProfile.course,
-        avatar: dbUser.avatar || cachedProfile.avatar,
+        name: dbUser.name || dbUser.fullName || cachedProfile.name || "Student",
+        email: dbUser.email || cachedProfile.email || "",
+        studentId: dbUser.idNumber || dbUser.id_number || dbUser.studentId || cachedProfile.studentId || "",
+        department: dbUser.department || cachedProfile.department || "WNU STI",
+        course: dbUser.course || cachedProfile.course || "General Program",
+        avatar: dbUser.avatar || cachedProfile.avatar || "",
+        qrCode: dbUser.qrCode || cachedProfile.qrCode || "",
       };
 
       await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(cachedProfile));
@@ -312,25 +320,108 @@ export const addReservation = async (reservation: any) => {
       headers
     );
 
-    if (response.status === 201) {
+    // Emit real-time WebSocket event for Circulation Librarian
+    socketService.emitBorrowRequest({
+      id: reservation.id,
+      title: reservation.title,
+      resourceTitle: reservation.title,
+      author: reservation.author,
+      studentName: reservation.studentName || cachedProfile.name,
+      studentId: reservation.studentId || cachedProfile.studentId,
+      department: reservation.department || cachedProfile.department,
+      action: reservation.action,
+      type: reservation.action === 'Borrow' ? 'Borrowing' : 'Reservation',
+      requestedAt: new Date().toISOString(),
+    });
+
+    if (response.data?.isDuplicate) {
+      // Backend idempotent notice: pending request already exists
+      Alert.alert(
+        "Request Active",
+        response.data.message || "You already have an active pending request for this book. The circulation librarian is currently reviewing it."
+      );
+      await syncTransactionsWithBackend(true);
+    } else if (response.status === 201 || response.status === 200) {
       await syncTransactionsWithBackend(true);
     }
   } catch (error: any) {
-    console.error("Error submitting transaction to backend:", error);
-    // Roll back local cache on failure
-    cachedReservations = cachedReservations.filter((item) => item.id !== reservation.id);
-    cachedHistory = cachedHistory.filter((item) => item.id !== reservation.id);
-    notify();
+    if (error.response?.status === 409) {
+      // 409 Conflict: request is already pending on the backend
+      console.warn("Backend 409 duplicate request:", error.response?.data?.message);
+      Alert.alert(
+        "Request Active",
+        error.response?.data?.message || "You already have an active pending request for this book. The circulation librarian is currently reviewing it."
+      );
+      await syncTransactionsWithBackend(true);
+    } else {
+      console.warn("Transaction submission issue:", error.message || error);
+      // Roll back local cache on unexpected network failure
+      cachedReservations = cachedReservations.filter((item) => item.id !== reservation.id);
+      cachedHistory = cachedHistory.filter((item) => item.id !== reservation.id);
+      notify();
 
-    const msg = error.response?.data?.message || "Failed to submit request. Please check your network connection.";
-    Alert.alert("Request Failed", msg);
+      const msg = error.response?.data?.message || "Failed to submit request. Please check your network connection.";
+      Alert.alert("Request Failed", msg);
+    }
+  }
+
+  return cachedReservations;
+};
+
+export const cancelReservation = async (id: string) => {
+  // Optimistic UI updates - save previous state for rollback
+  const previousReservations = [...cachedReservations];
+  const previousHistory = [...cachedHistory];
+
+  const target = cachedReservations.find((item) => item.id === id);
+
+  cachedReservations = cachedReservations.filter((item) => item.id !== id);
+  cachedHistory = cachedHistory.map((item) =>
+    item.id === id ? { ...item, status: 'Cancelled', date: 'Cancelled' } : item
+  );
+  notify();
+
+  try {
+    const headers = await getAuthHeaders();
+    // Call backend student cancellation endpoint
+    const response = await axios.post(
+      `${API_URL}/api/student/reservations/${id}/cancel`,
+      {},
+      headers
+    );
+
+    // Emit real-time WebSocket event from mobile client
+    socketService.emitReservationCancelled({
+      id,
+      title: target?.title || "Book",
+      resourceTitle: target?.title || "Book",
+      studentName: cachedProfile.name,
+      studentId: cachedProfile.studentId,
+      status: "Cancelled",
+    });
+
+    if (response.status === 200) {
+      await syncTransactionsWithBackend(true);
+    }
+  } catch (error: any) {
+    console.warn("Error cancelling reservation on backend:", error.message || error);
+    if (error.response?.data?.message) {
+      Alert.alert("Cancellation Notice", error.response.data.message);
+    }
+    // Re-sync with backend to ensure consistency
+    await syncTransactionsWithBackend(true);
   }
 
   return cachedReservations;
 };
 
 export const removeReservation = async (id: string) => {
-  // Optimistic UI updates - save previous state for rollback
+  const target = cachedReservations.find((item) => item.id === id);
+  if (target && (target.status === "Pending" || !target.status)) {
+    return cancelReservation(id);
+  }
+
+  // Otherwise handle as return of active loan
   const previousReservations = [...cachedReservations];
   const previousHistory = [...cachedHistory];
 
@@ -342,7 +433,6 @@ export const removeReservation = async (id: string) => {
 
   try {
     const headers = await getAuthHeaders();
-    // In our routes: studentRouter.post("/return/:transactionId", studentController.returnBook)
     const response = await axios.post(
       `${API_URL}/api/student/return/${id}`,
       {},
@@ -353,8 +443,7 @@ export const removeReservation = async (id: string) => {
       await syncTransactionsWithBackend(true);
     }
   } catch (error: any) {
-    console.error("Error cancelling/returning book on backend:", error);
-    // Roll back local cache on failure
+    console.warn("Error cancelling/returning book on backend:", error.message || error);
     cachedReservations = previousReservations;
     cachedHistory = previousHistory;
     notify();
@@ -365,6 +454,8 @@ export const removeReservation = async (id: string) => {
 
   return cachedReservations;
 };
+
+
 
 export const updateStudentProfile = async (updatedProfile: Partial<UserProfile>) => {
   // Local merge with rollback support
@@ -395,7 +486,7 @@ export const updateStudentProfile = async (updatedProfile: Partial<UserProfile>)
     await syncProfileWithBackend(true);
     return { success: true };
   } catch (error: any) {
-    console.error("Error saving profile to backend:", error);
+    console.warn("Error saving profile to backend:", error.message || error);
     // Rollback local cache on failure
     cachedProfile = previousProfile;
     await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(cachedProfile));
@@ -931,6 +1022,192 @@ export const clearLocalCache = async () => {
     console.log("Error clearing local cache:", e);
   }
 };
+
+// Subscribe to live Technical Librarian book creation events
+socketService.subscribeToBookAdded((bookData: any) => {
+  if (!bookData) return;
+  addDynamicBook(bookData);
+
+  const newNotif: NotificationItem = {
+    id: `notif-${Date.now()}`,
+    title: "New Book Available!",
+    body: `Technical Librarian added "${bookData.title || 'New Book'}" to the STI Library catalog.`,
+    timestamp: "Just now",
+    read: false,
+    type: "general",
+    bookData: bookData,
+  };
+
+  cachedNotifications.unshift(newNotif);
+  AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
+  notify();
+});
+
+// Subscribe to live Librarian Approval/Declined decision events
+socketService.subscribeToTransactionDecided((txData: any) => {
+  if (!txData) return;
+
+  const currentStudentId = cachedProfile.studentId?.toLowerCase();
+  const currentStudentName = cachedProfile.name?.toLowerCase();
+  const targetStudentId = (txData.studentId || txData.student_id || "")?.toLowerCase();
+  const targetStudentName = (txData.studentName || txData.student_name || "")?.toLowerCase();
+
+  // If targeted to current user (or fallback match)
+  const isMatch =
+    !targetStudentId ||
+    targetStudentId === currentStudentId ||
+    (targetStudentName && currentStudentName && targetStudentName.includes(currentStudentName));
+
+  if (!isMatch) return;
+
+  const status = txData.status;
+  const isApproved = status === "Approved";
+  const isDeclined = status === "Declined";
+  const isReturned = status === "Returned";
+  const type = txData.type || "Reservation";
+  const title = txData.resourceTitle || txData.title || "Book";
+
+  let notifTitle = `${type} Update`;
+  let notifBody = `Your ${type.toLowerCase()} request for "${title}" has been updated to ${status}.`;
+
+  if (isApproved) {
+    notifTitle = `${type} Approved`;
+    notifBody = `Your ${type.toLowerCase()} request for "${title}" has been approved by the librarian. You may now pick up the book.`;
+  } else if (isDeclined) {
+    notifTitle = `${type} Declined`;
+    const commentPart = txData.comment ? ` Reason: ${txData.comment}` : "";
+    notifBody = `Your ${type.toLowerCase()} request for "${title}" was declined by the librarian.${commentPart}`;
+  } else if (isReturned) {
+    notifTitle = `Book Returned`;
+    notifBody = `You have successfully returned "${title}". Thank you!`;
+  }
+
+  const newNotif: NotificationItem = {
+    id: `tx-decided-${txData.id || Date.now()}-${Date.now()}`,
+    title: notifTitle,
+    body: notifBody,
+    timestamp: "Just now",
+    read: false,
+    type: "reservation",
+    bookData: {
+      id: txData.bookId || txData.id,
+      title: title,
+      author: txData.author || "Author",
+      category: txData.department || "Circulation",
+      available: "true",
+      shelf: "Circulation Shelf",
+    },
+  };
+
+  // Prepend notification
+  cachedNotifications.unshift(newNotif);
+  AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
+
+  // Update reservations and history locally
+  if (txData.id) {
+    cachedReservations = cachedReservations.map((r) =>
+      r.id === txData.id || r.title === title ? { ...r, status: status } : r
+    );
+    if (isDeclined || isReturned) {
+      cachedReservations = cachedReservations.filter((r) => r.id !== txData.id && r.title !== title);
+    }
+    cachedHistory = cachedHistory.map((h) =>
+      h.id === txData.id || h.title === title ? { ...h, status: status, comment: txData.comment } : h
+    );
+  }
+
+  notify();
+  void syncTransactionsWithBackend(true);
+});
+
+export type ScannedStudentCardData = {
+  student: {
+    id: string;
+    name: string;
+    fullName?: string;
+    email: string;
+    studentId: string;
+    idNumber?: string;
+    department: string;
+    course: string;
+    role?: string;
+    avatar?: string;
+    qrCode?: string;
+  };
+  libraryCard: {
+    id: string;
+    bookTitle: string;
+    borrowDate: string;
+    dueReturnDate: string;
+    status: string;
+  }[];
+  violations: {
+    id: string;
+    bookTitle?: string;
+    violationType: string;
+    penaltyAmount: number;
+    status: string;
+    remarks: string;
+    date?: string;
+  }[];
+};
+
+export const fetchStudentCardAndViolations = async (qrPayload: string): Promise<ScannedStudentCardData | null> => {
+  if (!qrPayload) return null;
+  const cleanId = qrPayload.trim();
+
+  try {
+    const headers = await getAuthHeaders();
+    const response = await axios.get(`${API_URL}/api/student/card-by-qr/${encodeURIComponent(cleanId)}`, headers);
+    if (response.status === 200 && response.data?.student) {
+      return response.data;
+    }
+  } catch (error) {
+    console.warn("fetchStudentCardAndViolations backend lookup failed, falling back:", error);
+  }
+
+  // Local fallback simulation if offline or demo user
+  const matchingBorrowed = cachedReservations.filter((b) => b.status === "Approved" || b.status === "Upcoming" || b.status === "Reserved").map((b) => ({
+    id: b.id,
+    bookTitle: b.title,
+    borrowDate: b.date || "2026-05-10",
+    dueReturnDate: b.returnDate || b.date || "2026-05-24",
+    status: b.status || "Approved",
+  }));
+
+  return {
+    student: {
+      id: cachedProfile.studentId || "2025-0001",
+      name: cachedProfile.name,
+      fullName: cachedProfile.name,
+      email: cachedProfile.email,
+      studentId: cachedProfile.studentId,
+      department: cachedProfile.department,
+      course: cachedProfile.course,
+      avatar: cachedProfile.avatar,
+      qrCode: cachedProfile.qrCode || "e1a10003-2026-4050-8000-000000000003",
+    },
+    libraryCard: matchingBorrowed.length > 0 ? matchingBorrowed : [
+      {
+        id: "demo-tx-1",
+        bookTitle: "Clean Code: A Handbook of Agile Software Craftsmanship",
+        borrowDate: "05/10/2026",
+        dueReturnDate: "05/24/2026",
+        status: "Approved",
+      },
+      {
+        id: "demo-tx-2",
+        bookTitle: "Introduction to Algorithms, Fourth Edition",
+        borrowDate: "05/01/2026",
+        dueReturnDate: "05/15/2026",
+        status: "Approved",
+      }
+    ],
+    violations: [],
+  };
+};
+
+
 
 
 

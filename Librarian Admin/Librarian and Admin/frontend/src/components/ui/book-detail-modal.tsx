@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Clock3, Info, Tag, X } from "lucide-react";
+import { Check, Copy, Clock3, Info, Tag, X, BookOpen } from "lucide-react";
 
 import { generateApaCitation } from "@/lib/utils";
 import type { BookAvailability, BookRecord } from "@/lib/types";
@@ -15,22 +15,81 @@ export interface BookDetailPayload {
   department: string;
   shelfLocation?: string;
   genres?: string;
-  availability?: BookAvailability;
+  availability?: BookAvailability | string;
   publicationDate?: string;
   summary?: string;
   relevance?: number;
+  copies?: number;
 }
 
-const availabilityClasses = (availability?: BookAvailability) => {
-  if (availability === "Available") {
+export type NormalizedStatus = "Available" | "Reserved" | "Unavailable";
+
+export function normalizeStatus(rawStatus?: string | null): NormalizedStatus {
+  if (!rawStatus) return "Available";
+  const s = rawStatus.trim().toLowerCase().replace(/[\s_-]+/g, "");
+  if (s === "available" || s === "instock" || s === "in_stock") {
+    return "Available";
+  }
+  if (s === "reserved" || s === "pending" || s === "hold" || s === "onhold") {
+    return "Reserved";
+  }
+  if (
+    s === "unavailable" ||
+    s === "notavailable" ||
+    s === "limited" ||
+    s === "borrowed" ||
+    s === "checkedout" ||
+    s === "onloan" ||
+    s === "lost" ||
+    s === "archived"
+  ) {
+    return "Unavailable";
+  }
+  return "Available";
+}
+
+export function computeBookCopyStats(book: BookDetailPayload | null | undefined) {
+  const status = normalizeStatus(book?.availability);
+  const totalCopies = Math.max(1, Number(book?.copies) || 1);
+
+  let availableCopies = totalCopies;
+  let reservedCopies = 0;
+  let unavailableCopies = 0;
+
+  if (status === "Unavailable") {
+    availableCopies = 0;
+    reservedCopies = 0;
+    unavailableCopies = totalCopies;
+  } else if (status === "Reserved") {
+    reservedCopies = 1;
+    availableCopies = Math.max(0, totalCopies - 1);
+    unavailableCopies = 0;
+  } else {
+    availableCopies = totalCopies;
+    reservedCopies = 0;
+    unavailableCopies = 0;
+  }
+
+  return {
+    totalCopies,
+    availableCopies,
+    reservedCopies,
+    unavailableCopies,
+    status,
+  };
+}
+
+const availabilityClasses = (availability?: BookAvailability | string) => {
+  const normalized = normalizeStatus(availability);
+  if (normalized === "Available") {
     return "bg-emerald-500/20 text-emerald-300 border-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.35)]";
   }
 
-  if (availability === "Reserved") {
+  if (normalized === "Reserved") {
     return "bg-amber-500/20 text-amber-300 border-amber-400/40 shadow-[0_0_20px_rgba(245,158,11,0.35)]";
   }
 
-  return "bg-red-500/20 text-red-300 border-red-400/40 shadow-[0_0_20px_rgba(239,68,68,0.35)]";
+  return "bg-rose-500/20 text-rose-300 border-rose-400/40 shadow-[0_0_20px_rgba(244,63,94,0.35)]";
 };
 
 export function BookDetailModal({
@@ -49,6 +108,10 @@ export function BookDetailModal({
   }
 
   const citation = generateApaCitation(book as BookRecord);
+  const copyStats = computeBookCopyStats(book);
+  const percentAvailable = Math.round((copyStats.availableCopies / (copyStats.totalCopies || 1)) * 100);
+  const percentReserved = Math.round((copyStats.reservedCopies / (copyStats.totalCopies || 1)) * 100);
+  const percentUnavailable = Math.max(0, 100 - percentAvailable - percentReserved);
 
   const handleCopy = async () => {
     try {
@@ -109,11 +172,11 @@ export function BookDetailModal({
               <div className="flex-shrink-0 self-start sm:self-center">
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-black tracking-widest uppercase ${availabilityClasses(
-                    book.availability,
+                    copyStats.status,
                   )}`}
                 >
                   <span className="inline-block h-2 w-2 rounded-full bg-current animate-pulse" />
-                  {book.availability ?? "Status unknown"}
+                  {copyStats.status}
                 </span>
               </div>
             </div>
@@ -121,6 +184,72 @@ export function BookDetailModal({
 
           {/* Content Area */}
           <div className="space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+            {/* Dedicated Copy Inventory & Availability Section */}
+            <div className="rounded-2xl border border-[#FFD600]/20 bg-gradient-to-br from-[#152E47]/70 to-[#0F1D29]/90 p-4 shadow-lg text-left">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#FFD600]/15 text-[#FFD600]">
+                    <BookOpen className="h-3.5 w-3.5" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#FFD600]">
+                    COPY INVENTORY & AVAILABILITY
+                  </span>
+                </div>
+                <span className="text-xs font-mono font-bold text-white/90">
+                  {copyStats.availableCopies} of {copyStats.totalCopies} Available
+                </span>
+              </div>
+
+              {/* 3-metric copy breakdown cards */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl border border-white/5 bg-black/25 p-2.5 text-center">
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Total Physical</p>
+                  <p className="mt-0.5 text-base font-black text-white">{copyStats.totalCopies}</p>
+                  <p className="text-[9px] text-slate-500">In System</p>
+                </div>
+
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2.5 text-center">
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-emerald-400">Available</p>
+                  <p className="mt-0.5 text-base font-black text-emerald-300">{copyStats.availableCopies}</p>
+                  <p className="text-[9px] text-emerald-400/70">For Checkout</p>
+                </div>
+
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-2.5 text-center">
+                  <p className="text-[8px] font-bold uppercase tracking-wider text-amber-400">Reserved / Loan</p>
+                  <p className="mt-0.5 text-base font-black text-amber-300">{copyStats.reservedCopies + copyStats.unavailableCopies}</p>
+                  <p className="text-[9px] text-amber-400/70">Active Holds</p>
+                </div>
+              </div>
+
+              {/* Allocation bar */}
+              <div className="mt-3 space-y-1">
+                <div className="flex justify-between text-[9px] text-slate-400 font-medium">
+                  <span>Stock Allocation</span>
+                  <span>{percentAvailable}% In Circulation Ready</span>
+                </div>
+                <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden flex border border-white/5">
+                  {copyStats.availableCopies > 0 && (
+                    <div
+                      className="bg-emerald-500 transition-all duration-300"
+                      style={{ width: `${percentAvailable}%` }}
+                    />
+                  )}
+                  {copyStats.reservedCopies > 0 && (
+                    <div
+                      className="bg-amber-500 transition-all duration-300"
+                      style={{ width: `${percentReserved}%` }}
+                    />
+                  )}
+                  {copyStats.unavailableCopies > 0 && (
+                    <div
+                      className="bg-rose-500 transition-all duration-300"
+                      style={{ width: `${percentUnavailable}%` }}
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Visual Relevance Meter (if applicable) */}
             {typeof book.relevance === "number" && (
               <div className="rounded-2xl border border-[#FFD600]/20 bg-gradient-to-r from-[#FFD600]/5 to-transparent p-4 text-left">
@@ -143,10 +272,10 @@ export function BookDetailModal({
 
             {/* Standard Key-Value Grid */}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Detail label="ISBN" value={book.isbn} icon={Tag} />
+              <Detail label="ISBN" value={book.isbn} icon={Tag} isMono />
               <Detail label="Department" value={book.department} icon={Info} />
-              <Detail label="Shelf Location" value={book.shelfLocation ?? "Not available"} icon={Clock3} />
-              <Detail label="Genre" value={book.genres ?? "General collection"} icon={Tag} />
+              <Detail label="Shelf Location" value={book.shelfLocation || "Unavailable"} icon={Clock3} />
+              <Detail label="Genre" value={book.genres || "General collection"} icon={Tag} />
             </div>
 
             {/* APA Scholarly Citation Box */}
@@ -184,7 +313,7 @@ export function BookDetailModal({
             <div className="rounded-2xl border border-white/[0.04] bg-white/[0.01] p-5">
               <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35">Summary Description</p>
               <p className="mt-3 text-xs leading-relaxed text-white/60 max-h-[100px] overflow-y-auto pr-1 text-left scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                {book.summary ?? "No summary available for this title."}
+                {book.summary || "No summary available for this title."}
               </p>
             </div>
           </div>
@@ -198,10 +327,12 @@ function Detail({
   label,
   value,
   icon: Icon,
+  isMono = false,
 }: {
   label: string;
   value: string;
   icon: typeof Info;
+  isMono?: boolean;
 }) {
   return (
     <div className="flex items-center gap-3 rounded-2xl border border-white/[0.04] bg-white/[0.02] px-4 py-3 shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
@@ -210,7 +341,9 @@ function Detail({
       </div>
       <div className="min-w-0 text-left">
         <p className="text-[9px] font-black uppercase tracking-wider text-white/40">{label}</p>
-        <p className="mt-0.5 truncate text-xs font-bold text-white/95">{value || "Not specified"}</p>
+        <p className={`mt-0.5 truncate text-xs font-bold text-white/95 ${isMono ? "font-mono" : ""}`}>
+          {value || "Unavailable"}
+        </p>
       </div>
     </div>
   );
