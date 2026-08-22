@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { UnifiedManagementPage } from "@/components/admin/unified-management-page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return (
-    <Suspense fallback={<div className="p-8 text-white">Loading management...</div>}>
-      <UnifiedManagementPage />
-    </Suspense>
-  );
+export default function AdminManagementRedirectPage() {
+  redirect("/admin/catalog");
 }

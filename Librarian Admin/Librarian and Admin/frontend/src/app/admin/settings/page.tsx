@@ -1,5 +1,5 @@
-import { SettingsPage } from "@/components/admin/settings-page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <SettingsPage />;
+export default function AdminSettingsRedirectPage() {
+  redirect("/admin/home");
 }

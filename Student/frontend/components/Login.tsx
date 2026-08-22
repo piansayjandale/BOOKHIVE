@@ -33,7 +33,6 @@ const Login: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
                   className={styles.input}
                   required
                 />
@@ -45,7 +44,6 @@ const Login: React.FC = () => {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
                   className={styles.input}
                   required
                 />
@@ -66,9 +64,6 @@ const Login: React.FC = () => {
               {/* Submit Button */}
               <button type="submit" className={styles.submitButton}>LOGIN</button>
             </form>
-            <div className={styles.bottomLink}>
-              <a href="#" className={styles.createAccount}>Create Account</a>
-            </div>
           </div>
         </div>
       </div>

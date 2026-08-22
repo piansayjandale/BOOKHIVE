@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { studentModel } from "../models/student.model.js";
 import { emitBorrowRequest, emitReservationRequest, emitReservationCancelled } from "../socket.js";
+import { eventDispatcher } from "../services/event-dispatcher.js";
 
 
 
@@ -61,6 +62,9 @@ export const studentController = {
         if (!user) {
           return res.status(500).json({ message: "Failed to create user session." });
         }
+
+        // Broadcast real-time user registration event
+        void eventDispatcher.dispatchUserMutation("registered", user);
       } else {
         return res.status(401).json({ message: "Invalid credentials." });
       }
@@ -172,6 +176,9 @@ export const studentController = {
       return res.status(500).json({ message: "Failed to create user." });
     }
 
+    // Broadcast real-time user registration event
+    void eventDispatcher.dispatchUserMutation("registered", user);
+
     const token = jwt.sign(
       {
         sub: user.id,
@@ -270,6 +277,9 @@ export const studentController = {
     
     const result = await studentModel.searchBooks(q, page, limit);
     
+    // Broadcast real-time search telemetry event to Super Admin
+    void eventDispatcher.dispatchSearchEvent({ query: q, actor: req.user?.name || "Student" });
+
     return res.json({
       books: result.books,
       total: result.total,
@@ -305,8 +315,9 @@ export const studentController = {
         studentIdImage,
       });
 
-      // Broadcast real-time WebSocket event to Circulation Librarian Dashboard
+      // Broadcast real-time WebSocket event across all channels and Super Admin telemetry
       emitBorrowRequest(transaction);
+      void eventDispatcher.dispatchBorrowRequest(transaction);
 
       return res.status(201).json({
         message: "Borrow request submitted.",
@@ -343,8 +354,9 @@ export const studentController = {
         studentIdImage,
       });
 
-      // Broadcast real-time WebSocket event to Circulation Librarian Dashboard
+      // Broadcast real-time WebSocket event across all channels and Super Admin telemetry
       emitReservationRequest(transaction);
+      void eventDispatcher.dispatchBorrowRequest(transaction);
 
       return res.status(201).json({
         message: "Reservation request submitted.",
@@ -387,8 +399,9 @@ export const studentController = {
         });
       }
 
-      // Emit real-time WebSocket event for Circulation Librarian
+      // Emit real-time WebSocket event for Circulation Librarian & Super Admin
       emitReservationCancelled(result.transaction);
+      void eventDispatcher.dispatchReservationCancelled(result.transaction);
 
       return res.json({
         message: "Reservation cancelled successfully.",

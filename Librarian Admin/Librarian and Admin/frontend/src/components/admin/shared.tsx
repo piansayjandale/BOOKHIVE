@@ -131,15 +131,24 @@ export function FieldLabel({
   label,
   children,
 }: {
-  label: string;
-  children: ReactNode;
+  label?: string;
+  children?: ReactNode;
 }) {
+  if (label) {
+    return (
+      <label className="block">
+        <span className="mb-2 block text-xs font-bold uppercase tracking-[0.24em] text-[var(--topbar-muted)]">
+          {label}
+        </span>
+        {children}
+      </label>
+    );
+  }
+
   return (
-    <label className="block">
-      <span className="mb-3 block text-xs font-bold uppercase tracking-[0.24em] text-[var(--topbar-muted)]">
-        {label}
-      </span>
+    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.24em] text-[var(--topbar-muted)]">
       {children}
     </label>
   );
 }
+

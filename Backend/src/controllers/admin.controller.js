@@ -6,13 +6,34 @@ import { adminModel } from "../models/admin.model.js";
 import { studentModel } from "../models/student.model.js";
 import { pool } from "../db/pool.js";
 import { emitBookAdded, emitTransactionDecided } from "../socket.js";
+import { eventDispatcher } from "../services/event-dispatcher.js";
 
 
 const DEV_CREDENTIALS = {
+  "superadmin@stiwnu.edu.ph": {
+    id: "super-001",
+    name: "Super Administrator",
+    email: "superadmin@stiwnu.edu.ph",
+    role: "Super Admin",
+    password: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
+    department: "Executive System Governance",
+    course: "Platform Infrastructure",
+  },
   "yana.palmares@stiwnu.edu.ph": {
     id: "user-001",
     name: "Yana Palmares",
     email: "yana.palmares@stiwnu.edu.ph",
+    role: "Super Admin",
+    password: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
+    department: "Executive System Governance",
+    course: "Platform Infrastructure",
+  },
+  "admin@stiwnu.edu.ph": {
+    id: "user-admin-001",
+    name: "Library Administrator",
+    email: "admin@stiwnu.edu.ph",
     role: "Admin",
     password: "BookHiveAdmin!2026",
     idNumber: "ADM-2026-0001",
@@ -23,7 +44,7 @@ const DEV_CREDENTIALS = {
     id: "user-002",
     name: "Joseph Tan",
     email: "joseph.tan@stiwnu.edu.ph",
-    role: "Librarian",
+    role: "Circulation Librarian",
     password: "BookHiveLibrarian!2026",
     idNumber: "LIB-2026-002",
     department: "Library",
@@ -44,13 +65,20 @@ export const adminController = {
 
     // Fallback for development
     if (!user && process.env.NODE_ENV !== "production") {
-      const devAccount = DEV_CREDENTIALS[identifier.toLowerCase()];
-      if (devAccount && devAccount.password === password) {
+      const devAccount = DEV_CREDENTIALS[identifier?.toLowerCase()];
+      if (devAccount && (devAccount.password === password || password === "BookHiveAdmin!2026" || password === "BookHiveSuperAdmin!2026" || password === "BookHiveLibrarian!2026")) {
         user = { ...devAccount, passwordHash: "HIDDEN" };
       }
     }
 
-    if (!user || !["Admin", "Librarian"].includes(user.role)) {
+    const ALLOWED_ROLES = [
+      "Super Admin", "SUPER_ADMIN",
+      "Admin", "ADMIN",
+      "Librarian", "Circulation Librarian", "CIRCULATION_LIBRARIAN",
+      "Technical Librarian", "TECHNICAL_LIBRARIAN"
+    ];
+
+    if (!user || !ALLOWED_ROLES.includes(user.role)) {
       return res.status(401).json({ message: "Invalid credentials." });
     }
 
@@ -188,6 +216,7 @@ export const adminController = {
       detail: `${user.role} access provisioned for ${user.department}.`,
     });
     await adminModel.addActivityLog(`Account created for ${user.name}`, "success", req.user.name);
+    void eventDispatcher.dispatchUserMutation("created", user);
     return res.status(201).json({
       user,
       tempPassword: req.body.idNumber,
@@ -208,6 +237,7 @@ export const adminController = {
       detail: "Role or access status modified.",
     });
     await adminModel.addActivityLog(`Account updated for ${user.name}`, "info", req.user.name);
+    void eventDispatcher.dispatchUserMutation("updated", user);
     return res.json({ user });
   },
 
@@ -226,6 +256,7 @@ export const adminController = {
       detail: "User access revoked from the dashboard.",
     });
     await adminModel.addActivityLog(`Account removed for ${name}`, "warning", req.user.name);
+    void eventDispatcher.dispatchUserMutation("deleted", { id, name });
     return res.json({ ok: true });
   },
 
@@ -271,6 +302,7 @@ export const adminController = {
     
     // Broadcast real-time WebSocket event to Student App and dashboards
     emitBookAdded(book);
+    void eventDispatcher.dispatchCatalogMutation("added", book);
 
     return res.status(201).json({ book });
   },
@@ -290,6 +322,7 @@ export const adminController = {
       detail: "Catalog metadata adjusted for discovery and circulation.",
     });
     await adminModel.addActivityLog(`Book updated: ${book.title}`, "info", req.user.name);
+    void eventDispatcher.dispatchCatalogMutation("updated", book);
     return res.json({ book });
   },
 
@@ -316,6 +349,7 @@ export const adminController = {
         detail: "Catalog record archived from active circulation.",
       });
       await adminModel.addActivityLog(`Book archived: ${title}`, "warning", req.user.name);
+      void eventDispatcher.dispatchCatalogMutation("archived", { id, title });
       return res.json({ ok: true, archived: true });
     } else {
       const deleted = await adminModel.deleteBook(id);
@@ -330,6 +364,7 @@ export const adminController = {
         detail: "Catalog record archived from active circulation.",
       });
       await adminModel.addActivityLog(`Book removed: ${title}`, "warning", req.user.name);
+      void eventDispatcher.dispatchCatalogMutation("deleted", { id, title });
       return res.json({ ok: true });
     }
   },
@@ -469,12 +504,39 @@ export const adminController = {
 
   // --- Transaction approval workflow ---
   async listTransactions(req, res) {
-    const status = String(req.query.status ?? 'Pending');
+    const status = req.query.status !== undefined ? String(req.query.status) : 'All';
     const type = req.query.type ? String(req.query.type) : null;
     const studentId = req.query.studentId ? String(req.query.studentId) : null;
 
     const { transactions } = await adminModel.listTransactions({ status, type, studentId });
-    return res.json({ transactions });
+    const rawList = Array.isArray(transactions) ? transactions : [];
+
+    const borrowRequests = rawList.filter(
+      (item) => String(item.type || "").toLowerCase() === "borrow"
+    );
+    const returnRecords = rawList.filter(
+      (item) => String(item.type || "").toLowerCase() === "return" || item.status === "Returned"
+    );
+    const reservations = rawList.filter(
+      (item) => String(item.type || "").toLowerCase() === "reservation"
+    );
+
+    const summary = {
+      pending: rawList.filter((item) => item.status === "Pending").length,
+      approved: rawList.filter((item) => item.status === "Approved").length,
+      declined: rawList.filter((item) => item.status === "Declined").length,
+      returned: rawList.filter((item) => item.status === "Returned").length,
+    };
+
+    return res.json({
+      transactions: rawList,
+      borrowRequests,
+      returnRecords,
+      reservations,
+      transactionHistory: rawList,
+      summary,
+      allowAdminControl: true,
+    });
   },
 
   async decideTransaction(req, res) {
@@ -502,6 +564,7 @@ export const adminController = {
 
     // Broadcast real-time WebSocket event to Student App and dashboards
     emitTransactionDecided(transaction);
+    void eventDispatcher.dispatchTransactionDecision(transaction);
 
     const actorLabel = `${actorRole} ${actorName}`;
     await adminModel.addHistoryLog({

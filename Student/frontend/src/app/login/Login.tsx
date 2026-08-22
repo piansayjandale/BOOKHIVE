@@ -44,7 +44,6 @@ const Login: React.FC = () => {
                   id="email"
                   type="email"
                   className="login-input"
-                  placeholder="yourname@example.com"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   autoComplete="username"
@@ -58,7 +57,6 @@ const Login: React.FC = () => {
                   id="password"
                   type="password"
                   className="login-input"
-                  placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   autoComplete="current-password"
@@ -82,9 +80,6 @@ const Login: React.FC = () => {
               <button className="login-btn" type="submit">
                 SUBMIT
               </button>
-              <div className="login-bottom-link" tabIndex={0} role="button">
-                Create Account
-              </div>
             </form>
           </div>
         </div>

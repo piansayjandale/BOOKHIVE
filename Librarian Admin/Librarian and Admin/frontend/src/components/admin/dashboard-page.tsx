@@ -480,4 +480,6 @@ const DashboardPage = () => {
   );
 };
 
+export { DashboardPage };
 export default DashboardPage;
+

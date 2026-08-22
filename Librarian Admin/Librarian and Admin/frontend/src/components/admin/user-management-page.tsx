@@ -298,7 +298,7 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
                 </tr>
               ))}
 
-              {(!payload || payload.users.length === 0) && (
+              {(!payload || (payload.users ?? []).length === 0) && (
                 <tr>
                   <td colSpan={7} className="py-20 text-center text-[var(--module-muted-color)]">
                     <UserX className="mx-auto mb-4 h-10 w-10 opacity-30 text-[var(--topbar-muted)]" />

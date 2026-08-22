@@ -59,8 +59,70 @@ export function TransactionsPage() {
   const [search, setSearch]   = useState("");
 
   async function loadTransactions() {
-    const next = await requestJson<AdminTransactionsPayload>("/api/admin/transactions");
-    startTransition(() => setPayload(next));
+    try {
+      const res = await requestJson<any>("/api/admin/transactions?status=All&type=All");
+      const rawList: any[] = Array.isArray(res?.transactions)
+        ? res.transactions
+        : Array.isArray(res)
+        ? res
+        : Array.isArray(res?.transactionHistory)
+        ? res.transactionHistory
+        : [];
+
+      const borrowRequests = Array.isArray(res?.borrowRequests)
+        ? res.borrowRequests
+        : rawList.filter(
+            (item) => String(item.type || item.action || "").toLowerCase() === "borrow"
+          );
+
+      const returnRecords = Array.isArray(res?.returnRecords)
+        ? res.returnRecords
+        : rawList.filter(
+            (item) =>
+              String(item.type || item.action || "").toLowerCase() === "return" ||
+              item.status === "Returned"
+          );
+
+      const reservations = Array.isArray(res?.reservations)
+        ? res.reservations
+        : rawList.filter(
+            (item) => String(item.type || item.action || "").toLowerCase() === "reservation"
+          );
+
+      const transactionHistory = Array.isArray(res?.transactionHistory)
+        ? res.transactionHistory
+        : rawList;
+
+      const summary = res?.summary ?? {
+        pending: rawList.filter((item) => item.status === "Pending").length,
+        approved: rawList.filter((item) => item.status === "Approved").length,
+        declined: rawList.filter((item) => item.status === "Declined").length,
+        returned: rawList.filter((item) => item.status === "Returned").length,
+      };
+
+      const normalized: AdminTransactionsPayload = {
+        summary,
+        borrowRequests,
+        returnRecords,
+        reservations,
+        transactionHistory,
+        allowAdminControl: res?.allowAdminControl ?? true,
+      };
+
+      startTransition(() => setPayload(normalized));
+    } catch (error) {
+      console.error("Failed to load transactions:", error);
+      startTransition(() =>
+        setPayload({
+          summary: { pending: 0, approved: 0, declined: 0, returned: 0 },
+          borrowRequests: [],
+          returnRecords: [],
+          reservations: [],
+          transactionHistory: [],
+          allowAdminControl: true,
+        })
+      );
+    }
   }
 
   useEffect(() => { void loadTransactions(); }, []);
@@ -89,9 +151,9 @@ export function TransactionsPage() {
     ? allRows.filter((r) => {
         const q = search.toLowerCase();
         return (
-          r.studentName.toLowerCase().includes(q) ||
-          r.studentId.toLowerCase().includes(q) ||
-          r.resourceTitle.toLowerCase().includes(q) ||
+          (r.studentName ?? "").toLowerCase().includes(q) ||
+          (r.studentId ?? "").toLowerCase().includes(q) ||
+          (r.resourceTitle ?? "").toLowerCase().includes(q) ||
           (r.isbn ?? "").toLowerCase().includes(q)
         );
       })
@@ -196,9 +258,9 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((item) => (
+              {rows.map((item, idx) => (
                 <tr
-                  key={item.id}
+                  key={item.id ? `tx-${item.id}-${idx}` : `tx-idx-${idx}`}
                   className="border-b border-white/5 transition hover:bg-white/[0.03]"
                 >
                   <td className="px-5 py-3.5 max-w-[200px]">

@@ -191,6 +191,9 @@ export const syncProfileWithBackend = async (force = false) => {
       };
 
       await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(cachedProfile));
+      if (cachedProfile.studentId) {
+        socketService.joinUserRoom(cachedProfile.studentId);
+      }
       notify();
     }
   } catch (error) {

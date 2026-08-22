@@ -1,6 +1,17 @@
 export type ThemeMode = "dark" | "light";
 
-export type Role = "Admin" | "Librarian" | "Technical Librarian" | "Circulation Librarian" | "Student";
+export type Role =
+  | "Super Admin"
+  | "SUPER_ADMIN"
+  | "Admin"
+  | "ADMIN"
+  | "Circulation Librarian"
+  | "CIRCULATION_LIBRARIAN"
+  | "Technical Librarian"
+  | "TECHNICAL_LIBRARIAN"
+  | "Librarian"
+  | "Student"
+  | "STUDENT";
 
 export type Department =
   | "Circulation"
@@ -153,3 +164,90 @@ export interface ReportsPayload {
   topBorrowed: Array<{ title: string; borrows: number }>;
   statusBreakdown: Array<{ status: string; count: number }>;
 }
+
+export interface SuperAdminVitals {
+  totalUsers: number;
+  superAdminsCount: number;
+  adminsCount: number;
+  librariansCount: number;
+  studentsCount: number;
+  activeBooksCount: number;
+  archivedBooksCount: number;
+  totalTransactions: number;
+  pendingTransactions: number;
+  activeBorrows: number;
+  totalAiSearches: number;
+  totalAuditLogs: number;
+}
+
+export interface SuperAdminTelemetry {
+  platformStatus: string;
+  databaseStatus: string;
+  memoryUsagePercent: number;
+  storageUsedPercent: number;
+  uptimeSeconds: number;
+  nodeVersion: string;
+  searchIndexStatus: string;
+  institutionalSyncStatus: string;
+}
+
+export interface SuperAdminDashboardPayload {
+  vitals: SuperAdminVitals;
+  telemetry: SuperAdminTelemetry;
+}
+
+export interface SuperAdminUserRecord {
+  id: string;
+  name: string;
+  idNumber: string;
+  email: string;
+  role: string;
+  department: string;
+  course: string;
+  status: "Active" | "Suspended";
+  avatar?: string;
+  qrCode?: string;
+  lastActive?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface SystemBackupRecord {
+  id: string;
+  fileName: string;
+  fileSizeMb: number;
+  backupType: "MANUAL" | "SCHEDULED" | "PRE_PRUNE";
+  status: "COMPLETED" | "IN_PROGRESS" | "FAILED";
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface InstitutionalSyncLog {
+  id: string;
+  provider: string;
+  syncedRecords: number;
+  status: string;
+  details?: string;
+  syncedAt: string;
+}
+
+export interface SuperAdminSettingsPayload {
+  settings: {
+    theme: string;
+    borrowLimit: number;
+    borrowDurationDays: number;
+    storageUsedPercent: number;
+    indexingStatus: string;
+    aiEngine: string;
+    notificationsEnabled: boolean;
+    emailNotifications: boolean;
+    allowAdminTransactionControl: boolean;
+    aiStrictMode: boolean;
+  };
+  institutionalSync: {
+    provider: string;
+    autoSyncSchedule: string;
+    lastSyncLogs: InstitutionalSyncLog[];
+  };
+}
+

@@ -166,7 +166,7 @@ export default function ReservationsScreen() {
                   : [styles.inactivePillText, { color: isDarkMode ? '#94A3B8' : '#475569' }],
               ]}
             >
-              Book Card
+              Library Card
             </Text>
           </TouchableOpacity>
 

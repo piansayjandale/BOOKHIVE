@@ -36,12 +36,21 @@ export function StudentLibraryCardModal({
 
   const studentBorrows = useMemo(() => {
     if (!student) return [];
-    return transactions.filter(
-      (t) =>
-        (t.studentId === student.studentId ||
-          t.studentName.toLowerCase() === student.name.toLowerCase()) &&
-        (t.type === "Borrow" || (t as any).action === "Borrow" || !t.type)
-    );
+    const seen = new Set<string>();
+    return transactions.filter((t) => {
+      if (!t) return false;
+      const matchesStudent =
+        (t.studentId && t.studentId === student.studentId) ||
+        (t.studentName && t.studentName.toLowerCase() === student.name.toLowerCase());
+      const isBorrow =
+        t.type === "Borrow" || (t as any).action === "Borrow" || !t.type;
+      if (!matchesStudent || !isBorrow) return false;
+
+      const uniqueKey = t.id || `${t.studentId}-${t.resourceTitle}-${t.requestedAt}`;
+      if (seen.has(uniqueKey)) return false;
+      seen.add(uniqueKey);
+      return true;
+    });
   }, [student, transactions]);
 
   const activeLoansCount = useMemo(() => {
@@ -167,7 +176,7 @@ export function StudentLibraryCardModal({
               {/* Data / Grid Rows */}
               {rows.map((row, idx) => (
                 <div
-                  key={row?.id || `empty-${idx}`}
+                  key={row?.id ? `borrow-row-${row.id}-${idx}` : `empty-row-${idx}`}
                   className="flex border-b border-[#24334C] last:border-b-0 min-h-[34px] items-center hover:bg-white/[0.02]"
                 >
                   <div className="w-[28%] px-3.5 py-2 border-r border-[#24334C] text-slate-300">

@@ -140,7 +140,7 @@ export default function Layout() {
       <Tabs.Screen
         name="reservations"
         options={{
-          title: "Book Card",
+          title: "Library Card",
           tabBarIcon: ({ color, focused }) => (
             <View
               style={

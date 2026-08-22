@@ -281,6 +281,19 @@ export const seedTransactions: TransactionRecord[] = [
     department: "General Reference",
     durationDays: 3,
   },
+  {
+    id: "txn-009",
+    studentName: "Jan Dale B. Piansay",
+    studentId: "STI-2024-0012",
+    resourceTitle: "A Game of Thrones",
+    isbn: "9780553588484",
+    type: "Borrow",
+    status: "Approved",
+    requestedAt: "2026-05-24T08:00:00.000Z",
+    dueDate: "2026-05-31T17:00:00.000Z",
+    department: "Circulation",
+    durationDays: 7,
+  },
 ];
 
 export const seedActivities: ActivityLog[] = [

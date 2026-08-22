@@ -3,6 +3,7 @@ import { Router } from "express";
 import { adminRouter } from "./admin.routes.js";
 import { authRouter } from "./auth.routes.js";
 import { studentRouter } from "./student.routes.js";
+import { superAdminRouter } from "./super-admin.routes.js";
 
 import { adminController } from "../controllers/admin.controller.js";
 import { studentController } from "../controllers/student.controller.js";
@@ -12,6 +13,7 @@ export const apiRouter = Router();
 
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/admin", adminRouter);
+apiRouter.use("/super-admin", superAdminRouter);
 apiRouter.use("/student", studentRouter);
 
 // Standardized direct endpoint aliases for Expo Mobile App & Web Dashboard integration

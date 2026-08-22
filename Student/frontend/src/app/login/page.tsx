@@ -98,7 +98,6 @@ const LoginPage: React.FC = () => {
                 id="email"
                 type="email"
                 className="input"
-                placeholder="yourname@example.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 aria-required="true"
@@ -116,7 +115,6 @@ const LoginPage: React.FC = () => {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   className="input"
-                  placeholder="••••••••"
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   aria-required="true"
@@ -198,10 +196,6 @@ const LoginPage: React.FC = () => {
               {isLoading ? 'SIGNING IN...' : 'SUBMIT'}
             </button>
           </form>
-
-          <div className="bottom-link">
-            <a href="/signup" className="create-account">Create Account</a>
-          </div>
         </div>
       </div>
     </div>

@@ -1,5 +1,5 @@
-import { TransactionsPage } from "@/components/admin/transactions-page";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <TransactionsPage />;
+export default function AdminTransactionsRedirectPage() {
+  redirect("/admin/home");
 }

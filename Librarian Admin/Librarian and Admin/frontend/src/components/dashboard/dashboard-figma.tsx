@@ -803,15 +803,15 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
               {variant === "admin" ? (
                 <button
                   suppressHydrationWarning
-                  onClick={() => router.push("/admin/management?tab=users")}
+                  onClick={() => router.push("/admin/catalog")}
                   className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
                 >
                   <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                   <div className="z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-400 shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]">
-                    <Users className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
+                    <ClipboardList className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
                   </div>
                   <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
-                    MANAGE_USERS
+                    VIEW_CATALOG
                   </span>
                 </button>
               ) : (
@@ -844,10 +844,24 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     BATCH_IMPORT
                   </span>
                 </button>
+              ) : variant === "admin" ? (
+                <button
+                  suppressHydrationWarning
+                  onClick={() => router.push("/admin/analytics")}
+                  className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
+                >
+                  <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
+                  <div className="z-10 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/5 text-slate-400 shadow-inner transition-all duration-300 group-hover:scale-110 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]">
+                    <Sparkles className="h-6 w-6 text-slate-400 group-hover:text-[#FCD400]" />
+                  </div>
+                  <span className="z-10 text-[10px] font-bold tracking-[0.2em] text-slate-400 transition-colors duration-300 group-hover:text-[#FCD400]">
+                    ANALYTICS
+                  </span>
+                </button>
               ) : (
                 <button
                   suppressHydrationWarning
-                  onClick={() => router.push(variant === "admin" ? "/admin/transactions" : "/librarian/transactions")}
+                  onClick={() => router.push("/librarian/transactions")}
                   className="group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
                 >
                   <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>

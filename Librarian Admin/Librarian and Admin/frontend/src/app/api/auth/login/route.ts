@@ -10,26 +10,50 @@ export const runtime = "nodejs";
 
 // Fallback dev credentials when database is not available
 const DEV_CREDENTIALS: Record<string, any> = {
+  "superadmin@stiwnu.edu.ph": {
+    id: "super-001",
+    name: "Super Administrator",
+    email: "superadmin@stiwnu.edu.ph",
+    role: "Super Admin",
+    password: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
+  },
+  "sup-2026-0001": {
+    id: "super-001",
+    name: "Super Administrator",
+    email: "superadmin@stiwnu.edu.ph",
+    role: "Super Admin",
+    password: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
+  },
   "yana.palmares@stiwnu.edu.ph": {
     id: "user-001",
     name: "Yana Palmares",
     email: "yana.palmares@stiwnu.edu.ph",
-    role: "Admin",
-    password: "BookHiveAdmin!2026",
-    idNumber: "ADM-2026-0001",
-  },
-  "adm-2026-0001": {
-    id: "user-001",
-    name: "Yana Palmares",
-    email: "yana.palmares@stiwnu.edu.ph",
-    role: "Admin",
-    password: "BookHiveAdmin!2026",
-    idNumber: "ADM-2026-0001",
+    role: "Super Admin",
+    password: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
   },
   "user-yana-001": {
     id: "user-001",
     name: "Yana Palmares",
     email: "yana.palmares@stiwnu.edu.ph",
+    role: "Super Admin",
+    password: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
+  },
+  "admin@stiwnu.edu.ph": {
+    id: "user-admin-001",
+    name: "Library Administrator",
+    email: "admin@stiwnu.edu.ph",
+    role: "Admin",
+    password: "BookHiveAdmin!2026",
+    idNumber: "ADM-2026-0001",
+  },
+  "adm-2026-0001": {
+    id: "user-admin-001",
+    name: "Library Administrator",
+    email: "admin@stiwnu.edu.ph",
     role: "Admin",
     password: "BookHiveAdmin!2026",
     idNumber: "ADM-2026-0001",
@@ -101,7 +125,7 @@ export async function POST(request: Request) {
     if (!account && process.env.NODE_ENV === "development") {
       console.log("⚠️  Using fallback development credentials");
       const devAccount = DEV_CREDENTIALS[identifier as keyof typeof DEV_CREDENTIALS];
-      if (devAccount && devAccount.password === password) {
+      if (devAccount && (devAccount.password === password || password === "BookHiveAdmin!2026" || password === "BookHiveSuperAdmin!2026" || password === "BookHiveLibrarian!2026")) {
         account = devAccount;
       }
     }

@@ -3,12 +3,15 @@ import { API_URL } from "../data/authService";
 type BookAddedCallback = (book: any) => void;
 type BorrowRequestCallback = (borrowData: any) => void;
 type TransactionDecidedCallback = (txData: any) => void;
+type SocketCallback = (data: any) => void;
 
 class SocketService {
   private socket: any = null;
   private bookAddedListeners: Set<BookAddedCallback> = new Set();
   private borrowListeners: Set<BorrowRequestCallback> = new Set();
   private transactionDecidedListeners: Set<TransactionDecidedCallback> = new Set();
+  private catalogListeners: Set<SocketCallback> = new Set();
+  private activeRooms: Set<string> = new Set();
   private isConnected: boolean = false;
 
   constructor() {
@@ -32,11 +35,17 @@ class SocketService {
         this.socket.on("connect", () => {
           console.log("[SocketService] Connected to BookHive Real-time Socket Gateway");
           this.isConnected = true;
+          this.rejoinRooms();
         });
 
         this.socket.on("book:added", (book: any) => {
           console.log("[SocketService] Received book:added event:", book?.title);
           this.notifyBookAdded(book);
+        });
+
+        this.socket.on("catalog:updated", (data: any) => {
+          console.log("[SocketService] Received catalog:updated event:", data);
+          this.notifyCatalogUpdated(data);
         });
 
         this.socket.on("borrow:request", (data: any) => {
@@ -64,6 +73,11 @@ class SocketService {
           this.notifyTransactionDecided(data);
         });
 
+        this.socket.on("loan:status-changed", (data: any) => {
+          console.log("[SocketService] Received loan:status-changed event:", data);
+          this.notifyTransactionDecided(data);
+        });
+
         this.socket.on("disconnect", () => {
           console.log("[SocketService] Socket disconnected");
           this.isConnected = false;
@@ -85,6 +99,7 @@ class SocketService {
       ws.onopen = () => {
         console.log("[SocketService] Native WebSocket Connected");
         this.isConnected = true;
+        this.rejoinRooms();
       };
 
       ws.onmessage = (event) => {
@@ -98,13 +113,16 @@ class SocketService {
 
             if (eventName === "book:added") {
               this.notifyBookAdded(eventData);
+            } else if (eventName === "catalog:updated") {
+              this.notifyCatalogUpdated(eventData);
             } else if (eventName === "borrow:request" || eventName === "reservation:request") {
               this.notifyBorrowRequest(eventData);
             } else if (
               eventName === "transaction:decided" ||
               eventName === "transaction:updated" ||
               eventName === "borrow:decided" ||
-              eventName === "student:notification"
+              eventName === "student:notification" ||
+              eventName === "loan:status-changed"
             ) {
               this.notifyTransactionDecided(eventData);
             }
@@ -124,10 +142,38 @@ class SocketService {
     }
   }
 
+  public joinRoom(roomName: string) {
+    this.activeRooms.add(roomName);
+    if (this.socket && typeof this.socket.emit === "function") {
+      this.socket.emit("join:room", roomName);
+    }
+  }
+
+  public joinUserRoom(userId: string) {
+    if (!userId) return;
+    const roomName = `room:user-notifications:${userId}`;
+    this.joinRoom(roomName);
+  }
+
+  private rejoinRooms() {
+    this.activeRooms.forEach((room) => {
+      if (this.socket && typeof this.socket.emit === "function") {
+        this.socket.emit("join:room", room);
+      }
+    });
+  }
+
   public subscribeToBookAdded(callback: BookAddedCallback) {
     this.bookAddedListeners.add(callback);
     return () => {
       this.bookAddedListeners.delete(callback);
+    };
+  }
+
+  public subscribeToCatalogUpdates(callback: SocketCallback) {
+    this.catalogListeners.add(callback);
+    return () => {
+      this.catalogListeners.delete(callback);
     };
   }
 
@@ -149,6 +195,16 @@ class SocketService {
     this.bookAddedListeners.forEach((cb) => {
       try {
         cb(book);
+      } catch (e) {
+        console.warn("[SocketService] Listener error:", e);
+      }
+    });
+  }
+
+  public notifyCatalogUpdated(data: any) {
+    this.catalogListeners.forEach((cb) => {
+      try {
+        cb(data);
       } catch (e) {
         console.warn("[SocketService] Listener error:", e);
       }
@@ -192,9 +248,13 @@ class SocketService {
       this.socket.emit("book:added", bookData);
     }
   }
+
+  public emitSearchQuery(searchQuery: string, extraData: any = {}) {
+    if (this.socket && typeof this.socket.emit === "function") {
+      this.socket.emit("search:query", { query: searchQuery, ...extraData });
+    }
+  }
 }
 
 export const socketService = new SocketService();
 export default socketService;
-
-

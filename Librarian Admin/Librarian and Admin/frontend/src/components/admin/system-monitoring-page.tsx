@@ -286,7 +286,7 @@ export function SystemMonitoringPage() {
                   </tr>
                 );
               })}
-              {payload?.logs.length === 0 && (
+              {(payload?.logs ?? []).length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-8 text-center text-sm text-white/40">
                     No activity logs match the selected filters.

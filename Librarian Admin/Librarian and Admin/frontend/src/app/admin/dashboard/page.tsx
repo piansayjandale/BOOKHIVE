@@ -1,5 +1,5 @@
-import { DashboardFigma } from "@/components/dashboard/dashboard-figma";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <DashboardFigma variant="admin" />;
+export default function AdminDashboardRedirectPage() {
+  redirect("/admin/home");
 }

@@ -17,7 +17,7 @@ import {
 import { useNotice } from "@/components/providers/notice-provider";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminTransactionsPayload } from "@/lib/admin/types";
-import type { TransactionStatus } from "@/lib/types";
+import type { TransactionRecord, TransactionStatus } from "@/lib/types";
 import { formatDateTime } from "@/lib/utils";
 import { StudentLibraryCardModal } from "@/components/modals/student-library-card-modal";
 
@@ -67,8 +67,70 @@ export function TransactionsPage() {
   } | null>(null);
 
   async function loadTransactions() {
-    const next = await requestJson<AdminTransactionsPayload>("/api/admin/transactions");
-    startTransition(() => setPayload(next));
+    try {
+      const res = await requestJson<any>("/api/admin/transactions?status=All&type=All");
+      const rawList: TransactionRecord[] = Array.isArray(res?.transactions)
+        ? res.transactions
+        : Array.isArray(res)
+        ? res
+        : Array.isArray(res?.transactionHistory)
+        ? res.transactionHistory
+        : [];
+
+      const borrowRequests: TransactionRecord[] = Array.isArray(res?.borrowRequests)
+        ? res.borrowRequests
+        : rawList.filter(
+            (item) => String(item.type || (item as any).action || "").toLowerCase() === "borrow"
+          );
+
+      const returnRecords: TransactionRecord[] = Array.isArray(res?.returnRecords)
+        ? res.returnRecords
+        : rawList.filter(
+            (item) =>
+              String(item.type || (item as any).action || "").toLowerCase() === "return" ||
+              item.status === "Returned"
+          );
+
+      const reservations: TransactionRecord[] = Array.isArray(res?.reservations)
+        ? res.reservations
+        : rawList.filter(
+            (item) => String(item.type || (item as any).action || "").toLowerCase() === "reservation"
+          );
+
+      const transactionHistory: TransactionRecord[] = Array.isArray(res?.transactionHistory)
+        ? res.transactionHistory
+        : rawList;
+
+      const summary = res?.summary ?? {
+        pending: rawList.filter((item) => item.status === "Pending").length,
+        approved: rawList.filter((item) => item.status === "Approved").length,
+        declined: rawList.filter((item) => item.status === "Declined").length,
+        returned: rawList.filter((item) => item.status === "Returned").length,
+      };
+
+      const normalized: AdminTransactionsPayload = {
+        summary,
+        borrowRequests,
+        returnRecords,
+        reservations,
+        transactionHistory,
+        allowAdminControl: res?.allowAdminControl ?? true,
+      };
+
+      startTransition(() => setPayload(normalized));
+    } catch (error) {
+      console.error("Failed to load transactions:", error);
+      startTransition(() =>
+        setPayload({
+          summary: { pending: 0, approved: 0, declined: 0, returned: 0 },
+          borrowRequests: [],
+          returnRecords: [],
+          reservations: [],
+          transactionHistory: [],
+          allowAdminControl: true,
+        })
+      );
+    }
   }
 
   useEffect(() => { void loadTransactions(); }, []);
@@ -97,20 +159,19 @@ export function TransactionsPage() {
     ? allRows.filter((r) => {
         const q = search.toLowerCase();
         return (
-          r.studentName.toLowerCase().includes(q) ||
-          r.studentId.toLowerCase().includes(q) ||
-          r.resourceTitle.toLowerCase().includes(q) ||
+          (r.studentName ?? "").toLowerCase().includes(q) ||
+          (r.studentId ?? "").toLowerCase().includes(q) ||
+          (r.resourceTitle ?? "").toLowerCase().includes(q) ||
           (r.isbn ?? "").toLowerCase().includes(q)
         );
       })
     : allRows;
 
-  // Flatten all transactions for the modal
-  const combinedHistory = [
+  // All transactions for the student library card modal
+  const combinedHistory = payload?.transactionHistory ?? [
     ...(payload?.borrowRequests ?? []),
     ...(payload?.returnRecords ?? []),
     ...(payload?.reservations ?? []),
-    ...(payload?.transactionHistory ?? []),
   ];
 
   return (
@@ -145,7 +206,7 @@ export function TransactionsPage() {
         {[
           {
             label: "Borrow Requests",
-            count: payload?.borrowRequests.length ?? 0,
+            count: payload?.borrowRequests?.length ?? 0,
             color: "text-amber-400",
             border: "border-amber-500/20",
             bg: "bg-amber-500/5",
@@ -153,7 +214,7 @@ export function TransactionsPage() {
           },
           {
             label: "Return Records",
-            count: payload?.returnRecords.length ?? 0,
+            count: payload?.returnRecords?.length ?? 0,
             color: "text-sky-400",
             border: "border-sky-500/20",
             bg: "bg-sky-500/5",
@@ -161,7 +222,7 @@ export function TransactionsPage() {
           },
           {
             label: "Reservations",
-            count: payload?.reservations.length ?? 0,
+            count: payload?.reservations?.length ?? 0,
             color: "text-violet-400",
             border: "border-violet-500/20",
             bg: "bg-violet-500/5",
@@ -169,7 +230,7 @@ export function TransactionsPage() {
           },
           {
             label: "Total History",
-            count: payload?.transactionHistory.length ?? 0,
+            count: payload?.transactionHistory?.length ?? 0,
             color: "text-slate-300",
             border: "border-white/10",
             bg: "bg-white/5",
@@ -239,9 +300,9 @@ export function TransactionsPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((item) => (
+              {rows.map((item, idx) => (
                 <tr
-                  key={item.id}
+                  key={item.id ? `tx-${item.id}-${idx}` : `tx-idx-${idx}`}
                   className="border-b border-white/5 transition hover:bg-white/[0.03]"
                 >
                   <td className="px-5 py-3.5 max-w-[200px]">

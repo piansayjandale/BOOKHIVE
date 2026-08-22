@@ -1,11 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Clock3, Info, Tag, X, BookOpen } from "lucide-react";
+import { Check, Copy, Clock3, Info, Tag, X, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 
 import { generateApaCitation } from "@/lib/utils";
 import type { BookAvailability, BookRecord } from "@/lib/types";
+
+export interface BorrowHistoryEntry {
+  id?: string;
+  bookId?: string;
+  bookTitle?: string;
+  isbn?: string;
+  borrowDate?: string;
+  borrowerName?: string;
+  studentName?: string;
+  studentId?: string;
+  requestedAt?: string;
+  date?: string;
+  dueDate?: string;
+  status?: string;
+  type?: string;
+}
 
 export interface BookDetailPayload {
   id: string;
@@ -20,6 +36,7 @@ export interface BookDetailPayload {
   summary?: string;
   relevance?: number;
   copies?: number;
+  borrowHistory?: BorrowHistoryEntry[];
 }
 
 export type NormalizedStatus = "Available" | "Reserved" | "Unavailable";
@@ -48,26 +65,70 @@ export function normalizeStatus(rawStatus?: string | null): NormalizedStatus {
   return "Available";
 }
 
-export function computeBookCopyStats(book: BookDetailPayload | null | undefined) {
-  const status = normalizeStatus(book?.availability);
+export function computeBookCopyStats(
+  book: BookDetailPayload | null | undefined,
+  borrowHistory: BorrowHistoryEntry[] = []
+) {
   const totalCopies = Math.max(1, Number(book?.copies) || 1);
+  const baseStatus = normalizeStatus(book?.availability);
 
-  let availableCopies = totalCopies;
-  let reservedCopies = 0;
-  let unavailableCopies = 0;
+  // Active loans: status is Approved / Borrowed / On Loan / Active or type Borrow and not returned/declined
+  const activeLoans = borrowHistory.filter((tx) => {
+    const st = (tx.status || "").toLowerCase();
+    if (st === "returned" || st === "declined" || st === "cancelled" || st === "completed") {
+      return false;
+    }
+    return (
+      st === "approved" ||
+      st === "borrowed" ||
+      st === "on loan" ||
+      st === "onloan" ||
+      st === "active" ||
+      (tx.type?.toLowerCase() === "borrow" && st !== "pending")
+    );
+  });
 
-  if (status === "Unavailable") {
-    availableCopies = 0;
-    reservedCopies = 0;
-    unavailableCopies = totalCopies;
-  } else if (status === "Reserved") {
-    reservedCopies = 1;
-    availableCopies = Math.max(0, totalCopies - 1);
-    unavailableCopies = 0;
+  // Active reservations: Pending or Reserved holds
+  const activeReservations = borrowHistory.filter((tx) => {
+    const st = (tx.status || "").toLowerCase();
+    if (st === "returned" || st === "declined" || st === "cancelled" || st === "completed" || st === "approved") {
+      return false;
+    }
+    return st === "pending" || st === "reserved" || st === "upcoming" || tx.type?.toLowerCase() === "reservation";
+  });
+
+  let unavailableCopies = activeLoans.length;
+  let reservedCopies = activeReservations.length;
+  let availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+
+  let status: NormalizedStatus = "Available";
+
+  if (activeLoans.length > 0 || activeReservations.length > 0) {
+    if (unavailableCopies >= totalCopies || availableCopies === 0) {
+      status = unavailableCopies > 0 ? "Unavailable" : "Reserved";
+    } else if (reservedCopies > 0 && availableCopies <= reservedCopies) {
+      status = "Reserved";
+    } else if (activeLoans.length > 0 && totalCopies === 1) {
+      status = "Unavailable";
+    } else {
+      status = "Available";
+    }
   } else {
-    availableCopies = totalCopies;
-    reservedCopies = 0;
-    unavailableCopies = 0;
+    // Fallback to base book availability when no active transaction entries exist
+    status = baseStatus;
+    if (status === "Unavailable") {
+      unavailableCopies = totalCopies;
+      availableCopies = 0;
+      reservedCopies = 0;
+    } else if (status === "Reserved") {
+      reservedCopies = 1;
+      availableCopies = Math.max(0, totalCopies - 1);
+      unavailableCopies = 0;
+    } else {
+      availableCopies = totalCopies;
+      reservedCopies = 0;
+      unavailableCopies = 0;
+    }
   }
 
   return {
@@ -78,6 +139,84 @@ export function computeBookCopyStats(book: BookDetailPayload | null | undefined)
     status,
   };
 }
+
+function formatBorrowDate(dateStr?: string): string {
+  if (!dateStr) return "";
+  const s = String(dateStr).trim();
+  if (s === "Pending" || s === "Returned" || s === "Cancelled") return s;
+  try {
+    const d = new Date(s);
+    if (isNaN(d.getTime())) {
+      // If already formatted like YYYY-MM-DD or MM/DD/YYYY, return as is
+      return s;
+    }
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  } catch {
+    return s;
+  }
+}
+
+function isMatchingBook(tx: any, currentBook: BookDetailPayload | null | undefined): boolean {
+  if (!tx || !currentBook) return false;
+
+  // Direct ID matching
+  if (tx.bookId && currentBook.id && String(tx.bookId) === String(currentBook.id)) return true;
+  if (tx.id && currentBook.id && String(tx.id) === String(currentBook.id)) return true;
+
+  // ISBN matching
+  const cleanIsbn = (str?: string) => (str ? String(str).replace(/[-\s]/g, "").trim() : "");
+  const txIsbn = cleanIsbn(tx.isbn);
+  const bookIsbn = cleanIsbn(currentBook.isbn);
+  if (txIsbn && bookIsbn && txIsbn === bookIsbn) return true;
+
+  // Title matching
+  const cleanTitle = (str?: string) => (str || "").toLowerCase().replace(/[^a-z0-9]/g, "").trim();
+  const currentTitleClean = cleanTitle(currentBook.title);
+  const txTitle = tx.resourceTitle || tx.bookTitle || tx.title;
+  const txTitleClean = cleanTitle(txTitle);
+
+  if (currentTitleClean && txTitleClean) {
+    if (currentTitleClean === txTitleClean) return true;
+    if (currentTitleClean.length >= 4 && txTitleClean.length >= 4) {
+      if (currentTitleClean.includes(txTitleClean) || txTitleClean.includes(currentTitleClean)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function resolveBorrowerName(tx: any, defaultStudentName?: string): string {
+  return (
+    tx.borrowerName ||
+    tx.studentName ||
+    tx.studentFullName ||
+    tx.userName ||
+    tx.userFullName ||
+    tx.user_name ||
+    tx.name ||
+    (tx.studentId ? `Student (${tx.studentId})` : defaultStudentName || "Student")
+  );
+}
+
+function resolveBorrowDate(tx: any): string {
+  const rawDate =
+    tx.borrowDate ||
+    tx.pickupDate ||
+    tx.requestedAt ||
+    tx.date ||
+    tx.createdAt ||
+    tx.requested_at ||
+    tx.created_at;
+
+  return formatBorrowDate(rawDate);
+}
+
+const TOTAL_BOOK_CARD_ROWS = 12;
 
 const availabilityClasses = (availability?: BookAvailability | string) => {
   const normalized = normalizeStatus(availability);
@@ -102,13 +241,179 @@ export function BookDetailModal({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const [borrowHistory, setBorrowHistory] = useState<BorrowHistoryEntry[]>([]);
+
+  useEffect(() => {
+    setIsSummaryExpanded(false);
+  }, [book?.id, open]);
+
+  useEffect(() => {
+    if (!open || !book) {
+      setBorrowHistory([]);
+      return;
+    }
+
+    let isMounted = true;
+
+    async function loadAllTransactions() {
+      const allTxMap = new Map<string, BorrowHistoryEntry>();
+
+      // 1. Explicit prop history
+      if (book?.borrowHistory && Array.isArray(book.borrowHistory)) {
+        book.borrowHistory.forEach((entry, idx) => {
+          if (isMatchingBook(entry, book)) {
+            allTxMap.set(entry.id || `prop-${idx}`, {
+              id: entry.id || `prop-${idx}`,
+              borrowDate: resolveBorrowDate(entry),
+              borrowerName: resolveBorrowerName(entry),
+              status: entry.status || "Approved",
+              type: entry.type || "Borrow",
+            });
+          }
+        });
+      }
+
+      // 2. Fetch from backend / fallback API endpoints
+      try {
+        const [resTx, resAdminTx] = await Promise.allSettled([
+          fetch("/api/transactions"),
+          fetch("/api/admin/transactions"),
+        ]);
+
+        if (resTx.status === "fulfilled" && resTx.value.ok) {
+          const data = await resTx.value.json();
+          const list: any[] = Array.isArray(data.transactions) ? data.transactions : (Array.isArray(data) ? data : []);
+          list.forEach((t) => {
+            if (isMatchingBook(t, book)) {
+              allTxMap.set(t.id || `api-${t.isbn || t.resourceTitle}`, {
+                id: t.id,
+                borrowDate: resolveBorrowDate(t),
+                borrowerName: resolveBorrowerName(t),
+                status: t.status,
+                type: t.type,
+              });
+            }
+          });
+        }
+
+        if (resAdminTx.status === "fulfilled" && resAdminTx.value.ok) {
+          const data = await resAdminTx.value.json();
+          const list: any[] = Array.isArray(data.transactions)
+            ? data.transactions
+            : Array.isArray(data)
+            ? data
+            : [];
+          list.forEach((t) => {
+            if (isMatchingBook(t, book)) {
+              allTxMap.set(t.id || `admin-${t.isbn || t.resourceTitle}`, {
+                id: t.id,
+                borrowDate: resolveBorrowDate(t),
+                borrowerName: resolveBorrowerName(t),
+                status: t.status,
+                type: t.type,
+              });
+            }
+          });
+        }
+      } catch (err) {
+        console.warn("Could not fetch remote transactions:", err);
+      }
+
+      // 3. Check client-side storage (localStorage) for student transactions & profile
+      if (typeof window !== "undefined" && window.localStorage) {
+        try {
+          let storedProfileName = "Jan Dale B. Piansay";
+          const profileStr =
+            window.localStorage.getItem("STUDENT_PROFILE") ||
+            window.localStorage.getItem("bookhive_user");
+          if (profileStr) {
+            try {
+              const parsedProfile = JSON.parse(profileStr);
+              storedProfileName =
+                parsedProfile.fullName || parsedProfile.name || storedProfileName;
+            } catch {}
+          }
+
+          // Check student reservations cache
+          const resStr = window.localStorage.getItem("STUDENT_RESERVATIONS");
+          if (resStr) {
+            const parsedRes: any[] = JSON.parse(resStr);
+            if (Array.isArray(parsedRes)) {
+              parsedRes.forEach((r, idx) => {
+                if (isMatchingBook(r, book)) {
+                  allTxMap.set(r.id || `local-res-${idx}`, {
+                    id: r.id || `local-res-${idx}`,
+                    borrowDate: resolveBorrowDate(r),
+                    borrowerName: resolveBorrowerName(r, storedProfileName),
+                    status: r.status || "Approved",
+                    type: r.action === "Reserve" ? "Reservation" : "Borrow",
+                  });
+                }
+              });
+            }
+          }
+
+          // Check student history cache
+          const histStr = window.localStorage.getItem("STUDENT_HISTORY");
+          if (histStr) {
+            const parsedHist: any[] = JSON.parse(histStr);
+            if (Array.isArray(parsedHist)) {
+              parsedHist.forEach((h, idx) => {
+                if (isMatchingBook(h, book)) {
+                  allTxMap.set(h.id || `local-hist-${idx}`, {
+                    id: h.id || `local-hist-${idx}`,
+                    borrowDate: resolveBorrowDate(h),
+                    borrowerName: resolveBorrowerName(h, storedProfileName),
+                    status: h.status || "Completed",
+                    type: h.action === "Reserve" ? "Reservation" : "Borrow",
+                  });
+                }
+              });
+            }
+          }
+
+          // Check generic bookhive_transactions
+          const genStr = window.localStorage.getItem("bookhive_transactions");
+          if (genStr) {
+            const parsedGen: any[] = JSON.parse(genStr);
+            if (Array.isArray(parsedGen)) {
+              parsedGen.forEach((g, idx) => {
+                if (isMatchingBook(g, book)) {
+                  allTxMap.set(g.id || `local-gen-${idx}`, {
+                    id: g.id || `local-gen-${idx}`,
+                    borrowDate: resolveBorrowDate(g),
+                    borrowerName: resolveBorrowerName(g, storedProfileName),
+                    status: g.status,
+                    type: g.type,
+                  });
+                }
+              });
+            }
+          }
+        } catch (storageErr) {
+          console.warn("Could not read local storage transactions:", storageErr);
+        }
+      }
+
+      if (isMounted) {
+        setBorrowHistory(Array.from(allTxMap.values()));
+      }
+    }
+
+    void loadAllTransactions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [book?.id, book?.isbn, book?.title, book?.borrowHistory, open]);
 
   if (!open || !book) {
     return null;
   }
 
   const citation = generateApaCitation(book as BookRecord);
-  const copyStats = computeBookCopyStats(book);
+  const copyStats = computeBookCopyStats(book, borrowHistory);
   const percentAvailable = Math.round((copyStats.availableCopies / (copyStats.totalCopies || 1)) * 100);
   const percentReserved = Math.round((copyStats.reservedCopies / (copyStats.totalCopies || 1)) * 100);
   const percentUnavailable = Math.max(0, 100 - percentAvailable - percentReserved);
@@ -183,7 +488,7 @@ export function BookDetailModal({
           </div>
 
           {/* Content Area */}
-          <div className="space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          <div className="space-y-4 sm:space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
             {/* Dedicated Copy Inventory & Availability Section */}
             <div className="rounded-2xl border border-[#FFD600]/20 bg-gradient-to-br from-[#152E47]/70 to-[#0F1D29]/90 p-4 shadow-lg text-left">
               <div className="flex items-center justify-between mb-3">
@@ -278,6 +583,87 @@ export function BookDetailModal({
               <Detail label="Genre" value={book.genres || "General collection"} icon={Tag} />
             </div>
 
+            {/* Book Card (Physical Library Checkout Card) */}
+            <div className="rounded-2xl border border-white/10 bg-[#1a2332] overflow-hidden shadow-xl text-left">
+              {/* Header: Centered titled BOOK CARD */}
+              <div className="border-b border-white/15 bg-white/[0.02] py-2.5 sm:py-3 text-center">
+                <h3 className="text-sm sm:text-base font-black tracking-wider text-white uppercase">
+                  BOOK CARD
+                </h3>
+              </div>
+
+              {/* Subheader: Title of Book */}
+              <div className="border-b border-white/15 bg-white/[0.01] px-4 py-2 text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 min-w-0">
+                <span className="shrink-0 text-slate-300">Title of Book:</span>
+                <span className="truncate text-white font-extrabold">{book.title}</span>
+              </div>
+
+              {/* Column Headers */}
+              <div className="flex border-b border-white/15 bg-white/[0.03] text-xs font-bold text-slate-200">
+                <div className="w-[120px] sm:w-[140px] shrink-0 px-3.5 py-2 border-r border-white/15">
+                  Borrow Date:
+                </div>
+                <div className="flex-1 min-w-0 px-3.5 py-2">
+                  Borrower’s Name:
+                </div>
+              </div>
+
+              {/* Fixed 12 Rows Table */}
+              <div className="divide-y divide-white/10">
+                {Array.from({ length: Math.max(TOTAL_BOOK_CARD_ROWS, borrowHistory.length) }).map((_, idx) => {
+                  const entry = borrowHistory[idx];
+                  const borrowDateFormatted = entry?.borrowDate ? formatBorrowDate(entry.borrowDate) : "";
+                  const borrowerName = entry?.borrowerName || "";
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex min-h-[26px] sm:min-h-[28px] items-center text-xs transition-colors hover:bg-white/[0.02]"
+                    >
+                      <div className="w-[120px] sm:w-[140px] shrink-0 px-3.5 py-1 font-mono text-[11px] sm:text-xs text-slate-300 border-r border-white/10 truncate">
+                        {borrowDateFormatted ? borrowDateFormatted : <span className="opacity-0 select-none">-</span>}
+                      </div>
+                      <div className="flex-1 min-w-0 px-3.5 py-1 text-xs text-slate-200 font-medium truncate">
+                        {borrowerName ? borrowerName : <span className="opacity-0 select-none">-</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Summary Description with Truncation (3-4 lines + See More/Less toggle) */}
+            <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 sm:p-5 text-left transition-all">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FFD600]/80">
+                  Summary Description
+                </p>
+              </div>
+              <div className="relative">
+                <p
+                  className={`text-xs leading-relaxed text-white/70 transition-all duration-200 ${
+                    !isSummaryExpanded ? "line-clamp-3 sm:line-clamp-4" : ""
+                  }`}
+                >
+                  {book.summary || "No summary available for this title."}
+                </p>
+                {book.summary && book.summary.trim().length > 140 && (
+                  <button
+                    type="button"
+                    onClick={() => setIsSummaryExpanded((prev) => !prev)}
+                    className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-bold tracking-wide text-[#FFD600] hover:text-[#FFE55C] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FFD600]/50 rounded px-1 -ml-1 py-0.5 select-none cursor-pointer"
+                  >
+                    <span>{isSummaryExpanded ? "See Less" : "See More"}</span>
+                    {isSummaryExpanded ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* APA Scholarly Citation Box */}
             <div className="rounded-2xl border border-white/[0.05] bg-[#14293E]/30 p-5 relative overflow-hidden group">
               <div className="absolute -right-20 -bottom-20 w-32 h-32 rounded-full bg-[#FFD600]/5 blur-3xl group-hover:bg-[#FFD600]/8 transition-all duration-500" />
@@ -306,14 +692,6 @@ export function BookDetailModal({
               </div>
               <p className="text-xs font-medium text-white/85 leading-relaxed font-mono bg-black/25 p-4 rounded-xl border border-white/5 select-all text-left relative z-10 break-words">
                 {citation}
-              </p>
-            </div>
-
-            {/* Summary */}
-            <div className="rounded-2xl border border-white/[0.04] bg-white/[0.01] p-5">
-              <p className="text-[10px] font-black uppercase tracking-[0.25em] text-white/35">Summary Description</p>
-              <p className="mt-3 text-xs leading-relaxed text-white/60 max-h-[100px] overflow-y-auto pr-1 text-left scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                {book.summary || "No summary available for this title."}
               </p>
             </div>
           </div>

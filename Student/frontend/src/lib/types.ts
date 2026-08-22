@@ -1,6 +1,17 @@
 export type ThemeMode = "dark" | "light";
 
-export type Role = "Admin" | "Librarian" | "Student";
+export type Role =
+  | "Super Admin"
+  | "SUPER_ADMIN"
+  | "Admin"
+  | "ADMIN"
+  | "Circulation Librarian"
+  | "CIRCULATION_LIBRARIAN"
+  | "Technical Librarian"
+  | "TECHNICAL_LIBRARIAN"
+  | "Librarian"
+  | "Student"
+  | "STUDENT";
 
 export type Department =
   | "Circulation"

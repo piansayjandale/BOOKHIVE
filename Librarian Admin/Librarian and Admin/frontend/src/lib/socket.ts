@@ -8,8 +8,12 @@ class DashboardSocketService {
   private bookAddedListeners: Set<SocketCallback> = new Set();
   private cancelListeners: Set<SocketCallback> = new Set();
   private notificationListeners: Set<SocketCallback> = new Set();
+  private telemetryListeners: Set<SocketCallback> = new Set();
+  private catalogListeners: Set<SocketCallback> = new Set();
+  private userMutationListeners: Set<SocketCallback> = new Set();
   private connectionListeners: Set<(connected: boolean) => void> = new Set();
 
+  private activeRooms: Set<string> = new Set();
   private isConnected: boolean = false;
   private reconnectTimeout: any = null;
   private reconnectDelay: number = 1000;
@@ -41,6 +45,7 @@ class DashboardSocketService {
         this.socket.on("connect", () => {
           console.log("[DashboardSocket] Connected to Express Socket.io backend via io client");
           this.setConnected(true);
+          this.rejoinRooms();
         });
 
         this.socket.on("disconnect", (reason: string) => {
@@ -81,6 +86,7 @@ class DashboardSocketService {
         }
         this.setConnected(true);
         this.reconnectDelay = 1000;
+        this.rejoinRooms();
       };
 
       ws.onmessage = (event) => {
@@ -175,6 +181,10 @@ class DashboardSocketService {
     const handleCancelledRequest = (data: any) => this.routeIncomingEvent("reservation:cancelled", data);
     const handleGenericNotification = (data: any) => this.routeIncomingEvent("notification:new", data);
     const handleTransactionDecided = (data: any) => this.routeIncomingEvent("transaction:decided", data);
+    const handleTelemetryUpdated = (data: any) => this.routeIncomingEvent("telemetry:updated", data);
+    const handleCatalogUpdated = (data: any) => this.routeIncomingEvent("catalog:updated", data);
+    const handleUserMutated = (data: any) => this.routeIncomingEvent("user:mutated", data);
+    const handleSearchQuery = (data: any) => this.routeIncomingEvent("search:query", data);
 
     socket.on("borrow:request", handleIncomingRequest);
     socket.on("reservation:request", handleIncomingRequest);
@@ -184,6 +194,10 @@ class DashboardSocketService {
     socket.on("RESERVATION_CANCELLED", handleCancelledRequest);
     socket.on("transaction:updated", handleCancelledRequest);
     socket.on("transaction:decided", handleTransactionDecided);
+    socket.on("telemetry:updated", handleTelemetryUpdated);
+    socket.on("catalog:updated", handleCatalogUpdated);
+    socket.on("user:mutated", handleUserMutated);
+    socket.on("search:query", handleSearchQuery);
 
     socket.on("book:added", (data: any) => {
       this.routeIncomingEvent("book:added", data);
@@ -228,7 +242,57 @@ class DashboardSocketService {
       this.cancelListeners.forEach((cb) => cb(eventData));
     } else if (eventName === "book:added") {
       this.bookAddedListeners.forEach((cb) => cb(eventData));
+      this.catalogListeners.forEach((cb) => cb(eventData));
+    } else if (eventName === "catalog:updated") {
+      this.catalogListeners.forEach((cb) => cb(eventData));
+    } else if (eventName === "user:mutated") {
+      this.userMutationListeners.forEach((cb) => cb(eventData));
+    } else if (eventName === "telemetry:updated" || eventName === "search:query") {
+      this.telemetryListeners.forEach((cb) => cb(eventData));
     }
+  }
+
+  public joinRoom(roomName: string) {
+    this.activeRooms.add(roomName);
+    if (this.socket && typeof this.socket.emit === "function") {
+      this.socket.emit("join:room", roomName);
+    }
+  }
+
+  public leaveRoom(roomName: string) {
+    this.activeRooms.delete(roomName);
+    if (this.socket && typeof this.socket.emit === "function") {
+      this.socket.emit("leave:room", roomName);
+    }
+  }
+
+  private rejoinRooms() {
+    this.activeRooms.forEach((room) => {
+      if (this.socket && typeof this.socket.emit === "function") {
+        this.socket.emit("join:room", room);
+      }
+    });
+  }
+
+  public subscribeToTelemetry(cb: SocketCallback) {
+    this.telemetryListeners.add(cb);
+    return () => {
+      this.telemetryListeners.delete(cb);
+    };
+  }
+
+  public subscribeToCatalog(cb: SocketCallback) {
+    this.catalogListeners.add(cb);
+    return () => {
+      this.catalogListeners.delete(cb);
+    };
+  }
+
+  public subscribeToUserMutation(cb: SocketCallback) {
+    this.userMutationListeners.add(cb);
+    return () => {
+      this.userMutationListeners.delete(cb);
+    };
   }
 
   public subscribeToBorrowRequest(cb: SocketCallback) {
@@ -276,6 +340,12 @@ class DashboardSocketService {
   public publishBorrowRequest(borrowData: any) {
     if (this.socket && typeof this.socket.emit === "function") {
       this.socket.emit("borrow:request", borrowData);
+    }
+  }
+
+  public emitSearchQuery(searchData: any) {
+    if (this.socket && typeof this.socket.emit === "function") {
+      this.socket.emit("search:query", searchData);
     }
   }
 

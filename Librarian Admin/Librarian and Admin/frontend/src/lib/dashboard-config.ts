@@ -4,20 +4,23 @@ import {
   BrainCircuit,
   ChartColumnBig,
   ClipboardList,
+  Database,
   History,
   Home,
   LibraryBig,
   Megaphone,
+  Server,
   Settings,
   Settings2,
   ShieldAlert,
+  ShieldCheck,
   Sparkles,
   UserCircle2,
   Users,
   type LucideIcon,
 } from "lucide-react";
 
-export type DashboardVariant = "admin" | "librarian" | "technical" | "circulation";
+export type DashboardVariant = "super_admin" | "admin" | "librarian" | "technical" | "circulation";
 
 export interface DashboardNavItem {
   href: string;
@@ -35,6 +38,20 @@ export interface DashboardVariantConfig {
 }
 
 export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantConfig> = {
+  super_admin: {
+    label: "BOOKHIVE",
+    title: "BOOKHIVE SUPER ADMIN",
+    description: "GOVERNANCE & INFRASTRUCTURE",
+    profileLabel: "Super Admin",
+    basePath: "/super-admin",
+    navItems: [
+      { href: "/super-admin/home", label: "Home", icon: Home },
+      { href: "/super-admin/system-management", label: "System Management", icon: Users },
+      { href: "/super-admin/audit-logs", label: "Audit & Security Logs", icon: ShieldAlert },
+      { href: "/super-admin/records", label: "Records", icon: ClipboardList },
+      { href: "/super-admin/settings", label: "Global Settings", icon: Settings2 },
+    ],
+  },
   admin: {
     label: "BOOKHIVE",
     title: "BOOKHIVE ADMIN",
@@ -42,14 +59,10 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
     profileLabel: "Library Admin",
     basePath: "/admin",
     navItems: [
-      { href: "/admin/dashboard", label: "Dashboard", icon: Home },
-      { href: "/admin/management", label: "Management", icon: Users },
-      { href: "/admin/transactions", label: "Transactions", icon: Sparkles },
-      { href: "/admin/ai-prompt-search", label: "AI Prompt Search", icon: BrainCircuit },
+      { href: "/admin/home", label: "Home", icon: Home },
+      { href: "/admin/catalog", label: "Catalog View", icon: ClipboardList },
       { href: "/admin/analytics", label: "Analytics", icon: ChartColumnBig },
-      { href: "/admin/system-monitoring", label: "System Monitoring", icon: ShieldAlert },
       { href: "/admin/announcements", label: "Announcements", icon: Megaphone },
-      { href: "/admin/settings", label: "Settings", icon: Settings2 },
     ],
   },
   technical: {

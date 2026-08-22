@@ -3,7 +3,20 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-    CREATE TYPE user_role AS ENUM ('Admin', 'Librarian', 'Student');
+    CREATE TYPE user_role AS ENUM ('Super Admin', 'Admin', 'Librarian', 'Technical Librarian', 'Circulation Librarian', 'Student', 'SUPER_ADMIN', 'ADMIN', 'CIRCULATION_LIBRARIAN', 'TECHNICAL_LIBRARIAN', 'STUDENT');
+  ELSE
+    BEGIN
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Super Admin';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'SUPER_ADMIN';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'ADMIN';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Technical Librarian';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'TECHNICAL_LIBRARIAN';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'Circulation Librarian';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'CIRCULATION_LIBRARIAN';
+      ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'STUDENT';
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END;
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_status') THEN
@@ -224,4 +237,29 @@ CREATE TRIGGER trg_update_book_availability
 AFTER INSERT OR UPDATE OR DELETE ON transactions
 FOR EACH ROW
 EXECUTE FUNCTION update_book_availability_trigger();
+
+-- System Backups and Snapshots
+CREATE TABLE IF NOT EXISTS system_backups (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  file_name TEXT NOT NULL,
+  file_size_mb NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+  backup_type TEXT NOT NULL DEFAULT 'MANUAL',
+  status TEXT NOT NULL DEFAULT 'COMPLETED',
+  created_by TEXT NOT NULL DEFAULT 'Super Admin',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_system_backups_created_at ON system_backups(created_at DESC);
+
+-- Institutional Sync Logs
+CREATE TABLE IF NOT EXISTS institutional_sync_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  provider TEXT NOT NULL DEFAULT 'STI WNU Directory Ecosystem',
+  synced_records INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'SUCCESS',
+  details TEXT,
+  synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_institutional_sync_logs_synced_at ON institutional_sync_logs(synced_at DESC);
 

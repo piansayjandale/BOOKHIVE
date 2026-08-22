@@ -48,10 +48,51 @@ export async function authenticateToken(req, res, next) {
   }
 }
 
+export function normalizeRole(role) {
+  if (!role) return "";
+  const r = String(role).trim().toUpperCase().replace(/\s+/g, "_");
+  if (r === "SUPER_ADMIN" || r === "SUPERADMIN") return "SUPER_ADMIN";
+  if (r === "ADMIN" || r === "LIBRARY_ADMIN" || r === "ADMINISTRATOR") return "ADMIN";
+  if (r === "CIRCULATION_LIBRARIAN" || r === "LIBRARIAN") return "CIRCULATION_LIBRARIAN";
+  if (r === "TECHNICAL_LIBRARIAN") return "TECHNICAL_LIBRARIAN";
+  if (r === "STUDENT") return "STUDENT";
+  return r;
+}
+
+export function isSuperAdmin(role) {
+  return normalizeRole(role) === "SUPER_ADMIN";
+}
+
+export function isAdminOrSuper(role) {
+  const r = normalizeRole(role);
+  return r === "SUPER_ADMIN" || r === "ADMIN";
+}
+
+export function isStaff(role) {
+  const r = normalizeRole(role);
+  return ["SUPER_ADMIN", "ADMIN", "CIRCULATION_LIBRARIAN", "TECHNICAL_LIBRARIAN"].includes(r);
+}
+
+export function requireSuperAdmin(req, res, next) {
+  if (!req.user || !isSuperAdmin(req.user.role)) {
+    return res.status(403).json({ message: "Super Admin privileges required." });
+  }
+  return next();
+}
+
 export function requireAdmin(req, res, next) {
-  if (!req.user || req.user.role !== "Admin") {
+  if (!req.user || !isAdminOrSuper(req.user.role)) {
     return res.status(403).json({ message: "Admin access required." });
   }
 
   return next();
 }
+
+export function requireStaff(req, res, next) {
+  if (!req.user || !isStaff(req.user.role)) {
+    return res.status(403).json({ message: "Staff access required." });
+  }
+
+  return next();
+}
+
