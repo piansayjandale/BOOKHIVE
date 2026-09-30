@@ -1,5 +1,7 @@
 import cors from "cors";
 import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
 
 import { env } from "./config/env.js";
 import { corsOptions } from "./config/cors.js";
@@ -7,6 +9,11 @@ import { errorHandler } from "./middleware/error-handler.js";
 import { apiRouter } from "./routes/index.js";
 import { studentController } from "./controllers/student.controller.js";
 import { asyncHandler } from "./utils/async-handler.js";
+import { isDatabaseConnected } from "./db/pool.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootPublicDir = path.resolve(__dirname, "../../public");
 
 export function createApp() {
   const app = express();
@@ -17,11 +24,17 @@ export function createApp() {
   app.use(express.json({ limit: "25mb" }));
   app.use(express.urlencoded({ extended: true, limit: "25mb" }));
 
-  // Dedicated health-check endpoint for Render zero-downtime health probes and uptime monitoring
+  // Static assets and mobile APK direct download routes
+  app.use("/downloads", express.static(path.join(rootPublicDir, "downloads")));
+  app.use(express.static(rootPublicDir));
+
+  // Dedicated health-check endpoint for Render / Vercel uptime monitoring
+  // Always returns 200 OK so health probes succeed even if DB is in fallback/offline mode
   app.get("/health", (_req, res) => {
     res.status(200).json({
       status: "ok",
       app: "BOOKHIVE",
+      database: isDatabaseConnected() ? "connected" : "offline_fallback",
       timestamp: new Date().toISOString(),
     });
   });
@@ -31,6 +44,7 @@ export function createApp() {
     res.status(200).json({
       status: "ok",
       app: "BOOKHIVE",
+      database: isDatabaseConnected() ? "connected" : "offline_fallback",
       timestamp: new Date().toISOString(),
     });
   });
@@ -40,11 +54,13 @@ export function createApp() {
     res.status(200).json({
       status: "ok",
       app: "BOOKHIVE",
+      database: isDatabaseConnected() ? "connected" : "offline_fallback",
       message: "BookHive Backend API Serverless Runtime Active",
       timestamp: new Date().toISOString(),
     });
   });
 
+  // Public student ID card verification routes
   app.get("/verify/:qrCode", asyncHandler(studentController.renderStudentVerificationWebPage));
   app.get("/verify", asyncHandler(studentController.renderStudentVerificationWebPage));
 
