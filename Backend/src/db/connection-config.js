@@ -150,6 +150,7 @@ export function getDbSslConfig(urlStr) {
  *   host: string,
  *   port: number,
  *   database: string,
+ *   user: string,
  *   hasExplicitConfig: boolean
  * }}
  */
@@ -158,8 +159,10 @@ export function getDatabaseConfig(rawUrl) {
     rawUrl ||
     process.env.DATABASE_URL ||
     process.env.POSTGRES_URL ||
+    process.env.POSTGRES_PRISMA_URL ||
     process.env.DB_HOST ||
-    process.env.PGHOST
+    process.env.PGHOST ||
+    process.env.MYSQL_HOST
   );
 
   const connStr = resolveDatabaseUrl(rawUrl);
@@ -168,6 +171,7 @@ export function getDatabaseConfig(rawUrl) {
   let host = "127.0.0.1";
   let port = 5432;
   let database = "bookhive_2nd";
+  let user = "postgres";
   let isLocal = true;
 
   try {
@@ -175,6 +179,7 @@ export function getDatabaseConfig(rawUrl) {
     host = parsed.hostname || "127.0.0.1";
     port = parsed.port ? Number(parsed.port) : 5432;
     database = (parsed.pathname || "").replace(/^\//, "") || "bookhive_2nd";
+    user = parsed.username || "postgres";
     isLocal = isLocalhost(connStr);
 
     // Remove sslmode query param so it does not conflict with our explicit ssl config
@@ -195,6 +200,7 @@ export function getDatabaseConfig(rawUrl) {
     host,
     port,
     database,
+    user,
     hasExplicitConfig,
   };
 }

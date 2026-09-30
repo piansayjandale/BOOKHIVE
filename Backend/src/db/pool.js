@@ -17,36 +17,52 @@ console.log(
   `SSL: ${dbConfig.ssl ? "Enabled" : "Disabled"} | Configured: ${dbConfig.hasExplicitConfig ? "Yes" : "Default Localhost"}`
 );
 
-if (!dbConfig.hasExplicitConfig && (process.env.NODE_ENV === "production" || process.env.VERCEL)) {
-  console.warn(
-    "[Backend DB] Warning: No cloud database credentials found in environment variables (DATABASE_URL, DB_HOST, DB_USER, etc.). " +
-    "Defaulting to local Postgres fallback. If deployed on Vercel, set DATABASE_URL or DB_* variables in Vercel project settings."
-  );
-}
-
-let isOffline = !dbConfig.hasExplicitConfig && Boolean(process.env.VERCEL);
+// If running in Vercel serverless and NO explicit database is configured, immediately stay in fallback mode.
+// Never attempt to contact 127.0.0.1 in a serverless container.
+const isVercelServerless = Boolean(process.env.VERCEL);
+let isOffline = isVercelServerless && !dbConfig.hasExplicitConfig;
 let lastCheckTime = 0;
 const RETRY_COOLDOWN_MS = 5000;
 
+if (isOffline) {
+  console.warn(
+    "[Backend DB] Notice: Running in Vercel serverless mode without DATABASE_URL / DB_HOST configured. " +
+    "Database operations will safely use in-memory fallback. Public routes and health checks will respond with 200 OK."
+  );
+}
+
+// Lazy Pool: Do not create rawPool until first query, and allow idle exit so lambda functions never hang!
 let rawPool = null;
 
-try {
-  rawPool = new Pool({
-    connectionString: dbConfig.connectionString,
-    ssl: dbConfig.ssl,
-    connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 4000), // 4s timeout to avoid lambda freezes
-    idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 30000),
-    max: Number(process.env.DB_MAX_CONNECTIONS ?? 10),
-  });
+function getOrCreatePool() {
+  if (rawPool) return rawPool;
 
-  // Guard against unhandled errors on idle pool clients
-  rawPool.on("error", (err) => {
-    console.warn("[Backend DB] Idle connection error:", err.message);
+  // On Vercel without credentials, do not attempt to create pool
+  if (isVercelServerless && !dbConfig.hasExplicitConfig) {
+    return null;
+  }
+
+  try {
+    rawPool = new Pool({
+      connectionString: dbConfig.connectionString,
+      ssl: dbConfig.ssl,
+      connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 3000), // 3s max timeout to protect serverless
+      idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 1500), // close idle connections quickly
+      max: Number(process.env.DB_MAX_CONNECTIONS ?? 2), // small pool size for lambdas
+      allowExitOnIdle: true, // CRITICAL: allows Node.js event loop to exit when idle, preventing FUNCTION_INVOCATION_FAILED!
+    });
+
+    rawPool.on("error", (err) => {
+      console.warn("[Backend DB] Database client notice:", err.message);
+      isOffline = true;
+    });
+
+    return rawPool;
+  } catch (err) {
+    console.warn("[Backend DB] Failed to instantiate pool:", err.message);
     isOffline = true;
-  });
-} catch (poolInitErr) {
-  console.warn("[Backend DB] Failed to initialize Pool:", poolInitErr.message);
-  isOffline = true;
+    return null;
+  }
 }
 
 function isConnectionError(err) {
@@ -76,37 +92,6 @@ function isConnectionError(err) {
   );
 }
 
-/**
- * Non-blocking connection test probe.
- * Returns true if database is reachable, false otherwise.
- * Never throws or crashes the serverless process.
- */
-export async function testDatabaseConnection() {
-  if (!rawPool) {
-    isOffline = true;
-    return false;
-  }
-  try {
-    const client = await rawPool.connect();
-    client.release();
-    isOffline = false;
-    console.log(`[Backend DB] Database connection verified successfully (${dbConfig.host}:${dbConfig.port}/${dbConfig.database}).`);
-    return true;
-  } catch (err) {
-    isOffline = true;
-    console.warn(
-      `[Backend DB] Database connection notice: Could not connect to database at ${dbConfig.host}:${dbConfig.port} (${err.message}). ` +
-      `Serverless process will continue serving public and health routes.`
-    );
-    return false;
-  }
-}
-
-// Trigger initial connection test asynchronously without blocking module execution
-testDatabaseConnection().catch((err) => {
-  console.warn("[Backend DB] Initial connection check notice:", err.message);
-});
-
 export function isDatabaseConnected() {
   return !isOffline && rawPool !== null;
 }
@@ -120,44 +105,42 @@ export const pool = {
       throw err;
     }
 
-    if (!rawPool) {
-      const err = new Error("Database pool not available.");
+    const p = getOrCreatePool();
+    if (!p) {
+      const err = new Error("Database pool unavailable: running in offline fallback mode.");
       err.code = "DB_OFFLINE";
       throw err;
     }
 
     try {
-      const res = await rawPool.query(text, params);
+      const res = await p.query(text, params);
       if (isOffline) {
-        console.log("[Backend DB] Database connection restored.");
+        console.log("[Backend DB] Database connection established.");
         isOffline = false;
       }
       return res;
     } catch (err) {
       if (isConnectionError(err)) {
         if (!isOffline) {
-          console.warn(`[Backend DB] Database connection lost (${err.message}). Switching to fallback mode.`);
+          console.warn(`[Backend DB] Database connection error (${err.message}). Switching to fallback mode.`);
         }
         isOffline = true;
         lastCheckTime = Date.now();
         err.code = "DB_OFFLINE";
-      } else {
-        if (isOffline) {
-          isOffline = false;
-        }
       }
       throw err;
     }
   },
 
   async connect() {
-    if (!rawPool) {
-      const err = new Error("Database pool not available.");
+    const p = getOrCreatePool();
+    if (!p) {
+      const err = new Error("Database pool unavailable: running in offline fallback mode.");
       err.code = "DB_OFFLINE";
       throw err;
     }
     try {
-      const client = await rawPool.connect();
+      const client = await p.connect();
       isOffline = false;
       return client;
     } catch (err) {
@@ -168,16 +151,23 @@ export const pool = {
   },
 
   on(...args) {
-    if (rawPool) return rawPool.on(...args);
+    const p = getOrCreatePool();
+    if (p) return p.on(...args);
     return null;
   },
 
   end() {
-    if (rawPool) return rawPool.end();
+    if (rawPool) {
+      const p = rawPool;
+      rawPool = null;
+      return p.end();
+    }
     return Promise.resolve();
   },
 
-  raw: rawPool,
+  get raw() {
+    return getOrCreatePool();
+  },
   config: dbConfig,
 };
 
