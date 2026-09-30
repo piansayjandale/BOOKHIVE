@@ -2,6 +2,7 @@
   "name": "bookhive-workspace",
   "version": "1.0.0",
   "description": "Root workspace to run BookHive services concurrently (Backend, Librarian & Admin Web, Student Mobile)",
+  "type": "module",
   "private": true,
   "scripts": {
     "dev": "node run-all.js",
@@ -17,5 +18,22 @@
     "expo:login": "cd Student && npx expo login",
     "expo:whoami": "cd Student && npx expo whoami",
     "expo:logout": "cd Student && npx expo logout"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.2",
+    "cors": "^2.8.5",
+    "csv-parse": "^6.2.1",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pdf-parse": "^2.4.5",
+    "pg": "^8.20.0",
+    "sharp": "^0.35.4",
+    "socket.io": "^4.8.3",
+    "tesseract.js": "^7.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

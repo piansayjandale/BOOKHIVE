@@ -35,6 +35,16 @@ export function createApp() {
     });
   });
 
+  // Root status endpoint for Vercel apex domain checks
+  app.get("/", (_req, res) => {
+    res.status(200).json({
+      status: "ok",
+      app: "BOOKHIVE",
+      message: "BookHive Backend API Serverless Runtime Active",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   app.get("/verify/:qrCode", asyncHandler(studentController.renderStudentVerificationWebPage));
   app.get("/verify", asyncHandler(studentController.renderStudentVerificationWebPage));
 
@@ -43,3 +53,27 @@ export function createApp() {
 
   return app;
 }
+
+// Instantiate singleton Express application instance for Vercel / serverless runtimes
+const app = createApp();
+
+// Prevent port conflicts in Vercel serverless environments:
+// Only execute app.listen() when running directly as standalone script in local development.
+// In Vercel and cloud platforms, the hosting environment manages the HTTP lifecycle automatically.
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  const isDirectRun =
+    process.argv[1] &&
+    (process.argv[1].endsWith("app.js") || process.argv[1].endsWith("app"));
+
+  if (isDirectRun) {
+    const PORT = Number(process.env.PORT || 5000);
+    const HOST = process.env.HOST || "0.0.0.0";
+    app.listen(PORT, HOST, () => {
+      console.log(
+        `[BookHive API] Local standalone server listening on http://${HOST}:${PORT}`
+      );
+    });
+  }
+}
+
+export default app;
