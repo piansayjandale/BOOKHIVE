@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Environment secrets
+.env
+.env.*
+*.env
+!.env.example
+!.env.development
+!.env.production
+
+# Testing & Coverage
+coverage/
+
+# Next.js Build Outputs
+.next/
+out/
+build/
+dist/
+
+# OS / Temp
+.DS_Store
+*.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# SQLite
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+
+# APK Whitelist (allow public web download APK)
+*.apk
+!public/downloads/*.apk
+!frontend/public/downloads/*.apk

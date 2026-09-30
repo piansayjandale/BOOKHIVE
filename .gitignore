@@ -1,0 +1,98 @@
+# ==============================================================================
+# Git Ignore Rules - Root Workspace & Sub-Projects
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment Secrets & Credentials (STRICTLY IGNORED)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# ------------------------------------------------------------------------------
+# 2. Dependencies
+# ------------------------------------------------------------------------------
+node_modules/
+**/node_modules/
+.pnp
+.pnp.js
+
+# ------------------------------------------------------------------------------
+# 3. Debug Logs & Crash Reports
+# ------------------------------------------------------------------------------
+logs/
+**/logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ------------------------------------------------------------------------------
+# 4. Local SQLite & Temporary Databases
+# ------------------------------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# ------------------------------------------------------------------------------
+# 5. Build, Cache & Temporary Outputs
+# ------------------------------------------------------------------------------
+dist/
+**/dist/
+build/
+**/build/
+out/
+**/out/
+.next/
+**/.next/
+.expo/
+**/.expo/
+coverage/
+**/coverage/
+.cache/
+**/.cache/
+
+# ------------------------------------------------------------------------------
+# 6. Operating System & IDE Files
+# ------------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ------------------------------------------------------------------------------
+# 7. Android Artifacts & Whitelisted Public APK Downloads
+# ------------------------------------------------------------------------------
+# Ignore random temporary build APKs across sub-folders
+*.apk
+**/*.apk
+# BUT explicitly whitelist and allow the official public web download APK:
+!public/downloads/app-release.apk
+!**/public/downloads/app-release.apk
+!**/public/downloads/*.apk
+
+# ------------------------------------------------------------------------------
+# 8. Project-Specific Exclusions
+# ------------------------------------------------------------------------------
+backend/data/imports/books.catalog.json
+**/backend/data/imports/books.catalog.json
+.git_backup/
+**/.git_backup/

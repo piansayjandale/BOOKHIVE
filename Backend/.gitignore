@@ -1,0 +1,48 @@
+# ==============================================================================
+# Git Ignore Rules - BookHive Backend
+# ==============================================================================
+
+# Secrets & Environment Variables
+.env
+.env.*
+*.env
+!.env.example
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Debug Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# SQLite & Local DB Files
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Build & Coverage Outputs
+dist/
+build/
+coverage/
+.cache/
+
+# OS / Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Large Datasets / Temp files
+data/imports/books.catalog.json
+.git_backup/

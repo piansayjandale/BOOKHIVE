@@ -1,0 +1,21 @@
+{
+  "name": "bookhive-workspace",
+  "version": "1.0.0",
+  "description": "Root workspace to run BookHive services concurrently (Backend, Librarian & Admin Web, Student Mobile)",
+  "private": true,
+  "scripts": {
+    "dev": "node run-all.js",
+    "dev:tunnel": "node run-all.js --tunnel",
+    "dev:lan": "node run-all.js --lan",
+    "dev:web": "node run-all.js --web",
+    "build": "npm --prefix Backend run build",
+    "start": "npm --prefix Backend run start",
+    "db:init": "npm --prefix Backend run db:init",
+    "db:migrate": "npm --prefix Backend run db:migrate",
+    "db:seed": "npm --prefix Backend run db:seed",
+    "mobile:build:apk": "npm --prefix Student run build:apk",
+    "expo:login": "cd Student && npx expo login",
+    "expo:whoami": "cd Student && npx expo whoami",
+    "expo:logout": "cd Student && npx expo logout"
+  }
+}

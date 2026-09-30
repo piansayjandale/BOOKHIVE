@@ -1,0 +1,63 @@
+services:
+  - type: web
+    name: bookhive-backend
+    runtime: node
+    plan: free
+    rootDir: Backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bookhive-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://bookhive-frontend.onrender.com
+      - key: CORS_ORIGIN
+        value: https://bookhive-frontend.onrender.com
+
+  - type: web
+    name: bookhive-frontend
+    runtime: node
+    plan: free
+    rootDir: "Librarian Admin/Librarian and Admin"
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    routes:
+      - type: rewrite
+        source: /mobile
+        destination: /download
+    headers:
+      - path: /downloads/*.apk
+        name: Content-Type
+        value: application/vnd.android.package-archive
+      - path: /downloads/*.apk
+        name: Content-Disposition
+        value: attachment; filename=bookhive-release.apk
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        value: https://bookhive-backend.onrender.com/api
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bookhive-db
+          property: connectionString
+      - key: JWT_SECRET
+        fromService:
+          type: web
+          name: bookhive-backend
+          envVarKey: JWT_SECRET
+      - key: SESSION_SECRET
+        generateValue: true
+
+databases:
+  - name: bookhive-db
+    plan: free
+    databaseName: bookhive_db
+    user: bookhive_user

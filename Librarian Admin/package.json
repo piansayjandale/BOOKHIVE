@@ -1,0 +1,13 @@
+{
+  "scripts": {
+    "dev": "cd \"Librarian and Admin\" && npm run dev",
+    "build": "cd \"Librarian and Admin\" && npm run build",
+    "start": "cd \"Librarian and Admin\" && npm run start",
+    "db:seed": "cd \"Librarian and Admin\" && npm run db:seed",
+    "db:import:goodreads": "cd \"Librarian and Admin\" && npm run db:import:goodreads"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0"
+  }
+}
