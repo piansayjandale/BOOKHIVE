@@ -273,72 +273,111 @@ export const studentController = {
   },
 
   async getBooks(req, res) {
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)));
-    
-    const result = await studentModel.getAvailableBooks(page, limit);
-    
-    return res.json({
-      books: result.books,
-      total: result.total,
-      page,
-      limit,
-    });
+    try {
+      const page = Math.max(1, Number(req.query.page ?? 1));
+      const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)));
+
+      const result = await studentModel.getAvailableBooks(page, limit).catch((err) => {
+        console.warn("[studentController.getBooks] Safe query fallback:", err.message);
+        return { books: [], total: 0 };
+      });
+
+      return res.json({
+        books: result?.books || [],
+        total: result?.total || 0,
+        page,
+        limit,
+      });
+    } catch (err) {
+      console.warn("[studentController.getBooks] Unexpected error, returning empty list:", err.message);
+      return res.json({
+        books: [],
+        total: 0,
+        page: 1,
+        limit: 50,
+      });
+    }
   },
 
   async getBook(req, res) {
-    const { id } = req.params;
-    const title = req.query.title || req.query.resourceTitle;
-    const isbn = req.query.isbn;
-    const book = await studentModel.getBookById(id, { title, isbn });
-    
-    if (!book) {
+    try {
+      const { id } = req.params;
+      const title = req.query.title || req.query.resourceTitle;
+      const isbn = req.query.isbn;
+      const book = await studentModel.getBookById(id, { title, isbn }).catch(() => null);
+
+      if (!book) {
+        return res.status(404).json({ message: "Book not found." });
+      }
+
+      return res.json({ book });
+    } catch (err) {
+      console.warn("[studentController.getBook] Safe fallback:", err.message);
       return res.status(404).json({ message: "Book not found." });
     }
-
-    return res.json({ book });
   },
 
   async searchBooks(req, res) {
-    const { q, mode } = req.query;
-    
-    if (!q) {
-      return res.status(400).json({ message: "Search query is required." });
-    }
-
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const limit = Math.min(500, Math.max(1, Number(req.query.limit ?? 200)));
-    const searchMode = String(mode || "prefix").toLowerCase();
-    
-    const result = await studentModel.searchBooks(q, page, limit, searchMode);
-    
-    // Broadcast real-time search telemetry event to Super Admin
-    void eventDispatcher.dispatchSearchEvent({ query: q, mode: searchMode, actor: req.user?.name || "Student" });
-
-    // Persist search query telemetry for Admin "Most Searched Books" analytics
     try {
-      void pool.query(
-        "INSERT INTO ai_search_logs (actor_name, prompt, department, matches_found) VALUES ($1, $2, $3, $4)",
-        [req.user?.name || "Student", String(q).trim(), req.user?.department || "General", result.total || 0]
-      );
-    } catch {
-      // Non-blocking search telemetry
-    }
+      const { q, mode } = req.query;
 
-    return res.json({
-      books: result.books,
-      total: result.total,
-      page,
-      limit,
-      query: q,
-    });
+      if (!q) {
+        return res.status(400).json({ message: "Search query is required." });
+      }
+
+      const page = Math.max(1, Number(req.query.page ?? 1));
+      const limit = Math.min(500, Math.max(1, Number(req.query.limit ?? 200)));
+      const searchMode = String(mode || "prefix").toLowerCase();
+
+      const result = await studentModel.searchBooks(q, page, limit, searchMode).catch((err) => {
+        console.warn("[studentController.searchBooks] Safe query fallback:", err.message);
+        return { books: [], total: 0 };
+      });
+
+      // Broadcast real-time search telemetry event to Super Admin
+      try {
+        void eventDispatcher.dispatchSearchEvent({ query: q, mode: searchMode, actor: req.user?.name || "Student" });
+      } catch {}
+
+      // Persist search query telemetry for Admin "Most Searched Books" analytics
+      try {
+        void pool.query(
+          "INSERT INTO ai_search_logs (actor_name, prompt, department, matches_found) VALUES ($1, $2, $3, $4)",
+          [req.user?.name || "Student", String(q).trim(), req.user?.department || "General", result?.total || 0]
+        ).catch(() => {});
+      } catch {
+        // Non-blocking search telemetry
+      }
+
+      return res.json({
+        books: result?.books || [],
+        total: result?.total || 0,
+        page,
+        limit,
+        query: q,
+      });
+    } catch (err) {
+      console.warn("[studentController.searchBooks] Safe fallback:", err.message);
+      return res.json({
+        books: [],
+        total: 0,
+        page: 1,
+        limit: 200,
+        query: req.query?.q || "",
+      });
+    }
   },
 
   async getBorrowHistory(req, res) {
-    const userId = req.user.sub;
-    const history = await studentModel.getUserBorrowHistory(userId);
-    
-    return res.json({ history });
+    try {
+      const userId = req.user.sub;
+      const history = await studentModel.getUserBorrowHistory(userId).catch(() => []);
+
+      return res.json({ history: history || [] });
+    } catch (err) {
+      console.warn("[studentController.getBorrowHistory] Safe fallback:", err.message);
+      return res.json({ history: [] });
+    }
   },
 
   async borrowBook(req, res) {
@@ -543,18 +582,23 @@ export const studentController = {
 
 
   async getAnnouncements(req, res) {
-    const announcements = await studentModel.getAnnouncements();
-    return res.json({ announcements });
+    try {
+      const announcements = await studentModel.getAnnouncements().catch(() => []);
+      return res.json({ announcements: announcements || [] });
+    } catch (err) {
+      console.warn("[studentController.getAnnouncements] Safe fallback:", err.message);
+      return res.json({ announcements: [] });
+    }
   },
 
   async getRecommendations(req, res) {
     try {
-      const userId = req.user.sub;
-      const recommendations = await studentModel.getRecommendations(userId);
-      return res.json({ recommendations });
+      const userId = req.user?.sub;
+      const recommendations = await studentModel.getRecommendations(userId).catch(() => []);
+      return res.json({ recommendations: recommendations || [] });
     } catch (error) {
-      console.error("getRecommendations controller error:", error);
-      return res.status(500).json({ message: "An error occurred while generating recommendations." });
+      console.warn("[studentController.getRecommendations] Safe fallback:", error.message);
+      return res.json({ recommendations: [] });
     }
   },
 

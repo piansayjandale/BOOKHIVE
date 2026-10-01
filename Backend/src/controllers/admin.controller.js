@@ -222,56 +222,90 @@ export const adminController = {
   },
 
   async getDashboard(_req, res) {
-    const [summary, monthlyBorrowTrends, departmentUsage, recentActivities, newUsers, latestTransactions, topBooks] =
-      await Promise.all([
-        adminModel.getDashboardSummary(),
-        adminModel.getMonthlyBorrowTrends(),
-        adminModel.getDepartmentUsage(),
-        adminModel.getRecentActivities(),
-        adminModel.getRecentUsers(),
-        adminModel.getLatestTransactions(),
-        adminModel.getTopBorrowedBooks(10),
-      ]);
+    try {
+      const [summary, monthlyBorrowTrends, departmentUsage, recentActivities, newUsers, latestTransactions, topBooks] =
+        await Promise.all([
+          adminModel.getDashboardSummary().catch(() => ({
+            totalUsers: 0,
+            totalBooks: 0,
+            activeBorrowedBooks: 0,
+            pendingRequests: 0,
+          })),
+          adminModel.getMonthlyBorrowTrends().catch(() => []),
+          adminModel.getDepartmentUsage().catch(() => []),
+          adminModel.getRecentActivities().catch(() => []),
+          adminModel.getRecentUsers().catch(() => []),
+          adminModel.getLatestTransactions().catch(() => []),
+          adminModel.getTopBorrowedBooks(10).catch(() => []),
+        ]);
 
-    const systemHealth = {
-      status: "NOMINAL",
-      lastIndexing: new Date().toISOString(),
-      storageUsed: 84.2,
-      storageTotal: 128,
-    };
+      const systemHealth = {
+        status: "NOMINAL",
+        lastIndexing: new Date().toISOString(),
+        storageUsed: 84.2,
+        storageTotal: 128,
+      };
 
-    return res.json({
-      summary,
-      systemHealth,
-      topBooks: topBooks || [],
-      monthlyBorrowTrends,
-      departmentUsage,
-      recentActivities,
-      newUsers,
-      latestTransactions,
-    });
+      return res.json({
+        summary: summary || { totalUsers: 0, totalBooks: 0, activeBorrowedBooks: 0, pendingRequests: 0 },
+        systemHealth,
+        topBooks: topBooks || [],
+        monthlyBorrowTrends: monthlyBorrowTrends || [],
+        departmentUsage: departmentUsage || [],
+        recentActivities: recentActivities || [],
+        newUsers: newUsers || [],
+        latestTransactions: latestTransactions || [],
+      });
+    } catch (err) {
+      console.warn("[adminController.getDashboard] Safe fallback:", err.message);
+      return res.json({
+        summary: { totalUsers: 0, totalBooks: 0, activeBorrowedBooks: 0, pendingRequests: 0 },
+        systemHealth: { status: "DEGRADED", lastIndexing: new Date().toISOString() },
+        topBooks: [],
+        monthlyBorrowTrends: [],
+        departmentUsage: [],
+        recentActivities: [],
+        newUsers: [],
+        latestTransactions: [],
+      });
+    }
   },
 
   async getGenres(_req, res) {
-    const genres = await adminModel.getGenres();
-    return res.json({ genres });
+    try {
+      const genres = await adminModel.getGenres().catch(() => []);
+      return res.json({ genres: genres || [] });
+    } catch (err) {
+      console.warn("[adminController.getGenres] Safe fallback:", err.message);
+      return res.json({ genres: [] });
+    }
   },
 
   async listUsers(req, res) {
-    const search = String(req.query.search ?? "");
-    const role = String(req.query.role ?? "All");
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 10)));
-    const offset = (page - 1) * pageSize;
-    const status = String(req.query.status ?? "Active");
-    const result = await adminModel.listUsers({ search, role, limit: pageSize, offset, status });
+    try {
+      const search = String(req.query.search ?? "");
+      const role = String(req.query.role ?? "All");
+      const page = Math.max(1, Number(req.query.page ?? 1));
+      const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 10)));
+      const offset = (page - 1) * pageSize;
+      const status = String(req.query.status ?? "Active");
+      const result = await adminModel.listUsers({ search, role, limit: pageSize, offset, status }).catch(() => ({ rows: [], total: 0 }));
 
-    return res.json({
-      users: result.rows,
-      total: result.total,
-      page,
-      pageSize,
-    });
+      return res.json({
+        users: result?.rows || [],
+        total: result?.total || 0,
+        page,
+        pageSize,
+      });
+    } catch (err) {
+      console.warn("[adminController.listUsers] Safe fallback:", err.message);
+      return res.json({
+        users: [],
+        total: 0,
+        page: 1,
+        pageSize: 10,
+      });
+    }
   },
 
   async createUser(req, res) {
@@ -332,31 +366,52 @@ export const adminController = {
 
   // --- Catalog Management ---
   async listBooks(req, res) {
-    const search = String(req.query.search ?? "");
-    const department = String(req.query.department ?? "All");
-    const page = Math.max(1, Number(req.query.page ?? 1));
-    const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize ?? 120)));
-    const offset = (page - 1) * pageSize;
-    const archivedOnly = req.query.archivedOnly === "true";
-    const sortBy = String(req.query.sortBy ?? "");
+    try {
+      const search = String(req.query.search ?? "");
+      const department = String(req.query.department ?? "All");
+      const page = Math.max(1, Number(req.query.page ?? 1));
+      const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize ?? 120)));
+      const offset = (page - 1) * pageSize;
+      const archivedOnly = req.query.archivedOnly === "true";
+      const sortBy = String(req.query.sortBy ?? "");
 
-    const result = await adminModel.listBooks({ search, department, limit: pageSize, offset, archivedOnly, sortBy });
-    return res.json({
-      books: result.books,
-      total: result.total,
-      page,
-      pageSize,
-    });
+      const result = await adminModel.listBooks({ search, department, limit: pageSize, offset, archivedOnly, sortBy }).catch((err) => {
+        console.warn("[adminController.listBooks] Safe query fallback:", err.message);
+        return { books: [], total: 0 };
+      });
+      return res.json({
+        books: result?.books || [],
+        total: result?.total || 0,
+        page,
+        pageSize,
+      });
+    } catch (err) {
+      console.warn("[adminController.listBooks] Safe fallback:", err.message);
+      return res.json({
+        books: [],
+        total: 0,
+        page: 1,
+        pageSize: 120,
+      });
+    }
   },
 
   async getRecordsCatalog(req, res) {
-    const search = String(req.query.search ?? "");
-    const department = String(req.query.department ?? "All");
-    const result = await adminModel.listBooks({ search, department, limit: 300, offset: 0 });
-    return res.json({
-      records: result.books,
-      total: result.total,
-    });
+    try {
+      const search = String(req.query.search ?? "");
+      const department = String(req.query.department ?? "All");
+      const result = await adminModel.listBooks({ search, department, limit: 300, offset: 0 }).catch(() => ({ books: [], total: 0 }));
+      return res.json({
+        records: result?.books || [],
+        total: result?.total || 0,
+      });
+    } catch (err) {
+      console.warn("[adminController.getRecordsCatalog] Safe fallback:", err.message);
+      return res.json({
+        records: [],
+        total: 0,
+      });
+    }
   },
 
   async addBook(req, res) {

@@ -20,8 +20,13 @@ apiRouter.use("/student", studentRouter);
 // Standardized direct endpoint aliases for Expo Mobile App & Web Dashboard integration
 apiRouter.get("/dashboard", asyncHandler(adminController.getDashboard));
 apiRouter.get("/trending-books", asyncHandler(async (_req, res) => {
-  const topBooks = await adminModel.getTopBorrowedBooks(10);
-  return res.json({ books: topBooks, topBooks });
+  try {
+    const topBooks = await adminModel.getTopBorrowedBooks(10).catch(() => []);
+    return res.json({ books: topBooks || [], topBooks: topBooks || [] });
+  } catch (err) {
+    console.warn("[trending-books Fallback]:", err.message);
+    return res.json({ books: [], topBooks: [] });
+  }
 }));
 apiRouter.get("/transactions", asyncHandler(adminController.listTransactions));
 apiRouter.patch("/transactions/:transactionId", asyncHandler(adminController.decideTransaction));

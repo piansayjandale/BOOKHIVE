@@ -1,4 +1,5 @@
 import pg from "pg";
+import mysql from "mysql2/promise";
 import { env } from "../config/env.js";
 import {
   getDatabaseConfig,
@@ -6,19 +7,21 @@ import {
   isLocalhost,
   getDbSslConfig,
   resolveDatabaseUrl,
+  resolveDatabaseType,
 } from "./connection-config.js";
 
-const { Pool } = pg;
+const { Pool: PgPool } = pg;
 
 const dbConfig = getDatabaseConfig(env.databaseUrl);
 
 console.log(
-  `[Backend DB] Target: ${dbConfig.isLocal ? "Localhost" : "Cloud"} (${dbConfig.host}:${dbConfig.port}/${dbConfig.database}) | ` +
-  `SSL: ${dbConfig.ssl ? "Enabled" : "Disabled"} | Configured: ${dbConfig.hasExplicitConfig ? "Yes" : "Default Localhost"}`
+  `[Backend DB] Dialect: ${dbConfig.clientType.toUpperCase()} | Target: ${dbConfig.isLocal ? "Localhost" : "Cloud"} ` +
+  `(${dbConfig.host}:${dbConfig.port}/${dbConfig.database}) | ` +
+  `SSL: ${dbConfig.ssl ? "Enabled (rejectUnauthorized: false)" : "Disabled"} | ` +
+  `Configured: ${dbConfig.hasExplicitConfig ? "Yes" : "Default Localhost"}`
 );
 
-// If running in Vercel serverless and NO explicit database is configured, immediately stay in fallback mode.
-// Never attempt to contact 127.0.0.1 in a serverless container.
+// If running in Vercel serverless and NO explicit database is configured, stay in fallback mode.
 const isVercelServerless = Boolean(process.env.VERCEL);
 let isOffline = isVercelServerless && !dbConfig.hasExplicitConfig;
 let lastCheckTime = 0;
@@ -37,19 +40,47 @@ let rawPool = null;
 function getOrCreatePool() {
   if (rawPool) return rawPool;
 
-  // On Vercel without credentials, do not attempt to create pool
+  // On Vercel without credentials, do not attempt to contact localhost
   if (isVercelServerless && !dbConfig.hasExplicitConfig) {
     return null;
   }
 
   try {
-    rawPool = new Pool({
+    if (dbConfig.clientType === "mysql") {
+      // Explicitly configure Aiven MySQL SSL options
+      const mysqlOptions = {
+        host: dbConfig.host,
+        port: dbConfig.port || 3306,
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: dbConfig.database,
+        waitForConnections: true,
+        connectionLimit: Number(process.env.DB_MAX_CONNECTIONS ?? 2), // Small pool for serverless lambdas
+        connectTimeout: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 3000), // 3s timeout to protect serverless
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 0,
+      };
+
+      // Explicitly add SSL options with rejectUnauthorized: false for Aiven MySQL
+      if (dbConfig.ssl || !dbConfig.isLocal || isVercelServerless || process.env.NODE_ENV === "production") {
+        mysqlOptions.ssl = {
+          rejectUnauthorized: false,
+        };
+      }
+
+      rawPool = mysql.createPool(mysqlOptions);
+      return rawPool;
+    }
+
+    // Default PostgreSQL Pool
+    const pgSsl = (dbConfig.ssl || !dbConfig.isLocal) ? { rejectUnauthorized: false } : false;
+    rawPool = new PgPool({
       connectionString: dbConfig.connectionString,
-      ssl: dbConfig.ssl,
-      connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 3000), // 3s max timeout to protect serverless
-      idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 1500), // close idle connections quickly
-      max: Number(process.env.DB_MAX_CONNECTIONS ?? 2), // small pool size for lambdas
-      allowExitOnIdle: true, // CRITICAL: allows Node.js event loop to exit when idle, preventing FUNCTION_INVOCATION_FAILED!
+      ssl: pgSsl,
+      connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 3000), // 3s max timeout
+      idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 1500),
+      max: Number(process.env.DB_MAX_CONNECTIONS ?? 2),
+      allowExitOnIdle: true, // CRITICAL: prevents FUNCTION_INVOCATION_FAILED by allowing Node event loop to exit
     });
 
     rawPool.on("error", (err) => {
@@ -59,10 +90,49 @@ function getOrCreatePool() {
 
     return rawPool;
   } catch (err) {
-    console.warn("[Backend DB] Failed to instantiate pool:", err.message);
+    console.warn("[Backend DB] Failed to instantiate pool (non-fatal):", err.message);
     isOffline = true;
     return null;
   }
+}
+
+/**
+ * Clean and adapt SQL queries for MySQL compatibility when executing Postgres-style queries.
+ */
+function cleanSqlForMysql(sql) {
+  return sql
+    .replace(/::[a-zA-Z_]+/g, "") // strip Postgres casts (e.g. ::text, ::int, ::date)
+    .replace(/\bILIKE\b/gi, "LIKE")
+    .replace(/gen_random_uuid\(\)/gi, "UUID()")
+    .replace(/NOW\(\)::date/gi, "CURDATE()")
+    .replace(/date_trunc\('month',\s*([^)]+)\)/gi, "DATE_FORMAT($1, '%Y-%m-01')")
+    .replace(/\bRETURNING\b[\s\S]*$/i, "");
+}
+
+/**
+ * Converts $1, $2 Postgres placeholders to ? parameters for MySQL.
+ */
+function adaptQueryForMysql(sql, params = []) {
+  if (!sql) return { sql: "", params: [] };
+
+  const matches = [...sql.matchAll(/\$(\d+)/g)];
+  if (matches.length > 0) {
+    const newParams = [];
+    const newSql = sql.replace(/\$(\d+)/g, (_, num) => {
+      const idx = parseInt(num, 10) - 1;
+      newParams.push(params[idx]);
+      return "?";
+    });
+    return {
+      sql: cleanSqlForMysql(newSql),
+      params: newParams,
+    };
+  }
+
+  return {
+    sql: cleanSqlForMysql(sql),
+    params,
+  };
 }
 
 function isConnectionError(err) {
@@ -73,6 +143,13 @@ function isConnectionError(err) {
     "ETIMEDOUT",
     "EHOSTUNREACH",
     "ENOTFOUND",
+    "PROTOCOL_CONNECTION_LOST",
+    "PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR",
+    "ER_ACCESS_DENIED_ERROR",
+    "HANDSHAKE_ERROR",
+    "ER_BAD_DB_ERROR",
+    "ER_DBACCESS_DENIED_ERROR",
+    "ER_CON_COUNT_ERROR",
     "57P01",
     "57P02",
     "57P03",
@@ -87,8 +164,26 @@ function isConnectionError(err) {
     msg.includes("connection timeout") ||
     msg.includes("timeout exceeded") ||
     msg.includes("client has encountered a connection error") ||
+    msg.includes("access denied for user") ||
     msg.includes("password authentication failed") ||
+    msg.includes("handshake") ||
+    msg.includes("self signed certificate") ||
+    msg.includes("certificate") ||
     msg.includes("database offline")
+  );
+}
+
+function isMissingTableError(err) {
+  if (!err) return false;
+  if (err.code === "ER_NO_SUCH_TABLE" || err.code === 1146 || err.code === "42P01") {
+    return true;
+  }
+  const msg = (err.message || "").toLowerCase();
+  return (
+    msg.includes("doesn't exist") ||
+    msg.includes("does not exist") ||
+    msg.includes("no such table") ||
+    (msg.includes("relation") && msg.includes("does not exist"))
   );
 }
 
@@ -99,7 +194,7 @@ export function isDatabaseConnected() {
 export const pool = {
   async query(text, params) {
     const now = Date.now();
-    if (isOffline && (now - lastCheckTime < RETRY_COOLDOWN_MS)) {
+    if (isOffline && now - lastCheckTime < RETRY_COOLDOWN_MS) {
       const err = new Error("Database offline: service is currently running in fallback mode.");
       err.code = "DB_OFFLINE";
       throw err;
@@ -113,13 +208,30 @@ export const pool = {
     }
 
     try {
-      const res = await p.query(text, params);
+      let res;
+      if (dbConfig.clientType === "mysql") {
+        const adapted = adaptQueryForMysql(text, params);
+        const [rows, fields] = await p.query(adapted.sql, adapted.params);
+        res = {
+          rows: Array.isArray(rows) ? rows : [rows],
+          rowCount: Array.isArray(rows) ? rows.length : (rows?.affectedRows || 0),
+          fields,
+        };
+      } else {
+        res = await p.query(text, params);
+      }
+
       if (isOffline) {
         console.log("[Backend DB] Database connection established.");
         isOffline = false;
       }
       return res;
     } catch (err) {
+      if (isMissingTableError(err)) {
+        console.warn(`[Backend DB] Table missing or not yet migrated: ${err.message}. Returning empty rows fallback.`);
+        return { rows: [], rowCount: 0 };
+      }
+
       if (isConnectionError(err)) {
         if (!isOffline) {
           console.warn(`[Backend DB] Database connection error (${err.message}). Switching to fallback mode.`);
@@ -140,6 +252,11 @@ export const pool = {
       throw err;
     }
     try {
+      if (dbConfig.clientType === "mysql") {
+        const connection = await p.getConnection();
+        isOffline = false;
+        return connection;
+      }
       const client = await p.connect();
       isOffline = false;
       return client;
@@ -152,15 +269,17 @@ export const pool = {
 
   on(...args) {
     const p = getOrCreatePool();
-    if (p) return p.on(...args);
+    if (p && typeof p.on === "function") return p.on(...args);
     return null;
   },
 
-  end() {
+  async end() {
     if (rawPool) {
       const p = rawPool;
       rawPool = null;
-      return p.end();
+      try {
+        await p.end();
+      } catch {}
     }
     return Promise.resolve();
   },
@@ -171,4 +290,11 @@ export const pool = {
   config: dbConfig,
 };
 
-export { getDatabaseConfig, isLocalhost, getDbSslConfig, maskDatabaseUrl, resolveDatabaseUrl };
+export {
+  getDatabaseConfig,
+  isLocalhost,
+  getDbSslConfig,
+  maskDatabaseUrl,
+  resolveDatabaseUrl,
+  resolveDatabaseType,
+};
