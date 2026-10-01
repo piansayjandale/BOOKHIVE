@@ -14,6 +14,7 @@
     "db:init": "npm --prefix Backend run db:init",
     "db:migrate": "npm --prefix Backend run db:migrate",
     "db:seed": "npm --prefix Backend run db:seed",
+    "db:cloud:mysql": "node seed-cloud-db.js",
     "mobile:build:apk": "npm --prefix Student run build:apk",
     "expo:login": "cd Student && npx expo login",
     "expo:whoami": "cd Student && npx expo whoami",
