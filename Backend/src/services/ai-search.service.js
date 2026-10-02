@@ -1,5 +1,6 @@
+import "../polyfills.js";
 import { pool } from "../db/pool.js";
-import { PDFParse } from "pdf-parse";
+
 
 // Academic Curriculum Knowledge Base for College Handouts, Syllabi & Course Codes
 const ACADEMIC_CURRICULUM = [
@@ -158,9 +159,57 @@ export async function extractTextFromFile({ name, mimeType, base64, text }) {
 
   if (isPdf) {
     try {
-      const parser = new PDFParse({ data: buffer });
-      await parser.load();
-      const extracted = await parser.getText();
+      // Ensure browser globals are guaranteed to be present before parsing
+      if (typeof globalThis.DOMMatrix === "undefined") {
+        globalThis.DOMMatrix = class DOMMatrix {
+          constructor() {
+            this.a = 1;
+            this.b = 0;
+            this.c = 0;
+            this.d = 1;
+            this.e = 0;
+            this.f = 0;
+          }
+        };
+      }
+      if (typeof globalThis.ImageData === "undefined") {
+        globalThis.ImageData = class ImageData {};
+      }
+      if (typeof globalThis.Path2D === "undefined") {
+        globalThis.Path2D = class Path2D {};
+      }
+
+      let extracted = "";
+      try {
+        // Dynamic runtime import to ensure pdf parser is never evaluated during server initialization
+        const { PDFParse } = await import("pdf-parse");
+        const parser = new PDFParse({ data: buffer });
+        await parser.load();
+        extracted = await parser.getText();
+      } catch (parseErr) {
+        // Fallback: direct dynamic import of pdfjs-dist
+        try {
+          const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+          const loadingTask = pdfjsLib.getDocument({
+            data: new Uint8Array(buffer),
+            useSystemFonts: true,
+            disableFontFace: true,
+          });
+          const doc = await loadingTask.promise;
+          let fullText = "";
+          for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
+            const page = await doc.getPage(pageNum);
+            const content = await page.getTextContent();
+            const strings = content.items.map((item) => item.str || "");
+            fullText += strings.join(" ") + "\n";
+          }
+          extracted = fullText;
+        } catch (pdfjsErr) {
+          console.warn("[AI Search] Direct pdfjs-dist fallback notice:", pdfjsErr.message);
+          throw parseErr;
+        }
+      }
+
       return (extracted || "").trim();
     } catch (err) {
       console.warn("[AI Search] PDF text extraction error:", err.message);
