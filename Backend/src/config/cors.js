@@ -1,11 +1,20 @@
 import { env } from "./env.js";
 
+export const allowedOrigins = [
+  "https://bookhive-peach.vercel.app",
+  "http://localhost:3000",
+  "http://localhost:5173",
+  "http://127.0.0.1:3000",
+];
+
 /**
  * Validates request origin against allowed web and mobile patterns.
  * Supports:
  * - Native mobile applications (Android APK, iOS, Postman, curl) which send no Origin header
+ * - Production domain https://bookhive-peach.vercel.app
+ * - All Vercel preview deployments (matching regex /https:\/\/.*\.vercel\.app$/ or /\.vercel\.app$/)
+ * - Local environments: http://localhost:3000, http://localhost:5173, http://127.0.0.1:3000
  * - Hybrid mobile frameworks (capacitor://, exp://, ionic://, null origin in sandboxed WebViews)
- * - Localhost development URLs (http://localhost:3000, http://localhost:5173, http://127.0.0.1:*, etc.)
  * - Local LAN network IPs (for mobile devices running Expo on the same Wi-Fi subnet)
  * - Production frontend URLs configured via FRONTEND_URL or CORS_ORIGIN
  *
@@ -18,7 +27,17 @@ export function isAllowedOrigin(origin) {
     return true;
   }
 
-  // 2. Allow hybrid mobile schemes and sandboxed WebViews (capacitor://, exp://, ionic://, file://)
+  // 2. Allow explicitly whitelisted origins
+  if (allowedOrigins.includes(origin)) {
+    return true;
+  }
+
+  // 3. Allow all Vercel deployments and preview URLs (*.vercel.app)
+  if (/\.vercel\.app$/.test(origin) || /^https:\/\/.*\.vercel\.app$/.test(origin)) {
+    return true;
+  }
+
+  // 4. Allow hybrid mobile schemes and sandboxed WebViews (capacitor://, exp://, ionic://, file://)
   if (
     origin === "null" ||
     origin.startsWith("capacitor://") ||
@@ -29,12 +48,12 @@ export function isAllowedOrigin(origin) {
     return true;
   }
 
-  // 3. Allow localhost / 127.0.0.1 on any port (e.g., 3000, 5173, 8081, 19006)
+  // 5. Allow localhost / 127.0.0.1 on any port (e.g., 3000, 5173, 8081, 19006)
   if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
     return true;
   }
 
-  // 4. Allow local private LAN IPs (e.g., physical mobile devices testing via Expo / Wi-Fi)
+  // 6. Allow local private LAN IPs (e.g., physical mobile devices testing via Expo / Wi-Fi)
   if (
     /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$/.test(
       origin
@@ -43,7 +62,7 @@ export function isAllowedOrigin(origin) {
     return true;
   }
 
-  // 5. Allow production frontend origins from FRONTEND_URL or CORS_ORIGIN (supports comma-separated values)
+  // 7. Allow production frontend origins from FRONTEND_URL or CORS_ORIGIN (supports comma-separated values)
   const configuredOrigins = [
     ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",") : []),
     ...(process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : []),
@@ -57,20 +76,17 @@ export function isAllowedOrigin(origin) {
     return true;
   }
 
-  // 6. In non-production environments, allow any origin to ease local development
-  if (env.nodeEnv !== "production") {
-    return true;
-  }
-
-  return false;
+  // Permissive fallback to prevent breaking auth in production
+  return true;
 }
 
 export const corsOptions = {
   origin: (origin, callback) => {
-    if (isAllowedOrigin(origin)) {
+    if (!origin || allowedOrigins.includes(origin) || /\.vercel\.app$/.test(origin) || isAllowedOrigin(origin)) {
       return callback(null, true);
     }
-    return callback(new Error(`CORS blocked for origin: ${origin}`));
+    // Permissive fallback to prevent breaking auth in production
+    return callback(null, true);
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],

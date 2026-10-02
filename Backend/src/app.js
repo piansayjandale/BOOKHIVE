@@ -44,6 +44,8 @@ export function createApp() {
 
   // CORS middleware supporting web frontends, localhost, mobile APKs, and hybrid schemes
   app.use(cors(corsOptions));
+  app.options(/.*/, cors(corsOptions));
+
 
   // 1. Static Files & Favicon Optimization:
   // Intercept /favicon.ico immediately before DB middleware or body parsers.
