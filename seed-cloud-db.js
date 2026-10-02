@@ -28,6 +28,8 @@ for (let i = 0; i < args.length; i++) {
     i++;
   } else if (arg === "--dry-run") {
     dryRun = true;
+  } else if (!arg.startsWith("-") && (arg.startsWith("mysql://") || arg.startsWith("mysql2://"))) {
+    cliUrl = arg;
   }
 }
 
@@ -36,7 +38,10 @@ function resolveCloudConnectionConfig() {
     cliUrl ||
     process.env.AIVEN_MYSQL_URL ||
     process.env.MYSQL_URL ||
-    (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith("mysql")
+    (process.env.DATABASE_URL &&
+    (process.env.DATABASE_URL.startsWith("mysql") ||
+      process.env.DATABASE_URL.includes("aivencloud") ||
+      process.env.DATABASE_URL.includes("mysql"))
       ? process.env.DATABASE_URL
       : null);
 
@@ -384,6 +389,17 @@ const SEED_USERS = [
     qrCode: "e1a10000-admin-4050-8000-000000000002",
   },
   {
+    id: "usr-librarian-001",
+    name: "Yana Brich R. Palmares",
+    email: "librarian@stiwnu.edu.ph",
+    idNumber: "LIB-2026-0001",
+    password: "BookHiveLibrarian!2026",
+    role: "Librarian",
+    department: "Library Services",
+    course: "Library Services",
+    qrCode: "e1a10000-lib-4050-8000-000000000001",
+  },
+  {
     id: "usr-librarian-003",
     name: "Joseph Tan",
     email: "joseph.tan@stiwnu.edu.ph",
@@ -561,20 +577,57 @@ async function main() {
     console.log("[Step 3/4] Seeding administrative and student accounts...");
     for (const user of SEED_USERS) {
       const [existing] = await connection.query(
-        "SELECT id, email, id_number FROM users WHERE email = ? OR id_number = ? LIMIT 1;",
+        "SELECT id, email, id_number FROM users WHERE LOWER(email) = LOWER(?) OR LOWER(id_number) = LOWER(?) LIMIT 1;",
         [user.email, user.idNumber]
       );
 
+      const hash = await bcrypt.hash(user.password, 10);
+      const permissions = JSON.stringify({
+        home: true,
+        records: true,
+        transactions: true,
+        reminders: true,
+        reports: true,
+        history: true,
+        settings: true,
+      });
+
+      let userId = user.id;
+
       if (existing.length === 0) {
-        const hash = await bcrypt.hash(user.password, 10);
         await connection.query(
-          `INSERT INTO users (id, name, id_number, email, password_hash, role, department, course, status, qr_code)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?);`,
-          [user.id, user.name, user.idNumber, user.email, hash, user.role, user.department, user.course, user.qrCode]
+          `INSERT INTO users (id, name, id_number, email, password_hash, role, department, course, status, qr_code, permissions)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?);`,
+          [user.id, user.name, user.idNumber, user.email, hash, user.role, user.department, user.course, user.qrCode, permissions]
         );
         console.log(`  ✓ Seeded account: ${user.name} (${user.email}) [Role: ${user.role}]`);
       } else {
-        console.log(`  - Account already exists: ${user.email} (${existing[0].id_number}). Skipping.`);
+        userId = existing[0].id;
+        await connection.query(
+          `UPDATE users SET
+             name = ?,
+             id_number = ?,
+             password_hash = ?,
+             role = ?,
+             department = ?,
+             course = ?,
+             status = 'Active',
+             permissions = ?,
+             updated_at = NOW()
+           WHERE id = ?;`,
+          [user.name, user.idNumber, hash, user.role, user.department, user.course, permissions, userId]
+        );
+        console.log(`  ✓ Upserted account credentials: ${user.name} (${user.email}) [Role: ${user.role}]`);
+      }
+
+      // Upsert admin profile for non-student users
+      if (user.role !== "Student") {
+        await connection.query(
+          `INSERT INTO admin_profiles (user_id, phone, bio)
+           VALUES (?, '+63 917 555 0199', 'Library Administration & Services')
+           ON DUPLICATE KEY UPDATE bio = VALUES(bio), updated_at = NOW();`,
+          [userId]
+        );
       }
     }
 
