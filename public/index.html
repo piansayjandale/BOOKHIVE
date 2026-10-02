@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BookHive - Login | STI West Negros University Library</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700;800;900&family=Segoe+UI:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-overlay: rgba(18, 28, 44, 0.42);
+      --card-bg: #ffffff;
+      --card-text: #0c1b3a;
+      --text-muted: #6b7280;
+      --input-border: #e5e7eb;
+      --input-focus: #0072ce;
+      --sti-yellow: #FFF200;
+      --sti-blue: #0072ce;
+      --sti-blue-hover: #005bb5;
+      --error-bg: #fef2f2;
+      --error-text: #b91c1c;
+      --error-border: #fecaca;
+      --success-bg: #ecfdf5;
+      --success-text: #047857;
+      --modal-bg: #ffffff;
+      --modal-border: #e2e8f0;
+    }
+
+    [data-theme="dark"] {
+      --bg-overlay: rgba(10, 15, 26, 0.65);
+      --card-bg: #141f32;
+      --card-text: #f8fafc;
+      --text-muted: #94a3b8;
+      --input-border: #334155;
+      --input-focus: #38bdf8;
+      --sti-blue: #0284c7;
+      --sti-blue-hover: #0369a1;
+      --error-bg: rgba(239, 68, 68, 0.15);
+      --error-text: #fca5a5;
+      --error-border: rgba(239, 68, 68, 0.3);
+      --success-bg: rgba(16, 185, 129, 0.15);
+      --success-text: #6ee7b7;
+      --modal-bg: #132034;
+      --modal-border: #1e293b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      min-height: 100vh;
+      width: 100vw;
+      overflow-x: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background-color: #0b1524;
+    }
+
+    /* Fixed Photographic Background */
+    .bg-image {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+      filter: brightness(0.95);
+    }
+
+    .bg-overlay {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: var(--bg-overlay);
+      backdrop-filter: blur(2px);
+      z-index: 1;
+      transition: background 0.3s ease;
+    }
+
+    /* Primary Login Card */
+    .login-container {
+      position: relative;
+      z-index: 10;
+      width: 900px;
+      max-width: 94vw;
+      min-height: 520px;
+      display: flex;
+      border-radius: 24px;
+      overflow: hidden;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), 0 0 1px rgba(255, 255, 255, 0.2);
+      background: var(--card-bg);
+      transition: background 0.25s ease, transform 0.2s ease;
+      margin: 1.5rem auto;
+    }
+
+    /* Left Panel: STI Yellow Brand Showcase */
+    .left-panel {
+      width: 44%;
+      background: var(--sti-yellow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2.5rem 2rem;
+      position: relative;
+      user-select: none;
+    }
+
+    .brand-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      width: 100%;
+    }
+
+    .brand-logo {
+      width: 82%;
+      max-width: 250px;
+      height: auto;
+      object-fit: contain;
+      filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.08));
+      transition: transform 0.25s ease;
+    }
+
+    .brand-logo:hover {
+      transform: scale(1.03);
+    }
+
+    .brand-library {
+      font-family: 'Roboto Slab', serif;
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: 0.25em;
+      color: #0072ce;
+      text-transform: uppercase;
+      margin-top: 14px;
+      padding-left: 0.25em;
+      line-height: 1.1;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Right Panel: Credentials Form */
+    .right-panel {
+      width: 56%;
+      background: var(--card-bg);
+      color: var(--card-text);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      padding: 3rem 3.5rem;
+      position: relative;
+      transition: background 0.25s ease, color 0.25s ease;
+    }
+
+    /* In-Card Theme Toggle */
+    .theme-toggle {
+      position: absolute;
+      top: 1.5rem;
+      right: 1.5rem;
+      background: rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--input-border);
+      border-radius: 9999px;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--card-text);
+      transition: all 0.2s;
+    }
+
+    .theme-toggle:hover {
+      background: rgba(0, 0, 0, 0.1);
+      transform: scale(1.06);
+    }
+
+    [data-theme="dark"] .theme-toggle {
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .title {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--card-text);
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 16px;
+      color: var(--text-muted);
+      margin-bottom: 2rem;
+    }
+
+    /* Notifications & Alert Banners */
+    .alert-banner {
+      display: none;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 13.5px;
+      margin-bottom: 1.25rem;
+      line-height: 1.4;
+    }
+
+    .alert-error {
+      background: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid var(--error-border);
+    }
+
+    .alert-success {
+      background: var(--success-bg);
+      color: var(--success-text);
+      border: 1px solid var(--success-text);
+    }
+
+    .form-group {
+      margin-bottom: 1.35rem;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      letter-spacing: 0.05em;
+      margin-bottom: 6px;
+      text-transform: uppercase;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-field {
+      width: 100%;
+      padding: 8px 0;
+      font-size: 15.5px;
+      color: var(--card-text);
+      background: transparent;
+      border: none;
+      border-bottom: 1.5px solid var(--input-border);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-field:focus {
+      border-bottom-color: var(--input-focus);
+    }
+
+    .password-toggle {
+      position: absolute;
+      right: 4px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .password-toggle:hover {
+      color: var(--card-text);
+    }
+
+    .options-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 0.5rem;
+      margin-bottom: 1.75rem;
+      font-size: 13px;
+    }
+
+    .remember-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .forgot-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 600;
+      transition: color 0.2s;
+    }
+
+    .forgot-link:hover {
+      color: var(--input-focus);
+      text-decoration: underline;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 0.85rem;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      color: #ffffff;
+      background: var(--sti-blue);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0, 114, 206, 0.3);
+      transition: all 0.2s;
+    }
+
+    .submit-btn:hover {
+      background: var(--sti-blue-hover);
+      box-shadow: 0 6px 16px rgba(0, 114, 206, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .submit-btn:active {
+      transform: translateY(0);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Mobile Companion Quick Link */
+    .download-nav {
+      margin-top: 1.5rem;
+      text-align: center;
+      font-size: 12.5px;
+      color: var(--text-muted);
+    }
+
+    .download-link {
+      color: var(--input-focus);
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .download-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Forgot Password Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.65);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .modal-card {
+      background: var(--modal-bg);
+      color: var(--card-text);
+      width: 500px;
+      max-width: 100%;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+      border: 1px solid var(--modal-border);
+      position: relative;
+    }
+
+    .modal-accent {
+      height: 4px;
+      background: linear-gradient(90deg, #FFF200, #0072ce);
+    }
+
+    .modal-header {
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--modal-border);
+    }
+
+    .modal-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .modal-icon-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background: rgba(0, 114, 206, 0.12);
+      color: var(--input-focus);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-close-btn {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 4px;
+    }
+
+    .modal-close-btn:hover {
+      color: var(--card-text);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    .modal-alert {
+      background: rgba(234, 179, 8, 0.12);
+      border: 1px solid rgba(234, 179, 8, 0.35);
+      color: #eab308;
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-size: 13px;
+      line-height: 1.5;
+      margin-bottom: 1.25rem;
+    }
+
+    .contact-card {
+      background: rgba(0, 0, 0, 0.04);
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      border: 1px solid var(--modal-border);
+      margin-bottom: 1rem;
+    }
+
+    [data-theme="dark"] .contact-card {
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .contact-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      padding: 0.4rem 0;
+    }
+
+    .contact-row a {
+      color: var(--input-focus);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .modal-footer {
+      padding: 1rem 1.5rem;
+      border-top: 1px solid var(--modal-border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .btn-secondary {
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid var(--modal-border);
+      color: var(--card-text);
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+
+    .btn-email {
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      background: var(--sti-blue);
+      color: #fff;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Responsive Adaptation */
+    @media (max-width: 820px) {
+      .login-container {
+        flex-direction: column;
+        width: 440px;
+        min-height: auto;
+      }
+      .left-panel {
+        width: 100%;
+        padding: 2rem 1rem;
+      }
+      .brand-logo {
+        max-width: 180px;
+      }
+      .brand-library {
+        font-size: 26px;
+      }
+      .right-panel {
+        width: 100%;
+        padding: 2rem;
+      }
+    }
+  </style>
+</head>
+<body data-theme="light">
+  <!-- Dynamic Photography Background -->
+  <img src="/login-building.jpg" alt="STI West Negros University Campus" class="bg-image" onerror="this.src='/login-bg.jpg'">
+  <div class="bg-overlay"></div>
+
+  <!-- Primary Application Login Card -->
+  <div class="login-container">
+    <!-- LEFT PANEL: STI BRAND IDENTITY -->
+    <div class="left-panel">
+      <div class="brand-box">
+        <img src="/sti-logo.png" alt="STI Academic Logo" class="brand-logo" onerror="this.src='/logo.png'">
+        <div class="brand-library">LIBRARY</div>
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: PORTAL AUTHENTICATION -->
+    <div class="right-panel">
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle light/dark theme" title="Toggle theme">
+        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+
+      <h1 class="title">BOOKHIVE</h1>
+      <p class="subtitle">Login Your Account</p>
+
+      <div id="alertBanner" class="alert-banner"></div>
+
+      <form id="loginForm" novalidate>
+        <div class="form-group">
+          <label for="email" class="form-label">EMAIL ADDRESS</label>
+          <div class="input-wrapper">
+            <input 
+              id="email" 
+              type="text" 
+              name="identifier" 
+              class="input-field" 
+              placeholder="e.g. user@stiwnu.edu.ph or ID Number"
+              autocomplete="username" 
+              required 
+            />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password" class="form-label">PASSWORD</label>
+          <div class="input-wrapper">
+            <input 
+              id="password" 
+              type="password" 
+              name="password" 
+              class="input-field" 
+              placeholder="••••••••••••"
+              autocomplete="current-password" 
+              required 
+            />
+            <button type="button" id="togglePasswordBtn" class="password-toggle" aria-label="Toggle password visibility">
+              <svg id="eyeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="options-row">
+          <label class="remember-label">
+            <input type="checkbox" id="rememberMe" />
+            <span>Remember</span>
+          </label>
+          <a href="#forgot" id="forgotPasswordBtn" class="forgot-link">Forgot Password?</a>
+        </div>
+
+        <button type="submit" id="submitBtn" class="submit-btn">SUBMIT</button>
+
+        <div class="download-nav">
+          Looking for the mobile app? 
+          <a href="/download" class="download-link">Get Android APK</a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- PASSWORD ASSISTANCE MODAL -->
+  <div id="forgotModal" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-accent"></div>
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon-badge">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+          </div>
+          <div>
+            <h3 style="font-size: 17px; font-weight: 700;">Password Assistance</h3>
+            <p style="font-size: 12px; color: var(--text-muted);">BookHive Security Governance</p>
+          </div>
+        </div>
+        <button type="button" id="closeModalBtn" class="modal-close-btn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-alert">
+          <strong>Self-Service Reset Disabled:</strong> For institutional security and identity assurance, account credentials must be verified by the system administrator.
+        </div>
+        <div class="contact-card">
+          <div class="contact-row">
+            <strong>Administrator:</strong> <span>Super Administrator</span>
+          </div>
+          <div class="contact-row">
+            <strong>Support Email:</strong> <a href="mailto:superadmin@stiwnu.edu.ph">superadmin@stiwnu.edu.ph</a>
+          </div>
+          <div class="contact-row">
+            <strong>Desk Location:</strong> <span>STI WNU Library Services / ICT Admin</span>
+          </div>
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+          Please include your <strong>Full Name</strong>, <strong>Institutional ID Number</strong>, and registered email address when submitting your reset request.
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="closeModalBtn2" class="btn-secondary">Close</button>
+        <a href="mailto:superadmin@stiwnu.edu.ph?subject=BookHive%20Password%20Reset%20Request" class="btn-email">
+          Email Super Administrator
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 1. Theme Toggle Management
+    const htmlBody = document.body;
+    const themeToggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('bookhive_theme') || 'light';
+    htmlBody.setAttribute('data-theme', savedTheme);
+
+    function updateThemeIcon(theme) {
+      if (!themeToggle) return;
+      themeToggle.innerHTML = theme === 'dark' 
+        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>'
+        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>';
+    }
+    updateThemeIcon(savedTheme);
+
+    themeToggle.addEventListener('click', () => {
+      const current = htmlBody.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      htmlBody.setAttribute('data-theme', next);
+      localStorage.setItem('bookhive_theme', next);
+      updateThemeIcon(next);
+    });
+
+    // 2. Password Visibility Toggle
+    const passwordInput = document.getElementById('password');
+    const togglePasswordBtn = document.getElementById('togglePasswordBtn');
+    let isPasswordVisible = false;
+
+    togglePasswordBtn.addEventListener('click', () => {
+      isPasswordVisible = !isPasswordVisible;
+      passwordInput.type = isPasswordVisible ? 'text' : 'password';
+      togglePasswordBtn.innerHTML = isPasswordVisible 
+        ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>'
+        : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>';
+    });
+
+    // 3. Forgot Password Modal
+    const forgotModal = document.getElementById('forgotModal');
+    const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    const closeModalBtn2 = document.getElementById('closeModalBtn2');
+
+    function openModal() { forgotModal.style.display = 'flex'; }
+    function closeModal() { forgotModal.style.display = 'none'; }
+
+    forgotPasswordBtn.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
+    closeModalBtn.addEventListener('click', closeModal);
+    closeModalBtn2.addEventListener('click', closeModal);
+    forgotModal.addEventListener('click', (e) => { if (e.target === forgotModal) closeModal(); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+    // 4. Form Submission & Authentication
+    const loginForm = document.getElementById('loginForm');
+    const alertBanner = document.getElementById('alertBanner');
+    const submitBtn = document.getElementById('submitBtn');
+
+    function showAlert(text, type = 'error') {
+      alertBanner.textContent = text;
+      alertBanner.className = 'alert-banner ' + (type === 'success' ? 'alert-success' : 'alert-error');
+      alertBanner.style.display = 'block';
+    }
+
+    function hideAlert() {
+      alertBanner.style.display = 'none';
+    }
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      hideAlert();
+
+      const identifier = document.getElementById('email').value.trim();
+      const password = passwordInput.value.trim();
+
+      if (!identifier || !password) {
+        showAlert('Please fill in both email / ID number and password.');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'SIGNING IN...';
+
+      try {
+        const response = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, password })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          showAlert(data.message || 'Login failed. Please verify your credentials.');
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'SUBMIT';
+          return;
+        }
+
+        showAlert('Signed in successfully! Redirecting...', 'success');
+
+        if (data.token) {
+          localStorage.setItem('bookhive_token', data.token);
+          if (data.user) {
+            localStorage.setItem('bookhive_user', JSON.stringify(data.user));
+          }
+          // Set cookie for Next.js middleware compatibility
+          document.cookie = `bookhive_token=${data.token}; path=/; max-age=28800; SameSite=Lax`;
+        }
+
+        // Determine target dashboard path based on role
+        const role = data.user?.role?.toUpperCase() || '';
+        let target = '/dashboard';
+        if (role.includes('SUPER')) {
+          target = '/super-admin/home';
+        } else if (role.includes('ADMIN')) {
+          target = '/admin/home';
+        } else if (role.includes('LIBRARIAN')) {
+          target = '/librarian';
+        }
+
+        setTimeout(() => {
+          window.location.href = data.redirectPath || target;
+        }, 500);
+
+      } catch (err) {
+        showAlert('An unexpected network error occurred. Please check your connection.');
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'SUBMIT';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -12,7 +12,7 @@ import {
 
 const { Pool: PgPool } = pg;
 
-const dbConfig = getDatabaseConfig(env.databaseUrl);
+const dbConfig = getDatabaseConfig(process.env.DATABASE_URL || env.databaseUrl);
 
 console.log(
   `[Backend DB] Dialect: ${dbConfig.clientType.toUpperCase()} | Target: ${dbConfig.isLocal ? "Localhost" : "Cloud"} ` +
@@ -21,7 +21,7 @@ console.log(
   `Configured: ${dbConfig.hasExplicitConfig ? "Yes" : "Default Localhost"}`
 );
 
-// If running in Vercel serverless and NO explicit database is configured, stay in fallback mode.
+// Actively connect to DATABASE_URL when provided; only use offline fallback if no credentials on Vercel
 const isVercelServerless = Boolean(process.env.VERCEL);
 let isOffline = isVercelServerless && !dbConfig.hasExplicitConfig;
 let lastCheckTime = 0;
@@ -34,20 +34,20 @@ if (isOffline) {
   );
 }
 
-// Lazy Pool: Do not create rawPool until first query, and allow idle exit so lambda functions never hang!
+// Database pool instance
 let rawPool = null;
 
 function getOrCreatePool() {
   if (rawPool) return rawPool;
 
   // On Vercel without credentials, do not attempt to contact localhost
-  if (isVercelServerless && !dbConfig.hasExplicitConfig) {
+  if (isVercelServerless && !dbConfig.hasExplicitConfig && !process.env.DATABASE_URL) {
     return null;
   }
 
   try {
     if (dbConfig.clientType === "mysql") {
-      // Explicitly configure Aiven MySQL SSL options
+      // Actively configure Aiven MySQL instance with SSL rejectUnauthorized: false
       const mysqlOptions = {
         host: dbConfig.host,
         port: dbConfig.port || 3306,
@@ -55,32 +55,29 @@ function getOrCreatePool() {
         password: dbConfig.password,
         database: dbConfig.database,
         waitForConnections: true,
-        connectionLimit: Number(process.env.DB_MAX_CONNECTIONS ?? 2), // Small pool for serverless lambdas
-        connectTimeout: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 3000), // 3s timeout to protect serverless
+        connectionLimit: Number(process.env.DB_MAX_CONNECTIONS ?? 5),
+        connectTimeout: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 10000),
         enableKeepAlive: true,
         keepAliveInitialDelay: 0,
+        ssl: {
+          rejectUnauthorized: false,
+        },
       };
 
-      // Explicitly add SSL options with rejectUnauthorized: false for Aiven MySQL
-      if (dbConfig.ssl || !dbConfig.isLocal || isVercelServerless || process.env.NODE_ENV === "production") {
-        mysqlOptions.ssl = {
-          rejectUnauthorized: false,
-        };
-      }
-
       rawPool = mysql.createPool(mysqlOptions);
+      isOffline = false;
       return rawPool;
     }
 
     // Default PostgreSQL Pool
-    const pgSsl = (dbConfig.ssl || !dbConfig.isLocal) ? { rejectUnauthorized: false } : false;
+    const pgSsl = (dbConfig.ssl || !dbConfig.isLocal || process.env.DATABASE_URL) ? { rejectUnauthorized: false } : false;
     rawPool = new PgPool({
       connectionString: dbConfig.connectionString,
       ssl: pgSsl,
-      connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 3000), // 3s max timeout
+      connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 10000),
       idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 1500),
-      max: Number(process.env.DB_MAX_CONNECTIONS ?? 2),
-      allowExitOnIdle: true, // CRITICAL: prevents FUNCTION_INVOCATION_FAILED by allowing Node event loop to exit
+      max: Number(process.env.DB_MAX_CONNECTIONS ?? 5),
+      allowExitOnIdle: true, // Prevents FUNCTION_INVOCATION_FAILED by allowing Node event loop to exit
     });
 
     rawPool.on("error", (err) => {
@@ -88,6 +85,7 @@ function getOrCreatePool() {
       isOffline = true;
     });
 
+    isOffline = false;
     return rawPool;
   } catch (err) {
     console.warn("[Backend DB] Failed to instantiate pool (non-fatal):", err.message);
@@ -95,6 +93,16 @@ function getOrCreatePool() {
     return null;
   }
 }
+
+// Actively initialize pool on startup when DATABASE_URL or database credentials are provided
+if (dbConfig.hasExplicitConfig || process.env.DATABASE_URL) {
+  try {
+    getOrCreatePool();
+  } catch (initErr) {
+    console.warn("[Backend DB] Initial connection notice:", initErr.message);
+  }
+}
+
 
 /**
  * Clean and adapt SQL queries for MySQL compatibility when executing Postgres-style queries.
@@ -188,6 +196,9 @@ function isMissingTableError(err) {
 }
 
 export function isDatabaseConnected() {
+  if (rawPool === null && (Boolean(process.env.DATABASE_URL) || dbConfig.hasExplicitConfig)) {
+    getOrCreatePool();
+  }
   return !isOffline && rawPool !== null;
 }
 

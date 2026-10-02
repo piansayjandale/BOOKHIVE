@@ -37,6 +37,7 @@ import { pool, isDatabaseConnected } from "./db/pool.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootPublicDir = path.resolve(__dirname, "../../public");
+const frontendPublicDir = path.resolve(__dirname, "../../Librarian Admin/Librarian and Admin/frontend/public");
 
 export function createApp() {
   const app = express();
@@ -52,12 +53,20 @@ export function createApp() {
     if (fs.existsSync(faviconPath)) {
       return res.sendFile(faviconPath);
     }
+    const altFaviconPath = path.join(frontendPublicDir, "favicon.ico");
+    if (fs.existsSync(altFaviconPath)) {
+      return res.sendFile(altFaviconPath);
+    }
     return res.status(204).end();
   });
 
-  // Serve static assets and mobile APK direct download routes without executing DB middleware
+  // Serve static assets from frontend and root public directories
+  if (fs.existsSync(frontendPublicDir)) {
+    app.use(express.static(frontendPublicDir, { maxAge: "1d" }));
+  }
   app.use("/downloads", express.static(path.join(rootPublicDir, "downloads"), { maxAge: "1d" }));
   app.use(express.static(rootPublicDir, { maxAge: "1d" }));
+
 
   // Mobile APK direct download route: serves HTML/views directly without waiting for blocking database calls
   app.get(["/download", "/mobile"], (req, res) => {
@@ -160,64 +169,41 @@ export function createApp() {
     });
   });
 
-  // 2. Graceful Root Route (/) with Error-Resilient Fallback:
-  // Serves HTML/views directly without waiting for blocking database calls.
+  // 3. Root Route (GET /): Serves the real main BookHive application interface / login portal
   app.get("/", (req, res) => {
-    const dbStatus = isDatabaseConnected() ? "connected" : "offline_fallback";
-    const acceptsHtml = req.accepts(["html", "json"]) === "html";
-
-    if (acceptsHtml && !req.xhr && !req.headers["x-requested-with"]) {
-      return res.status(200).send(`<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>BookHive API</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-    .card { max-width: 600px; width: 100%; background: #1e293b; border-radius: 14px; padding: 2.25rem 2rem; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-    h1 { color: #38bdf8; margin: 0 0 0.5rem 0; font-size: 1.85rem; font-weight: 700; }
-    .subtitle { color: #94a3b8; font-size: 0.95rem; margin-bottom: 1.5rem; }
-    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 0.3rem 0.8rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; background: #0284c7; color: white; margin-bottom: 1.25rem; }
-    .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: #38bdf8; }
-    .status-group { background: #0f172a; border-radius: 10px; padding: 1rem 1.25rem; border: 1px solid #334155; margin-bottom: 1.5rem; }
-    .status-row { display: flex; justify-content: space-between; padding: 0.35rem 0; color: #94a3b8; font-size: 0.9rem; }
-    .status-row strong { color: #f1f5f9; }
-    .actions { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-    .btn { display: inline-flex; align-items: center; justify-content: center; padding: 0.7rem 1.25rem; border-radius: 8px; font-size: 0.9rem; font-weight: 600; text-decoration: none; transition: all 0.2s; }
-    .btn-primary { background: #38bdf8; color: #0f172a; }
-    .btn-primary:hover { background: #7dd3fc; }
-    .btn-secondary { background: #334155; color: #f8fafc; border: 1px solid #475569; }
-    .btn-secondary:hover { background: #475569; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div class="badge"><span class="badge-dot"></span> Operational</div>
-    <h1>BookHive API</h1>
-    <p class="subtitle">STI West Negros University Library Management System &bull; Serverless Runtime</p>
-    <div class="status-group">
-      <div class="status-row"><span>Runtime Environment</span><strong>Vercel Serverless (Express)</strong></div>
-      <div class="status-row"><span>Database Dialect</span><strong>PostgreSQL / MySQL Adaptive</strong></div>
-      <div class="status-row"><span>Database Connection</span><strong>${dbStatus}</strong></div>
-      <div class="status-row"><span>System Health</span><strong>OK &bull; Non-blocking Root Resilient</strong></div>
-    </div>
-    <div class="actions">
-      <a href="/download" class="btn btn-primary">Download Mobile App (APK)</a>
-      <a href="/health" class="btn btn-secondary">API Health Probe</a>
-    </div>
-  </div>
-</body>
-</html>`);
+    // If client requested JSON explicitly via query or Accept header
+    if (req.query.json === "true" || (req.accepts(["html", "json"]) === "json" && !req.accepts("html"))) {
+      const dbStatus = isDatabaseConnected() ? "connected" : "offline_fallback";
+      return res.status(200).json({
+        status: "ok",
+        app: "BOOKHIVE",
+        database: dbStatus,
+        message: "BookHive Backend API Serverless Runtime Active",
+        timestamp: new Date().toISOString(),
+      });
     }
 
-    return res.status(200).json({
-      status: "ok",
-      app: "BOOKHIVE",
-      database: dbStatus,
-      message: "BookHive Backend API Serverless Runtime Active",
-      timestamp: new Date().toISOString(),
-    });
+    // Serve the real main BookHive application interface / login portal
+    const indexPath = path.join(rootPublicDir, "index.html");
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+
+    const altIndexPath = path.join(frontendPublicDir, "index.html");
+    if (fs.existsSync(altIndexPath)) {
+      return res.sendFile(altIndexPath);
+    }
+
+    return res.status(200).send("<h1>BookHive Portal Ready</h1>");
+  });
+
+  // Explicit /login route alias serving the real main BookHive application interface
+  app.get("/login", (_req, res) => {
+    const indexPath = path.join(rootPublicDir, "index.html");
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    return res.redirect("/");
   });
 
   // Public student ID card verification routes

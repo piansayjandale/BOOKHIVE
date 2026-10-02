@@ -36,7 +36,12 @@ export function resolveDatabaseType(rawUrl) {
     ""
   ).trim().toLowerCase();
 
-  if (candidateUrl.startsWith("mysql:") || candidateUrl.startsWith("mysql2:")) {
+  if (
+    candidateUrl.startsWith("mysql:") ||
+    candidateUrl.startsWith("mysql2:") ||
+    candidateUrl.includes("mysql") ||
+    candidateUrl.includes("aivencloud")
+  ) {
     return "mysql";
   }
   if (candidateUrl.startsWith("postgres:") || candidateUrl.startsWith("postgresql:")) {
