@@ -208,11 +208,86 @@ export function createApp() {
     return res.redirect("/");
   });
 
+  // Librarian Operations Dashboard Route Handlers (Express 5 compatible RegExp)
+  app.get(/^\/librarian(\/.*)?$/, (_req, res) => {
+    const librarianPath = path.join(rootPublicDir, "librarian.html");
+    if (fs.existsSync(librarianPath)) {
+      return res.sendFile(librarianPath);
+    }
+    const altIndexPath = path.join(rootPublicDir, "index.html");
+    return res.sendFile(altIndexPath);
+  });
+
+  // Admin & Super Admin Dashboard Route Handlers (Express 5 compatible RegExp)
+  app.get(
+    /^\/(admin|super-admin|dashboard|circulation|technical)(\/.*)?$/,
+    (_req, res) => {
+      const adminPath = path.join(rootPublicDir, "admin.html");
+      if (fs.existsSync(adminPath)) {
+        return res.sendFile(adminPath);
+      }
+      const librarianPath = path.join(rootPublicDir, "librarian.html");
+      if (fs.existsSync(librarianPath)) {
+        return res.sendFile(librarianPath);
+      }
+      return res.sendFile(path.join(rootPublicDir, "index.html"));
+    }
+  );
+
   // Public student ID card verification routes
   app.get("/verify/:qrCode", asyncHandler(studentController.renderStudentVerificationWebPage));
   app.get("/verify", asyncHandler(studentController.renderStudentVerificationWebPage));
 
   app.use("/api", apiRouter);
+
+  // SPA / Static Fallback Catch-All for non-API client routes (Express 5 compatible RegExp)
+  app.get(/.*/, (req, res, next) => {
+    // Pass through API requests, downloads, and favicon
+    if (
+      req.path.startsWith("/api") ||
+      req.path.startsWith("/downloads") ||
+      req.path === "/favicon.ico"
+    ) {
+      return next();
+    }
+
+    // Role-specific client routing fallback
+    if (req.path.startsWith("/librarian")) {
+      const librarianPath = path.join(rootPublicDir, "librarian.html");
+      if (fs.existsSync(librarianPath)) {
+        return res.sendFile(librarianPath);
+      }
+    }
+
+    if (
+      req.path.startsWith("/admin") ||
+      req.path.startsWith("/super-admin") ||
+      req.path.startsWith("/dashboard")
+    ) {
+      const adminPath = path.join(rootPublicDir, "admin.html");
+      if (fs.existsSync(adminPath)) {
+        return res.sendFile(adminPath);
+      }
+      const librarianPath = path.join(rootPublicDir, "librarian.html");
+      if (fs.existsSync(librarianPath)) {
+        return res.sendFile(librarianPath);
+      }
+    }
+
+    // Default SPA fallback: index.html
+    const indexPath = path.join(rootPublicDir, "index.html");
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+
+    const altIndexPath = path.join(frontendPublicDir, "index.html");
+    if (fs.existsSync(altIndexPath)) {
+      return res.sendFile(altIndexPath);
+    }
+
+    return next();
+  });
+
   app.use(errorHandler);
 
   return app;

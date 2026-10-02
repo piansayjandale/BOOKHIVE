@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BookHive - Librarian Dashboard | STI West Negros University</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700;800;900&family=Segoe+UI:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #0b1524;
+      --bg-sidebar: #0f1d2f;
+      --bg-card: #132238;
+      --bg-card-hover: #172a45;
+      --border-color: #1f3554;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --sti-yellow: #FFF200;
+      --sti-yellow-hover: #fae100;
+      --sti-blue: #0072ce;
+      --sti-blue-hover: #005bb5;
+      --accent-green: #10b981;
+      --accent-red: #ef4444;
+      --accent-amber: #f59e0b;
+      --input-bg: #09121f;
+    }
+
+    [data-theme="light"] {
+      --bg-page: #f1f5f9;
+      --bg-sidebar: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f8fafc;
+      --border-color: #e2e8f0;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --sti-blue: #0284c7;
+      --sti-blue-hover: #0369a1;
+      --input-bg: #f8fafc;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+    }
+
+    /* TOP HEADER */
+    .top-header {
+      background: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border-color);
+      height: 70px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.75rem;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    }
+
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+    }
+
+    .brand-logo-img {
+      height: 42px;
+      width: auto;
+      object-fit: contain;
+    }
+
+    .brand-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-title {
+      font-family: 'Roboto Slab', serif;
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-title span {
+      color: var(--sti-yellow);
+      background: #0072ce;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+      letter-spacing: 0.1em;
+    }
+
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .live-clock {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      background: rgba(0,0,0,0.15);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 9999px;
+    }
+
+    .user-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: #0072ce;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+    }
+
+    .user-details {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+
+    .user-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .user-role-badge {
+      font-size: 10px;
+      color: #fbbf24;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .btn-icon {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-icon:hover {
+      background: var(--bg-card-hover);
+      border-color: #38bdf8;
+    }
+
+    .btn-logout {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+
+    .btn-logout:hover {
+      background: rgba(239, 68, 68, 0.25);
+      color: #fee2e2;
+    }
+
+    /* MAIN CONTAINER */
+    .main-layout {
+      display: flex;
+      flex: 1;
+      min-height: calc(100vh - 70px);
+    }
+
+    /* NAVIGATION SIDEBAR */
+    .sidebar {
+      width: 250px;
+      background: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      padding: 1.5rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .nav-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 14px 10px 6px;
+      font-weight: 700;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 14px;
+      border-radius: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: 1px solid transparent;
+    }
+
+    .nav-item:hover {
+      background: var(--bg-card-hover);
+      color: var(--text-main);
+    }
+
+    .nav-item.active {
+      background: rgba(0, 114, 206, 0.15);
+      color: #38bdf8;
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+
+    /* CONTENT AREA */
+    .content-area {
+      flex: 1;
+      padding: 2rem;
+      overflow-y: auto;
+      max-width: 1400px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.75rem;
+    }
+
+    .page-title-box h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .page-title-box p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .header-buttons {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0072ce, #0284c7);
+      color: #fff;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 4px 12px rgba(0, 114, 206, 0.3);
+      transition: all 0.2s;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(0, 114, 206, 0.4);
+    }
+
+    /* METRICS STATS GRID */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(56, 189, 248, 0.4);
+    }
+
+    .stat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .stat-label {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .stat-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-value {
+      font-size: 30px;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1.1;
+    }
+
+    .stat-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .stat-sub .badge-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+
+    /* SECTION CARDS & TABLES */
+    .card-panel {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .panel-title {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .input-search {
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      width: 260px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-search:focus {
+      border-color: #38bdf8;
+    }
+
+    .select-filter {
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    /* RESPONSIVE TABLE */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: 10px;
+      border: 1px solid var(--border-color);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    th {
+      background: rgba(0,0,0,0.25);
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-main);
+      vertical-align: middle;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* BADGES & ACTION BUTTONS */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 9px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge-success { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .badge-pending { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+    .badge-info { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .badge-danger { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+    .action-btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s;
+    }
+
+    .action-btn-green { background: #059669; color: #fff; }
+    .action-btn-green:hover { background: #10b981; }
+    .action-btn-red { background: #dc2626; color: #fff; }
+    .action-btn-red:hover { background: #ef4444; }
+    .action-btn-blue { background: #0284c7; color: #fff; }
+    .action-btn-blue:hover { background: #38bdf8; color: #0f172a; }
+
+    /* MODAL */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .modal-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      width: 580px;
+      max-width: 95vw;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+      overflow: hidden;
+    }
+
+    .modal-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-height: 75vh;
+      overflow-y: auto;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .form-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .form-input {
+      background: var(--input-bg);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .form-input:focus {
+      border-color: #38bdf8;
+    }
+
+    .modal-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      padding: 1.25rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      background: rgba(0,0,0,0.15);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    /* RESPONSIVE */
+    @media (max-width: 900px) {
+      .sidebar {
+        width: 70px;
+        padding: 1rem 0.5rem;
+      }
+      .nav-label { display: none; }
+      .nav-item span { display: none; }
+      .nav-item { justify-content: center; }
+      .brand-text { display: none; }
+      .live-clock { display: none; }
+    }
+  </style>
+</head>
+<body data-theme="dark">
+  <!-- TOP APPLICATION BAR -->
+  <header class="top-header">
+    <a href="/librarian" class="brand-wrap">
+      <img src="/sti-logo.png" alt="STI WNU" class="brand-logo-img" onerror="this.src='/logo.png'">
+      <div class="brand-text">
+        <div class="brand-title">BOOKHIVE <span>LIBRARIAN</span></div>
+        <div class="brand-subtitle">STI West Negros University Library Services</div>
+      </div>
+    </a>
+
+    <div class="header-actions">
+      <div class="live-clock" id="liveClock">PHT 00:00:00</div>
+
+      <div class="user-pill" id="userPill">
+        <div class="user-avatar" id="avatarInitial">L</div>
+        <div class="user-details">
+          <div class="user-name" id="userNameDisplay">Librarian Account</div>
+          <div class="user-role-badge" id="userRoleDisplay">Librarian</div>
+        </div>
+      </div>
+
+      <button type="button" class="btn-icon" id="themeToggle" title="Toggle Light/Dark Theme">
+        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"></circle>
+          <line x1="12" y1="1" x2="12" y2="3"></line>
+          <line x1="12" y1="21" x2="12" y2="23"></line>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+          <line x1="1" y1="12" x2="3" y2="12"></line>
+          <line x1="21" y1="12" x2="23" y2="12"></line>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+        </svg>
+      </button>
+
+      <button type="button" class="btn-logout" id="logoutBtn" title="Sign out of BookHive">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+        <span>Logout</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="main-layout">
+    <!-- LEFT NAVIGATION -->
+    <aside class="sidebar">
+      <div class="nav-label">Circulation Desk</div>
+      <a class="nav-item active" data-tab="overview">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+        <span>Dashboard</span>
+      </a>
+      <a class="nav-item" data-tab="catalog">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/></svg>
+        <span>Book Catalog</span>
+      </a>
+      <a class="nav-item" data-tab="transactions">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg>
+        <span>Transactions & Holds</span>
+      </a>
+      <a class="nav-item" data-tab="announcements">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+        <span>Announcements</span>
+      </a>
+
+      <div class="nav-label">System External</div>
+      <a href="/download" class="nav-item" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span>Student APK</span>
+      </a>
+      <a href="/health" class="nav-item" target="_blank">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <span>API Diagnostics</span>
+      </a>
+    </aside>
+
+    <!-- CONTENT DISPLAY -->
+    <main class="content-area">
+      <div class="page-header">
+        <div class="page-title-box">
+          <h1 id="tabHeading">Librarian Operations Center</h1>
+          <p id="tabSubheading">Real-time book lending control, catalog inventory, and STI WNU student services</p>
+        </div>
+        <div class="header-buttons">
+          <button class="btn-primary" id="addBookTrigger">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>Add Book</span>
+          </button>
+          <button class="btn-secondary" id="refreshBtn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></svg>
+            <span>Refresh</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- METRICS GRID -->
+      <section class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Total Books</span>
+            <div class="stat-icon" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
+            </div>
+          </div>
+          <div class="stat-value" id="statTotalBooks">--</div>
+          <div class="stat-sub"><span class="badge-dot"></span> Catalog inventory</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Active Loans</span>
+            <div class="stat-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </div>
+          </div>
+          <div class="stat-value" id="statActiveLoans">--</div>
+          <div class="stat-sub"><span class="badge-dot" style="background:#10b981;"></span> Currently in circulation</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Pending Requests</span>
+            <div class="stat-icon" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+          </div>
+          <div class="stat-value" id="statPendingRequests">--</div>
+          <div class="stat-sub"><span class="badge-dot" style="background:#fbbf24;"></span> Requiring decision</div>
+        </div>
+
+        <div class="stat-card">
+          <div class="stat-header">
+            <span class="stat-label">Total Patrons</span>
+            <div class="stat-icon" style="background: rgba(168, 85, 247, 0.15); color: #c084fc;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            </div>
+          </div>
+          <div class="stat-value" id="statTotalUsers">--</div>
+          <div class="stat-sub"><span class="badge-dot" style="background:#c084fc;"></span> Registered students & staff</div>
+        </div>
+      </section>
+
+      <!-- TAB 1: OVERVIEW -->
+      <section id="tab-overview" class="tab-content">
+        <div class="card-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+              Recent Circulation Requests & Transactions
+            </div>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Student</th>
+                  <th>Student ID</th>
+                  <th>Book Title</th>
+                  <th>ISBN</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Requested Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="overviewTransactionsBody">
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading transactions...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: BOOK CATALOG -->
+      <section id="tab-catalog" class="tab-content" style="display: none;">
+        <div class="card-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
+              Library Catalog Inventory
+            </div>
+            <div class="search-filter-bar">
+              <input type="text" id="bookSearchInput" class="input-search" placeholder="Search by Title, Author, or ISBN..." />
+              <select id="departmentFilter" class="select-filter">
+                <option value="">All Departments</option>
+                <option value="Circulation">Circulation Section</option>
+                <option value="General Reference">General Reference Section</option>
+                <option value="Filipiniana">Filipiniana & Negrosiana</option>
+                <option value="Engineering">Engineering & Maritime</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Book Title</th>
+                  <th>Author</th>
+                  <th>ISBN</th>
+                  <th>Department</th>
+                  <th>Shelf Location</th>
+                  <th>Copies</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="booksCatalogBody">
+                <tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading catalog books...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: TRANSACTIONS & HOLDS -->
+      <section id="tab-transactions" class="tab-content" style="display: none;">
+        <div class="card-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M16 3h5v5"/><path d="M4 20L21 3"/></svg>
+              Circulation Desk: Borrows, Returns & Holds
+            </div>
+            <div class="search-filter-bar">
+              <select id="transactionStatusFilter" class="select-filter">
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending Approvals</option>
+                <option value="Approved">Approved / Active Loans</option>
+                <option value="Returned">Returned Books</option>
+                <option value="Declined">Declined Requests</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr>
+                  <th>Patron</th>
+                  <th>ID Number</th>
+                  <th>Resource</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>Requested</th>
+                  <th>Due Date</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="allTransactionsBody">
+                <tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Loading transactions...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: ANNOUNCEMENTS -->
+      <section id="tab-announcements" class="tab-content" style="display: none;">
+        <div class="card-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="m3 11 18-5v12L3 14v-3z"/></svg>
+              Library Bulletins & Announcements
+            </div>
+          </div>
+          <div id="announcementsList" style="display: flex; flex-direction: column; gap: 14px;">
+            <p style="color: var(--text-muted);">Loading announcements...</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ADD BOOK MODAL -->
+  <div class="modal-backdrop" id="addBookModal">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3 style="font-size: 16px; font-weight: 700;">Add New Book to Catalog</h3>
+        <button type="button" class="btn-icon" id="closeAddBookBtn">&times;</button>
+      </div>
+      <form id="addBookForm">
+        <div class="modal-body">
+          <div class="form-group">
+            <label class="form-label">Title *</label>
+            <input type="text" id="newBookTitle" class="form-input" required placeholder="e.g. Clean Architecture" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Author *</label>
+            <input type="text" id="newBookAuthor" class="form-input" required placeholder="e.g. Robert C. Martin" />
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label">ISBN *</label>
+              <input type="text" id="newBookIsbn" class="form-input" required placeholder="9780134494166" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Department</label>
+              <select id="newBookDept" class="form-input">
+                <option value="Circulation Section">Circulation Section</option>
+                <option value="General Reference Section">General Reference Section</option>
+                <option value="Filipiniana & Negrosiana Section">Filipiniana & Negrosiana Section</option>
+                <option value="Engineering & Maritime Section">Engineering & Maritime Section</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label class="form-label">Shelf Location</label>
+              <input type="text" id="newBookShelf" class="form-input" placeholder="CIR-01A.1" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Copies</label>
+              <input type="number" id="newBookCopies" class="form-input" value="3" min="1" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <input type="text" id="newBookCategory" class="form-input" placeholder="e.g. Computer Science" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Summary / Description</label>
+            <textarea id="newBookSummary" class="form-input" rows="3" placeholder="Brief summary of the book..."></textarea>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button type="button" class="btn-secondary" id="cancelAddBookBtn">Cancel</button>
+          <button type="submit" class="btn-primary" id="saveBookBtn">Save to Catalog</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // 1. Session & Auth Validation
+    const token = localStorage.getItem('bookhive_token');
+    const rawUser = localStorage.getItem('bookhive_user');
+    let currentUser = null;
+
+    if (!token) {
+      window.location.href = '/login';
+    }
+
+    try {
+      if (rawUser) currentUser = JSON.parse(rawUser);
+    } catch (_) {}
+
+    if (currentUser) {
+      document.getElementById('userNameDisplay').textContent = currentUser.name || 'Librarian';
+      document.getElementById('userRoleDisplay').textContent = currentUser.role || 'Librarian';
+      document.getElementById('avatarInitial').textContent = (currentUser.name || 'L')[0].toUpperCase();
+    }
+
+    // 2. Clock & Theme
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('liveClock').textContent = 'PHT ' + now.toLocaleTimeString('en-US', { hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    const themeToggle = document.getElementById('themeToggle');
+    const savedTheme = localStorage.getItem('bookhive_theme') || 'dark';
+    document.body.setAttribute('data-theme', savedTheme);
+
+    themeToggle.addEventListener('click', () => {
+      const current = document.body.getAttribute('data-theme') || 'dark';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.body.setAttribute('data-theme', next);
+      localStorage.setItem('bookhive_theme', next);
+    });
+
+    // 3. Logout
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      localStorage.removeItem('bookhive_token');
+      localStorage.removeItem('bookhive_user');
+      document.cookie = 'bookhive_token=; path=/; max-age=0';
+      window.location.href = '/';
+    });
+
+    // 4. Tab Navigation
+    const navItems = document.querySelectorAll('.nav-item[data-tab]');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    const tabTitles = {
+      overview: { title: 'Librarian Operations Center', sub: 'Real-time book lending control, catalog inventory, and STI WNU student services' },
+      catalog: { title: 'Book Catalog & Inventory', sub: 'Browse, search, edit, and append books to the institutional library' },
+      transactions: { title: 'Circulation & Holds', sub: 'Process student borrow requests, approve holds, and confirm returns' },
+      announcements: { title: 'Library Announcements', sub: 'Broadcast institutional bulletins, operating hours, and notices' }
+    };
+
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        const targetTab = item.getAttribute('data-tab');
+        navItems.forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+
+        tabContents.forEach(tc => tc.style.display = 'none');
+        const activeTabEl = document.getElementById('tab-' + targetTab);
+        if (activeTabEl) activeTabEl.style.display = 'block';
+
+        if (tabTitles[targetTab]) {
+          document.getElementById('tabHeading').textContent = tabTitles[targetTab].title;
+          document.getElementById('tabSubheading').textContent = tabTitles[targetTab].sub;
+        }
+      });
+    });
+
+    // 5. Data Fetching
+    let allBooks = [];
+    let allTransactions = [];
+
+    async function loadDashboardData() {
+      try {
+        const res = await fetch('/api/dashboard', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.summary) {
+            document.getElementById('statTotalBooks').textContent = data.summary.totalBooks ?? '--';
+            document.getElementById('statActiveLoans').textContent = data.summary.activeBorrowedBooks ?? '--';
+            document.getElementById('statPendingRequests').textContent = data.summary.pendingRequests ?? '--';
+            document.getElementById('statTotalUsers').textContent = data.summary.totalUsers ?? '--';
+          }
+        }
+      } catch (err) {
+        console.warn('Dashboard summary fetch notice:', err.message);
+      }
+    }
+
+    async function loadBooks() {
+      try {
+        const res = await fetch('/api/books', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          allBooks = Array.isArray(data) ? data : (data.books || []);
+          renderBooks(allBooks);
+          document.getElementById('statTotalBooks').textContent = allBooks.length;
+        }
+      } catch (err) {
+        console.warn('Books fetch notice:', err.message);
+      }
+    }
+
+    function renderBooks(books) {
+      const tbody = document.getElementById('booksCatalogBody');
+      if (!books.length) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">No books found matching criteria.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = books.map(b => `
+        <tr>
+          <td><strong>${b.title}</strong></td>
+          <td style="color: var(--text-muted);">${b.author}</td>
+          <td><code>${b.isbn}</code></td>
+          <td>${b.department || 'General'}</td>
+          <td><code>${b.shelf_location || b.shelfLocation || 'GEN-01'}</code></td>
+          <td><strong>${b.copies || 1}</strong></td>
+          <td><span class="badge ${b.availability === 'Available' ? 'badge-success' : 'badge-danger'}">${b.availability || 'Available'}</span></td>
+        </tr>
+      `).join('');
+    }
+
+    async function loadTransactions() {
+      try {
+        const res = await fetch('/api/transactions', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const data = await res.json();
+          allTransactions = Array.isArray(data) ? data : (data.transactions || []);
+          renderTransactions(allTransactions);
+        }
+      } catch (err) {
+        console.warn('Transactions fetch notice:', err.message);
+      }
+    }
+
+    function renderTransactions(txs) {
+      const overviewTbody = document.getElementById('overviewTransactionsBody');
+      const allTbody = document.getElementById('allTransactionsBody');
+
+      if (!txs.length) {
+        overviewTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No circulation requests recorded.</td></tr>';
+        allTbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No circulation requests recorded.</td></tr>';
+        return;
+      }
+
+      const rowsHtml = txs.map(t => {
+        const statusBadge = t.status === 'Approved' ? 'badge-success' : (t.status === 'Pending' ? 'badge-pending' : (t.status === 'Returned' ? 'badge-info' : 'badge-danger'));
+        const dateStr = t.requested_at ? new Date(t.requested_at).toLocaleDateString() : 'Recent';
+        const dueStr = t.due_date ? new Date(t.due_date).toLocaleDateString() : 'N/A';
+
+        let actionBtns = '';
+        if (t.status === 'Pending') {
+          actionBtns = `
+            <button class="action-btn action-btn-green" onclick="decideTx('${t.id}', 'Approved')">Approve</button>
+            <button class="action-btn action-btn-red" onclick="decideTx('${t.id}', 'Declined')">Decline</button>
+          `;
+        } else if (t.status === 'Approved') {
+          actionBtns = `
+            <button class="action-btn action-btn-blue" onclick="returnTx('${t.id}')">Return</button>
+          `;
+        } else {
+          actionBtns = '<span style="color: var(--text-muted); font-size: 11px;">Completed</span>';
+        }
+
+        return `
+          <tr>
+            <td><strong>${t.student_name || t.studentName || 'Student'}</strong></td>
+            <td><code>${t.student_id || t.studentId || 'STI-2026'}</code></td>
+            <td>${t.resource_title || t.resourceTitle || 'Resource'}</td>
+            <td><span class="badge badge-info">${t.type || 'Borrow'}</span></td>
+            <td><span class="badge ${statusBadge}">${t.status}</span></td>
+            <td>${dateStr}</td>
+            <td>${dueStr}</td>
+            <td><div style="display: flex; gap: 6px;">${actionBtns}</div></td>
+          </tr>
+        `;
+      }).join('');
+
+      overviewTbody.innerHTML = rowsHtml;
+      allTbody.innerHTML = rowsHtml;
+    }
+
+    async function loadAnnouncements() {
+      try {
+        const res = await fetch('/api/admin/announcements', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const list = await res.json();
+          const items = Array.isArray(list) ? list : (list.announcements || []);
+          const container = document.getElementById('announcementsList');
+          if (!items.length) {
+            container.innerHTML = '<p style="color: var(--text-muted); font-size: 13px;">No active bulletins.</p>';
+            return;
+          }
+          container.innerHTML = items.map(a => `
+            <div style="background: var(--bg-card-hover); padding: 1.25rem; border-radius: 12px; border: 1px solid var(--border-color);">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <strong style="color: var(--sti-yellow); font-size: 15px;">${a.title}</strong>
+                <span class="badge badge-info">${a.priority || 'Normal'}</span>
+              </div>
+              <p style="font-size: 13px; color: var(--text-main); line-height: 1.5;">${a.content}</p>
+              <div style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">Audience: ${a.audience || 'All'} &bull; Author: ${a.author || 'Library Administration'}</div>
+            </div>
+          `).join('');
+        }
+      } catch (_) {}
+    }
+
+    // 6. Transaction Actions
+    window.decideTx = async function(id, decision) {
+      if (!confirm(`Are you sure you want to mark this transaction as ${decision}?`)) return;
+      try {
+        const res = await fetch(`/api/transactions/${id}`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ decision })
+        });
+        if (res.ok) {
+          loadTransactions();
+          loadDashboardData();
+        } else {
+          alert('Failed to update transaction status.');
+        }
+      } catch (e) {
+        alert('Network error: ' + e.message);
+      }
+    };
+
+    window.returnTx = async function(id) {
+      if (!confirm('Confirm return of this borrowed book?')) return;
+      try {
+        const res = await fetch(`/api/return/${id}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (res.ok) {
+          loadTransactions();
+          loadBooks();
+          loadDashboardData();
+        } else {
+          alert('Failed to process book return.');
+        }
+      } catch (e) {
+        alert('Network error: ' + e.message);
+      }
+    };
+
+    // 7. Search & Filtering
+    document.getElementById('bookSearchInput').addEventListener('input', (e) => {
+      const q = e.target.value.toLowerCase();
+      const filtered = allBooks.filter(b => 
+        (b.title || '').toLowerCase().includes(q) ||
+        (b.author || '').toLowerCase().includes(q) ||
+        (b.isbn || '').includes(q)
+      );
+      renderBooks(filtered);
+    });
+
+    document.getElementById('departmentFilter').addEventListener('change', (e) => {
+      const dept = e.target.value.toLowerCase();
+      const filtered = dept 
+        ? allBooks.filter(b => (b.department || '').toLowerCase().includes(dept))
+        : allBooks;
+      renderBooks(filtered);
+    });
+
+    // 8. Add Book Modal
+    const addBookModal = document.getElementById('addBookModal');
+    const addBookTrigger = document.getElementById('addBookTrigger');
+    const closeAddBookBtn = document.getElementById('closeAddBookBtn');
+    const cancelAddBookBtn = document.getElementById('cancelAddBookBtn');
+
+    function openAddModal() { addBookModal.style.display = 'flex'; }
+    function closeAddModal() { addBookModal.style.display = 'none'; }
+
+    addBookTrigger.addEventListener('click', openAddModal);
+    closeAddBookBtn.addEventListener('click', closeAddModal);
+    cancelAddBookBtn.addEventListener('click', closeAddModal);
+
+    document.getElementById('addBookForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const payload = {
+        title: document.getElementById('newBookTitle').value.trim(),
+        author: document.getElementById('newBookAuthor').value.trim(),
+        isbn: document.getElementById('newBookIsbn').value.trim(),
+        department: document.getElementById('newBookDept').value,
+        shelfLocation: document.getElementById('newBookShelf').value.trim() || 'GEN-01A.1',
+        copies: parseInt(document.getElementById('newBookCopies').value, 10) || 1,
+        category: document.getElementById('newBookCategory').value.trim() || 'General',
+        summary: document.getElementById('newBookSummary').value.trim() || ''
+      };
+
+      try {
+        const res = await fetch('/api/books', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+        if (res.ok) {
+          closeAddModal();
+          document.getElementById('addBookForm').reset();
+          loadBooks();
+          loadDashboardData();
+        } else {
+          const errData = await res.json();
+          alert(errData.message || 'Failed to add book to catalog.');
+        }
+      } catch (err) {
+        alert('Network error: ' + err.message);
+      }
+    });
+
+    document.getElementById('refreshBtn').addEventListener('click', () => {
+      loadDashboardData();
+      loadBooks();
+      loadTransactions();
+      loadAnnouncements();
+    });
+
+    // Initial Load
+    loadDashboardData();
+    loadBooks();
+    loadTransactions();
+    loadAnnouncements();
+  </script>
+</body>
+</html>
