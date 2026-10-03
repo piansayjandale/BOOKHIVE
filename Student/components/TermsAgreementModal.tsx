@@ -114,13 +114,13 @@ export default function TermsAgreementModal({
         }
       }}
     >
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, { backgroundColor: isDarkMode ? "rgba(3, 7, 18, 0.85)" : "rgba(15, 23, 42, 0.55)" }]}>
         <View style={[styles.modalCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
           {/* HEADER */}
           <View style={[styles.headerContainer, { borderBottomColor: theme.cardBorder }]}>
-            <View style={[styles.badgePill, { backgroundColor: isDarkMode ? "rgba(234, 179, 8, 0.12)" : "#FEF3C7" }]}>
-              <Ionicons name="shield-checkmark" size={16} color={theme.accentGold} />
-              <Text style={[styles.badgeText, { color: theme.accentGold }]}>
+            <View style={[styles.badgePill, { backgroundColor: isDarkMode ? "rgba(234, 179, 8, 0.12)" : "#FEF9C3", borderColor: isDarkMode ? "rgba(234, 179, 8, 0.3)" : "#FDE047", borderWidth: 1 }]}>
+              <Ionicons name="shield-checkmark" size={16} color={isDarkMode ? theme.accentGold : "#854D0E"} />
+              <Text style={[styles.badgeText, { color: isDarkMode ? theme.accentGold : "#854D0E" }]}>
                 OFFICIAL LIBRARY POLICY
               </Text>
             </View>
@@ -140,20 +140,20 @@ export default function TermsAgreementModal({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={true}
           >
-            <View style={[styles.introBox, { backgroundColor: isDarkMode ? "#0A1224" : "#F8FAFC", borderColor: theme.cardBorder }]}>
-              <Ionicons name="information-circle-outline" size={18} color={theme.accentGold} />
+            <View style={[styles.introBox, { backgroundColor: isDarkMode ? "#0A1224" : "#F0F7FF", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.20)" }]}>
+              <Ionicons name="information-circle-outline" size={18} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
               <Text style={[styles.introText, { color: theme.textSecondary }]}>
                 Welcome to BookHive. As a registered student, your borrowing privileges and access to physical/digital collections are subject to the following institutional agreements. Please review carefully.
               </Text>
             </View>
 
             {TERMS_AND_AGREEMENT.map((section) => (
-              <View key={section.id} style={[styles.sectionBlock, { borderBottomColor: isDarkMode ? "#1A253C" : "#E2E8F0" }]}>
+              <View key={section.id} style={[styles.sectionBlock, { borderBottomColor: isDarkMode ? "#1A253C" : "rgba(2, 116, 187, 0.10)" }]}>
                 <View style={styles.sectionHeaderRow}>
-                  <View style={[styles.iconCircle, { backgroundColor: isDarkMode ? "#141D30" : "#F1F5F9" }]}>
-                    <Ionicons name={section.icon as any} size={18} color={theme.accentGold} />
+                  <View style={[styles.iconCircle, { backgroundColor: isDarkMode ? "#141D30" : "#EFF6FF" }]}>
+                    <Ionicons name={section.icon as any} size={18} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
                   </View>
-                  <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+                  <Text style={[styles.sectionTitle, { color: isDarkMode ? theme.textPrimary : "#0B1A2C" }]}>
                     {section.title}
                   </Text>
                 </View>
@@ -165,7 +165,7 @@ export default function TermsAgreementModal({
                 <View style={styles.rulesList}>
                   {section.rules.map((rule, idx) => (
                     <View key={`rule-${section.id}-${idx}`} style={styles.ruleItem}>
-                      <View style={[styles.ruleBullet, { backgroundColor: theme.accentGold }]} />
+                      <View style={[styles.ruleBullet, { backgroundColor: isDarkMode ? theme.accentGold : "#FCD400" }]} />
                       <Text style={[styles.ruleText, { color: theme.textPrimary }]}>
                         {rule}
                       </Text>
@@ -185,8 +185,8 @@ export default function TermsAgreementModal({
                   activeOpacity={0.8}
                   onPress={() => setAgreed(!agreed)}
                 >
-                  <View style={[styles.checkbox, agreed && { backgroundColor: theme.accentGold, borderColor: theme.accentGold }]}>
-                    {agreed && <Ionicons name="checkmark" size={16} color="#000000" />}
+                  <View style={[styles.checkbox, agreed && { backgroundColor: isDarkMode ? theme.accentGold : "#FCD400", borderColor: isDarkMode ? theme.accentGold : "#EAB308" }]}>
+                    {agreed && <Ionicons name="checkmark" size={16} color={isDarkMode ? "#000000" : "#0B1A2C"} />}
                   </View>
                   <Text style={[styles.checkboxLabel, { color: theme.textPrimary }]}>
                     I have read, understood, and accept all terms, library regulations, and penalty policies.
@@ -195,7 +195,7 @@ export default function TermsAgreementModal({
 
                 <View style={styles.btnRow}>
                   <TouchableOpacity
-                    style={[styles.declineBtn, { borderColor: isDarkMode ? "#374151" : "#D1D5DB" }]}
+                    style={[styles.declineBtn, { backgroundColor: isDarkMode ? "transparent" : "#FFFFFF", borderColor: isDarkMode ? "#374151" : "#CBD5E1" }]}
                     onPress={handleDecline}
                     activeOpacity={0.7}
                   >
@@ -205,16 +205,24 @@ export default function TermsAgreementModal({
                   <TouchableOpacity
                     style={[
                       styles.acceptBtn,
-                      { backgroundColor: agreed ? theme.accentGold : isDarkMode ? "#2D3748" : "#CBD5E1" },
+                      {
+                        backgroundColor: agreed
+                          ? (isDarkMode ? theme.accentGold : "#FCD400")
+                          : (isDarkMode ? "#2D3748" : "#E2E8F0"),
+                        borderColor: agreed
+                          ? (isDarkMode ? theme.accentGold : "#EAB308")
+                          : "transparent",
+                        borderWidth: agreed ? 1 : 0,
+                      },
                     ]}
                     onPress={handleAccept}
                     disabled={!agreed || submitting}
                     activeOpacity={0.8}
                   >
                     {submitting ? (
-                      <ActivityIndicator size="small" color={isDarkMode ? "#000000" : "#0274BB"} />
+                      <ActivityIndicator size="small" color={isDarkMode ? "#000000" : "#0B1A2C"} />
                     ) : (
-                      <Text style={[styles.acceptBtnText, { color: agreed ? (isDarkMode ? "#000000" : "#0274BB") : (isDarkMode ? "#9CA3AF" : "#64748B") }]}>
+                      <Text style={[styles.acceptBtnText, { color: agreed ? (isDarkMode ? "#000000" : "#0B1A2C") : (isDarkMode ? "#9CA3AF" : "#94A3B8") }]}>
                         I Agree & Continue
                       </Text>
                     )}
@@ -223,14 +231,14 @@ export default function TermsAgreementModal({
               </>
             ) : (
               <TouchableOpacity
-                style={[styles.closeBtn, { backgroundColor: theme.accentGold }]}
+                style={[styles.closeBtn, { backgroundColor: isDarkMode ? theme.accentGold : "#FCD400" }]}
                 onPress={() => {
                   setVisible(false);
                   onClose?.();
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={[styles.closeBtnText, { color: isDarkMode ? "#000000" : "#0274BB" }]}>Close</Text>
+                <Text style={[styles.closeBtnText, { color: isDarkMode ? "#000000" : "#0B1A2C" }]}>Close</Text>
               </TouchableOpacity>
             )}
           </View>

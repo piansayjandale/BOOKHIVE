@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
 
 import {
@@ -60,13 +61,38 @@ export default function ReservationDetailsScreen() {
     );
   };
 
+  const handleBack = useCallback(() => {
+    if (params.from === "notifications" || String(params.from) === "notifications") {
+      router.replace("/notifications");
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  }, [params.from, router]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+
+    const backSubscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+
+    return () => backSubscription.remove();
+  }, [handleBack]);
 
   return (
     <ScrollView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* HEADER */}
       <View style={[styles.header, { paddingTop: insets.top + 16, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder, borderBottomWidth: 1 }]}>
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleBack}
         >
           <Ionicons
             name="arrow-back"
@@ -84,7 +110,7 @@ export default function ReservationDetailsScreen() {
 
       {/* BOOK CARD */}
       <View style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-        <View style={[styles.iconContainer, { backgroundColor: isDarkMode ? "#3F1B1F" : "#FFF300" }]}>
+        <View style={[styles.iconContainer, { backgroundColor: isDarkMode ? "#3F1B1F" : theme.badgeYellowBg, borderColor: isDarkMode ? "transparent" : theme.badgeYellowBorder, borderWidth: isDarkMode ? 0 : 1 }]}>
           <MaterialCommunityIcons
             name="book-clock-outline"
             size={34}
@@ -100,8 +126,8 @@ export default function ReservationDetailsScreen() {
           by {params.author}
         </Text>
 
-        <View style={[styles.queueBadge, { backgroundColor: isDarkMode ? "#3A2E12" : "#FFF300", borderColor: !isDarkMode ? "#FFF300" : undefined }]}>
-          <Text style={[styles.queueBadgeText, { color: isDarkMode ? "#FCD34D" : "#0274BB", fontWeight: "800" }]}>
+        <View style={[styles.queueBadge, { backgroundColor: isDarkMode ? "#3A2E12" : theme.badgeYellowBg, borderColor: !isDarkMode ? theme.badgeYellowBorder : undefined }]}>
+          <Text style={[styles.queueBadgeText, { color: isDarkMode ? "#FCD34D" : theme.badgeYellowText, fontWeight: "800" }]}>
             Queue #{queuePosition}
           </Text>
         </View>

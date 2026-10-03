@@ -27,8 +27,8 @@ import {
   Entypo,
 } from "@expo/vector-icons";
 import { API_URL, getAuthHeaders } from "../../data/authService";
-import { saveSearchQuery, getNotifications, subscribe, NotificationItem } from "../../data/store";
-import localCatalogBooks from "../../data/books";
+import { saveSearchQuery, saveBookToViewHistory, getNotifications, subscribe, NotificationItem } from "../../data/store";
+import localCatalogBooks, { searchBooksByPrefix, searchBooksByKeyword, getBooksByDepartment } from "../../data/books";
 const DIRECTIVE_PATTERNS = [
   /is\s+there\s+any\s+books?\s+similar\s+to\s+this\s+file\??/i,
   /is\s+there\s+any\s+books?\s+similar\s+to\s+this\??/i,
@@ -586,27 +586,40 @@ export default function SearchScreen() {
       "textbook reserved reading high demand course book",
   };
 
-  const defaultCatalogItems = React.useMemo(() => {
-    return (localCatalogBooks || []).map((book: any, index: number) => ({
-      id: book.id || book.isbn || `cat-book-${index}`,
+  const formatSearchItem = useCallback((book: any, index: number = 0) => {
+    return {
+      id: String(book.id || book.isbn || `cat-book-${index}`),
       isbn: book.isbn || "",
       local: true,
-      status: book.available !== false ? "Available" : "Borrowed",
-      shelfLocation: book.shelfLocation || "Shelf A-102",
+      status: book.status || book.availability || (book.available !== false ? "Available" : "Borrowed"),
+      department: book.department || "Circulation Section",
+      shelfLocation: book.shelfLocation || book.shelf || "CIR-01A.1",
+      copies: book.copies !== undefined ? Number(book.copies) : 1,
+      volume: book.volume || "Single Volume / None",
+      edition: book.edition || "Single Edition / None",
+      accessionNumber: book.accessionNumber || "",
       volumeInfo: {
-        title: book.title || "",
-        authors: [book.author || "Unknown Author"],
-        description: book.description || book.summary || "",
-        categories: [book.department || "Circulation"],
-        publishedDate: String(book.year || "2024"),
-        pageCount: book.pages || 320,
-        language: "en",
+        title: book.title || book.volumeInfo?.title || "",
+        authors: Array.isArray(book.volumeInfo?.authors)
+          ? book.volumeInfo.authors
+          : [book.author || "Unknown Author"],
+        description: book.description || book.summary || book.volumeInfo?.description || "",
+        categories: Array.isArray(book.volumeInfo?.categories)
+          ? book.volumeInfo.categories
+          : [book.category || book.genre || book.department || "Circulation"],
+        publishedDate: String(book.publicationDate || book.year || book.volumeInfo?.publishedDate || "2024-01-01"),
+        pageCount: Number(book.pages || book.volumeInfo?.pageCount || 320),
+        language: book.language || book.volumeInfo?.language || "en",
         imageLinks: {
-          thumbnail: "https://via.placeholder.com/100",
+          thumbnail: book.coverUrl || book.coverImg || book.volumeInfo?.imageLinks?.thumbnail || "https://via.placeholder.com/100",
         },
       },
-    }));
+    };
   }, []);
+
+  const defaultCatalogItems = React.useMemo(() => {
+    return (localCatalogBooks || []).slice(0, 100).map((book: any, index: number) => formatSearchItem(book, index));
+  }, [formatSearchItem]);
 
   const [masterBooksPool, setMasterBooksPool] = useState<any[]>(defaultCatalogItems);
 
@@ -643,21 +656,46 @@ export default function SearchScreen() {
           base64: selectedFile.base64,
         } : null);
 
-        const res = await axios.post(
-          `${API_URL}/api/student/ai-search`,
-          {
-            prompt: query || "",
-            file: filePayload,
-            department: dept || activeDepartment,
-            limit: 40,
-          },
-          headers
-        );
+        let returnedBooks: any[] = [];
 
-        if (res.data?.success && Array.isArray(res.data.books)) {
-          setAiAnalysis(res.data.aiAnalysis || null);
-          setAiBooks(res.data.books);
-          mergeBooksPool(res.data.books);
+        try {
+          const res = await axios.post(
+            `${API_URL}/api/student/ai-search`,
+            {
+              prompt: query || "",
+              file: filePayload,
+              department: dept || activeDepartment,
+              limit: 40,
+            },
+            headers
+          );
+
+          if (res.data?.success && Array.isArray(res.data.books)) {
+            setAiAnalysis(res.data.aiAnalysis || null);
+            returnedBooks = res.data.books;
+          }
+        } catch (postErr) {
+          console.log("ai-search post error, trying fallback:", postErr);
+        }
+
+        // If no file attached and AI search returned few results, query the 48k backend database via /books/search?mode=ai
+        if (returnedBooks.length === 0 && query.trim().length > 0 && !filePayload) {
+          try {
+            const aiQueryRes = await axios.get(
+              `${API_URL}/api/student/books/search?q=${encodeURIComponent(query)}&limit=200&mode=ai`,
+              headers
+            );
+            if (aiQueryRes.data?.books && Array.isArray(aiQueryRes.data.books)) {
+              returnedBooks = aiQueryRes.data.books.map((b: any, idx: number) => formatSearchItem(b, idx));
+            }
+          } catch (getErr) {
+            console.log("ai search fallback error:", getErr);
+          }
+        }
+
+        if (returnedBooks.length > 0) {
+          setAiBooks(returnedBooks);
+          mergeBooksPool(returnedBooks);
         }
       } catch (err) {
         console.log("AI search error:", err);
@@ -665,7 +703,7 @@ export default function SearchScreen() {
         setLoading(false);
       }
     },
-    [selectedFile, activeDepartment, mergeBooksPool]
+    [selectedFile, activeDepartment, mergeBooksPool, formatSearchItem]
   );
 
   // FILE PICKER WITH BASE64 EXTRACTION
@@ -784,30 +822,7 @@ export default function SearchScreen() {
           headers
         );
         if (localRes.status === 200 && localRes.data?.books) {
-          const fetchedItems = localRes.data.books.map((book: any) => ({
-            volumeInfo: {
-              title: book.title,
-              authors: [book.author],
-              description: book.description || book.summary || "",
-              categories: [book.genres || book.category || book.department || "Circulation"],
-              publishedDate: String(book.publicationDate || book.year || "2026-09-01"),
-              pageCount: book.pages || 320,
-              language: book.language || "en",
-              imageLinks: {
-                thumbnail: book.coverUrl || book.coverImg || "https://via.placeholder.com/100",
-              },
-            },
-            id: String(book.id),
-            isbn: book.isbn,
-            department: book.department || "Circulation",
-            copies: book.copies !== undefined && book.copies !== null ? book.copies : 1,
-            volume: book.volume || "Single Volume / None",
-            edition: book.edition || "Single Edition / None",
-            accessionNumber: book.accessionNumber || "",
-            local: true,
-            status: book.status || book.availability || "Available",
-            shelfLocation: book.shelfLocation || book.shelf || "",
-          }));
+          const fetchedItems = localRes.data.books.map((book: any, idx: number) => formatSearchItem(book, idx));
           mergeBooksPool(fetchedItems);
         }
       } catch (err) {
@@ -872,7 +887,9 @@ export default function SearchScreen() {
       if (!fileName) {
         fetchBooks(incomingQuery);
       }
-      saveSearchQuery(incomingQuery);
+      if (!isPrefixFilter) {
+        saveSearchQuery(incomingQuery);
+      }
     }
     if (autoFocus === "true") {
       setTimeout(() => {
@@ -882,19 +899,22 @@ export default function SearchScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [q, autoFocus, fileName, fileUri, fileKeywords, fetchBooks, performAiSearch]);
+  }, [q, autoFocus, fileName, fileUri, fileKeywords, fetchBooks, performAiSearch, isPrefixFilter]);
 
-  // SAVE SEARCH QUERY EFFECT & AUTOMATIC LIVE BACKEND SEARCH
+  // LIVE SEARCH & PROMPT HISTORY EFFECT
   useEffect(() => {
     const trimmed = searchText.trim();
     if (trimmed.length > 0) {
-      saveSearchQuery(trimmed);
       const timer = setTimeout(() => {
         fetchBooks(trimmed);
-      }, 250);
+        // Only save to Prompted tab if Filter is OFF (i.e. AI Prompt / Ask BookHive mode)
+        if (trimmed.length >= 2 && !isPrefixFilter) {
+          saveSearchQuery(trimmed);
+        }
+      }, 700);
       return () => clearTimeout(timer);
     }
-  }, [searchText, fetchBooks]);
+  }, [searchText, isPrefixFilter, fetchBooks]);
 
   // DEPARTMENT CLICK
   const handleDepartmentPress = (department: string) => {
@@ -921,7 +941,59 @@ export default function SearchScreen() {
     const fileKw = selectedFile?.keywords || [];
     const isDirectiveOnly = DIRECTIVE_PATTERNS.some((p) => p.test(activeQuery));
 
-    return masterBooksPool
+    // Gather candidate books across all 48k books:
+    let candidatePool: any[] = [];
+
+    // Check if query is a department name (e.g. from department chips)
+    const isDeptQuery = departments.some(
+      (d) => d.name.toLowerCase() === activeQuery.toLowerCase()
+    );
+
+    if (isDeptQuery) {
+      const deptMatches = getBooksByDepartment(activeQuery, 200);
+      candidatePool = deptMatches.map((b, idx) => formatSearchItem(b, idx));
+      masterBooksPool.forEach((item) => {
+        const itemDept = (item.department || item.volumeInfo?.categories?.[0] || "").toLowerCase();
+        if (itemDept.includes(activeQuery.toLowerCase())) {
+          candidatePool.push(item);
+        }
+      });
+    } else if (isPrefixFilter && activeQuery.length > 0) {
+      // 1. Title Prefix Filter mode: query the 48,000+ local books via prefix index (instant 1-2 ms)
+      const prefixMatches = searchBooksByPrefix(activeQuery, 300);
+      candidatePool = prefixMatches.map((b, idx) => formatSearchItem(b, idx));
+
+      // Also combine any backend-fetched books in masterBooksPool that match the prefix
+      masterBooksPool.forEach((item) => {
+        const title = item.volumeInfo?.title || "";
+        if (matchesPrefix(title, activeQuery)) {
+          candidatePool.push(item);
+        }
+      });
+    } else if (!isPrefixFilter && activeQuery.length > 0) {
+      // 2. AI Prompt / Keyword mode: query the 48,000+ local books via keyword matching
+      const kwMatches = searchBooksByKeyword(activeQuery, 150);
+      candidatePool = kwMatches.map((b, idx) => formatSearchItem(b, idx));
+
+      // Also merge any backend-fetched items in masterBooksPool
+      masterBooksPool.forEach((item) => {
+        candidatePool.push(item);
+      });
+    } else {
+      candidatePool = masterBooksPool;
+    }
+
+    // Deduplicate candidate pool by title or isbn
+    const dedupMap = new Map<string, any>();
+    candidatePool.forEach((item) => {
+      const key = (item.volumeInfo?.title || item.title || "").toLowerCase().trim();
+      if (key && !dedupMap.has(key)) {
+        dedupMap.set(key, item);
+      }
+    });
+    const uniqueCandidates = Array.from(dedupMap.values());
+
+    return uniqueCandidates
       .map((item: any) => {
         const info = item.volumeInfo || {};
         const title = info.title || "";
@@ -994,7 +1066,7 @@ export default function SearchScreen() {
           b.item.volumeInfo?.title || ""
         );
       });
-  }, [masterBooksPool, activeQuery, selectedFile, isSearchActive, isPrefixFilter, aiBooks]);
+  }, [masterBooksPool, activeQuery, selectedFile, isSearchActive, isPrefixFilter, aiBooks, departments, formatSearchItem]);
 
     const itemsPerPage = 10;
     const totalPages = Math.max(1, Math.ceil(processedBooks.length / itemsPerPage));
@@ -1108,7 +1180,7 @@ export default function SearchScreen() {
                     false: isDarkMode ? "#334155" : "#CBD5E1",
                     true: isDarkMode ? "rgba(255, 243, 0, 0.5)" : "rgba(2, 116, 187, 0.5)"
                   }}
-                  thumbColor={isPrefixFilter ? (isDarkMode ? "#FFF300" : "#0274BB") : "#94A3B8"}
+                  thumbColor={isPrefixFilter ? (isDarkMode ? theme.accentGold : "#0274BB") : "#94A3B8"}
                   style={{ transform: [{ scaleX: 0.72 }, { scaleY: 0.72 }], marginVertical: -4, marginRight: -4 }}
                 />
               </TouchableOpacity>
@@ -1162,7 +1234,12 @@ export default function SearchScreen() {
                   }
                 }}
                 blurOnSubmit={true}
-                onSubmitEditing={() => fetchBooks(searchText)}
+                onSubmitEditing={() => {
+                  if (!isPrefixFilter && searchText.trim().length >= 2) {
+                    saveSearchQuery(searchText.trim());
+                  }
+                  fetchBooks(searchText);
+                }}
                 returnKeyType="search"
               />
 
@@ -1183,10 +1260,15 @@ export default function SearchScreen() {
 
               {/* ANALYZE BUTTON (Matches Web System) */}
               <TouchableOpacity
-                onPress={() => fetchBooks(searchText)}
+                onPress={() => {
+                  if (!isPrefixFilter && searchText.trim().length >= 2) {
+                    saveSearchQuery(searchText.trim());
+                  }
+                  fetchBooks(searchText);
+                }}
                 activeOpacity={0.85}
                 style={{
-                  backgroundColor: isDarkMode ? theme.accentGold : "#FFF300",
+                  backgroundColor: isDarkMode ? theme.accentGold : theme.buttonPrimaryBg,
                   paddingHorizontal: 11,
                   paddingVertical: 5.5,
                   borderRadius: 14,
@@ -1197,7 +1279,7 @@ export default function SearchScreen() {
                 }}
               >
                 <Text style={{
-                  color: isDarkMode ? "#090D16" : "#0274BB",
+                  color: isDarkMode ? "#090D16" : theme.buttonPrimaryText,
                   fontWeight: "800",
                   fontSize: 11,
                   letterSpacing: 0.5,
@@ -1353,18 +1435,18 @@ export default function SearchScreen() {
                         <View
                           key={tIdx}
                           style={{
-                            backgroundColor: isDarkMode ? "rgba(255, 243, 0, 0.15)" : "#FFF300",
+                            backgroundColor: isDarkMode ? "rgba(255, 243, 0, 0.15)" : theme.badgeYellowBg,
                             paddingHorizontal: 8,
                             paddingVertical: 2.5,
                             borderRadius: 6,
                             borderWidth: 1,
-                            borderColor: isDarkMode ? "rgba(255, 243, 0, 0.3)" : "#EAB308",
+                            borderColor: isDarkMode ? "rgba(255, 243, 0, 0.3)" : theme.badgeYellowBorder,
                           }}
                         >
                           <Text style={{
                             fontSize: 10,
                             fontWeight: "800",
-                            color: isDarkMode ? "#FFD700" : "#0274BB",
+                            color: isDarkMode ? "#FFD700" : theme.badgeYellowText,
                           }}>
                             #{topic}
                           </Text>
@@ -1404,31 +1486,35 @@ export default function SearchScreen() {
                       key={`search-item-${item.id || index}-${index}`}
                       activeOpacity={0.7}
                       style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
-                      onPress={() =>
+                      onPress={() => {
+                        const bookObj = {
+                          id: item.id || '',
+                          title: info.title || '',
+                          author: authorNames,
+                          description: info.description || 'No description available.',
+                          available: item.local ? (item.status === 'Available' ? 'true' : 'false') : 'true',
+                          department: item.department || classifiedDepartment,
+                          category: info.categories?.[0] || item.department || classifiedDepartment,
+                          isbn: item.isbn || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_13')?.identifier || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_10')?.identifier || '',
+                          shelf: item.local ? (item.shelfLocation || 'Shelf A, Row 2') : 'Shelf A-102, 2nd Floor',
+                          year: info.publishedDate ? info.publishedDate.split('-')[0] : '2026',
+                          publicationDate: info.publishedDate || '2026-09-01',
+                          pages: String(info.pageCount || 320),
+                          language: info.language || 'en',
+                          copies: String(item.copies !== undefined ? item.copies : 1),
+                          volume: item.volume || 'Single Volume / None',
+                          edition: item.edition || 'Single Edition / None',
+                          accessionNumber: item.accessionNumber || '',
+                        };
+                        saveBookToViewHistory(bookObj);
                         router.push({
                           pathname: '/book-details',
                           params: {
                             from: 'search',
-                            id: item.id || '',
-                            title: info.title || '',
-                            author: authorNames,
-                            description: info.description || 'No description available.',
-                            available: item.local ? (item.status === 'Available' ? 'true' : 'false') : 'true',
-                            department: item.department || classifiedDepartment,
-                            category: info.categories?.[0] || item.department || classifiedDepartment,
-                            isbn: item.isbn || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_13')?.identifier || info.industryIdentifiers?.find((i: any) => i.type === 'ISBN_10')?.identifier || '',
-                            shelf: item.local ? (item.shelfLocation || 'Shelf A, Row 2') : 'Shelf A-102, 2nd Floor',
-                            year: info.publishedDate ? info.publishedDate.split('-')[0] : '2026',
-                            publicationDate: info.publishedDate || '2026-09-01',
-                            pages: String(info.pageCount || 320),
-                            language: info.language || 'en',
-                            copies: String(item.copies !== undefined ? item.copies : 1),
-                            volume: item.volume || 'Single Volume / None',
-                            edition: item.edition || 'Single Edition / None',
-                            accessionNumber: item.accessionNumber || '',
+                            ...bookObj,
                           },
-                        })
-                      }
+                        });
+                      }}
                     >
                       {/* LEFT: TITLE & AUTHOR */}
                       <View style={styles.cardLeftContent}>
@@ -1447,11 +1533,11 @@ export default function SearchScreen() {
                       </View>
 
                       {/* RIGHT: MATCH BADGE */}
-                      <View style={[styles.matchBadge, { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : "#FFF300", borderColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : "#FFF300", borderWidth: 1 }]}>
-                        <Text style={[styles.matchPercentText, { color: isDarkMode ? "#FFD700" : "#0274BB", fontWeight: "900" }]}>
+                      <View style={[styles.matchBadge, { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg, borderColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : theme.badgeYellowBorder, borderWidth: 1 }]}>
+                        <Text style={[styles.matchPercentText, { color: isDarkMode ? "#FFD700" : theme.badgeYellowText, fontWeight: "900" }]}>
                           {match}%
                         </Text>
-                        <Text style={[styles.matchLabelText, { color: isDarkMode ? "#FFD700" : "#0274BB", fontWeight: "800" }]}>
+                        <Text style={[styles.matchLabelText, { color: isDarkMode ? "#FFD700" : theme.badgeYellowText, fontWeight: "800" }]}>
                           MATCH
                         </Text>
                       </View>
@@ -1495,7 +1581,7 @@ export default function SearchScreen() {
                     />
                   </TouchableOpacity>
 
-                  <View style={[styles.pageNumberBox, { backgroundColor: !isDarkMode ? "#FFF300" : theme.cardBg, borderColor: !isDarkMode ? "#FFF300" : theme.cardBorder }]}>
+                  <View style={[styles.pageNumberBox, { backgroundColor: !isDarkMode ? theme.tabBarActivePill : theme.cardBg, borderColor: !isDarkMode ? theme.badgeYellowBorder : theme.cardBorder }]}>
                     <Text style={[styles.pageNumberText, { color: !isDarkMode ? "#0274BB" : theme.textPrimary, fontWeight: "800" }]}>
                       {currentPage}
                     </Text>

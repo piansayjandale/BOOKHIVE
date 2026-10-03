@@ -248,7 +248,7 @@ export default function BorrowScreen() {
           backgroundColor: theme.cardBg, 
           borderColor: theme.cardBorder,
           borderTopWidth: !isDarkMode ? 3 : 1,
-          borderTopColor: !isDarkMode ? "#FFF300" : theme.cardBorder,
+          borderTopColor: !isDarkMode ? theme.accentGold : theme.cardBorder,
         }
       ]}>
         <Text style={[styles.bookTitle, { color: theme.textPrimary }]}>
@@ -305,7 +305,7 @@ export default function BorrowScreen() {
         style={[styles.uploadButton, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
         onPress={pickImage}
       >
-        <View style={!isDarkMode ? { backgroundColor: "#FFF300", borderRadius: 8, padding: 6, marginRight: 8 } : { marginRight: 8 }}>
+        <View style={!isDarkMode ? { backgroundColor: theme.badgeYellowBg, borderRadius: 8, padding: 6, marginRight: 8, borderWidth: 1, borderColor: theme.badgeYellowBorder } : { marginRight: 8 }}>
           <Ionicons
             name="cloud-upload-outline"
             size={20}
@@ -408,8 +408,8 @@ export default function BorrowScreen() {
         style={[
           styles.button,
           {
-            backgroundColor: isDarkMode ? theme.buttonPrimaryBg : "#FFF300",
-            borderColor: isDarkMode ? theme.buttonPrimaryBorder : "rgba(2, 116, 187, 0.35)",
+            backgroundColor: theme.buttonPrimaryBg,
+            borderColor: isDarkMode ? theme.buttonPrimaryBorder : "rgba(2, 116, 187, 0.25)",
             borderWidth: 1.5,
             minHeight: 56,
             borderRadius: 14,
@@ -431,18 +431,18 @@ export default function BorrowScreen() {
         activeOpacity={0.85}
       >
         {isSubmitting ? (
-          <ActivityIndicator size="small" color="#080F1E" />
+          <ActivityIndicator size="small" color={theme.buttonPrimaryText} />
         ) : (
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center" }}>
             <Ionicons
               name={isBorrow ? "paper-plane" : "bookmark"}
               size={19}
-              color="#080F1E"
+              color={theme.buttonPrimaryText}
               style={{ marginRight: 8 }}
             />
             <Text
               style={{
-                color: "#080F1E",
+                color: theme.buttonPrimaryText,
                 fontWeight: '900',
                 fontSize: 16,
                 letterSpacing: 0.4,

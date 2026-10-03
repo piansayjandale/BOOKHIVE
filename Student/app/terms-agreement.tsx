@@ -110,7 +110,7 @@ export default function TermsAgreementScreen() {
               </Text>
             </View>
 
-            <Text style={[styles.studentIdPill, { color: theme.accentGold }]}>
+            <Text style={[styles.studentIdPill, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
               {user?.studentId || "Student Account"}
             </Text>
           </View>
@@ -127,7 +127,7 @@ export default function TermsAgreementScreen() {
 
         {/* SECTION TITLE */}
         <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: theme.accentGold }]}>
+          <Text style={[styles.sectionTitle, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
             Library Rules & Regulations
           </Text>
         </View>
@@ -159,13 +159,13 @@ export default function TermsAgreementScreen() {
                   <View
                     style={[
                       styles.termIconWrap,
-                      { backgroundColor: isDarkMode ? "#0E1726" : "#F1F5F9" },
+                      { backgroundColor: isDarkMode ? "#0E1726" : "#EFF6FF" },
                     ]}
                   >
                     <Ionicons
                       name={section.icon as any}
                       size={18}
-                      color={theme.accentGold}
+                      color={isDarkMode ? theme.accentGold : theme.accentBlue}
                     />
                   </View>
                   <Text style={[styles.termSectionTitle, { color: theme.textPrimary }]}>
@@ -181,7 +181,7 @@ export default function TermsAgreementScreen() {
                   {section.rules.map((rule, rIdx) => (
                     <View key={`screen-rule-${section.id}-${rIdx}`} style={styles.ruleRow}>
                       <View
-                        style={[styles.ruleBullet, { backgroundColor: theme.accentGold }]}
+                        style={[styles.ruleBullet, { backgroundColor: isDarkMode ? theme.accentGold : "#FCD400" }]}
                       />
                       <Text style={[styles.ruleText, { color: theme.textPrimary }]}>
                         {rule}
@@ -195,8 +195,8 @@ export default function TermsAgreementScreen() {
         </View>
 
         {/* NOTICE */}
-        <View style={[styles.footerNotice, { borderColor: theme.cardBorder }]}>
-          <Ionicons name="information-circle-outline" size={18} color={theme.accentGold} />
+        <View style={[styles.footerNotice, { borderColor: theme.cardBorder, backgroundColor: isDarkMode ? "transparent" : "#F0F7FF" }]}>
+          <Ionicons name="information-circle-outline" size={18} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
           <Text style={[styles.footerNoticeText, { color: theme.textSecondary }]}>
             Policies and penalty schedules are subject to university guidelines. For appeals or inquiries, contact the Library Administration or Super Administrator.
           </Text>
@@ -204,11 +204,11 @@ export default function TermsAgreementScreen() {
 
         {/* BACK BUTTON */}
         <TouchableOpacity
-          style={[styles.returnButton, { backgroundColor: theme.accentGold }]}
+          style={[styles.returnButton, { backgroundColor: isDarkMode ? theme.accentGold : "#FCD400" }]}
           onPress={() => router.back()}
           activeOpacity={0.8}
         >
-          <Text style={styles.returnButtonText}>Back to Profile</Text>
+          <Text style={[styles.returnButtonText, { color: isDarkMode ? "#080F1E" : "#0B1A2C" }]}>Back to Profile</Text>
         </TouchableOpacity>
       </ScrollView>
     </AnimatedScreen>

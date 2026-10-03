@@ -384,9 +384,9 @@ export function RecordsPage() {
                         className={cn(
                           "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
                           tx.type === "Borrow"
-                            ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
-                            : tx.type === "Return"
                             ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                            : tx.type === "Return"
+                            ? "bg-sky-500/15 text-sky-300 border border-sky-500/30"
                             : "bg-violet-500/15 text-violet-300 border border-violet-500/30"
                         )}
                       >

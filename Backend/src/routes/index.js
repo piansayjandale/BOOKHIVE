@@ -29,7 +29,9 @@ apiRouter.get("/trending-books", asyncHandler(async (_req, res) => {
   }
 }));
 apiRouter.get("/transactions", asyncHandler(adminController.listTransactions));
+apiRouter.post("/transactions", asyncHandler(adminController.createTransaction));
 apiRouter.patch("/transactions/:transactionId", asyncHandler(adminController.decideTransaction));
+apiRouter.put("/transactions/:transactionId", asyncHandler(adminController.decideTransaction));
 apiRouter.get("/books", asyncHandler(studentController.getBooks));
 apiRouter.post("/books", asyncHandler(adminController.addBook));
 apiRouter.post("/circulation/borrow", asyncHandler(studentController.borrowBook));

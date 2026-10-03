@@ -315,12 +315,14 @@ export default function ScannedCardScreen() {
   const TOTAL_CARD_ROWS = Math.max(14, libraryCard.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = libraryCard[index];
+    const isReturned = item?.status === "Returned" || item?.status === "Completed";
     return {
       id: item?.id || `empty-row-${index}`,
       borrowDate: item?.borrowDate || "",
       dueReturnDate: item?.dueReturnDate || "",
       bookTitle: item?.bookTitle || "",
       hasData: !!item,
+      isReturned,
     };
   });
 
@@ -756,8 +758,29 @@ export default function ScannedCardScreen() {
                             </Text>
                           </View>
 
-                          <View style={[styles.colDueDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
-                            <Text style={[styles.cellDataText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]} numberOfLines={1}>
+                          <View
+                            style={[
+                              styles.colDueDate,
+                              { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
+                              row.hasData && !row.isReturned && {
+                                backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.cellDataText,
+                                row.hasData && !row.isReturned
+                                  ? {
+                                      color: isDarkMode ? '#86EFAC' : '#064E3B',
+                                      fontWeight: '700',
+                                    }
+                                  : {
+                                      color: isDarkMode ? '#CBD5E1' : '#334155',
+                                    },
+                              ]}
+                              numberOfLines={1}
+                            >
                               {row.dueReturnDate}
                             </Text>
                           </View>
@@ -1326,6 +1349,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRightWidth: 1,
     justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   colBookTitle: {
     flex: 1,
@@ -1352,6 +1376,7 @@ const styles = StyleSheet.create({
   cellDataTitleText: {
     fontSize: 11,
     fontWeight: '600',
+    flexShrink: 1,
   },
 
   /* VIOLATION SECTION */

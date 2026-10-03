@@ -4,8 +4,18 @@ import { eventDispatcher } from "./event-dispatcher.js";
 import { adminModel } from "../models/admin.model.js";
 
 function warnIfNotOffline(label, error) {
-  if (error && error.code !== "DB_OFFLINE" && !error.message?.includes("offline") && !error.message?.includes("password authentication failed") && !error.message?.includes("connect ECONNREFUSED")) {
-    console.warn(label, error.message);
+  const errObj = typeof error === "string" ? { message: error } : (error || {});
+  const msg = (errObj.message || String(error || "")).toLowerCase();
+  const code = errObj.code || "";
+
+  if (
+    code !== "DB_OFFLINE" &&
+    !msg.includes("offline") &&
+    !msg.includes("password authentication failed") &&
+    !msg.includes("connect econnrefused") &&
+    !msg.includes("does not support ssl")
+  ) {
+    console.warn(label, errObj.message || error);
   }
 }
 
@@ -60,7 +70,7 @@ export const reservationTimerService = {
         return tx;
       }
     } catch (error) {
-      warnIfNotOffline("DB activateReservationHold error:", error.message);
+      warnIfNotOffline("DB activateReservationHold error:", error);
     }
     return null;
   },
@@ -92,7 +102,7 @@ export const reservationTimerService = {
         console.log(`[ReservationTimer] No further waitlisted reservations for '${title || isbn}'. Copy released to circulation.`);
       }
     } catch (error) {
-      warnIfNotOffline("DB promoteNextReservation error:", error.message);
+      warnIfNotOffline("DB promoteNextReservation error:", error);
     }
     return null;
   },
@@ -185,7 +195,7 @@ export const reservationTimerService = {
 
       return voidedList;
     } catch (error) {
-      warnIfNotOffline("DB checkAndVoidExpiredReservations error:", error.message);
+      warnIfNotOffline("DB checkAndVoidExpiredReservations error:", error);
       return [];
     }
   },

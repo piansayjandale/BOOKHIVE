@@ -70,18 +70,18 @@ export function CustomSelect({
           buttonClassName || "modal-input",
           "flex items-center justify-between text-left cursor-pointer transition select-none w-full",
           !buttonClassName && (isLight
-            ? "border-slate-300 bg-white text-[#0c1b3a] hover:border-[#0274bb] focus:border-[#0274bb]"
+            ? "border-slate-300 bg-white text-black hover:border-black focus:border-black"
             : "border-white/10 bg-white/5 text-white hover:border-white/20 focus:border-[#FCD400]")
         )}
       >
-        <span className={cn("truncate font-medium", value ? (isLight && !buttonClassName ? "text-[#0c1b3a]" : "text-inherit") : "text-slate-400")}>
+        <span className={cn("truncate font-medium", value ? (isLight && !buttonClassName ? "text-black" : "text-inherit") : "text-slate-500")}>
           {value || placeholder}
         </span>
         <ChevronDown
           className={cn(
             "h-4 w-4 shrink-0 transition-transform duration-200 ml-2",
-            isLight ? "text-slate-500" : "text-slate-400",
-            open && (isLight ? "rotate-180 text-[#0274bb]" : "rotate-180 text-[#FCD400]")
+            isLight ? "text-slate-700" : "text-slate-400",
+            open && (isLight ? "rotate-180 text-black" : "rotate-180 text-[#FCD400]")
           )}
         />
       </button>
@@ -91,7 +91,7 @@ export function CustomSelect({
           className={cn(
             "absolute top-full right-0 z-50 mt-1.5 w-full min-w-[200px] max-h-60 overflow-y-auto rounded-xl p-1.5 shadow-2xl backdrop-blur-md",
             isLight
-              ? "border border-slate-200 bg-white text-slate-800 shadow-slate-400/30"
+              ? "border border-slate-200 bg-white text-black shadow-slate-400/30"
               : "border border-[#2E3F5C] bg-[#0E1A26] text-white shadow-black/90",
             menuClassName
           )}
@@ -111,10 +111,10 @@ export function CustomSelect({
                   "flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition cursor-pointer text-left",
                   isSelected
                     ? (isLight
-                        ? "bg-[#0274bb] text-white font-bold shadow-sm"
+                        ? "bg-black text-white font-bold shadow-sm"
                         : "bg-[#FCD400] text-[#0F1D29] font-bold shadow-sm")
                     : (isLight
-                        ? "text-slate-700 hover:bg-slate-100 hover:text-[#0274bb]"
+                        ? "text-black hover:bg-slate-100 hover:text-black"
                         : "text-slate-200 hover:bg-white/10 hover:text-white")
                 )}
               >

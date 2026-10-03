@@ -41,6 +41,8 @@ import {
   setBooksTabOverride,
   getLibraryPoints,
   saveSearchQuery,
+  setCachedAllBooks,
+  getPersonalizedRecommendedBooks,
 } from "../../data/store";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -189,7 +191,7 @@ function BookCoverImage({
     );
   }
 
-  const { theme } = useThemeColors();
+  const { isDarkMode, theme } = useThemeColors();
 
   return (
     <View
@@ -199,11 +201,44 @@ function BookCoverImage({
         { backgroundColor: theme.bookCoverBg, borderColor: theme.bookCoverBorder },
       ]}
     >
-      <MaterialCommunityIcons
-        name="book-open-page-variant"
-        size={iconSize}
-        color={theme.bookCoverIcon}
+      {/* Decorative top-right gold bookmark ribbon */}
+      <View
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 8,
+          width: 7,
+          height: 13,
+          backgroundColor: isDarkMode ? theme.accentGold : "#FCD400",
+          borderBottomLeftRadius: 3,
+          borderBottomRightRadius: 3,
+        }}
       />
+
+      {/* Yellow highlight container for book icon */}
+      <View
+        style={{
+          width: Math.max(30, iconSize + 12),
+          height: Math.max(30, iconSize + 12),
+          borderRadius: Math.round((iconSize + 12) / 2),
+          backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.18)" : "#FEF08A",
+          borderColor: isDarkMode ? "rgba(255, 215, 0, 0.45)" : "#FDE047",
+          borderWidth: 1.5,
+          justifyContent: "center",
+          alignItems: "center",
+          shadowColor: "#FCD400",
+          shadowOffset: { width: 0, height: 1.5 },
+          shadowOpacity: isDarkMode ? 0.3 : 0.25,
+          shadowRadius: 2.5,
+          elevation: 2,
+        }}
+      >
+        <MaterialCommunityIcons
+          name="book-open-page-variant"
+          size={iconSize}
+          color={isDarkMode ? theme.accentGold : "#0274BB"}
+        />
+      </View>
       {showText && (
         <Text style={[styles.fallbackCoverTitle, { color: theme.textPrimary }]} numberOfLines={2}>
           {title}
@@ -547,7 +582,7 @@ export default function HomeScreen() {
 
       // Fallback/enrich with local books catalog
       if (mappedBooks.length === 0 && Array.isArray(localBooks) && localBooks.length > 0) {
-        mappedBooks = localBooks.map((book: any, idx: number) => {
+        mappedBooks = localBooks.slice(0, 100).map((book: any, idx: number) => {
           const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
           const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
           const dept = book.department || "General";
@@ -570,6 +605,7 @@ export default function HomeScreen() {
       }
 
       setAllBooks(mappedBooks);
+      setCachedAllBooks(mappedBooks);
       // New arrivals tab includes all newly added books into the system
       setNewArrivals(mappedBooks);
 
@@ -608,7 +644,7 @@ export default function HomeScreen() {
     } catch (error) {
       console.log("Error fetching books payload, using catalog fallback:", error);
       if (Array.isArray(localBooks) && localBooks.length > 0) {
-        const fallback = localBooks.map((book: any, idx: number) => {
+        const fallback = localBooks.slice(0, 100).map((book: any, idx: number) => {
           const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
           const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
           const dept = book.department || "General";
@@ -629,6 +665,7 @@ export default function HomeScreen() {
           };
         });
         setAllBooks(fallback);
+        setCachedAllBooks(fallback);
         setNewArrivals(fallback);
         setTrendingBooks(fallback.slice(0, 5));
       }
@@ -660,9 +697,10 @@ export default function HomeScreen() {
       return (newArrivals.length > 0 ? newArrivals : allBooks).slice(0, 20);
     }
 
-    if (nameLower === "recommended books") {
-      const highRated = allBooks.filter((b) => Number(b.rating) >= 4.5);
-      return highRated.length > 0 ? highRated.slice(0, 8) : allBooks.slice(0, 8);
+    if (nameLower === "recommended books" || nameLower === "recommended") {
+      return getPersonalizedRecommendedBooks(allBooks, 8, {
+        userCourse: user?.course || user?.department,
+      });
     }
 
     if (nameLower === "circulation") {
@@ -734,9 +772,9 @@ export default function HomeScreen() {
     ];
     baseWords.forEach(w => wordsSet.add(w));
     
-    // Add words from local catalog
+    // Add words from local catalog (sample 500 books for instant speed)
     if (Array.isArray(localBooks)) {
-      localBooks.forEach(book => {
+      localBooks.slice(0, 500).forEach(book => {
         if (book.title) {
           book.title.split(/[^a-zA-Z0-9+#]+/).forEach((w: string) => {
             if (w.length > 2) {
@@ -977,7 +1015,7 @@ export default function HomeScreen() {
             <Ionicons
               name="bookmark"
               size={17}
-              color={isDarkMode ? theme.accentGold : "#FFF300"}
+              color={isDarkMode ? theme.accentGold : "#FCD400"}
             />
             <Text style={[styles.headerTitle, { color: theme.headerTitle }]}>
               BookHive Monitor
@@ -1115,7 +1153,7 @@ export default function HomeScreen() {
                   onPress={() => handleHomeSearchSubmit()}
                   activeOpacity={0.8}
                   style={{
-                    backgroundColor: isDarkMode ? theme.accentGold : "#FFF300",
+                    backgroundColor: isDarkMode ? theme.accentGold : theme.buttonPrimaryBg,
                     paddingHorizontal: 9,
                     paddingVertical: 4.5,
                     borderRadius: 12,
@@ -1125,7 +1163,7 @@ export default function HomeScreen() {
                   }}
                 >
                   <Text style={{
-                    color: isDarkMode ? "#090D16" : "#0274BB",
+                    color: isDarkMode ? "#090D16" : theme.buttonPrimaryText,
                     fontSize: 10.5,
                     fontWeight: "800",
                     letterSpacing: 0.3,
@@ -1202,14 +1240,14 @@ export default function HomeScreen() {
             {
               backgroundColor: theme.cardBg,
               borderColor: theme.cardBorder,
-              borderTopColor: isDarkMode ? theme.cardBorder : "#FFF300",
+              borderTopColor: isDarkMode ? theme.cardBorder : theme.accentGold,
               borderTopWidth: isDarkMode ? 1 : 2.5,
             }
           ]}>
             <View style={styles.newStatHeader}>
               <View style={[
                 styles.statIconBadge,
-                { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : "#FFF300" }
+                { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg }
               ]}>
                 <MaterialCommunityIcons name="qrcode-scan" size={14} color={isDarkMode ? theme.accentGold : "#0274BB"} />
               </View>
@@ -1229,7 +1267,7 @@ export default function HomeScreen() {
                 width: 24,
                 height: 24,
                 borderRadius: 7,
-                backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : "#FFF300",
+                backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg,
                 justifyContent: "center",
                 alignItems: "center"
               }}>
@@ -1361,15 +1399,15 @@ export default function HomeScreen() {
                       <View style={[
                         styles.carouselCategoryBadge,
                         {
-                          backgroundColor: isDarkMode ? theme.badgeCategoryBg : "#FFF300",
-                          borderColor: isDarkMode ? "transparent" : "#FFF300",
+                          backgroundColor: theme.badgeCategoryBg,
+                          borderColor: isDarkMode ? "transparent" : theme.badgeCategoryBorder,
                           borderWidth: isDarkMode ? 0 : 1,
                         }
                       ]}>
                         <Text style={[
                           styles.carouselCategoryText,
                           {
-                            color: isDarkMode ? theme.badgeCategoryText : "#0274BB",
+                            color: theme.badgeCategoryText,
                             fontWeight: "800",
                           }
                         ]}>
@@ -1397,7 +1435,7 @@ export default function HomeScreen() {
                         ? [
                             styles.paginationDotActive,
                             {
-                              backgroundColor: isDarkMode ? theme.accentGold : "#FFF300",
+                              backgroundColor: isDarkMode ? theme.accentGold : theme.accentGold,
                               borderColor: isDarkMode ? "transparent" : "#0274BB",
                               borderWidth: isDarkMode ? 0 : 1.5,
                               width: 18,
@@ -1429,7 +1467,7 @@ export default function HomeScreen() {
 
           return (
             <View key={cIndex} style={styles.categorySection}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 20, marginBottom: 4 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 20, marginBottom: 6 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                   <Text style={[styles.sectionTitle, { color: theme.sectionTitle, fontSize: 16 }]}>
                     {categoryTitle}
@@ -1437,8 +1475,8 @@ export default function HomeScreen() {
                   {categoryTitle === "New Arrivals" && (
                     <View
                       style={{
-                        backgroundColor: isDarkMode ? "rgba(252, 212, 0, 0.15)" : "#FFF300",
-                        borderColor: isDarkMode ? "rgba(252, 212, 0, 0.4)" : "#FFF300",
+                        backgroundColor: theme.badgeYellowBg,
+                        borderColor: theme.badgeYellowBorder,
                         borderWidth: 1,
                         borderRadius: 6,
                         paddingHorizontal: 6,
@@ -1447,7 +1485,7 @@ export default function HomeScreen() {
                     >
                       <Text
                         style={{
-                          color: isDarkMode ? theme.accentGold : "#0274BB",
+                          color: theme.badgeYellowText,
                           fontSize: 9,
                           fontWeight: "800",
                           fontFamily: "monospace",
@@ -1461,8 +1499,8 @@ export default function HomeScreen() {
                   {categoryTitle === "Recommended Books" && (
                     <View
                       style={{
-                        backgroundColor: isDarkMode ? "rgba(252, 212, 0, 0.15)" : "#FFF300",
-                        borderColor: isDarkMode ? "rgba(252, 212, 0, 0.4)" : "#FFF300",
+                        backgroundColor: theme.badgeYellowBg,
+                        borderColor: theme.badgeYellowBorder,
                         borderWidth: 1,
                         borderRadius: 6,
                         paddingHorizontal: 6,
@@ -1472,10 +1510,10 @@ export default function HomeScreen() {
                         gap: 3,
                       }}
                     >
-                      <Ionicons name="star" size={8} color={isDarkMode ? theme.accentGold : "#0274BB"} />
+                      <Ionicons name="star" size={8} color={theme.badgeYellowText} />
                       <Text
                         style={{
-                          color: isDarkMode ? theme.accentGold : "#0274BB",
+                          color: theme.badgeYellowText,
                           fontSize: 9,
                           fontWeight: "800",
                           fontFamily: "monospace",
@@ -1487,6 +1525,43 @@ export default function HomeScreen() {
                     </View>
                   )}
                 </View>
+
+                {/* SEE ALL HEADER BUTTON */}
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/department-books",
+                      params: { department: categoryTitle },
+                    })
+                  }
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 3,
+                    paddingHorizontal: 8,
+                    paddingVertical: 3.5,
+                    borderRadius: 12,
+                    backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.12)" : theme.badgeYellowBg,
+                    borderWidth: 1,
+                    borderColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : theme.badgeYellowBorder,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "800",
+                      color: isDarkMode ? theme.accentGold : "#0274BB",
+                    }}
+                  >
+                    See All
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={12}
+                    color={isDarkMode ? theme.accentGold : "#0274BB"}
+                  />
+                </TouchableOpacity>
               </View>
               {isLoadingBooks ? (
                 <View style={styles.categoryLoadingBox}>
@@ -1569,7 +1644,7 @@ export default function HomeScreen() {
         style={[
           styles.floatingButton,
           {
-            backgroundColor: isDarkMode ? theme.accentGold : "#FFF300",
+            backgroundColor: isDarkMode ? theme.accentGold : theme.accentYellow,
             shadowColor: isDarkMode ? theme.accentGold : "#0274BB",
             borderWidth: isDarkMode ? 0 : 1.5,
             borderColor: isDarkMode ? "transparent" : "rgba(2, 116, 187, 0.25)",

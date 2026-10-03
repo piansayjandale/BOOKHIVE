@@ -32,6 +32,7 @@ export type ReservationBook = {
   availableAt?: string;
   expiresAt?: string;
   claimDeadlineRemainingSeconds?: number;
+  isReturned?: boolean;
 };
 
 
@@ -115,6 +116,41 @@ export const resetProfileCache = (user?: Partial<UserProfile>) => {
 let cachedReservations: ReservationBook[] = [];
 let cachedHistory: ReservationBook[] = [];
 let cachedNotifications: NotificationItem[] = [];
+
+export const deduplicateNotifications = (list: NotificationItem[]): NotificationItem[] => {
+  if (!Array.isArray(list)) return [];
+  const seenContentKeys = new Set<string>();
+  const seenIds = new Set<string>();
+  const result: NotificationItem[] = [];
+
+  for (const item of list) {
+    if (!item) continue;
+    const title = (item.title || "").trim();
+    const body = (item.body || "").trim();
+
+    // 1. Purge corrupted notifications containing "undefined"
+    if (body.toLowerCase().includes("undefined") || title.toLowerCase().includes("undefined")) {
+      continue;
+    }
+
+    // 2. Strict content deduplication: normalize title and body
+    const contentKey = `${title.toLowerCase()}|||${body.toLowerCase()}`;
+    const idKey = item.id ? String(item.id).trim().toLowerCase() : "";
+
+    if (idKey && seenIds.has(idKey)) {
+      continue;
+    }
+    if (seenContentKeys.has(contentKey)) {
+      continue;
+    }
+
+    if (idKey) seenIds.add(idKey);
+    seenContentKeys.add(contentKey);
+    result.push(item);
+  }
+
+  return result;
+};
 
 let cachedAnnouncements: AnnouncementItem[] = [];
 
@@ -215,7 +251,9 @@ const loadCacheFromStorage = async () => {
 
     const notificationsStr = await AsyncStorage.getItem("STUDENT_NOTIFICATIONS");
     if (notificationsStr) {
-      cachedNotifications = JSON.parse(notificationsStr);
+      const parsed = JSON.parse(notificationsStr);
+      cachedNotifications = deduplicateNotifications(parsed);
+      AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
     }
 
     const announcementsStr = await AsyncStorage.getItem("STUDENT_ANNOUNCEMENTS");
@@ -235,22 +273,28 @@ loadCacheFromStorage();
 socketService.subscribeToTransactionDecided((data) => {
   if (data?.event_type === "RESERVATION_COPY_AVAILABLE" || (data?.title && data.title.includes("Available"))) {
     const bookTitle = data.bookData?.title || data.resourceTitle || data.title || "your reserved book";
-    const newNotif: NotificationItem = {
-      id: `avail-socket-${data.entity_id || Date.now()}`,
-      title: "Reserved Book Available",
-      body: data.message || `Good news! A copy of '${bookTitle}' is now available for borrowing.`,
-      timestamp: "Just now",
-      read: false,
-      type: "reservation",
-      bookData: data.bookData || {
-        title: bookTitle,
-        available: "true",
-      },
-    };
+    const stableId = `avail-socket-${data.entity_id || data.id || bookTitle}`;
+    const notifTitle = "Reserved Book Available";
+    const notifBody = data.message || `Good news! A copy of '${bookTitle}' is now available for borrowing.`;
+    const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
+
     // Avoid duplicate socket notification if already added
-    const exists = cachedNotifications.some(n => n.id === newNotif.id);
+    const exists = cachedNotifications.some(n => n.id === stableId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey);
     if (!exists) {
+      const newNotif: NotificationItem = {
+        id: stableId,
+        title: notifTitle,
+        body: notifBody,
+        timestamp: "Just now",
+        read: false,
+        type: "reservation",
+        bookData: data.bookData || {
+          title: bookTitle,
+          available: "true",
+        },
+      };
       cachedNotifications.unshift(newNotif);
+      cachedNotifications = deduplicateNotifications(cachedNotifications);
       AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
       void syncTransactionsWithBackend(true);
       notify();
@@ -262,22 +306,63 @@ socketService.subscribeToTransactionDecided((data) => {
 socketService.subscribeToAnnouncementPublished((data) => {
   void syncAnnouncementsWithBackend(true);
   if (data && data.title) {
-    const annId = `ann-${data.id || Date.now()}`;
-    const exists = cachedNotifications.some((n) => n.id === annId);
+    const annId = `ann-${data.id || data.title}`;
+    const notifTitle = `📢 Announcement: ${data.title}`;
+    const notifBody = data.content || "A new library announcement has been posted.";
+    const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
+
+    const exists = cachedNotifications.some((n) => n.id === annId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey);
     if (!exists) {
       const newNotif: NotificationItem = {
         id: annId,
-        title: `📢 Announcement: ${data.title}`,
-        body: data.content || "A new library announcement has been posted.",
+        title: notifTitle,
+        body: notifBody,
         timestamp: "Just now",
         read: false,
         type: "announcement",
       };
       cachedNotifications.unshift(newNotif);
+      cachedNotifications = deduplicateNotifications(cachedNotifications);
       AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
       notify();
     }
   }
+});
+
+// Real-time book returned listener: marks book as returned in history and updates library card in real-time
+socketService.subscribeToReturn((data) => {
+  const returnedId = data?.id || data?.transactionId || data?.bookId;
+  let changed = false;
+
+  if (returnedId) {
+    cachedHistory = cachedHistory.map((item) => {
+      if (item.id === returnedId || String(item.id).toLowerCase() === String(returnedId).toLowerCase()) {
+        changed = true;
+        return {
+          ...item,
+          status: "Completed",
+          isReturned: true,
+          date: "Returned",
+          returnDate: data?.returnedAt ? new Date(data.returnedAt).toISOString().split('T')[0] : (item.returnDate || new Date().toISOString().split('T')[0]),
+        };
+      }
+      return item;
+    });
+
+    const prevReservationsLen = cachedReservations.length;
+    cachedReservations = cachedReservations.filter((item) => item.id !== returnedId && String(item.id).toLowerCase() !== String(returnedId).toLowerCase());
+    if (prevReservationsLen !== cachedReservations.length) {
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    AsyncStorage.setItem("STUDENT_HISTORY", JSON.stringify(cachedHistory)).catch(() => {});
+    AsyncStorage.setItem("STUDENT_RESERVATIONS", JSON.stringify(cachedReservations)).catch(() => {});
+    notify();
+  }
+
+  void syncTransactionsWithBackend(true);
 });
 
 // Throttling mechanism to prevent infinite API render-fetch loops
@@ -362,8 +447,8 @@ export const syncTransactionsWithBackend = async (force = false) => {
       const dbHistory = response.data.history;
 
       const mappedList: ReservationBook[] = dbHistory.map((tx: any) => {
-        const isTxReturned = tx.status === 'Returned';
-        const isTxApproved = tx.status === 'Approved';
+        const isTxReturned = tx.status === 'Returned' || tx.status === 'Completed';
+        const isTxApproved = tx.status === 'Approved' || tx.status === 'On Loan';
         
         let displayStatus = "Upcoming";
         if (isTxReturned) {
@@ -389,6 +474,7 @@ export const syncTransactionsWithBackend = async (force = false) => {
           category: tx.category || "CS",
           date: isTxReturned ? "Returned" : (tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : 'Pending'),
           status: displayStatus,
+          isReturned: isTxReturned,
           pickupDate: tx.requestedAt ? formatBorrowDateTime(tx.requestedAt) : undefined,
           returnDate: tx.returnedAt ? new Date(tx.returnedAt).toISOString().split('T')[0] : (tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : undefined),
           queuePosition: tx.queuePosition ? String(tx.queuePosition) : undefined,
@@ -449,6 +535,38 @@ export const getReservationHistory = () => {
 export const getBorrowedBooks = () => {
   syncTransactionsWithBackend();
   return cachedReservations.filter((item) => item.status === "Approved");
+};
+
+// Returns complete library card records (both active borrowed books and returned history) so books never disappear
+export const getLibraryCardHistory = (): ReservationBook[] => {
+  syncTransactionsWithBackend();
+  const seenIds = new Set<string>();
+  const list: ReservationBook[] = [];
+
+  // 1. All borrow records from cachedHistory (both approved/borrowed and completed/returned)
+  for (const item of cachedHistory) {
+    const isBorrowRecord =
+      item.action === 'Borrow' ||
+      item.status === 'Approved' ||
+      item.status === 'Completed' ||
+      item.isReturned === true ||
+      item.date === 'Returned';
+
+    if (isBorrowRecord && !seenIds.has(item.id)) {
+      seenIds.add(item.id);
+      list.push(item);
+    }
+  }
+
+  // 2. Any active approved borrowed books in cachedReservations
+  for (const item of cachedReservations) {
+    if (item.status === 'Approved' && item.action !== 'Reserve' && !seenIds.has(item.id)) {
+      seenIds.add(item.id);
+      list.push(item);
+    }
+  }
+
+  return list;
 };
 
 // Mutations
@@ -722,27 +840,35 @@ export const syncNotifications = async (force = false) => {
               body = `You have successfully returned '${tx.resourceTitle || tx.title || "Unknown Book"}'.`;
             }
 
-            const newNotif: NotificationItem = {
-              id: `tx-${tx.id}-${tx.status}-${Date.now()}`,
-              title,
-              body,
-              timestamp: "Just now",
-              read: false,
-              type: "reservation",
-              bookData: {
-                id: tx.bookId,
-                title: tx.title,
-                author: tx.author,
-                description: tx.description || "No description available.",
-                year: tx.year || "2024",
-                pages: tx.pages || "320",
-                language: tx.language || "EN",
-                category: tx.category || "CS",
-                available: String(tx.available === "Available" || tx.available === "true" || tx.available === true),
-                shelf: tx.shelf || "Shelf A-102, 2nd Floor",
-              }
-            };
-            cachedNotifications.unshift(newNotif);
+            const stableId = `tx-${tx.id}-${tx.status}`;
+            const contentKey = `${title.toLowerCase()}|||${body.toLowerCase()}`;
+            const alreadyExists = cachedNotifications.some(
+              (n) => n.id === stableId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey
+            );
+
+            if (!alreadyExists) {
+              const newNotif: NotificationItem = {
+                id: stableId,
+                title,
+                body,
+                timestamp: "Just now",
+                read: false,
+                type: "reservation",
+                bookData: {
+                  id: tx.bookId,
+                  title: tx.title,
+                  author: tx.author,
+                  description: tx.description || "No description available.",
+                  year: tx.year || "2024",
+                  pages: tx.pages || "320",
+                  language: tx.language || "EN",
+                  category: tx.category || "CS",
+                  available: String(tx.available === "Available" || tx.available === "true" || tx.available === true),
+                  shelf: tx.shelf || "Shelf A-102, 2nd Floor",
+                }
+              };
+              cachedNotifications.unshift(newNotif);
+            }
           }
         }
 
@@ -754,27 +880,38 @@ export const syncNotifications = async (force = false) => {
             availCache[cacheKey] = true;
             availUpdated = true;
 
-            const newNotif: NotificationItem = {
-              id: `avail-${tx.id}-${Date.now()}`,
-              title: "Reserved Book Available",
-              body: `Good news! A copy of '${tx.resourceTitle || tx.title || "Unknown Book"}' is now available. Tap to borrow.`,
-              timestamp: "Just now",
-              read: false,
-              type: "reservation",
-              bookData: {
-                id: tx.bookId,
-                title: tx.title,
-                author: tx.author,
-                description: tx.description || "No description available.",
-                year: tx.year || "2024",
-                pages: tx.pages || "320",
-                language: tx.language || "EN",
-                category: tx.category || "CS",
-                available: "true",
-                shelf: tx.shelf || "Shelf A-102, 2nd Floor",
-              }
-            };
-            cachedNotifications.unshift(newNotif);
+            const stableId = `avail-${tx.id}`;
+            const notifTitle = "Reserved Book Available";
+            const notifBody = `Good news! A copy of '${tx.resourceTitle || tx.title || "Unknown Book"}' is now available. Tap to borrow.`;
+            const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
+
+            const alreadyExists = cachedNotifications.some(
+              (n) => n.id === stableId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey
+            );
+
+            if (!alreadyExists) {
+              const newNotif: NotificationItem = {
+                id: stableId,
+                title: notifTitle,
+                body: notifBody,
+                timestamp: "Just now",
+                read: false,
+                type: "reservation",
+                bookData: {
+                  id: tx.bookId,
+                  title: tx.title,
+                  author: tx.author,
+                  description: tx.description || "No description available.",
+                  year: tx.year || "2024",
+                  pages: tx.pages || "320",
+                  language: tx.language || "EN",
+                  category: tx.category || "CS",
+                  available: "true",
+                  shelf: tx.shelf || "Shelf A-102, 2nd Floor",
+                }
+              };
+              cachedNotifications.unshift(newNotif);
+            }
           }
         }
       }
@@ -786,6 +923,7 @@ export const syncNotifications = async (force = false) => {
         if (availUpdated) {
           await AsyncStorage.setItem("NOTIFIED_AVAILABLE_BOOKS", JSON.stringify(availCache));
         }
+        cachedNotifications = deduplicateNotifications(cachedNotifications);
         await AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications));
         notify();
       }
@@ -806,32 +944,44 @@ export const syncNotifications = async (force = false) => {
           bookCache[book.id] = true;
           updated = true;
 
-          const newNotif: NotificationItem = {
-            id: `book-${book.id}-${Date.now()}`,
-            title: "New Added Book",
-            body: `'${book.title}' by ${book.author} has been newly added to the catalog.`,
-            timestamp: "Just now",
-            read: false,
-            type: "general",
-            bookData: {
-              id: book.id,
-              title: book.title,
-              author: book.author,
-              description: book.description || "No description available.",
-              year: book.publicationYear || "2024",
-              pages: book.pages || "320",
-              language: book.language || "EN",
-              category: book.category || "CS",
-              available: String(book.status === "Available" || book.availability === "Available"),
-              shelf: book.shelfLocation || "Shelf A-102, 2nd Floor",
-            }
-          };
-          cachedNotifications.unshift(newNotif);
+          const stableId = `book-${book.id}`;
+          const notifTitle = "New Added Book";
+          const notifBody = `'${book.title}' by ${book.author} has been newly added to the catalog.`;
+          const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
+
+          const alreadyExists = cachedNotifications.some(
+            (n) => n.id === stableId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey
+          );
+
+          if (!alreadyExists) {
+            const newNotif: NotificationItem = {
+              id: stableId,
+              title: notifTitle,
+              body: notifBody,
+              timestamp: "Just now",
+              read: false,
+              type: "general",
+              bookData: {
+                id: book.id,
+                title: book.title,
+                author: book.author,
+                description: book.description || "No description available.",
+                year: book.publicationYear || "2024",
+                pages: book.pages || "320",
+                language: book.language || "EN",
+                category: book.category || "CS",
+                available: String(book.status === "Available" || book.availability === "Available"),
+                shelf: book.shelfLocation || "Shelf A-102, 2nd Floor",
+              }
+            };
+            cachedNotifications.unshift(newNotif);
+          }
         }
       }
 
       if (updated) {
         await AsyncStorage.setItem("NOTIFIED_BOOK_IDS", JSON.stringify(bookCache));
+        cachedNotifications = deduplicateNotifications(cachedNotifications);
         await AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications));
         notify();
       }
@@ -844,11 +994,24 @@ export const syncNotifications = async (force = false) => {
 
 export const getNotifications = () => {
   syncNotifications();
+  cachedNotifications = deduplicateNotifications(cachedNotifications);
   return cachedNotifications;
 };
 
 export const addNotification = async (item: NotificationItem) => {
+  if (!item || !item.title || !item.body) return cachedNotifications;
+  if (item.body.includes("undefined") || item.title.includes("undefined")) return cachedNotifications;
+
+  const contentKey = `${item.title.trim().toLowerCase()}|||${item.body.trim().toLowerCase()}`;
+  const alreadyExists = cachedNotifications.some(
+    (n) => n.id === item.id || `${n.title.trim().toLowerCase()}|||${n.body.trim().toLowerCase()}` === contentKey
+  );
+  if (alreadyExists) {
+    return cachedNotifications;
+  }
+
   cachedNotifications.unshift(item);
+  cachedNotifications = deduplicateNotifications(cachedNotifications);
   try {
     await AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications));
   } catch (e) {
@@ -934,7 +1097,14 @@ let cachedLibraryPoints = 0;
 const loadAdditionalCache = async () => {
   try {
     const queriesStr = await AsyncStorage.getItem("SEARCH_QUERIES");
-    if (queriesStr) cachedSearchQueries = JSON.parse(queriesStr);
+    if (queriesStr) {
+      const parsed: string[] = JSON.parse(queriesStr);
+      cachedSearchQueries = parsed.filter((q, idx) => {
+        const qLower = q.toLowerCase();
+        return !parsed.some((other, oIdx) => oIdx !== idx && other.toLowerCase().startsWith(qLower) && other.length > q.length);
+      });
+      AsyncStorage.setItem("SEARCH_QUERIES", JSON.stringify(cachedSearchQueries)).catch(() => {});
+    }
 
     const viewedStr = await AsyncStorage.getItem("VIEWED_BOOKS_HISTORY");
     if (viewedStr) cachedViewedBooks = JSON.parse(viewedStr);
@@ -963,9 +1133,18 @@ export const saveSearchQuery = async (query: string) => {
   const trimmed = query.trim();
   if (!trimmed || trimmed.length <= 1) return;
   
+  const trimmedLower = trimmed.toLowerCase();
+  const cleaned = cachedSearchQueries.filter((q) => {
+    const qLower = q.toLowerCase();
+    if (qLower === trimmedLower) return false;
+    // Prune partial sub-prefixes (e.g. if saving "Brich", remove "Br", "Bri", "Bric")
+    if (trimmedLower.startsWith(qLower) && trimmedLower.length > qLower.length) return false;
+    return true;
+  });
+
   cachedSearchQueries = [
     trimmed,
-    ...cachedSearchQueries.filter((q) => q.toLowerCase() !== trimmed.toLowerCase())
+    ...cleaned
   ].slice(0, 15);
 
   try {
@@ -987,8 +1166,28 @@ export const clearSearchQueries = async () => {
   }
 };
 
+export const removeSearchQuery = async (query: string) => {
+  cachedSearchQueries = cachedSearchQueries.filter((q) => q.toLowerCase() !== query.toLowerCase());
+  try {
+    await AsyncStorage.setItem("SEARCH_QUERIES", JSON.stringify(cachedSearchQueries));
+    notify();
+  } catch (e) {
+    console.log("Error removing search query:", e);
+  }
+};
+
 export const getViewedBooksHistory = () => {
   return cachedViewedBooks;
+};
+
+export const removeViewedBookFromHistory = async (bookId: string) => {
+  cachedViewedBooks = cachedViewedBooks.filter((b) => b.id !== bookId);
+  try {
+    await AsyncStorage.setItem("VIEWED_BOOKS_HISTORY", JSON.stringify(cachedViewedBooks));
+    notify();
+  } catch (e) {
+    console.log("Error removing viewed book from history:", e);
+  }
 };
 
 export const saveBookToViewHistory = async (book: any) => {
@@ -1202,49 +1401,82 @@ socketService.subscribeToBookAdded((bookData: any) => {
   if (!bookData) return;
   addDynamicBook(bookData);
 
-  const newNotif: NotificationItem = {
-    id: `notif-${Date.now()}`,
-    title: "New Book Available!",
-    body: `Technical Librarian added "${bookData.title || 'New Book'}" to the STI Library catalog.`,
-    timestamp: "Just now",
-    read: false,
-    type: "general",
-    bookData: bookData,
-  };
+  const stableId = `book-added-${bookData.id || bookData.isbn || bookData.title || Date.now()}`;
+  const notifTitle = "New Book Available!";
+  const notifBody = `Technical Librarian added "${bookData.title || 'New Book'}" to the STI Library catalog.`;
+  const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
 
-  cachedNotifications.unshift(newNotif);
-  AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
-  notify();
+  const alreadyExists = cachedNotifications.some(
+    (n) => n.id === stableId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey
+  );
+
+  if (!alreadyExists) {
+    const newNotif: NotificationItem = {
+      id: stableId,
+      title: notifTitle,
+      body: notifBody,
+      timestamp: "Just now",
+      read: false,
+      type: "general",
+      bookData: bookData,
+    };
+
+    cachedNotifications.unshift(newNotif);
+    cachedNotifications = deduplicateNotifications(cachedNotifications);
+    AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
+    notify();
+  }
 });
 
 // Subscribe to live Librarian Approval/Declined decision events
-socketService.subscribeToTransactionDecided((txData: any) => {
-  if (!txData) return;
+socketService.subscribeToTransactionDecided((incomingData: any) => {
+  if (!incomingData) return;
 
+  // 1. Unwrap envelope if wrapped (Backend sends { event_type, payload: transaction } or { transaction: ... })
+  const txData = incomingData.payload || incomingData.transaction || incomingData;
+  if (!txData || typeof txData !== "object") return;
+
+  // 2. Validate status - NEVER create notifications for missing or "undefined" status
+  const rawStatus = txData.status || incomingData.status;
+  if (!rawStatus || rawStatus === "undefined" || typeof rawStatus !== "string") {
+    return;
+  }
+  const status = rawStatus.trim();
+
+  // 3. Target verification - MUST be targeted to the logged-in student or match local active items
   const currentStudentId = (cachedProfile.studentId || "").toLowerCase().trim();
   const currentStudentName = (cachedProfile.name || "").toLowerCase().trim();
-  const targetStudentId = (txData.studentId || txData.student_id || "")?.toLowerCase().trim();
-  const targetStudentName = (txData.studentName || txData.student_name || "")?.toLowerCase().trim();
-  const title = txData.resourceTitle || txData.title || "Book";
+  const targetStudentId = (txData.studentId || txData.student_id || incomingData.actor_id || incomingData.studentId || "")?.toLowerCase().trim();
+  const targetStudentName = (txData.studentName || txData.student_name || incomingData.studentName || "")?.toLowerCase().trim();
 
-  const hasMatchingLocalReservation = cachedReservations.some(
-    (r) => r.id === txData.id || (r.title && title && r.title.toLowerCase() === title.toLowerCase())
+  const txId = txData.id || txData._id || incomingData.entity_id;
+  let title = txData.resourceTitle || txData.title;
+
+  const localMatch = cachedReservations.find(
+    (r) => (txId && r.id === txId) || (title && r.title && r.title.toLowerCase() === title.toLowerCase())
+  );
+  const historyMatch = cachedHistory.find(
+    (h) => (txId && h.id === txId) || (title && h.title && h.title.toLowerCase() === title.toLowerCase())
   );
 
-  // If targeted to current user (or matched to local pending item)
-  const isMatch =
-    !targetStudentId ||
-    targetStudentId === currentStudentId ||
-    (targetStudentName && currentStudentName && (targetStudentName.includes(currentStudentName) || currentStudentName.includes(targetStudentName))) ||
-    hasMatchingLocalReservation;
+  const isTargetedToStudent =
+    (targetStudentId && currentStudentId && targetStudentId === currentStudentId) ||
+    (targetStudentName && currentStudentName && (targetStudentName.includes(currentStudentName) || currentStudentName.includes(targetStudentName)));
 
-  if (!isMatch) return;
+  // NEVER accept broadcast events from other students or system telemetry
+  if (!isTargetedToStudent && !localMatch && !historyMatch) {
+    return;
+  }
 
-  const status = txData.status;
+  // Refine title if generic ("Book", "Loan Request Returned", etc.)
+  if (!title || title === "Book" || title.toLowerCase().includes("loan request")) {
+    title = localMatch?.title || historyMatch?.title || (title && !title.toLowerCase().includes("loan request") ? title : "Book");
+  }
+
   const isApproved = status === "Approved";
   const isDeclined = status === "Declined";
   const isReturned = status === "Returned";
-  const type = txData.type || "Reservation";
+  const type = txData.type || localMatch?.action || "Borrow";
 
   let notifTitle = `${type} Update`;
   let notifBody = `Your ${type.toLowerCase()} request for "${title}" has been updated to ${status}.`;
@@ -1261,37 +1493,50 @@ socketService.subscribeToTransactionDecided((txData: any) => {
     notifBody = `You have successfully returned "${title}". Thank you!`;
   }
 
-  const newNotif: NotificationItem = {
-    id: `tx-decided-${txData.id || Date.now()}-${Date.now()}`,
-    title: notifTitle,
-    body: notifBody,
-    timestamp: "Just now",
-    read: false,
-    type: "reservation",
-    bookData: {
-      id: txData.bookId || txData.id,
-      title: title,
-      author: txData.author || "Author",
-      category: txData.department || "Circulation",
-      available: "true",
-      shelf: "Circulation Shelf",
-    },
-  };
+  // 4. Stable Deterministic ID
+  const stableId = `tx-decided-${txId || title}-${status.toLowerCase()}`;
 
-  // Prepend notification
-  cachedNotifications.unshift(newNotif);
-  AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
+  // 5. Strict deduplication check: avoid duplicate notifications
+  const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
+  const alreadyExists = cachedNotifications.some(
+    (n) => n.id === stableId || `${n.title.toLowerCase()}|||${n.body.toLowerCase()}` === contentKey
+  );
+
+  if (!alreadyExists) {
+    const newNotif: NotificationItem = {
+      id: stableId,
+      title: notifTitle,
+      body: notifBody,
+      timestamp: "Just now",
+      read: false,
+      type: "reservation",
+      bookData: {
+        id: txData.bookId || txId || localMatch?.id,
+        title: title,
+        author: txData.author || localMatch?.author || "Author",
+        category: txData.department || localMatch?.category || "Circulation",
+        available: "true",
+        shelf: txData.shelf || localMatch?.shelf || "Circulation Shelf",
+      },
+    };
+
+    cachedNotifications.unshift(newNotif);
+    cachedNotifications = deduplicateNotifications(cachedNotifications);
+    AsyncStorage.setItem("STUDENT_NOTIFICATIONS", JSON.stringify(cachedNotifications)).catch(() => {});
+  }
 
   // Update reservations and history locally
-  if (txData.id) {
+  if (txId) {
     cachedReservations = cachedReservations.map((r) =>
-      r.id === txData.id || r.title === title ? { ...r, status: status } : r
+      r.id === txId || (r.title && title && r.title.toLowerCase() === title.toLowerCase()) ? { ...r, status: status } : r
     );
     if (isDeclined || isReturned) {
-      cachedReservations = cachedReservations.filter((r) => r.id !== txData.id && r.title !== title);
+      cachedReservations = cachedReservations.filter((r) => r.id !== txId && (!title || r.title !== title));
     }
     cachedHistory = cachedHistory.map((h) =>
-      h.id === txData.id || h.title === title ? { ...h, status: status, comment: txData.comment } : h
+      h.id === txId || (h.title && title && h.title.toLowerCase() === title.toLowerCase())
+        ? { ...h, status: status === "Returned" ? "Completed" : status, isReturned: status === "Returned", comment: txData.comment || h.comment }
+        : h
     );
   }
 
@@ -1477,4 +1722,248 @@ export const getTermsAcceptedDate = async (studentIdentifier?: string): Promise<
     return null;
   }
 };
+
+let _cachedAllBooks: any[] = [];
+export const setCachedAllBooks = (books: any[]) => {
+  if (Array.isArray(books)) {
+    _cachedAllBooks = books;
+  }
+};
+
+export const getCachedAllBooks = (): any[] => {
+  return _cachedAllBooks;
+};
+
+const RECOMMEND_STOP_WORDS = new Set([
+  "the", "and", "for", "with", "about", "book", "books", "that", "this",
+  "from", "what", "can", "you", "show", "find", "want", "like", "need",
+  "recommend", "recommendation", "looking", "good", "best", "some", "any",
+  "read", "into", "over", "more", "most", "have", "been", "will", "would",
+  "your", "user", "student", "library", "please", "just", "very", "much"
+]);
+
+export const getPersonalizedRecommendedBooks = (
+  books: any[],
+  maxCount: number = 8,
+  options?: {
+    searchQueries?: string[];
+    borrowedBooks?: any[];
+    userCourse?: string;
+  }
+): any[] => {
+  if (!Array.isArray(books) || books.length === 0) return [];
+
+  const searchQueries = options?.searchQueries || getSearchQueries();
+  const borrowedBooks = options?.borrowedBooks || getLibraryCardHistory();
+  const viewedBooks = getViewedBooksHistory();
+  const favoriteBooks = getFavoriteBooks();
+  const userCourse = (options?.userCourse || cachedProfile?.course || cachedProfile?.department || "").toLowerCase().trim();
+
+  // 1. Compile User Search & Prompt Signals
+  const searchSignals: { phrase: string; tokens: string[]; weight: number }[] = [];
+  searchQueries.forEach((q, idx) => {
+    const raw = (q || "").trim().toLowerCase();
+    if (!raw || raw.length < 2) return;
+    const weight = Math.max(1.0, 3.0 - idx * 0.3); // Recent searches have higher multiplier
+    const tokens = raw
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !RECOMMEND_STOP_WORDS.has(w));
+    searchSignals.push({ phrase: raw, tokens, weight });
+  });
+
+  // 2. Compile Borrowed Books Preferences (Strongest interest signal)
+  const borrowedAuthors = new Map<string, number>();
+  const borrowedCategories = new Map<string, number>();
+  const borrowedKeywords = new Set<string>();
+  const activeBorrowedKeys = new Set<string>();
+
+  borrowedBooks.forEach((b) => {
+    const bId = String(b.id || "").toLowerCase().trim();
+    const bIsbn = String(b.isbn || "").toLowerCase().trim();
+    const bTitle = (b.title || "").toLowerCase().trim();
+    if (bId) activeBorrowedKeys.add(bId);
+    if (bIsbn) activeBorrowedKeys.add(bIsbn);
+    if (bTitle) activeBorrowedKeys.add(bTitle);
+
+    const author = (b.author || "").toLowerCase().trim();
+    if (author && author !== "unknown" && author !== "author") {
+      borrowedAuthors.set(author, (borrowedAuthors.get(author) || 0) + 1);
+    }
+
+    const cat = (b.category || b.department || "").toLowerCase().trim();
+    if (cat) {
+      borrowedCategories.set(cat, (borrowedCategories.get(cat) || 0) + 1);
+    }
+
+    // Extract title keywords from borrowed books
+    const titleTokens = bTitle
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w: string) => w.length > 3 && !RECOMMEND_STOP_WORDS.has(w));
+    titleTokens.forEach((tok: string) => borrowedKeywords.add(tok));
+  });
+
+  // 3. Compile Viewed & Favorited Preferences
+  const interestAuthors = new Set<string>();
+  const interestCategories = new Set<string>();
+  [...viewedBooks, ...favoriteBooks].forEach((b) => {
+    const author = (b.author || "").toLowerCase().trim();
+    if (author) interestAuthors.add(author);
+    const cat = (b.category || b.department || "").toLowerCase().trim();
+    if (cat) interestCategories.add(cat);
+  });
+
+  // 4. Course / Academic Discipline Domain Alignment
+  const courseKeywords: string[] = [];
+  if (
+    userCourse.includes("information technology") ||
+    userCourse.includes("computer") ||
+    userCourse.includes("it") ||
+    userCourse.includes("cs") ||
+    userCourse.includes("cict")
+  ) {
+    courseKeywords.push("computer", "software", "programming", "technology", "data", "web", "algorithm", "network", "python", "java", "code", "cyber", "system", "database", "ai");
+  } else if (
+    userCourse.includes("business") ||
+    userCourse.includes("account") ||
+    userCourse.includes("management") ||
+    userCourse.includes("cba")
+  ) {
+    courseKeywords.push("business", "management", "accounting", "finance", "marketing", "economics", "entrepreneurship", "leadership", "organization");
+  } else if (
+    userCourse.includes("hospitality") ||
+    userCourse.includes("tourism") ||
+    userCourse.includes("hotel") ||
+    userCourse.includes("hrm")
+  ) {
+    courseKeywords.push("hospitality", "tourism", "hotel", "culinary", "service", "food", "travel", "beverage", "resort");
+  } else if (userCourse.includes("engineering")) {
+    courseKeywords.push("engineering", "circuits", "physics", "math", "mechanics", "electrical", "civil", "structural");
+  }
+
+  const hasActivity =
+    searchSignals.length > 0 ||
+    borrowedAuthors.size > 0 ||
+    borrowedCategories.size > 0 ||
+    interestAuthors.size > 0 ||
+    interestCategories.size > 0;
+
+  // 5. Score Each Candidate Book
+  const scored = books.map((book, originalIdx) => {
+    const bId = String(book.id || "").toLowerCase().trim();
+    const bIsbn = String(book.isbn || "").toLowerCase().trim();
+    const bTitle = (book.title || "").toLowerCase().trim();
+    const bAuthor = (book.author || "").toLowerCase().trim();
+    const bCat = (book.category || book.genres || "").toLowerCase().trim();
+    const bDept = (book.department || "").toLowerCase().trim();
+    const bDesc = (book.description || book.summary || "").toLowerCase().trim();
+
+    let score = 0;
+
+    // A. Match against searches and AI prompts
+    for (const s of searchSignals) {
+      if (bTitle === s.phrase) {
+        score += 80 * s.weight;
+      } else if (bTitle.includes(s.phrase)) {
+        score += 60 * s.weight;
+      } else if (bAuthor.includes(s.phrase)) {
+        score += 45 * s.weight;
+      } else if (bCat.includes(s.phrase) || bDept.includes(s.phrase)) {
+        score += 35 * s.weight;
+      }
+
+      let tokenMatches = 0;
+      for (const tok of s.tokens) {
+        if (bTitle.includes(tok)) tokenMatches += 3;
+        else if (bCat.includes(tok) || bDept.includes(tok)) tokenMatches += 2;
+        else if (bDesc.includes(tok)) tokenMatches += 1;
+      }
+      score += tokenMatches * 5 * s.weight;
+    }
+
+    // B. Match against borrowed book preferences
+    for (const [author, count] of borrowedAuthors.entries()) {
+      if (bAuthor.includes(author) || author.includes(bAuthor)) {
+        score += 55 * count;
+      }
+    }
+    for (const [cat, count] of borrowedCategories.entries()) {
+      if (bCat.includes(cat) || cat.includes(bCat) || bDept.includes(cat)) {
+        score += 40 * count;
+      }
+    }
+    for (const tok of borrowedKeywords) {
+      if (bTitle.includes(tok)) {
+        score += 20;
+      }
+    }
+
+    // C. Match against viewed / favorited items
+    for (const author of interestAuthors) {
+      if (bAuthor.includes(author)) score += 25;
+    }
+    for (const cat of interestCategories) {
+      if (bCat.includes(cat)) score += 20;
+    }
+
+    // D. Match against course keywords
+    for (const kw of courseKeywords) {
+      if (bTitle.includes(kw)) score += 22;
+      if (bCat.includes(kw) || bDept.includes(kw)) score += 18;
+      if (bDesc.includes(kw)) score += 8;
+    }
+
+    // E. General rating / quality boost
+    const ratingNum = Number(book.rating) || 0;
+    if (ratingNum > 0) {
+      score += ratingNum * 2.5;
+    }
+
+    // F. Deprioritize books currently already borrowed or reserved so we recommend fresh books
+    if (activeBorrowedKeys.has(bId) || (bIsbn && activeBorrowedKeys.has(bIsbn)) || activeBorrowedKeys.has(bTitle)) {
+      score -= 75;
+    }
+
+    return { book, score, originalIdx };
+  });
+
+  // 6. Sort and Return Recommendations
+  if (hasActivity) {
+    scored.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return a.originalIdx - b.originalIdx;
+    });
+
+    const activeRecommendations = scored.filter((s) => s.score > 0).map((s) => s.book);
+    if (activeRecommendations.length >= Math.min(4, books.length)) {
+      return activeRecommendations.slice(0, maxCount);
+    }
+
+    // If activity matches are fewer than maxCount, backfill with diverse non-duplicate books
+    const seenIds = new Set(activeRecommendations.map((b) => String(b.id || b.title)));
+    for (const s of scored) {
+      const key = String(s.book.id || s.book.title);
+      if (!seenIds.has(key)) {
+        seenIds.add(key);
+        activeRecommendations.push(s.book);
+        if (activeRecommendations.length >= maxCount) break;
+      }
+    }
+    return activeRecommendations.slice(0, maxCount);
+  }
+
+  // Cold Start (No search or borrow history yet):
+  // Sort by course alignment + rating, and ensure we do NOT simply duplicate the first items of circulation!
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    // Interleave diverse indices across the collection
+    const idxA = (a.originalIdx * 7 + 3) % books.length;
+    const idxB = (b.originalIdx * 7 + 3) % books.length;
+    return idxA - idxB;
+  });
+
+  return scored.map((s) => s.book).slice(0, maxCount);
+};
+
 

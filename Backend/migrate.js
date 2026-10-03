@@ -47,7 +47,9 @@ async function migrate() {
 
     await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS student_id_image TEXT");
     await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS comment TEXT");
-    console.log("✓ Verified columns: transactions (student_id_image, comment)");
+    await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ");
+    await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ");
+    console.log("✓ Verified columns: transactions (student_id_image, comment, available_at, expires_at)");
 
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS qr_code UUID UNIQUE DEFAULT gen_random_uuid()");

@@ -1,6 +1,16 @@
 function warnIfNotOffline(label, error) {
-  if (error && error.code !== "DB_OFFLINE" && !error.message?.includes("offline") && !error.message?.includes("password authentication failed") && !error.message?.includes("connect ECONNREFUSED")) {
-    console.warn(label, error.message);
+  const errObj = typeof error === "string" ? { message: error } : (error || {});
+  const msg = (errObj.message || String(error || "")).toLowerCase();
+  const code = errObj.code || "";
+
+  if (
+    code !== "DB_OFFLINE" &&
+    !msg.includes("offline") &&
+    !msg.includes("password authentication failed") &&
+    !msg.includes("connect econnrefused") &&
+    !msg.includes("does not support ssl")
+  ) {
+    console.warn(label, errObj.message || error);
   }
 }
 
@@ -1752,7 +1762,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
             t.decided_at AS "decidedAt"
           FROM transactions t
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
-            AND t.type = 'Borrow'
+            AND (t.type::text = 'Borrow' OR t.type::text = 'Borrowing' OR t.type IS NULL)
           ORDER BY t.requested_at DESC
         `;
         const { rows: txRows } = await pool.query(txSql, [String(student.id), String(student.idNumber)]);

@@ -470,6 +470,24 @@ export default function BookDetailsScreen() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleBack = useCallback(() => {
+    if (params.from === "notifications" || String(params.from) === "notifications") {
+      router.replace("/notifications");
+      return;
+    }
+
+    if (params.from === "department" || String(params.from) === "department") {
+      const targetDept =
+        (params.fromDepartment as string) ||
+        (params.department as string) ||
+        (params.category as string) ||
+        "Circulation";
+      router.replace({
+        pathname: "/department-books",
+        params: { department: targetDept },
+      });
+      return;
+    }
+
     if (params.from === "search") {
       if (router.canGoBack()) {
         router.back();
@@ -502,7 +520,7 @@ export default function BookDetailsScreen() {
     } else {
       router.replace("/(tabs)");
     }
-  }, [params.from, router]);
+  }, [params.from, params.fromDepartment, params.department, params.category, router]);
 
   useEffect(() => {
     const onBackPress = () => {
@@ -584,14 +602,16 @@ export default function BookDetailsScreen() {
     }
   };
 
-  const detailBoxBg = isDarkMode ? "rgba(255, 214, 0, 0.12)" : "#FFF300";
-  const detailBoxBorder = isDarkMode ? "rgba(255, 214, 0, 0.2)" : "#FFF300";
+  const detailBoxBg = isDarkMode ? "rgba(255, 214, 0, 0.12)" : "#E0F2FE";
+  const detailBoxBorder = isDarkMode ? "rgba(255, 214, 0, 0.2)" : "rgba(2, 116, 187, 0.22)";
   const detailBoxIconColor = isDarkMode ? "#FFD700" : "#0274BB";
+  const detailCardBorder = isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.16)";
+  const detailLabelColor = isDarkMode ? theme.textSecondary : "#0274BB";
 
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
       {/* HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top, height: 70 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
+      <View style={[styles.header, { paddingTop: insets.top, height: 70 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: isDarkMode ? theme.headerBorder : "rgba(2, 116, 187, 0.12)" }]}>
         <TouchableOpacity
           onPress={handleBack}
           activeOpacity={0.7}
@@ -603,12 +623,18 @@ export default function BookDetailsScreen() {
           />
         </TouchableOpacity>
 
-        <Text style={[styles.logo, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
+        <Text style={[styles.logo, { color: isDarkMode ? theme.accentGold : theme.accentBlue, fontWeight: "900" }]}>
           BOOKHIVE
         </Text>
 
         <TouchableOpacity onPress={toggleFav} activeOpacity={0.7}>
-          <View style={!isDarkMode ? { backgroundColor: "#FFF300", borderRadius: 8, padding: 5 } : undefined}>
+          <View style={{
+            backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.12)" : "#E0F2FE",
+            borderRadius: 10,
+            padding: 6,
+            borderWidth: 1,
+            borderColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : "rgba(2, 116, 187, 0.25)",
+          }}>
             <Ionicons
               name={isFav ? "bookmark" : "bookmark-outline"}
               size={20}
@@ -627,7 +653,20 @@ export default function BookDetailsScreen() {
         }}
       >
         {/* BOOK CARD */}
-        <View style={[styles.card, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+        <View style={[
+          styles.card,
+          {
+            backgroundColor: theme.cardBg,
+            borderColor: theme.cardBorder,
+            ...(!isDarkMode && {
+              shadowColor: "#0274BB",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.08,
+              shadowRadius: 12,
+              elevation: 3,
+            }),
+          }
+        ]}>
           <View style={styles.titleRow}>
             <View style={{ flex: 1 }}>
               <Text
@@ -700,8 +739,14 @@ export default function BookDetailsScreen() {
               )}
 
               {params.matchPercent !== undefined && Number(params.matchPercent) > 0 && (
-                <View style={styles.matchBadge}>
-                  <Text style={styles.matchText}>
+                <View style={[
+                  styles.matchBadge,
+                  !isDarkMode && {
+                    backgroundColor: "#E0F2FE",
+                    borderColor: "rgba(2, 116, 187, 0.3)",
+                  }
+                ]}>
+                  <Text style={[styles.matchText, !isDarkMode && { color: "#0274BB" }]}>
                     {params.matchPercent}% MATCH
                   </Text>
                 </View>
@@ -712,15 +757,15 @@ export default function BookDetailsScreen() {
 
 
           {/* COPY INVENTORY & AVAILABILITY */}
-          <View style={[styles.inventoryBox, { backgroundColor: isDarkMode ? "#0A1322" : "#F8FAFC", borderColor: isDarkMode ? "rgba(255, 214, 0, 0.2)" : theme.cardBorder }]}>
+          <View style={[styles.inventoryBox, { backgroundColor: isDarkMode ? "#0A1322" : "#F0F7FF", borderColor: isDarkMode ? "rgba(255, 214, 0, 0.2)" : "rgba(2, 116, 187, 0.2)" }]}>
             <View style={styles.inventoryHeader}>
               <View style={styles.inventoryHeaderLeft}>
-                <View style={[styles.inventoryHeaderIcon, !isDarkMode && { backgroundColor: "#FFF300", borderColor: "#FFF300" }]}>
+                <View style={[styles.inventoryHeaderIcon, { backgroundColor: isDarkMode ? "rgba(255, 214, 0, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "rgba(255, 214, 0, 0.3)" : "rgba(2, 116, 187, 0.25)", borderWidth: 1 }]}>
                   <Ionicons name="book" size={13} color={isDarkMode ? "#FFD700" : "#0274BB"} />
                 </View>
-                <Text style={[styles.inventoryHeaderText, { color: isDarkMode ? "#FFD700" : theme.accentBlue }]}>COPY INVENTORY & AVAILABILITY</Text>
+                <Text style={[styles.inventoryHeaderText, { color: isDarkMode ? "#FFD700" : "#0274BB" }]}>COPY INVENTORY & AVAILABILITY</Text>
               </View>
-              <View style={[styles.inventoryHeaderBadge, { backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.06)" : "#FFF300", borderColor: isDarkMode ? theme.cardBorder : "#FFF300" }]}>
+              <View style={[styles.inventoryHeaderBadge, { backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.06)" : "#E0F2FE", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.25)" }]}>
                 <Text style={[styles.inventoryHeaderRightText, { color: isDarkMode ? "rgba(255, 255, 255, 0.9)" : "#0274BB", fontWeight: "800" }]}>
                   {availableCopies} of {totalCopies} Available
                 </Text>
@@ -729,8 +774,8 @@ export default function BookDetailsScreen() {
 
             {/* 4-metric cards */}
             <View style={styles.inventoryCardsRow}>
-              <View style={[styles.inventoryCardPhysical, { backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.3)" : "#FFFFFF", borderColor: theme.cardBorder }]}>
-                <Text style={styles.invCardLabelSlate}>TOTAL PHYSICAL</Text>
+              <View style={[styles.inventoryCardPhysical, { backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.3)" : "#FFFFFF", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.2)" }]}>
+                <Text style={[styles.invCardLabelSlate, !isDarkMode && { color: "#0274BB" }]}>TOTAL PHYSICAL</Text>
                 <Text style={[styles.invCardValueWhite, { color: theme.textPrimary }]}>{totalCopies}</Text>
                 <Text style={styles.invCardSubSlate}>In System</Text>
               </View>
@@ -775,24 +820,24 @@ export default function BookDetailsScreen() {
           {/* 8 Detail Cards (2 per row) */}
           <View style={styles.detailGrid}>
             <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="pricetag-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>ISBN</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>ISBN</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF", fontFamily: "monospace" }]} numberOfLines={2}>
                     {isbn || "978-0132350884"}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="information-circle-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>DEPARTMENT</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>DEPARTMENT</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {departmentParam || "Circulation"}
                   </Text>
@@ -801,24 +846,24 @@ export default function BookDetailsScreen() {
             </View>
 
             <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="bookmark-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>GENRE</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>GENRE</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {category || "General Collection"}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="time-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>CALL NUMBER</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>CALL NUMBER</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF", fontFamily: "monospace" }]} numberOfLines={2}>
                     {shelf || "CIR 101.4 .A01 2026"}
                   </Text>
@@ -827,24 +872,24 @@ export default function BookDetailsScreen() {
             </View>
 
             <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="calendar-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>PUB. DATE</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>PUB. DATE</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {pubDateFormatted || year || "Sep 1, 2026"}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="globe-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>LANGUAGE</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>LANGUAGE</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {language || "English"}
                   </Text>
@@ -853,24 +898,24 @@ export default function BookDetailsScreen() {
             </View>
 
             <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="layers-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>VOLUME</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>VOLUME</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {volume || "Single Volume / None"}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="book-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>EDITION</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>EDITION</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {edition || "Single Edition / None"}
                   </Text>
@@ -879,24 +924,24 @@ export default function BookDetailsScreen() {
             </View>
 
             <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="copy-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>COPIES IN SYSTEM</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>COPIES IN SYSTEM</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
                     {String(totalCopies)}
                   </Text>
                 </View>
               </View>
 
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: theme.cardBorder || "#1E2D4A" }]}>
+              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
                 <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
                   <Ionicons name="sparkles-outline" size={14} color={detailBoxIconColor} />
                 </View>
                 <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: theme.textSecondary || "#94A3B8" }]}>ACCESSION NO.</Text>
+                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>ACCESSION NO.</Text>
                   <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF", fontFamily: "monospace" }]} numberOfLines={2}>
                     {accessionNumber}
                   </Text>
@@ -909,30 +954,30 @@ export default function BookDetailsScreen() {
           <View style={[
             styles.bookCardContainer,
             {
-              backgroundColor: isDarkMode ? "#0A1322" : "#F8FAFC",
-              borderColor: theme.cardBorder,
+              backgroundColor: isDarkMode ? "#0A1322" : "#FFFFFF",
+              borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.2)",
             },
           ]}>
             {/* Header: BOOK CARD */}
             <View style={[
               styles.bookCardHeader,
               {
-                backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.03)" : "rgba(2, 116, 187, 0.04)",
-                borderBottomColor: theme.cardBorder,
+                backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.03)" : "#E0F2FE",
+                borderBottomColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.2)",
               },
             ]}>
-              <Text style={[styles.bookCardHeaderText, { color: isDarkMode ? "#FFFFFF" : theme.accentBlue }]}>BOOK CARD</Text>
+              <Text style={[styles.bookCardHeaderText, { color: isDarkMode ? "#FFFFFF" : "#0274BB", fontWeight: "900", letterSpacing: 0.8 }]}>BOOK CARD</Text>
             </View>
 
             {/* Subheader: Title of Book */}
             <View style={[
               styles.bookCardTitleRow,
               {
-                backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.2)" : "#FFFFFF",
-                borderBottomColor: theme.cardBorder,
+                backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.2)" : "#F8FAFC",
+                borderBottomColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.12)",
               },
             ]}>
-              <Text style={[styles.bookCardTitleLabel, { color: theme.textSecondary }]}>Title of Book: </Text>
+              <Text style={[styles.bookCardTitleLabel, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>Title of Book: </Text>
               <Text style={[styles.bookCardTitleValue, { color: theme.textPrimary }]} numberOfLines={1}>
                 {title}
               </Text>
@@ -942,15 +987,15 @@ export default function BookDetailsScreen() {
             <View style={[
               styles.bookCardTableHead,
               {
-                backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.04)" : "rgba(2, 116, 187, 0.03)",
-                borderBottomColor: theme.cardBorder,
+                backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.04)" : "#F0F7FF",
+                borderBottomColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.15)",
               },
             ]}>
-              <View style={[styles.bookCardColDate, { borderRightColor: theme.cardBorder }]}>
-                <Text style={[styles.bookCardColHeadText, { color: theme.textSecondary }]}>Borrow Date:</Text>
+              <View style={[styles.bookCardColDate, { borderRightColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.15)" }]}>
+                <Text style={[styles.bookCardColHeadText, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>Borrow Date:</Text>
               </View>
               <View style={styles.bookCardColName}>
-                <Text style={[styles.bookCardColHeadText, { color: theme.textSecondary }]}>Borrower’s Name:</Text>
+                <Text style={[styles.bookCardColHeadText, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>Borrower’s Name:</Text>
               </View>
             </View>
 
@@ -1108,9 +1153,9 @@ export default function BookDetailsScreen() {
             <TouchableOpacity
               style={[
                 styles.reserveButton,
-                !isDarkMode && {
-                  backgroundColor: "#FFF300",
-                  borderColor: "rgba(2, 116, 187, 0.25)",
+                {
+                  backgroundColor: theme.buttonPrimaryBg,
+                  borderColor: theme.buttonPrimaryBorder,
                 },
                 isSubmitting && { opacity: 0.6 },
               ]}
@@ -1119,15 +1164,15 @@ export default function BookDetailsScreen() {
               activeOpacity={0.85}
             >
               {isSubmitting ? (
-                <ActivityIndicator size="small" color={isDarkMode ? "#FFFFFF" : "#0274BB"} />
+                <ActivityIndicator size="small" color={theme.buttonPrimaryText} />
               ) : (
                 <>
                   <Ionicons
                     name={isAvailable ? "cart-outline" : "bookmark-outline"}
                     size={18}
-                    color={isDarkMode ? "#FFFFFF" : "#0274BB"}
+                    color={theme.buttonPrimaryText}
                   />
-                  <Text style={[styles.reserveText, !isDarkMode && { color: "#0274BB", fontWeight: "800" }]}>
+                  <Text style={[styles.reserveText, { color: theme.buttonPrimaryText, fontWeight: "800" }]}>
                     {isAvailable ? "Borrow Book" : "Reserve Book (Waitlist)"}
                   </Text>
                 </>
@@ -1167,7 +1212,20 @@ export default function BookDetailsScreen() {
 
         {/* CITATION */}
         <View
-          style={[styles.citationCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+          style={[
+            styles.citationCard,
+            {
+              backgroundColor: theme.cardBg,
+              borderColor: theme.cardBorder,
+              ...(!isDarkMode && {
+                shadowColor: "#0274BB",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.08,
+                shadowRadius: 12,
+                elevation: 3,
+              }),
+            }
+          ]}
         >
           <View
             style={
@@ -1207,8 +1265,8 @@ export default function BookDetailsScreen() {
               style={[
                 styles.copyBtn,
                 {
-                  backgroundColor: isDarkMode ? "rgba(255,255,255,0.05)" : "#FFF300",
-                  borderColor: isDarkMode ? "#1E293B" : "#FFF300",
+                  backgroundColor: isDarkMode ? "rgba(255,255,255,0.05)" : "#E0F2FE",
+                  borderColor: isDarkMode ? "#1E293B" : "rgba(2, 116, 187, 0.25)",
                 }
               ]}
               onPress={
@@ -1933,14 +1991,14 @@ const styles = StyleSheet.create({
 
   reserveButton: {
     marginTop: 22,
-    backgroundColor: "#D97706",
+    backgroundColor: "#FCD400",
     height: 54,
     borderRadius: 16,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#F59E0B",
+    borderColor: "#EAB308",
   },
 
   cancelReserveButton: {

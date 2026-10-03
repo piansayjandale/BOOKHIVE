@@ -107,7 +107,7 @@ export default function HistoryScreen() {
                 <Ionicons
                   name={book.date === 'Returned' || book.status === 'Completed' ? 'checkmark-circle' : 'alert-circle'}
                   size={14}
-                  color={book.date === 'Returned' || book.status === 'Completed' ? '#00C853' : '#F59E0B'}
+                  color={book.date === 'Returned' || book.status === 'Completed' ? (isDarkMode ? '#38BDF8' : '#0274BB') : '#F59E0B'}
                 />
               </View>
 

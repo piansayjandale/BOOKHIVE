@@ -12,19 +12,26 @@ export async function authenticateToken(req, res, next) {
   }
 
   try {
-    let decoded;
-    try {
-      decoded = jwt.verify(token, env.jwtSecret);
-    } catch (err) {
-      if (process.env.NODE_ENV !== "production") {
-        try {
-          decoded = jwt.verify(token, "replace_me");
-        } catch {
-          decoded = jwt.verify(token, "bookhive-dev-secret-change-me");
-        }
-      } else {
-        throw err;
+    const possibleSecrets = [
+      env.jwtSecret,
+      process.env.BOOKHIVE_JWT_SECRET,
+      "development_jwt_secret_key_2026",
+      "replace_me",
+      "bookhive-dev-secret-change-me",
+    ].filter(Boolean);
+
+    let decoded = null;
+    for (const secret of possibleSecrets) {
+      try {
+        decoded = jwt.verify(token, secret);
+        if (decoded) break;
+      } catch {
+        // try next secret
       }
+    }
+
+    if (!decoded) {
+      return res.status(401).json({ message: "Invalid or expired token." });
     }
     
     // Verify that the user still exists in the database
@@ -80,14 +87,21 @@ export async function optionalAuthenticateToken(req, res, next) {
   }
 
   try {
-    let decoded;
-    try {
-      decoded = jwt.verify(token, env.jwtSecret);
-    } catch {
+    const possibleSecrets = [
+      env.jwtSecret,
+      process.env.BOOKHIVE_JWT_SECRET,
+      "development_jwt_secret_key_2026",
+      "replace_me",
+      "bookhive-dev-secret-change-me",
+    ].filter(Boolean);
+
+    let decoded = null;
+    for (const secret of possibleSecrets) {
       try {
-        decoded = jwt.verify(token, "replace_me");
+        decoded = jwt.verify(token, secret);
+        if (decoded) break;
       } catch {
-        decoded = jwt.verify(token, "bookhive-dev-secret-change-me");
+        // try next secret
       }
     }
 

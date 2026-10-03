@@ -39,6 +39,7 @@ function RootStack() {
       <Stack.Screen name="return-history" />
       <Stack.Screen name="saved-citations" />
       <Stack.Screen name="settings" />
+      <Stack.Screen name="department-books" />
       <Stack.Screen name="terms-agreement" />
       <Stack.Screen name="modal" />
     </Stack>

@@ -1,6 +1,16 @@
 function warnIfNotOffline(label, error) {
-  if (error && error.code !== "DB_OFFLINE" && !error.message?.includes("offline") && !error.message?.includes("password authentication failed") && !error.message?.includes("connect ECONNREFUSED")) {
-    console.warn(label, error.message);
+  const errObj = typeof error === "string" ? { message: error } : (error || {});
+  const msg = (errObj.message || String(error || "")).toLowerCase();
+  const code = errObj.code || "";
+
+  if (
+    code !== "DB_OFFLINE" &&
+    !msg.includes("offline") &&
+    !msg.includes("password authentication failed") &&
+    !msg.includes("connect econnrefused") &&
+    !msg.includes("does not support ssl")
+  ) {
+    console.warn(label, errObj.message || error);
   }
 }
 

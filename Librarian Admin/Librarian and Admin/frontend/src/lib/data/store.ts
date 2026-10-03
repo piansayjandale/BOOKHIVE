@@ -638,17 +638,17 @@ export const store = {
         { code: "CCJE", name: "CCJE", mascot: "Purple Wizards", color: "#8B5CF6" },
       ];
 
-      function resolveCollege(str?: string | null): string {
-        if (!str) return "CICT";
+      function resolveCollege(str?: string | null): string | null {
+        if (!str) return null;
         const s = String(str).toUpperCase().trim();
-        if (s.includes("CICT") || s.includes("INFORMATION") || s.includes("BSIT") || s.includes("CS") || s.includes("TECH") || s.includes("TIME TRAVEL") || s.includes("COMPUTER")) return "CICT";
-        if (s.includes("COE") || s.includes("ENGINEERING") || s.includes("BSCE") || s.includes("CPE") || s.includes("CIVIL") || s.includes("ELECTRICAL") || s.includes("MECHANICAL")) return "COE";
-        if (s.includes("CBMA") || s.includes("BUSINESS") || s.includes("ACCOUNTANCY") || s.includes("BSA") || s.includes("BSBA") || s.includes("MANAGEMENT") || s.includes("MARKETING")) return "CBMA";
-        if (s.includes("CAS") || s.includes("ARTS") || s.includes("SCIENCES") || s.includes("COMM") || s.includes("BACOMM") || s.includes("PSYCH") || s.includes("POLITICAL")) return "CAS";
-        if (s.includes("CED") || s.includes("EDUCATION") || s.includes("BSED") || s.includes("BEED") || s.includes("TEACHER")) return "CED";
+        if (s.includes("CICT") || s.includes("INFORMATION") || s.includes("BSIT") || s.includes("CS") || s.includes("BSCS") || s.includes("TECH") || s.includes("TIME TRAVEL") || s.includes("COMPUTER") || s.includes("PROGRAMMING")) return "CICT";
+        if (s.includes("COE") || s.includes("ENGINEERING") || s.includes("BSCE") || s.includes("BSCPE") || s.includes("CPE") || s.includes("CIVIL") || s.includes("ELECTRICAL") || s.includes("MECHANICAL") || s.includes("BSEE") || s.includes("BSME")) return "COE";
+        if (s.includes("CBMA") || s.includes("BUSINESS") || s.includes("ACCOUNTANCY") || s.includes("ACCOUNTING") || s.includes("BSA") || s.includes("BSBA") || s.includes("BSAIS") || s.includes("MANAGEMENT") || s.includes("MARKETING") || s.includes("FINANCE")) return "CBMA";
+        if (s.includes("CAS") || s.includes("ARTS") || s.includes("SCIENCES") || s.includes("COMM") || s.includes("BACOMM") || s.includes("PSYCH") || s.includes("POLITICAL") || s.includes("MULTIMEDIA") || s.includes("BMMA") || s.includes("GENERAL")) return "CAS";
+        if (s.includes("CED") || s.includes("EDUCATION") || s.includes("BSED") || s.includes("BEED") || s.includes("TEACHER") || s.includes("TEACHING")) return "CED";
         if (s.includes("CHTM") || s.includes("HOSPITALITY") || s.includes("TOURISM") || s.includes("BSTM") || s.includes("BSHM") || s.includes("HOTEL") || s.includes("RESTAURANT")) return "CHTM";
         if (s.includes("CCJE") || s.includes("CRIMINAL") || s.includes("JUSTICE") || s.includes("CRIM") || s.includes("BSCRIM") || s.includes("LAW ENFORCEMENT")) return "CCJE";
-        return "CICT";
+        return null;
       }
 
       const collegeCounts: Record<string, number> = {
@@ -656,9 +656,9 @@ export const store = {
       };
 
       collegeBorrowRes.rows.forEach((r: any) => {
-        const code = resolveCollege(r.college_dept) || resolveCollege(r.course) || "CICT";
+        const code = resolveCollege(r.course) || resolveCollege(r.college_dept);
         const count = Number(r.borrows || 0);
-        if (collegeCounts[code] !== undefined) {
+        if (code && collegeCounts[code] !== undefined) {
           collegeCounts[code] += count;
         }
       });
@@ -712,17 +712,17 @@ export const store = {
       { code: "CCJE", name: "CCJE", mascot: "Purple Wizards", color: "#8B5CF6" },
     ];
 
-    function resolveCollegeFallback(str?: string | null): string {
-      if (!str) return "CICT";
+    function resolveCollegeFallback(str?: string | null): string | null {
+      if (!str) return null;
       const s = String(str).toUpperCase().trim();
-      if (s.includes("CICT") || s.includes("INFORMATION") || s.includes("BSIT") || s.includes("CS") || s.includes("TECH") || s.includes("TIME TRAVEL") || s.includes("COMPUTER")) return "CICT";
-      if (s.includes("COE") || s.includes("ENGINEERING") || s.includes("BSCE") || s.includes("CPE") || s.includes("CIVIL") || s.includes("ELECTRICAL") || s.includes("MECHANICAL")) return "COE";
-      if (s.includes("CBMA") || s.includes("BUSINESS") || s.includes("ACCOUNTANCY") || s.includes("BSA") || s.includes("BSBA") || s.includes("MANAGEMENT") || s.includes("MARKETING")) return "CBMA";
-      if (s.includes("CAS") || s.includes("ARTS") || s.includes("SCIENCES") || s.includes("COMM") || s.includes("BACOMM") || s.includes("PSYCH") || s.includes("POLITICAL")) return "CAS";
-      if (s.includes("CED") || s.includes("EDUCATION") || s.includes("BSED") || s.includes("BEED") || s.includes("TEACHER")) return "CED";
+      if (s.includes("CICT") || s.includes("INFORMATION") || s.includes("BSIT") || s.includes("CS") || s.includes("BSCS") || s.includes("TECH") || s.includes("TIME TRAVEL") || s.includes("COMPUTER") || s.includes("PROGRAMMING")) return "CICT";
+      if (s.includes("COE") || s.includes("ENGINEERING") || s.includes("BSCE") || s.includes("BSCPE") || s.includes("CPE") || s.includes("CIVIL") || s.includes("ELECTRICAL") || s.includes("MECHANICAL") || s.includes("BSEE") || s.includes("BSME")) return "COE";
+      if (s.includes("CBMA") || s.includes("BUSINESS") || s.includes("ACCOUNTANCY") || s.includes("ACCOUNTING") || s.includes("BSA") || s.includes("BSBA") || s.includes("BSAIS") || s.includes("MANAGEMENT") || s.includes("MARKETING") || s.includes("FINANCE")) return "CBMA";
+      if (s.includes("CAS") || s.includes("ARTS") || s.includes("SCIENCES") || s.includes("COMM") || s.includes("BACOMM") || s.includes("PSYCH") || s.includes("POLITICAL") || s.includes("MULTIMEDIA") || s.includes("BMMA") || s.includes("GENERAL")) return "CAS";
+      if (s.includes("CED") || s.includes("EDUCATION") || s.includes("BSED") || s.includes("BEED") || s.includes("TEACHER") || s.includes("TEACHING")) return "CED";
       if (s.includes("CHTM") || s.includes("HOSPITALITY") || s.includes("TOURISM") || s.includes("BSTM") || s.includes("BSHM") || s.includes("HOTEL") || s.includes("RESTAURANT")) return "CHTM";
       if (s.includes("CCJE") || s.includes("CRIMINAL") || s.includes("JUSTICE") || s.includes("CRIM") || s.includes("BSCRIM") || s.includes("LAW ENFORCEMENT")) return "CCJE";
-      return "CICT";
+      return null;
     }
 
     const fallbackCollegeCounts: Record<string, number> = {
@@ -730,7 +730,7 @@ export const store = {
     };
     state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow").forEach((tx) => {
       const code = resolveCollegeFallback(tx.department);
-      if (fallbackCollegeCounts[code] !== undefined) {
+      if (code && fallbackCollegeCounts[code] !== undefined) {
         fallbackCollegeCounts[code]++;
       }
     });

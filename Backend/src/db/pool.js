@@ -70,7 +70,7 @@ function getOrCreatePool() {
     }
 
     // Default PostgreSQL Pool
-    const pgSsl = (dbConfig.ssl || !dbConfig.isLocal || process.env.DATABASE_URL) ? { rejectUnauthorized: false } : false;
+    const pgSsl = dbConfig.ssl ? { rejectUnauthorized: false } : false;
     rawPool = new PgPool({
       connectionString: dbConfig.connectionString,
       ssl: pgSsl,
@@ -177,6 +177,8 @@ function isConnectionError(err) {
     msg.includes("handshake") ||
     msg.includes("self signed certificate") ||
     msg.includes("certificate") ||
+    msg.includes("does not support ssl") ||
+    msg.includes("server closed the connection") ||
     msg.includes("database offline")
   );
 }

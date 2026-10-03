@@ -16,6 +16,8 @@ class SocketService {
   private activeRooms: Set<string> = new Set();
   private isConnected: boolean = false;
   private reconnectTimer: any = null;
+  private recentDecisionKeys: Map<string, number> = new Map();
+  private recentReturnKeys: Map<string, number> = new Map();
 
   constructor() {
     this.connect();
@@ -134,13 +136,7 @@ class SocketService {
       const ws = new WebSocket(`${wsUrl}/socket.io/?EIO=4&transport=websocket`);
 
       ws.onopen = () => {
-        console.log("[SocketService] Native WebSocket Connected, sending Engine.IO namespace connect");
-        try {
-          // Socket.IO v4 Connect packet to default namespace '/'
-          ws.send("40");
-        } catch (e) {}
-        this.isConnected = true;
-        this.rejoinRooms();
+        console.log("[SocketService] Native WebSocket Connected, awaiting Engine.IO handshake...");
       };
 
       ws.onmessage = (event) => {
@@ -153,9 +149,16 @@ class SocketService {
             return;
           }
 
-          // Engine.IO Handshake response ('0{...}') -> send CONNECT ('40')
+          // Engine.IO Handshake response ('0{...}') -> send Socket.IO CONNECT ('40')
           if (dataStr.startsWith("0")) {
             ws.send("40");
+            return;
+          }
+
+          // Socket.IO Connect Ack ('40{"sid":"..."}' or '40')
+          if (dataStr.startsWith("40")) {
+            this.isConnected = true;
+            this.rejoinRooms();
             return;
           }
 
@@ -331,6 +334,27 @@ class SocketService {
   }
 
   public notifyTransactionDecided(data: any) {
+    const raw = data?.payload || data?.transaction || data;
+    const txId = raw?.id || raw?.transactionId || data?.entity_id;
+    const status = raw?.status || data?.status;
+
+    // Deduplication check: ignore duplicate burst events within 3.5 seconds
+    if (txId && status) {
+      const key = `${txId}:${String(status).toLowerCase()}`;
+      const now = Date.now();
+      const last = this.recentDecisionKeys.get(key);
+      if (last && now - last < 3500) {
+        return;
+      }
+      this.recentDecisionKeys.set(key, now);
+      if (this.recentDecisionKeys.size > 100) {
+        const threshold = now - 10000;
+        for (const [k, v] of this.recentDecisionKeys.entries()) {
+          if (v < threshold) this.recentDecisionKeys.delete(k);
+        }
+      }
+    }
+
     this.transactionDecidedListeners.forEach((cb) => {
       try {
         cb(data);
@@ -341,6 +365,24 @@ class SocketService {
   }
 
   public notifyBookReturned(data: any) {
+    const raw = data?.payload || data?.transaction || data;
+    const txId = raw?.id || raw?.transactionId || data?.entity_id;
+    if (txId) {
+      const key = `return:${txId}`;
+      const now = Date.now();
+      const last = this.recentReturnKeys.get(key);
+      if (last && now - last < 3500) {
+        return;
+      }
+      this.recentReturnKeys.set(key, now);
+      if (this.recentReturnKeys.size > 100) {
+        const threshold = now - 10000;
+        for (const [k, v] of this.recentReturnKeys.entries()) {
+          if (v < threshold) this.recentReturnKeys.delete(k);
+        }
+      }
+    }
+
     this.returnListeners.forEach((cb) => {
       try {
         cb(data);

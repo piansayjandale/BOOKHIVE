@@ -27,15 +27,16 @@ studentRouter.post("/ocr/scan-paper", optionalAuthenticateToken, asyncHandler(st
 // AI Semantic Prompt & Document Search Route
 studentRouter.post("/ai-search", optionalAuthenticateToken, asyncHandler(studentController.aiSearch));
 
+// Book Catalog & Search (Public / Optional Auth for guest or student browsing)
+studentRouter.get("/books", optionalAuthenticateToken, asyncHandler(studentController.getBooks));
+studentRouter.get("/books/search", optionalAuthenticateToken, asyncHandler(studentController.searchBooks));
+studentRouter.get("/books/:id", optionalAuthenticateToken, asyncHandler(studentController.getBook));
+
 // Protected routes
 studentRouter.use(authenticateToken);
 
 studentRouter.get("/profile", asyncHandler(studentController.getProfile));
 studentRouter.put("/profile", asyncHandler(studentController.updateProfile));
-
-studentRouter.get("/books", asyncHandler(studentController.getBooks));
-studentRouter.get("/books/search", asyncHandler(studentController.searchBooks));
-studentRouter.get("/books/:id", asyncHandler(studentController.getBook));
 
 studentRouter.get("/announcements", asyncHandler(studentController.getAnnouncements));
 

@@ -13,7 +13,10 @@ export async function proxyToBackend(path: string, request: Request) {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
   };
-  if (token) {
+  const incomingAuth = request.headers.get("authorization");
+  if (incomingAuth) {
+    headers["Authorization"] = incomingAuth;
+  } else if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
 

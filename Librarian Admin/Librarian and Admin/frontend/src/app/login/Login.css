@@ -124,38 +124,44 @@
   transition: background-color 0.25s ease, color 0.25s ease;
 }
 
-.title {
+.title,
+.login-title {
   font-size: 42px;
   font-weight: 700;
-  color: #0c1b3a;
+  color: #000000;
   margin-bottom: 8px;
 }
 
-.subtitle {
+.subtitle,
+.login-subtitle {
   font-size: 18px;
-  color: #6b7280;
+  color: #000000;
   margin-bottom: 32px;
 }
 
-.form-group {
+.form-group,
+.login-field {
   margin-bottom: 20px;
 }
 
-.label {
+.label,
+.login-label {
   display: block;
   font-size: 12px;
-  color: #888888;
-  font-weight: 600;
+  color: #000000;
+  font-weight: 700;
   margin-bottom: 4px;
 }
 
-.input {
+.input,
+.login-input {
   width: 100%;
   padding: 8px 0;
   border: none;
-  border-bottom: 1.5px solid #e5e7eb;
+  border-bottom: 1.5px solid #cbd5e1;
   font-size: 16px;
-  color: #0c1b3a;
+  color: #000000 !important;
+  caret-color: #000000 !important;
   background: transparent;
   outline: none;
   transition: border-color 0.18s;
@@ -163,12 +169,13 @@
 
 .input::placeholder,
 .login-input::placeholder {
-  color: #bfc3cb;
-  opacity: 0.4;
+  color: #64748b;
+  opacity: 0.7;
   font-size: 16px;
 }
 
-.input:focus {
+.input:focus,
+.login-input:focus {
   border-bottom: 1.5px solid #f7d000;
 }
 
@@ -190,10 +197,12 @@
   border: none;
   cursor: pointer;
   padding: 4px;
+  color: #000000;
 }
 
 
-.options-row {
+.options-row,
+.login-options {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -201,37 +210,44 @@
   margin-bottom: 24px;
 }
 
-.remember {
+.remember,
+.login-remember {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 14px;
-  color: #7a7a7a;
-
+  color: #000000;
+  font-weight: 500;
 }
-.remember input[type="checkbox"] {
+.remember input[type="checkbox"],
+.login-remember input[type="checkbox"] {
   width: 16px;
   height: 16px;
   accent-color: #f7d000;
   margin: 0;
 }
 
-.forgot-password {
+.forgot-password,
+.login-forgot {
   font-size: 14px;
-  color: #7a7a7a;
+  color: #000000;
   text-decoration: none;
   transition: color 0.18s;
+  font-weight: 500;
 }
 
-.forgot-password:hover {
-  color: #0c1b3a;
+.forgot-password:hover,
+.login-forgot:hover {
+  color: #000000;
+  text-decoration: underline;
 }
 
-.submit-btn {
+.submit-btn,
+.login-submit-btn {
   width: 100%;
   height: 46px;
   background: #f7d000;
-  color: #0c1b3a;
+  color: #000000;
   font-size: 18px;
   font-weight: 700;
   text-transform: uppercase;
@@ -243,12 +259,14 @@
   transition: background 0.18s, box-shadow 0.18s;
 }
 
-.submit-btn:hover:not(:disabled) {
+.submit-btn:hover:not(:disabled),
+.login-submit-btn:hover:not(:disabled) {
   background: #e6c200;
   box-shadow: 0 4px 16px rgba(247, 208, 0, 0.18);
 }
 
-.submit-btn:disabled {
+.submit-btn:disabled,
+.login-submit-btn:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }
@@ -256,13 +274,13 @@
 .bottom-link {
   text-align: center;
   margin-top: 32px;
-  color: #7a7a7a;
+  color: #000000;
   font-size: 15px;
   transition: color 0.18s;
 }
 
 .bottom-link:hover {
-  color: #0c1b3a;
+  color: #000000;
 }
 
 .create-account {
@@ -605,9 +623,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #e2e8f0;
+  border: 1px solid #cbd5e1;
   background: #f8fafc;
-  color: #475569;
+  color: #000000;
   cursor: pointer;
   transition: all 0.2s ease;
   z-index: 5;
@@ -615,9 +633,59 @@
 
 .card-theme-toggle-btn:hover {
   background: #f1f5f9;
-  border-color: #cbd5e1;
-  color: #0c1b3a;
+  border-color: #94a3b8;
+  color: #000000;
   transform: scale(1.05);
+}
+
+/* =========================================
+   Login Page Light Mode Explicit Overrides
+   ========================================= */
+
+html[data-theme="light"] .title,
+[data-theme="light"] .title,
+html[data-theme="light"] .login-title,
+[data-theme="light"] .login-title,
+html[data-theme="light"] .subtitle,
+[data-theme="light"] .subtitle,
+html[data-theme="light"] .login-subtitle,
+[data-theme="light"] .login-subtitle,
+html[data-theme="light"] .label,
+[data-theme="light"] .label,
+html[data-theme="light"] .login-label,
+[data-theme="light"] .login-label,
+html[data-theme="light"] .remember,
+[data-theme="light"] .remember,
+html[data-theme="light"] .login-remember,
+[data-theme="light"] .login-remember,
+html[data-theme="light"] .forgot-password,
+[data-theme="light"] .forgot-password,
+html[data-theme="light"] .login-forgot,
+[data-theme="light"] .login-forgot,
+html[data-theme="light"] .bottom-link,
+[data-theme="light"] .bottom-link {
+  color: #000000 !important;
+}
+
+html[data-theme="light"] .input,
+[data-theme="light"] .input,
+html[data-theme="light"] .login-input,
+[data-theme="light"] .login-input {
+  color: #000000 !important;
+  caret-color: #000000 !important;
+  border-bottom: 1.5px solid #cbd5e1;
+}
+
+html[data-theme="light"] .password-toggle,
+[data-theme="light"] .password-toggle {
+  color: #000000 !important;
+}
+
+html[data-theme="light"] .card-theme-toggle-btn,
+[data-theme="light"] .card-theme-toggle-btn {
+  color: #000000 !important;
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
 html[data-theme="dark"] .card-theme-toggle-btn,

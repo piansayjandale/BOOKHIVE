@@ -710,21 +710,21 @@ export function SuperAdminHomePage() {
                           <stop offset="100%" stopColor="#9A3412" />
                         </linearGradient>
                       </defs>
-                      <CartesianGrid stroke={isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)"} strokeDasharray="3 3" vertical={false} />
+                      <CartesianGrid stroke={isLight ? "rgba(0, 0, 0, 0.12)" : "rgba(255,255,255,0.06)"} strokeDasharray="3 3" vertical={false} />
                       <XAxis
                         dataKey="label"
-                        stroke={isLight ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
+                        stroke={isLight ? "rgba(0, 0, 0, 0.3)" : "rgba(255,255,255,0.4)"}
+                        tick={{ fill: isLight ? "#000000" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
-                        axisLine={{ stroke: isLight ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.1)" }}
+                        axisLine={{ stroke: isLight ? "rgba(0, 0, 0, 0.25)" : "rgba(255,255,255,0.1)" }}
                         interval={0}
                         angle={-15}
                         dy={8}
                         textAnchor="end"
                       />
                       <YAxis
-                        stroke={isLight ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                        stroke={isLight ? "rgba(0, 0, 0, 0.3)" : "rgba(255,255,255,0.4)"}
+                        tick={{ fill: isLight ? "#000000" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
                         axisLine={false}
                         allowDecimals={false}
@@ -732,13 +732,15 @@ export function SuperAdminHomePage() {
                       <Tooltip
                         contentStyle={{
                           backgroundColor: isLight ? "#ffffff" : "#0F1D29",
-                          border: isLight ? "1px solid #e2e8f0" : "1px solid rgba(255,255,255,0.15)",
-                          color: isLight ? "#0f172a" : "#fff",
+                          border: isLight ? "1px solid rgba(0,0,0,0.12)" : "1px solid rgba(255,255,255,0.15)",
+                          color: isLight ? "#000000" : "#fff",
                           borderRadius: "12px",
                           fontSize: "12px",
                           boxShadow: isLight ? "0 10px 25px rgba(0,0,0,0.08)" : "0 10px 25px rgba(0,0,0,0.5)",
                           padding: "10px 14px",
                         }}
+                        itemStyle={{ color: isLight ? "#000000" : "#fff" }}
+                        labelStyle={{ color: isLight ? "#000000" : "#fff", fontWeight: "bold" }}
                         cursor={{ fill: isLight ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.05)" }}
                         formatter={(value: any, _name: any, props: any) => [
                           `${value} Actions Logged`,

@@ -123,7 +123,9 @@ CREATE TABLE IF NOT EXISTS transactions (
   decided_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   student_id_image TEXT,
-  comment TEXT
+  comment TEXT,
+  available_at TIMESTAMPTZ,
+  expires_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS reservations (

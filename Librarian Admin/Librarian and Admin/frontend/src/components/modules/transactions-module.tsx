@@ -41,6 +41,8 @@ const STATUS_STYLE: Record<string, string> = {
   Pending:    "bg-amber-500/15 text-amber-300 border-amber-500/30",
   Waitlisted: "bg-violet-500/15 text-violet-300 border-violet-500/30",
   Approved:   "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Borrow:     "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Borrowed:   "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   Declined:   "bg-red-500/15 text-red-300 border-red-500/30",
   Returned:   "bg-sky-500/15 text-sky-300 border-sky-500/30",
   Cancelled:  "bg-red-500/10 text-red-400 border border-red-500/20",
@@ -71,8 +73,8 @@ function TypeBadge({ type, isLight }: { type: string; isLight: boolean }) {
   if (isLight) {
     if (t === "borrow") {
       return (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-500/15 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-[#0274BB]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[#0274BB]" />
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-emerald-600">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           Borrow
         </span>
       );
@@ -103,8 +105,8 @@ function TypeBadge({ type, isLight }: { type: string; isLight: boolean }) {
   // Dark mode
   if (t === "borrow") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-[#FCD400]/30 bg-[#FCD400]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#FCD400]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#FCD400]" />
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-emerald-300">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         Borrow
       </span>
     );
@@ -136,10 +138,12 @@ function StatusBadge({ status, isLight }: { status: string; isLight: boolean }) 
   if (isLight) {
     switch (status) {
       case "Approved":
+      case "Borrow":
+      case "Borrowed":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-emerald-600">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-            Approved
+            {status}
           </span>
         );
       case "Pending":

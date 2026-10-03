@@ -1250,6 +1250,18 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         .modal-input option {
           background: #0F1D29;
         }
+        html[data-theme="light"] .modal-input {
+          border: 1px solid rgba(0, 0, 0, 0.15);
+          background: #ffffff;
+          color: #000000;
+        }
+        html[data-theme="light"] .modal-input:focus {
+          border-color: #0274BB;
+        }
+        html[data-theme="light"] .modal-input option {
+          background: #ffffff;
+          color: #000000;
+        }
       `}</style>
 
       {/* ── Book Details Modal ("Book Archive Details") ─────── */}

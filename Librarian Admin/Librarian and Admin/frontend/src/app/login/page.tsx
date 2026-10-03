@@ -191,7 +191,7 @@ const LoginPage: React.FC = () => {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ color: '#94a3b8', opacity: 0.8 }}
+                      style={{ color: mounted && theme === 'dark' ? '#94a3b8' : '#000000', opacity: 0.85 }}
                     >
                       <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
                       <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
@@ -209,7 +209,7 @@ const LoginPage: React.FC = () => {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ color: '#94a3b8', opacity: 0.8 }}
+                      style={{ color: mounted && theme === 'dark' ? '#94a3b8' : '#000000', opacity: 0.85 }}
                     >
                       <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
                       <circle cx="12" cy="12" r="3" />

@@ -34,8 +34,8 @@ const LIGHT_THEME = {
   primary: "#0274BB", // BookHive STI Blue
   primarySoft: "rgba(2, 116, 187, 0.08)",
   primaryLine: "rgba(2, 116, 187, 0.18)",
-  accent: "#FFF300", // STI Yellow
-  accentStrong: "#EBD000",
+  accent: "#FCD400", // STI Warm Golden Yellow
+  accentStrong: "#EAB308",
   bg: "#F8FAFC", // Light mode page background
   panel: "#FFFFFF", // White panel
   panelStrong: "#F0F7FC", // Soft blue-tinted container

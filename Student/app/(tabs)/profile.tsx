@@ -29,6 +29,7 @@ import {
   COURSE_DATA,
   getCourseLabel,
   saveStudentProfile,
+  fetchStudentCardAndViolations,
 } from "../../data/store";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -97,7 +98,67 @@ export default function ProfileScreen() {
       penaltyAmount: 20.0,
       remarks: `Overdue loan beyond agreed due date (${b.date}). Standard fine applied.`,
       status: "Active Penalty",
+      date: b.date,
     }));
+
+  const [serverViolations, setServerViolations] = useState<any[]>([]);
+  const [loadingViolations, setLoadingViolations] = useState(false);
+  const [violationTab, setViolationTab] = useState<"active" | "all">("active");
+
+  const loadViolations = React.useCallback(async () => {
+    const targetId = user?.studentId || profile.studentId || (user as any)?.idNumber || user?.qrCode;
+    if (!targetId) return;
+    try {
+      setLoadingViolations(true);
+      const data = await fetchStudentCardAndViolations(targetId);
+      if (data?.violations) {
+        setServerViolations(data.violations);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch violations in profile:", err);
+    } finally {
+      setLoadingViolations(false);
+    }
+  }, [user, profile.studentId]);
+
+  useEffect(() => {
+    loadViolations();
+  }, [loadViolations]);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadViolations();
+    }, [loadViolations])
+  );
+
+  const allViolations = React.useMemo(() => {
+    const list: any[] = [];
+    const seenTitles = new Set<string>();
+
+    serverViolations.forEach((v) => {
+      list.push(v);
+      if (v.bookTitle) seenTitles.add(v.bookTitle.toLowerCase().trim());
+    });
+
+    violations.forEach((v) => {
+      if (!v.bookTitle || !seenTitles.has(v.bookTitle.toLowerCase().trim())) {
+        list.push(v);
+        if (v.bookTitle) seenTitles.add(v.bookTitle.toLowerCase().trim());
+      }
+    });
+
+    return list;
+  }, [serverViolations, violations]);
+
+  const activeViolations = React.useMemo(() => {
+    return allViolations.filter((v) => {
+      const s = (v.status || "").toLowerCase();
+      return !s.includes("settled") && !s.includes("cleared") && !s.includes("resolved") && !s.includes("paid");
+    });
+  }, [allViolations]);
+
+  const displayedViolations = violationTab === "active" ? activeViolations : allViolations;
+  const totalPenalty = activeViolations.reduce((acc, v) => acc + (Number(v.penaltyAmount) || 0), 0);
 
   const studentFullName = user?.fullName || profile.name || "Student";
   const studentIdNumber = user?.studentId || profile.studentId || "N/A";
@@ -328,8 +389,8 @@ export default function ProfileScreen() {
                     styles.avatar,
                     styles.avatarPlaceholder,
                     {
-                      borderColor: isDarkMode ? theme.cardBorder : "#FFF300",
-                      backgroundColor: isDarkMode ? "#172339" : "#FFF300"
+                      borderColor: isDarkMode ? theme.cardBorder : theme.badgeYellowBorder,
+                      backgroundColor: isDarkMode ? "#172339" : theme.badgeYellowBg
                     }
                   ]}>
                     <Text style={{
@@ -399,8 +460,8 @@ export default function ProfileScreen() {
                 {studentCourse}
               </Text>
 
-              <View style={[styles.idBadge, { backgroundColor: isDarkMode ? theme.background : "#FFF300", borderColor: isDarkMode ? theme.cardBorder : "#FFF300" }]}>
-                <Text style={[styles.idText, { color: isDarkMode ? theme.accentGold : "#0274BB", fontWeight: "800" }]}>
+              <View style={[styles.idBadge, { backgroundColor: isDarkMode ? theme.background : theme.badgeYellowBg, borderColor: isDarkMode ? theme.cardBorder : theme.badgeYellowBorder }]}>
+                <Text style={[styles.idText, { color: isDarkMode ? theme.accentGold : theme.badgeYellowText, fontWeight: "800" }]}>
                   STUDENT ID: {studentIdNumber}
                 </Text>
               </View>
@@ -413,7 +474,7 @@ export default function ProfileScreen() {
                 {
                   backgroundColor: theme.cardBg,
                   borderColor: theme.cardBorder,
-                  borderTopColor: isDarkMode ? theme.cardBorder : "#FFF300",
+                  borderTopColor: isDarkMode ? theme.cardBorder : theme.accentGold,
                   borderTopWidth: isDarkMode ? 1 : 2.5,
                   shadowColor: theme.shadowColor,
                   shadowOpacity: isDarkMode ? 0.3 : 0.05,
@@ -469,12 +530,12 @@ export default function ProfileScreen() {
               <View style={[
                 styles.adminNoticeBanner,
                 {
-                  backgroundColor: isDarkMode ? "rgba(234, 179, 8, 0.08)" : "#FFF300",
-                  borderColor: isDarkMode ? "rgba(234, 179, 8, 0.25)" : "#FFF300",
+                  backgroundColor: isDarkMode ? "rgba(234, 179, 8, 0.08)" : theme.badgeYellowBg,
+                  borderColor: isDarkMode ? "rgba(234, 179, 8, 0.25)" : theme.badgeYellowBorder,
                 }
               ]}>
-                <Ionicons name="lock-closed" size={15} color={isDarkMode ? theme.accentGold : "#0274BB"} />
-                <Text style={[styles.adminNoticeText, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>
+                <Ionicons name="lock-closed" size={15} color={isDarkMode ? theme.accentGold : theme.badgeYellowText} />
+                <Text style={[styles.adminNoticeText, { color: isDarkMode ? theme.textSecondary : theme.badgeYellowText, fontWeight: "700" }]}>
                   Official student record. Only Super Admin has authority to edit account details.
                 </Text>
               </View>
@@ -558,6 +619,237 @@ export default function ProfileScreen() {
                   </View>
                 </View>
               </View>
+            </View>
+
+            {/* LIBRARY VIOLATIONS SECTION */}
+            <View style={styles.sectionHeader}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text style={[styles.sectionTitle, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
+                  Library Violations
+                </Text>
+                {allViolations.length > 0 ? (
+                  <View style={[styles.violationCountBadge, { backgroundColor: theme.statusDanger }]}>
+                    <Text style={styles.violationCountText}>
+                      {activeViolations.length > 0 ? `${activeViolations.length} Active` : `${allViolations.length} Total`}
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={[styles.violationCountBadge, { backgroundColor: theme.statusSuccessBg, borderWidth: 1, borderColor: theme.statusSuccess }]}>
+                    <Text style={[styles.violationCountText, { color: theme.statusSuccess }]}>
+                      Clear
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {activeViolations.length > 0 && totalPenalty > 0 && (
+                <Text style={{ fontSize: 13, fontWeight: "800", color: theme.statusDanger }}>
+                  Fine: ₱{totalPenalty.toFixed(2)}
+                </Text>
+              )}
+            </View>
+
+            <View style={[
+              styles.accountInfoCard,
+              {
+                backgroundColor: theme.cardBg,
+                borderColor: activeViolations.length > 0
+                  ? (isDarkMode ? "rgba(239, 68, 68, 0.35)" : "rgba(239, 68, 68, 0.25)")
+                  : theme.cardBorder,
+                shadowColor: theme.shadowColor,
+                shadowOpacity: isDarkMode ? 0.3 : 0.05,
+              }
+            ]}>
+              {allViolations.length > 0 ? (
+                <>
+                  {/* Tab Selector: Active Penalties vs All Records */}
+                  <View style={[styles.tabSelectorContainer, { backgroundColor: isDarkMode ? "#0B1528" : "#F1F5F9", borderColor: theme.cardBorder }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.tabSelectorButton,
+                        violationTab === "active" && [
+                          styles.tabSelectorButtonActive,
+                          { backgroundColor: isDarkMode ? "#EF4444" : "#DC2626" }
+                        ]
+                      ]}
+                      onPress={() => setViolationTab("active")}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="alert-circle"
+                        size={14}
+                        color={violationTab === "active" ? "#FFFFFF" : (isDarkMode ? theme.textSecondary : "#64748B")}
+                      />
+                      <Text
+                        style={[
+                          styles.tabSelectorText,
+                          { color: violationTab === "active" ? "#FFFFFF" : (isDarkMode ? theme.textSecondary : "#64748B") },
+                          violationTab === "active" && { fontWeight: "700" }
+                        ]}
+                      >
+                        Active ({activeViolations.length})
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.tabSelectorButton,
+                        violationTab === "all" && [
+                          styles.tabSelectorButtonActive,
+                          { backgroundColor: isDarkMode ? theme.accentGold : theme.accentBlue }
+                        ]
+                      ]}
+                      onPress={() => setViolationTab("all")}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="list-outline"
+                        size={14}
+                        color={violationTab === "all" ? (isDarkMode ? "#0B1A2C" : "#FFFFFF") : (isDarkMode ? theme.textSecondary : "#64748B")}
+                      />
+                      <Text
+                        style={[
+                          styles.tabSelectorText,
+                          { color: violationTab === "all" ? (isDarkMode ? "#0B1A2C" : "#FFFFFF") : (isDarkMode ? theme.textSecondary : "#64748B") },
+                          violationTab === "all" && { fontWeight: "700" }
+                        ]}
+                      >
+                        All History ({allViolations.length})
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Warning Notice Banner */}
+                  {activeViolations.length > 0 && (
+                    <View style={[
+                      styles.adminNoticeBanner,
+                      {
+                        backgroundColor: isDarkMode ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2",
+                        borderColor: isDarkMode ? "rgba(239, 68, 68, 0.3)" : "#FCA5A5",
+                      }
+                    ]}>
+                      <Ionicons name="alert-circle" size={16} color="#EF4444" />
+                      <Text style={[styles.adminNoticeText, { color: isDarkMode ? "#FCA5A5" : "#B91C1C", fontWeight: "600" }]}>
+                        {activeViolations.length === 1
+                          ? "You have 1 active overdue loan. Please settle your record at the circulation desk."
+                          : `You have ${activeViolations.length} active violations. Please settle your records at the circulation desk.`}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Violation Items List */}
+                  {displayedViolations.length === 0 ? (
+                    <View style={{ paddingVertical: 18, alignItems: "center" }}>
+                      <Text style={{ fontSize: 13, color: theme.textSecondary, fontWeight: "500" }}>
+                        No records under this filter.
+                      </Text>
+                    </View>
+                  ) : (
+                    displayedViolations.map((v, vIdx) => {
+                      const isLast = vIdx === displayedViolations.length - 1;
+                      const isSettled = (v.status || "").toLowerCase().includes("settled") || (v.status || "").toLowerCase().includes("cleared");
+
+                      return (
+                        <View
+                          key={v.id ? `viol-item-${v.id}` : `viol-item-${vIdx}`}
+                          style={[
+                            styles.violationItemCard,
+                            {
+                              backgroundColor: isSettled
+                                ? (isDarkMode ? "#0F1A2A" : "#F8FAFC")
+                                : (isDarkMode ? "rgba(239, 68, 68, 0.08)" : "#FFF5F5"),
+                              borderColor: isSettled
+                                ? theme.cardBorder
+                                : (isDarkMode ? "rgba(239, 68, 68, 0.25)" : "#FEE2E2"),
+                              marginBottom: isLast ? 0 : 10,
+                            }
+                          ]}
+                        >
+                          <View style={styles.violationTopRow}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                <MaterialCommunityIcons
+                                  name="shield-alert-outline"
+                                  size={16}
+                                  color={isSettled ? "#10B981" : "#EF4444"}
+                                />
+                                <Text
+                                  style={[
+                                    styles.violationItemType,
+                                    isSettled && { color: "#10B981" }
+                                  ]}
+                                >
+                                  {v.violationType || "Overdue Book Return"}
+                                </Text>
+                              </View>
+                              {v.bookTitle ? (
+                                <Text
+                                  style={[
+                                    styles.violationBookTitle,
+                                    { color: theme.textPrimary }
+                                  ]}
+                                >
+                                  Book: {v.bookTitle}
+                                </Text>
+                              ) : null}
+                            </View>
+
+                            <View
+                              style={[
+                                styles.penaltyBadge,
+                                isSettled && { backgroundColor: "rgba(16, 185, 129, 0.15)", borderWidth: 1, borderColor: "rgba(16, 185, 129, 0.4)" }
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.penaltyBadgeText,
+                                  isSettled && { color: "#10B981" }
+                                ]}
+                              >
+                                {Number(v.penaltyAmount) > 0 ? `₱${Number(v.penaltyAmount).toFixed(2)} Fine` : v.status}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {v.remarks ? (
+                            <Text
+                              style={[
+                                styles.violationRemarks,
+                                { color: isSettled ? theme.textSecondary : (isDarkMode ? "#FCA5A5" : "#991B1B") }
+                              ]}
+                            >
+                              {v.remarks}
+                            </Text>
+                          ) : null}
+
+                          {v.date ? (
+                            <Text style={[styles.violationDate, { color: theme.textMuted }]}>
+                              Due Date / Recorded: {v.date}
+                            </Text>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  )}
+                </>
+              ) : (
+                /* CLEAN RECORD VIEW */
+                <View style={styles.clearViolationCard}>
+                  <Ionicons name="checkmark-circle-outline" size={42} color="#10B981" />
+                  <Text style={[styles.clearStatusTitle, { color: theme.textPrimary }]}>
+                    No Active Violations
+                  </Text>
+                  <Text style={[styles.clearStatusSubtitle, { color: theme.textSecondary }]}>
+                    Your account is in good standing with zero overdue penalties or disciplinary records in the library.
+                  </Text>
+                  <View style={[styles.cleanRecordPill, { backgroundColor: theme.statusSuccessBg, borderColor: theme.statusSuccess }]}>
+                    <Ionicons name="shield-checkmark-outline" size={13} color="#10B981" />
+                    <Text style={[styles.cleanRecordPillText, { color: theme.statusSuccess }]}>
+                      Clear Standing • Eligible to Borrow
+                    </Text>
+                  </View>
+                </View>
+              )}
             </View>
 
             {/* SETTINGS SECTION */}
@@ -1316,6 +1608,61 @@ const styles = StyleSheet.create({
   violationRemarks: {
     fontSize: 11,
     marginTop: 4,
+  },
+  violationCountBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  violationCountText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+  },
+  tabSelectorContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 3,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  tabSelectorButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: 9,
+    gap: 6,
+  },
+  tabSelectorButtonActive: {
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  tabSelectorText: {
+    fontSize: 12,
+  },
+  violationDate: {
+    fontSize: 11,
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  cleanRecordPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 12,
+  },
+  cleanRecordPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   staffLogoutBtn: {
     flexDirection: 'row',

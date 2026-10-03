@@ -72,11 +72,11 @@ html[data-theme="light"] {
   color-scheme: light;
   --background: #ffffff;
   --background-muted: #f8fafc;
-  --foreground: #0274bb;
-  --muted: #64748b;
+  --foreground: #000000;
+  --muted: #1e293b;
   --panel: #ffffff;
-  --panel-strong: #f0f7fc;
-  --line: rgba(2, 116, 187, 0.15);
+  --panel-strong: #f8fafc;
+  --line: rgba(0, 0, 0, 0.12);
   --accent: #fff300;
   --accent-soft: rgba(255, 243, 0, 0.28);
   --accent-strong: #ebd000;
@@ -89,34 +89,34 @@ html[data-theme="light"] {
   --danger-soft-bg: rgba(239, 68, 68, 0.14);
   --danger-soft-fg: #991b1b;
   --info-soft-bg: rgba(2, 116, 187, 0.12);
-  --info-soft-fg: #0274bb;
+  --info-soft-fg: #000000;
   --warning-soft-bg: rgba(255, 243, 0, 0.25);
-  --warning-soft-fg: #5b5000;
-  --overlay-bg: rgba(2, 116, 187, 0.25);
+  --warning-soft-fg: #000000;
+  --overlay-bg: rgba(0, 0, 0, 0.35);
 
   --sidebar-bg: linear-gradient(180deg, #0274bb 0%, #015488 100%);
   --sidebar-accent: #fff300;
   --card-bg: #ffffff;
-  --card-foreground: #0274bb;
+  --card-foreground: #000000;
   --content-bg: #ffffff;
   --topbar-bg: #ffffff;
-  --topbar-foreground: #0274bb;
-  --topbar-title-color: #0274bb;
-  --topbar-muted: #64748b;
-  --table-header-bg: rgba(2, 116, 187, 0.05);
-  --table-header-foreground: #0274bb;
-  --surface-muted: rgba(2, 116, 187, 0.04);
-  --surface-hover: rgba(2, 116, 187, 0.06);
+  --topbar-foreground: #000000;
+  --topbar-title-color: #000000;
+  --topbar-muted: #334155;
+  --table-header-bg: rgba(0, 0, 0, 0.04);
+  --table-header-foreground: #000000;
+  --surface-muted: rgba(0, 0, 0, 0.03);
+  --surface-hover: rgba(0, 0, 0, 0.05);
   --button-approve-bg: #dcfce7;
   --button-approve-fg: #166534;
   --button-decline-bg: #fee2e2;
   --button-decline-fg: #991b1b;
   --button-info-bg: rgba(2, 116, 187, 0.12);
-  --button-info-fg: #0274bb;
+  --button-info-fg: #000000;
 
-  --module-title-color: #0274bb;
-  --module-muted-color: #64748b;
-  --module-muted-2: #94a3b8;
+  --module-title-color: #000000;
+  --module-muted-color: #000000;
+  --module-muted-2: #334155;
   --sidebar-foreground: #ffffff;
   --sidebar-muted: rgba(255, 255, 255, 0.88);
   --sidebar-subtle: rgba(255, 255, 255, 0.76);
@@ -444,19 +444,19 @@ html[data-theme="light"] {
   .text-slate-500:not(aside *):not(.panel-hero *),
   .text-gray-300:not(aside *):not(.panel-hero *),
   .text-gray-400:not(aside *):not(.panel-hero *) {
-    color: var(--muted) !important;
+    color: #000000 !important;
   }
 
   /* Inactive tab and filter buttons outside sidebar */
   button.text-slate-400:not(aside *):not([class*="bg-[#"]):not([class*="bg-sky"]):not([class*="bg-emerald"]):not([class*="bg-red"]):not([class*="bg-rose"]):not([class*="bg-amber"]),
   button.text-slate-300:not(aside *):not([class*="bg-[#"]):not([class*="bg-sky"]):not([class*="bg-emerald"]):not([class*="bg-red"]):not([class*="bg-rose"]):not([class*="bg-amber"]) {
-    color: #475569 !important;
+    color: #000000 !important;
   }
 
   button.text-slate-400:not(aside *):hover,
   button.text-slate-300:not(aside *):hover {
-    color: #0274bb !important;
-    background-color: rgba(2, 116, 187, 0.08) !important;
+    color: #000000 !important;
+    background-color: rgba(0, 0, 0, 0.08) !important;
   }
 
   /* Prevent dark hover states from turning elements black in light mode */
@@ -469,12 +469,12 @@ html[data-theme="light"] {
   }
 
   [class*="hover:text-white"]:not(aside *):hover {
-    color: var(--foreground) !important;
+    color: #000000 !important;
   }
 
   /* Icon text color adjustments for light-mode shortcuts */
   .group:not(aside *) .text-slate-400 {
-    color: var(--muted) !important;
+    color: #000000 !important;
   }
   .group:not(aside *):hover .text-slate-400 {
     color: var(--accent) !important;
@@ -510,51 +510,43 @@ html[data-theme="light"] {
   input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
   select,
   textarea {
-    color: var(--foreground) !important;
+    color: #000000 !important;
     background-color: var(--card-bg) !important;
     border-color: var(--line) !important;
   }
   input.bg-transparent {
-    color: var(--foreground) !important;
+    color: #000000 !important;
     background-color: transparent !important;
     background: transparent !important;
   }
   input::placeholder,
   textarea::placeholder {
-    color: #94a3b8 !important;
-    opacity: 1 !important;
+    color: #64748b !important;
+    opacity: 0.8 !important;
   }
   select option,
   option {
     background-color: #ffffff !important;
-    color: #0274bb !important;
-  }
-
-  html[data-theme="dark"] select {
-    color-scheme: dark;
-  }
-
-  html[data-theme="dark"] select option,
-  html[data-theme="dark"] option {
-    background-color: #0F1D29 !important;
-    color: #ffffff !important;
+    color: #000000 !important;
   }
 
   /* Table headers and rows in light mode */
   table thead tr,
   table thead th {
     background-color: var(--table-header-bg) !important;
-    color: var(--table-header-foreground) !important;
+    color: #000000 !important;
     border-color: var(--line) !important;
   }
   table tbody tr {
     border-color: var(--line) !important;
+    color: #000000 !important;
   }
   table tbody tr:hover {
     background-color: var(--surface-hover) !important;
   }
   table tbody td {
     border-color: var(--line) !important;
+    color: #000000 !important;
   }
 
   /* High contrast badge text and backgrounds in light mode */
@@ -621,13 +613,13 @@ html[data-theme="light"] {
     opacity: 1 !important;
   }
 
-  /* Yellow and Blue palette overrides for light mode */
+  /* Yellow palette overrides for light mode: black text on yellow */
   .bg-\[\#FFD600\],
   .bg-\[\#FCD400\],
   .bg-\[\#FFD166\],
   .bg-\[\#FFF300\] {
     background-color: #fff300 !important;
-    color: #0274bb !important;
+    color: #000000 !important;
   }
 
   .border-\[\#FFD600\],
@@ -697,18 +689,33 @@ html[data-theme="light"] {
     border-color: #fff300 !important;
   }
 
-  /* Accents on white surfaces use blue text */
+  /* Accents on white surfaces use black text */
   .text-\[\#FFD600\]:not(aside *),
   .text-\[\#FCD400\]:not(aside *),
   .text-\[\#FFD166\]:not(aside *) {
-    color: #0274bb !important;
+    color: #000000 !important;
   }
 
   .bg-\[\#FFD600\]:not(aside *) *,
   .bg-\[\#FCD400\]:not(aside *) *,
   .bg-\[\#FFD166\]:not(aside *) *,
   .bg-\[\#FFF300\]:not(aside *) * {
-    color: #0274bb !important;
+    color: #000000 !important;
+  }
+
+  /* Universal text elements in light mode */
+  h1:not(aside *),
+  h2:not(aside *),
+  h3:not(aside *),
+  h4:not(aside *),
+  h5:not(aside *),
+  h6:not(aside *),
+  p:not(aside *):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-rose"]):not([class*="text-amber"]):not([class*="text-sky"]),
+  label:not(aside *),
+  span:not(aside *):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-rose"]):not([class*="text-amber"]):not([class*="text-sky"]):not([class*="bg-"]):not([class*="badge"]),
+  td:not(aside *),
+  th:not(aside *) {
+    color: #000000;
   }
 }
 
@@ -1273,5 +1280,77 @@ aside button.btn-logout:hover,
 button.btn-logout:hover {
   background-color: #b91c1c !important;
 }
+
+/* Dark Mode Select Elements */
+html[data-theme="dark"] select {
+  color-scheme: dark;
+}
+html[data-theme="dark"] select option,
+html[data-theme="dark"] option {
+  background-color: #0F1D29 !important;
+  color: #ffffff !important;
+}
+
+/* Chart Tooltips - Light Mode Guarantee (Pure White Background & Black Text) */
+html[data-theme="light"] .chart-custom-tooltip,
+html[data-theme="light"] .recharts-tooltip-wrapper > div,
+html[data-theme="light"] .recharts-default-tooltip {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.12) !important;
+  color: #000000 !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.06) !important;
+}
+
+html[data-theme="light"] .chart-custom-tooltip *,
+html[data-theme="light"] .recharts-tooltip-wrapper > div *,
+html[data-theme="light"] .recharts-default-tooltip * {
+  color: #000000 !important;
+}
+
+html[data-theme="light"] .recharts-default-tooltip .recharts-tooltip-item-name,
+html[data-theme="light"] .recharts-default-tooltip .recharts-tooltip-item-value,
+html[data-theme="light"] .recharts-default-tooltip .recharts-tooltip-label {
+  color: #000000 !important;
+}
+
+/* Chart Details, Gridlines & Labels - Light Mode Guarantee */
+html[data-theme="light"] .recharts-cartesian-grid line,
+html[data-theme="light"] .recharts-cartesian-grid-horizontal line,
+html[data-theme="light"] .recharts-cartesian-grid-vertical line {
+  stroke: rgba(0, 0, 0, 0.12) !important;
+}
+
+html[data-theme="light"] .recharts-cartesian-axis-line {
+  stroke: rgba(0, 0, 0, 0.25) !important;
+}
+
+html[data-theme="light"] .recharts-cartesian-axis-tick-line {
+  stroke: rgba(0, 0, 0, 0.25) !important;
+}
+
+html[data-theme="light"] .recharts-cartesian-axis-tick text,
+html[data-theme="light"] .recharts-cartesian-axis-tick-value,
+html[data-theme="light"] .recharts-cartesian-axis-tick tspan {
+  fill: #000000 !important;
+  color: #000000 !important;
+}
+
+html[data-theme="light"] .recharts-label,
+html[data-theme="light"] text.recharts-label {
+  fill: #000000 !important;
+  color: #000000 !important;
+}
+
+html[data-theme="light"] .recharts-legend-item-text {
+  color: #000000 !important;
+  fill: #000000 !important;
+}
+
+html[data-theme="light"] .recharts-pie-label-line {
+  stroke: rgba(0, 0, 0, 0.3) !important;
+}
+
+
 
 

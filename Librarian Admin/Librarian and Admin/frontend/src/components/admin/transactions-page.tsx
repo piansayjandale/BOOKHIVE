@@ -29,6 +29,8 @@ type TransactionTab = "borrow" | "returns" | "reservations" | "history";
 const STATUS_STYLE: Record<string, string> = {
   Pending:  "bg-amber-500/15 text-amber-300 border-amber-500/30",
   Approved: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Borrow:   "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Borrowed: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
   Declined: "bg-red-500/15 text-red-300 border-red-500/30",
   Returned: "bg-sky-500/15 text-sky-300 border-sky-500/30",
 };
@@ -46,6 +48,8 @@ function StatusBadge({ status, isLight }: { status: string; isLight?: boolean })
   const lightStyles: Record<string, string> = {
     Pending:  "bg-amber-50 text-amber-700 border-amber-200",
     Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    Borrow:   "bg-emerald-50 text-emerald-700 border-emerald-200",
+    Borrowed: "bg-emerald-50 text-emerald-700 border-emerald-200",
     Declined: "bg-red-50 text-red-700 border-red-200",
     Returned: "bg-sky-50 text-sky-700 border-sky-200",
   };

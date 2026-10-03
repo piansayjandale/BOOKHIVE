@@ -50,11 +50,16 @@ export function AnalyticsPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
-  const gridStroke = isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.06)";
+  const gridStroke = isLight ? "rgba(0, 0, 0, 0.12)" : "rgba(255, 255, 255, 0.06)";
+  const axisStroke = isLight ? "rgba(0, 0, 0, 0.3)" : "rgba(255, 255, 255, 0.4)";
+  const axisLineStroke = isLight ? "rgba(0, 0, 0, 0.25)" : "rgba(255, 255, 255, 0.1)";
+  const tickFill = isLight ? "#000000" : "#FFFFFF";
+  const tickMutedFill = isLight ? "#000000" : "#94A3B8";
+
   const tooltipContentStyle = {
     backgroundColor: isLight ? "#ffffff" : "#0F1D29",
-    border: isLight ? "1px solid #e2e8f0" : "1px solid rgba(255,255,255,0.15)",
-    color: isLight ? "#0f172a" : "#fff",
+    border: isLight ? "1px solid rgba(0,0,0,0.12)" : "1px solid rgba(255,255,255,0.15)",
+    color: isLight ? "#000000" : "#fff",
     borderRadius: "12px",
     fontSize: "12px",
     boxShadow: isLight ? "0 10px 25px rgba(2, 116, 187, 0.08)" : "0 10px 25px rgba(0,0,0,0.5)",
@@ -704,10 +709,10 @@ export function AnalyticsPage() {
                   <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                   <XAxis
                     dataKey="title"
-                    stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                    tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 11, fontWeight: "bold" }}
+                    stroke={axisStroke}
+                    tick={{ fill: tickFill, fontSize: 11, fontWeight: "bold" }}
                     tickLine={false}
-                    axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                    axisLine={{ stroke: axisLineStroke }}
                     interval={0}
                     angle={-15}
                     dy={10}
@@ -715,8 +720,8 @@ export function AnalyticsPage() {
                     tickFormatter={(value) => (value.length > 14 ? value.substring(0, 13) + "..." : value)}
                   />
                   <YAxis
-                    stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                    tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                    stroke={axisStroke}
+                    tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                     tickLine={false}
                     axisLine={false}
                     allowDecimals={false}
@@ -931,14 +936,14 @@ export function AnalyticsPage() {
                 <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="month"
-                  stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                  tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 11, fontWeight: "bold" }}
+                  stroke={axisStroke}
+                  tick={{ fill: tickFill, fontSize: 11, fontWeight: "bold" }}
                   tickLine={false}
-                  axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                  axisLine={{ stroke: axisLineStroke }}
                 />
                 <YAxis
-                  stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                  tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                  stroke={axisStroke}
+                  tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                   tickLine={false}
                   axisLine={false}
                   allowDecimals={false}
@@ -1205,14 +1210,14 @@ export function AnalyticsPage() {
                       <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                       <XAxis
                         dataKey="month"
-                        stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
+                        stroke={axisStroke}
+                        tick={{ fill: tickFill, fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
-                        axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                        axisLine={{ stroke: axisLineStroke }}
                       />
                       <YAxis
-                        stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                        stroke={axisStroke}
+                        tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
                         axisLine={false}
                         allowDecimals={false}
@@ -1352,14 +1357,14 @@ export function AnalyticsPage() {
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                     <XAxis
                       dataKey="month"
-                      stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                      tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
+                      stroke={axisStroke}
+                      tick={{ fill: tickFill, fontSize: 10, fontWeight: "bold" }}
                       tickLine={false}
-                      axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                      axisLine={{ stroke: axisLineStroke }}
                     />
                     <YAxis
-                      stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                      tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                      stroke={axisStroke}
+                      tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                       tickLine={false}
                       axisLine={false}
                       allowDecimals={false}
@@ -1538,14 +1543,14 @@ export function AnalyticsPage() {
                       <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                       <XAxis
                         dataKey="course"
-                        stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
+                        stroke={axisStroke}
+                        tick={{ fill: tickFill, fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
-                        axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                        axisLine={{ stroke: axisLineStroke }}
                       />
                       <YAxis
-                        stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                        stroke={axisStroke}
+                        tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
                         axisLine={false}
                         allowDecimals={false}
@@ -1682,14 +1687,14 @@ export function AnalyticsPage() {
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                     <XAxis
                       dataKey="course"
-                      stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                      tick={{ fill: isLight ? "#334155" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
+                      stroke={axisStroke}
+                      tick={{ fill: tickFill, fontSize: 10, fontWeight: "bold" }}
                       tickLine={false}
-                      axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                      axisLine={{ stroke: axisLineStroke }}
                     />
                     <YAxis
-                      stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                      tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                      stroke={axisStroke}
+                      tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                       tickLine={false}
                       axisLine={false}
                       allowDecimals={false}
@@ -1866,15 +1871,15 @@ export function AnalyticsPage() {
                       <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                       <XAxis
                         dataKey="title"
-                        stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#1e293b" : "#FFFFFF", fontSize: 9.5, fontWeight: "bold" }}
+                        stroke={axisStroke}
+                        tick={{ fill: tickFill, fontSize: 9.5, fontWeight: "bold" }}
                         tickLine={false}
-                        axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                        axisLine={{ stroke: axisLineStroke }}
                         tickFormatter={(val: string) => (val.length > 12 ? `${val.substring(0, 10)}...` : val)}
                       />
                       <YAxis
-                        stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                        tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                        stroke={axisStroke}
+                        tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                         tickLine={false}
                         axisLine={false}
                         allowDecimals={false}
@@ -2011,14 +2016,14 @@ export function AnalyticsPage() {
                     <CartesianGrid stroke={gridStroke} strokeDasharray="3 3" vertical={false} />
                     <XAxis
                       dataKey="term"
-                      stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                      tick={{ fill: isLight ? "#1e293b" : "#FFFFFF", fontSize: 10, fontWeight: "bold" }}
+                      stroke={axisStroke}
+                      tick={{ fill: tickFill, fontSize: 10, fontWeight: "bold" }}
                       tickLine={false}
-                      axisLine={{ stroke: isLight ? "#e2e8f0" : "rgba(255,255,255,0.1)" }}
+                      axisLine={{ stroke: axisLineStroke }}
                     />
                     <YAxis
-                      stroke={isLight ? "#cbd5e1" : "rgba(255,255,255,0.4)"}
-                      tick={{ fill: isLight ? "#64748B" : "#94A3B8", fontSize: 10, fontWeight: "bold" }}
+                      stroke={axisStroke}
+                      tick={{ fill: tickMutedFill, fontSize: 10, fontWeight: "bold" }}
                       tickLine={false}
                       axisLine={false}
                       allowDecimals={false}

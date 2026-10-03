@@ -7,12 +7,14 @@ import {
   ScrollView,
   StatusBar,
   TextInput,
+  BackHandler,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AnimatedScreen from '../components/AnimatedScreen';
 import { useThemeColors } from '../hooks/useThemeColors';
+import { getLiveBooks } from '../data/books';
 import {
   clearNotifications,
   getNotifications,
@@ -20,6 +22,7 @@ import {
   deleteNotification,
   NotificationItem,
   subscribe,
+  deduplicateNotifications,
 } from '../data/store';
 
 export default function NotificationsScreen() {
@@ -31,11 +34,29 @@ export default function NotificationsScreen() {
   const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'books' | 'updates' | 'general'>('all');
 
   useEffect(() => {
-    setNotifications(getNotifications());
+    setNotifications(deduplicateNotifications(getNotifications()));
     return subscribe(() => {
-      setNotifications(getNotifications());
+      setNotifications(deduplicateNotifications(getNotifications()));
     });
   }, []);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)");
+      }
+      return true;
+    };
+
+    const backSubscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+
+    return () => backSubscription.remove();
+  }, [router]);
 
   const handleMarkRead = (id: string) => {
     markNotificationRead(id);
@@ -56,21 +77,61 @@ export default function NotificationsScreen() {
     if (!item.read) {
       handleMarkRead(item.id);
     }
-    if (item.bookData) {
+
+    let bookInfo = item.bookData;
+
+    // If no direct bookData, attempt to extract quoted title from body
+    if (!bookInfo) {
+      const match = item.body.match(/['"]([^'"]+)['"]/);
+      const extractedTitle = match ? match[1] : null;
+      if (extractedTitle) {
+        const liveCatalog = getLiveBooks();
+        const found = liveCatalog.find(
+          (b) =>
+            b.title.toLowerCase().trim() === extractedTitle.toLowerCase().trim() ||
+            b.title.toLowerCase().includes(extractedTitle.toLowerCase()) ||
+            extractedTitle.toLowerCase().includes(b.title.toLowerCase())
+        );
+        if (found) {
+          bookInfo = {
+            id: found.isbn,
+            title: found.title,
+            author: found.author,
+            description: found.description || found.summary,
+            year: found.year,
+            pages: found.pages,
+            category: found.category || found.department,
+            available: String(found.available),
+            shelf: found.shelf || found.shelf_location,
+          };
+        } else {
+          bookInfo = {
+            id: `notif-${item.id}`,
+            title: extractedTitle,
+            author: "Library Collection",
+            description: item.body,
+            category: "General",
+            available: "true",
+          };
+        }
+      }
+    }
+
+    if (bookInfo) {
       router.push({
         pathname: "/book-details",
         params: {
-          from: "home",
-          id: item.bookData.id,
-          title: item.bookData.title,
-          author: item.bookData.author,
-          description: item.bookData.description,
-          year: item.bookData.year,
-          pages: item.bookData.pages,
-          language: item.bookData.language,
-          category: item.bookData.category,
-          available: item.bookData.available,
-          shelf: item.bookData.shelf,
+          from: "notifications",
+          id: String(bookInfo.id || ""),
+          title: String(bookInfo.title || ""),
+          author: String(bookInfo.author || ""),
+          description: String(bookInfo.description || ""),
+          year: String(bookInfo.year || ""),
+          pages: String(bookInfo.pages || ""),
+          language: String(bookInfo.language || "EN"),
+          category: String(bookInfo.category || ""),
+          available: String(bookInfo.available ?? "true"),
+          shelf: String(bookInfo.shelf || ""),
         },
       });
     }
@@ -137,11 +198,11 @@ export default function NotificationsScreen() {
       return {
         icon: "time-outline" as const,
         color: isDarkMode ? "#FCD34D" : "#0274BB", // STI Brand Accent (Pending)
-        bgColor: isDarkMode ? "rgba(252, 211, 77, 0.12)" : "#FFF300",
-        borderColor: isDarkMode ? "rgba(252, 211, 77, 0.3)" : "#FFF300",
+        bgColor: isDarkMode ? "rgba(252, 211, 77, 0.12)" : theme.badgeYellowBg,
+        borderColor: isDarkMode ? "rgba(252, 211, 77, 0.3)" : theme.badgeYellowBorder,
         badge: "PENDING",
-        badgeBg: isDarkMode ? "rgba(252, 211, 77, 0.15)" : "#FFF300",
-        badgeText: isDarkMode ? "#FCD34D" : "#0274BB",
+        badgeBg: isDarkMode ? "rgba(252, 211, 77, 0.15)" : theme.badgeYellowBg,
+        badgeText: isDarkMode ? "#FCD34D" : theme.badgeYellowText,
         isAlert: false,
       };
     }
@@ -230,7 +291,16 @@ export default function NotificationsScreen() {
 
       {/* HEADER */}
       <View style={[styles.header, { paddingTop: 12 + insets.top, height: 64 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
-        <TouchableOpacity style={[styles.backBtn, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]} onPress={() => router.back()}>
+        <TouchableOpacity
+          style={[styles.backBtn, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace("/(tabs)");
+            }
+          }}
+        >
           <Ionicons name="arrow-back" size={20} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
         </TouchableOpacity>
 
@@ -284,10 +354,10 @@ export default function NotificationsScreen() {
                   styles.tabButton,
                   {
                     backgroundColor: isActive 
-                      ? (isDarkMode ? "rgba(252, 211, 77, 0.15)" : "#FFF300") 
+                      ? (isDarkMode ? "rgba(252, 211, 77, 0.15)" : theme.tabBarActivePill) 
                       : theme.cardBg,
                     borderColor: isActive 
-                      ? (isDarkMode ? "#FCD34D" : "#FFF300") 
+                      ? (isDarkMode ? "#FCD34D" : theme.badgeYellowBorder) 
                       : theme.cardBorder,
                   },
                 ]}
@@ -321,7 +391,7 @@ export default function NotificationsScreen() {
                         styles.tabBadgeText,
                         {
                           color: isActive 
-                            ? (isDarkMode ? "#080F1E" : "#FFF300") 
+                            ? (isDarkMode ? "#080F1E" : "#FFFFFF") 
                             : (isDarkMode ? "#94A3B8" : "#475569"),
                         },
                       ]}

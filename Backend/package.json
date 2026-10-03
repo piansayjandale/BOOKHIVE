@@ -11,7 +11,8 @@
     "db:migrate": "node migrate.js",
     "db:seed": "node scripts/init-db.js",
     "db:import:goodreads": "tsx scripts/import-goodreads.ts",
-    "db:import:kaggle": "tsx scripts/import-goodreads.ts --file data/imports/books_1.Best_Books_Ever.csv"
+    "db:import:kaggle": "tsx scripts/import-goodreads.ts --file data/imports/books_1.Best_Books_Ever.csv",
+    "export:student:catalog": "node scripts/export-student-catalog.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

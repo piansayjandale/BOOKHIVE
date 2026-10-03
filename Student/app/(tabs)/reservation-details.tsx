@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
+  BackHandler,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
@@ -72,10 +73,36 @@ export default function ReservationDetailsScreen() {
     { label: "Borrow Completed", completed: false },
   ];
 
+  const handleBack = useCallback(() => {
+    if (params.from === "notifications" || String(params.from) === "notifications") {
+      router.replace("/notifications");
+      return;
+    }
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/reservations");
+    }
+  }, [params.from, router]);
+
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+
+    const backSubscription = BackHandler.addEventListener(
+      "hardwareBackPress",
+      onBackPress
+    );
+
+    return () => backSubscription.remove();
+  }, [handleBack]);
+
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={[styles.header, { paddingTop: 18 + insets.top, paddingBottom: 18, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder, borderBottomWidth: 1 }]}>
-        <TouchableOpacity onPress={() => router.back()}>
+        <TouchableOpacity onPress={handleBack}>
           <Feather name="arrow-left" size={22} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
         </TouchableOpacity>
 
@@ -94,12 +121,30 @@ export default function ReservationDetailsScreen() {
         </View>
 
         <View style={[styles.bookInfoCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          <View style={[styles.coverPlaceholder, { backgroundColor: isDarkMode ? "#1E293B" : "#FFF300" }]}>
-            <MaterialCommunityIcons
-              name="book-open-page-variant"
-              size={40}
-              color={isDarkMode ? theme.accentGold : "#0274BB"}
-            />
+          <View style={[styles.coverPlaceholder, { backgroundColor: isDarkMode ? "#1E293B" : theme.bookCoverBg }]}>
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.18)" : "#FEF08A",
+                borderColor: isDarkMode ? "rgba(255, 215, 0, 0.45)" : "#FDE047",
+                borderWidth: 1.5,
+                justifyContent: "center",
+                alignItems: "center",
+                shadowColor: "#FCD400",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.25,
+                shadowRadius: 3,
+                elevation: 2,
+              }}
+            >
+              <MaterialCommunityIcons
+                name="book-open-page-variant"
+                size={34}
+                color={isDarkMode ? theme.accentGold : "#0274BB"}
+              />
+            </View>
           </View>
 
           <View style={styles.bookInfoDetails}>
@@ -255,10 +300,10 @@ export default function ReservationDetailsScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionButton, styles.secondaryButton, { backgroundColor: isDarkMode ? theme.accentGold : "#FFF300", borderColor: !isDarkMode ? "#FFF300" : undefined }]}
+            style={[styles.actionButton, styles.secondaryButton, { backgroundColor: isDarkMode ? theme.accentGold : theme.buttonPrimaryBg, borderColor: !isDarkMode ? theme.buttonPrimaryBorder : undefined }]}
             onPress={() => router.push('/search')}
           >
-            <Text style={[styles.secondaryButtonText, { color: isDarkMode ? "#080F1E" : "#0274BB", fontWeight: "800" }]}>Find Similar Books</Text>
+            <Text style={[styles.secondaryButtonText, { color: isDarkMode ? "#080F1E" : theme.buttonPrimaryText, fontWeight: "800" }]}>Find Similar Books</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

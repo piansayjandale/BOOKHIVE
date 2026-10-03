@@ -16,8 +16,10 @@ import { useThemeColors } from '../../hooks/useThemeColors';
 import { useAuth } from '../../data/AuthContext';
 import { getBackendUrl } from '../../data/authService';
 import QRCode from 'react-native-qrcode-svg';
+import socketService from '../../services/socketService';
 import {
   getUpcomingReservations,
+  getLibraryCardHistory,
   getStudentProfile,
   subscribe,
   ReservationBook,
@@ -35,6 +37,9 @@ export default function ReservationsScreen() {
   const [showQrModal, setShowQrModal] = useState(false);
   const [activeReservations, setActiveReservations] = useState<ReservationBook[]>(
     getUpcomingReservations()
+  );
+  const [libraryCardBooks, setLibraryCardBooks] = useState<ReservationBook[]>(
+    getLibraryCardHistory()
   );
   const [profile, setProfile] = useState(getStudentProfile());
   const [notifications, setNotifications] = useState<NotificationItem[]>(getNotifications());
@@ -66,18 +71,31 @@ export default function ReservationsScreen() {
 
   useEffect(() => {
     setActiveReservations(getUpcomingReservations());
+    setLibraryCardBooks(getLibraryCardHistory());
     setProfile(getStudentProfile());
     setNotifications(getNotifications());
-    return subscribe(() => {
+
+    const unsubStore = subscribe(() => {
       setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
     });
+
+    const unsubReturn = socketService.subscribeToReturn(() => {
+      setLibraryCardBooks(getLibraryCardHistory());
+    });
+
+    return () => {
+      unsubStore();
+      unsubReturn();
+    };
   }, []);
 
   useFocusEffect(
     React.useCallback(() => {
       setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
     }, [])
@@ -85,7 +103,6 @@ export default function ReservationsScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const borrowedBooks = activeReservations.filter((book) => book.status === 'Approved' && book.action !== 'Reserve');
   const reservedBooks = activeReservations.filter(
     (book) => book.action === 'Reserve' || (book.status === 'Pending' && book.action !== 'Borrow') || book.status === 'Waitlisted'
   );
@@ -139,15 +156,18 @@ export default function ReservationsScreen() {
   };
 
   // Build rows for the Library Card table (minimum 16 rows to match the reference design visual)
-  const TOTAL_CARD_ROWS = Math.max(16, borrowedBooks.length);
+  // All borrowed books (active + returned history) are preserved here and never disappear
+  const TOTAL_CARD_ROWS = Math.max(16, libraryCardBooks.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
-    const item = borrowedBooks[index];
+    const item = libraryCardBooks[index];
+    const isReturned = !!(item?.isReturned || item?.status === 'Completed' || item?.date === 'Returned');
     return {
       id: item?.id || `empty-row-${index}`,
-      borrowDate: item?.pickupDate || item?.date || "",
-      dueReturnDate: item?.returnDate || item?.date || "",
+      borrowDate: item?.pickupDate || (item?.date !== 'Returned' ? item?.date : "") || "",
+      dueReturnDate: item?.returnDate || (item?.date !== 'Returned' ? item?.date : "") || "",
       bookTitle: item?.title || "",
       hasData: !!item,
+      isReturned,
     };
   });
 
@@ -266,7 +286,9 @@ export default function ReservationsScreen() {
                 style={[
                   styles.qrScanIconBtn,
                   !isDarkMode && {
-                    backgroundColor: "#FFF300",
+                    backgroundColor: theme.badgeYellowBg,
+                    borderColor: theme.badgeYellowBorder,
+                    borderWidth: 1,
                     borderRadius: 10,
                     padding: 5,
                   }
@@ -351,8 +373,29 @@ export default function ReservationsScreen() {
                     </Text>
                   </View>
 
-                  <View style={[styles.colDueDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
-                    <Text style={[styles.cellDataText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]} numberOfLines={1}>
+                  <View
+                    style={[
+                      styles.colDueDate,
+                      { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
+                      row.hasData && !row.isReturned && {
+                        backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.cellDataText,
+                        row.hasData && !row.isReturned
+                          ? {
+                              color: isDarkMode ? '#86EFAC' : '#064E3B',
+                              fontWeight: '700',
+                            }
+                          : {
+                              color: isDarkMode ? '#CBD5E1' : '#334155',
+                            },
+                      ]}
+                      numberOfLines={1}
+                    >
                       {row.dueReturnDate}
                     </Text>
                   </View>
@@ -828,6 +871,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRightWidth: 1,
     justifyContent: 'center',
+    alignSelf: 'stretch',
   },
   colBookTitle: {
     flex: 1,
@@ -854,6 +898,7 @@ const styles = StyleSheet.create({
   cellDataTitleText: {
     fontSize: 11,
     fontWeight: '600',
+    flexShrink: 1,
   },
 
   /* SECTION HEADINGS */
