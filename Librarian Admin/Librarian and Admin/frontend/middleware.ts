@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { parseSessionToken, SESSION_COOKIE } from "@/lib/auth";
+import { parseSessionToken, SESSION_COOKIE } from "@/lib/token";
 import {
   getDashboardPathForRole,
   isAdminDashboardPath,
