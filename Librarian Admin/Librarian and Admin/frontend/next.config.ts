@@ -15,11 +15,15 @@ const nextConfig: NextConfig = {
   devIndicators: {
     position: "bottom-left",
   },
-  turbopack: {
-    root: fs.existsSync(path.join(__dirname, "node_modules"))
-      ? __dirname
-      : path.join(__dirname, ".."),
-  },
+  ...(process.env.VERCEL
+    ? {}
+    : {
+        turbopack: {
+          root: fs.existsSync(path.join(__dirname, "node_modules"))
+            ? __dirname
+            : path.join(__dirname, ".."),
+        },
+      }),
   async headers() {
     return [
       {

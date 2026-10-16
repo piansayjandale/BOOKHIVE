@@ -108,14 +108,13 @@ export function getSessionCookieOptions() {
   };
 }
 
-import { pool } from "@/lib/db";
-
 export async function getSession() {
   const cookieStore = await cookies();
   const tokenUser = await parseSessionToken(cookieStore.get(SESSION_COOKIE)?.value);
   if (!tokenUser) return null;
 
   try {
+    const { pool } = await import("@/lib/db");
     const { rows } = await pool.query(
       "SELECT id, permissions FROM users WHERE id = $1 OR email = $2 LIMIT 1",
       [tokenUser.id, tokenUser.email]
