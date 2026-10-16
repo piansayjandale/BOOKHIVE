@@ -13,7 +13,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://bookhive-backend.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
       }
     },
     "production": {
@@ -21,7 +21,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://bookhive-backend.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
       }
     }
   },

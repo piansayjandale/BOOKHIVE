@@ -13,7 +13,7 @@ import backendConfig from "../data/backendConfig.json";
  * Used for compiled standalone Android APKs and production builds.
  */
 export const PRODUCTION_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://bookhive-backend.onrender.com";
+  process.env.EXPO_PUBLIC_API_URL || "https://bookhive-backend-13kk.onrender.com";
 
 /**
  * Android Emulator loopback alias pointing to the development host machine.
