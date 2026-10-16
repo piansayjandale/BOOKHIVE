@@ -30,15 +30,17 @@ export default function ReservationDetailsScreen() {
   const params = useLocalSearchParams();
   const reservationId = (params.id as string) || "";
   const queuePosition = params.queuePosition ? String(params.queuePosition) : "1";
-  const estimatedWait = params.estimatedWait ? String(params.estimatedWait) : "Pending approval";
+  const estimatedWait = params.estimatedWait ? String(params.estimatedWait) : "Waiting for return";
   const studentsAhead = Math.max(0, Number(queuePosition) - 1);
+  const isAvailable = params.available === 'true' || params.available === 'Available';
+  const dateReserved = (params.dateReserved as string) || (params.pickupDate as string) || (params.date as string) || "Not specified";
 
   const handleCancel = () => {
     Alert.alert(
       "Cancel Reservation?",
-      `Are you sure you want to cancel your reservation for "${params.title}"? You will lose your current spot in the queue.`,
+      `Are you sure you want to cancel your reservation for "${params.title}"? You will lose your current spot in the 1st-come 1st-served queue.`,
       [
-        { text: "Keep Request", style: "cancel" },
+        { text: "Keep Reservation", style: "cancel" },
         {
           text: "Cancel Reservation",
           style: "destructive",
@@ -59,6 +61,19 @@ export default function ReservationDetailsScreen() {
         },
       ]
     );
+  };
+
+  const handleBorrowNow = () => {
+    router.push({
+      pathname: "/borrow",
+      params: {
+        title: params.title,
+        author: params.author,
+        isbn: params.isbn || "",
+        department: params.department || params.category || "Circulation",
+        action: "Borrow",
+      },
+    });
   };
 
   const handleBack = useCallback(() => {
@@ -93,6 +108,7 @@ export default function ReservationDetailsScreen() {
       <View style={[styles.header, { paddingTop: insets.top + 16, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder, borderBottomWidth: 1 }]}>
         <TouchableOpacity
           onPress={handleBack}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
           <Ionicons
             name="arrow-back"
@@ -110,11 +126,11 @@ export default function ReservationDetailsScreen() {
 
       {/* BOOK CARD */}
       <View style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-        <View style={[styles.iconContainer, { backgroundColor: isDarkMode ? "#3F1B1F" : theme.badgeYellowBg, borderColor: isDarkMode ? "transparent" : theme.badgeYellowBorder, borderWidth: isDarkMode ? 0 : 1 }]}>
+        <View style={[styles.iconContainer, { backgroundColor: isDarkMode ? "rgba(168, 85, 247, 0.15)" : "#F3E8FF", borderColor: isDarkMode ? "rgba(168, 85, 247, 0.3)" : "#D8B4FE", borderWidth: 1 }]}>
           <MaterialCommunityIcons
             name="book-clock-outline"
-            size={34}
-            color={isDarkMode ? theme.accentGold : "#0274BB"}
+            size={36}
+            color="#A855F7"
           />
         </View>
 
@@ -126,128 +142,188 @@ export default function ReservationDetailsScreen() {
           by {params.author}
         </Text>
 
-        <View style={[styles.queueBadge, { backgroundColor: isDarkMode ? "#3A2E12" : theme.badgeYellowBg, borderColor: !isDarkMode ? theme.badgeYellowBorder : undefined }]}>
-          <Text style={[styles.queueBadgeText, { color: isDarkMode ? "#FCD34D" : theme.badgeYellowText, fontWeight: "800" }]}>
-            Queue #{queuePosition}
+        <View style={[
+          styles.queueBadge,
+          isAvailable
+            ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "#10B981" }
+            : { backgroundColor: isDarkMode ? "rgba(168, 85, 247, 0.15)" : "#F3E8FF", borderColor: isDarkMode ? "#A855F7" : "#D8B4FE" }
+        ]}>
+          <Text style={[
+            styles.queueBadgeText,
+            { color: isAvailable ? "#10B981" : isDarkMode ? "#C084FC" : "#7C3AED", fontWeight: "800" }
+          ]}>
+            {isAvailable ? "READY FOR PICKUP" : `WAITLIST #${queuePosition}`}
           </Text>
         </View>
       </View>
 
-      {/* 24-HOUR CLAIM WINDOW ALERT */}
-      {params.available === 'true' && (
-        <View style={[styles.statusCard, { backgroundColor: "rgba(16, 185, 129, 0.12)", borderColor: "#10B981" }]}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
-            <Ionicons name="timer-outline" size={20} color="#10B981" />
-            <Text style={{ fontSize: 14, fontWeight: "800", color: "#10B981" }}>
-              1-Day Pickup Window Active
+      {/* 24-HOUR CLAIM WINDOW ALERT (If returned copy is available) */}
+      {isAvailable && (
+        <View style={[styles.alertCard, { backgroundColor: "rgba(16, 185, 129, 0.12)", borderColor: "#10B981" }]}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
+            <Ionicons name="checkmark-circle-outline" size={22} color="#10B981" />
+            <Text style={{ fontSize: 15, fontWeight: "800", color: "#10B981" }}>
+              Book Returned & Ready for Pickup!
             </Text>
           </View>
-          <Text style={{ fontSize: 12, color: theme.textPrimary, lineHeight: 18 }}>
-            A physical copy is currently available and held for you. Please proceed to the library desk or tap Borrow to claim it within 24 hours. If unclaimed, the hold is automatically voided and passed to the next waiting student.
+          <Text style={{ fontSize: 13, color: theme.textPrimary, lineHeight: 20, marginBottom: 14 }}>
+            A physical copy has been returned and is reserved exclusively for you at the library desk. Please claim or borrow it within the 24-hour pickup hold window.
           </Text>
+          <TouchableOpacity
+            style={styles.claimButton}
+            onPress={handleBorrowNow}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="book-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.claimButtonText}>Claim Copy / Borrow Now</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* STATUS CARD */}
+      {/* RESERVATION DETAILS & 1ST-COME 1ST-SERVED INFO CARD */}
       <View style={[styles.statusCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-          Reservation Status
-        </Text>
-
-        <View style={styles.infoRow}>
-          <Ionicons
-            name="time-outline"
-            size={18}
-            color={isDarkMode ? theme.accentGold : theme.accentBlue}
-          />
-
-          <Text style={[styles.infoText, { color: theme.textPrimary }]}>
-            You are currently #{queuePosition} in the waiting queue
+        <View style={styles.sectionHeaderRow}>
+          <Ionicons name="receipt-outline" size={20} color={isDarkMode ? "#FCD34D" : theme.accentBlue} />
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+            Reservation Information
           </Text>
         </View>
 
+        {/* Date Reserved */}
         <View style={styles.infoRow}>
-          <Ionicons
-            name="people-outline"
-            size={18}
-            color={isDarkMode ? theme.accentGold : theme.accentBlue}
-          />
-
-          <Text style={[styles.infoText, { color: theme.textPrimary }]}>
-            {studentsAhead} {studentsAhead === 1 ? 'student is' : 'students are'} ahead of you
-          </Text>
+          <View style={[styles.infoIconBox, { backgroundColor: isDarkMode ? "rgba(59, 130, 246, 0.15)" : "#EFF6FF" }]}>
+            <Ionicons name="calendar-outline" size={18} color={isDarkMode ? "#60A5FA" : "#2563EB"} />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>Date Reserved</Text>
+            <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
+              {dateReserved}
+            </Text>
+          </View>
         </View>
 
+        {/* Queue Policy: 1st-Come, 1st-Served */}
         <View style={styles.infoRow}>
-          <Feather
-            name="calendar"
-            size={18}
-            color={isDarkMode ? theme.accentGold : theme.accentBlue}
-          />
+          <View style={[styles.infoIconBox, { backgroundColor: isDarkMode ? "rgba(168, 85, 247, 0.15)" : "#F3E8FF" }]}>
+            <MaterialCommunityIcons name="podium-gold" size={18} color="#A855F7" />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>Queue Method</Text>
+            <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
+              1st-Come, 1st-Served Waitlist
+            </Text>
+            <Text style={[styles.infoSubtext, { color: theme.textSecondary }]}>
+              The 1st to reserve is 1st in line to borrow when this book is returned.
+            </Text>
+          </View>
+        </View>
 
-          <Text style={[styles.infoText, { color: theme.textPrimary }]}>
-            Estimated availability: {estimatedWait}
-          </Text>
+        {/* Current Waitlist Position */}
+        <View style={styles.infoRow}>
+          <View style={[styles.infoIconBox, { backgroundColor: isDarkMode ? "rgba(245, 158, 11, 0.15)" : "#FEF3C7" }]}>
+            <Ionicons name="people-outline" size={18} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>Queue Spot</Text>
+            <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
+              #{queuePosition} {studentsAhead === 0 ? "(You are next in line!)" : `(${studentsAhead} ahead)`}
+            </Text>
+          </View>
+        </View>
+
+        {/* Reservation Duration & Hold Window */}
+        <View style={styles.infoRow}>
+          <View style={[styles.infoIconBox, { backgroundColor: isDarkMode ? "rgba(16, 185, 129, 0.15)" : "#ECFDF5" }]}>
+            <Ionicons name="time-outline" size={18} color={isDarkMode ? "#34D399" : "#059669"} />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>Reservation Duration</Text>
+            <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
+              Active Until Return + 24h Hold Window
+            </Text>
+            <Text style={[styles.infoSubtext, { color: theme.textSecondary }]}>
+              Once returned, a 24-hour pickup hold window is granted exclusively to you before offering to the next student.
+            </Text>
+          </View>
+        </View>
+
+        {/* Automatic System Notification */}
+        <View style={[styles.infoRow, { marginBottom: 0 }]}>
+          <View style={[styles.infoIconBox, { backgroundColor: isDarkMode ? "rgba(236, 72, 153, 0.15)" : "#FDF2F8" }]}>
+            <Ionicons name="notifications-outline" size={18} color={isDarkMode ? "#F472B6" : "#DB2777"} />
+          </View>
+          <View style={styles.infoContent}>
+            <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>System Notification</Text>
+            <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
+              Automatic Return Alert
+            </Text>
+            <Text style={[styles.infoSubtext, { color: theme.textSecondary }]}>
+              The BookHive system automatically notifies you via app notification the moment this copy is returned to the library.
+            </Text>
+          </View>
         </View>
       </View>
 
       {/* BOOK INFO */}
       <View style={[styles.detailsCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
+        <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginBottom: 16 }]}>
           Book Information
         </Text>
 
-        <View style={styles.detailRow}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            Category
-          </Text>
+        {params.category ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Category</Text>
+            <Text style={[styles.value, { color: theme.textPrimary }]}>{params.category}</Text>
+          </View>
+        ) : null}
 
-          <Text style={[styles.value, { color: theme.textPrimary }]}>
-            {params.category}
-          </Text>
-        </View>
+        {params.department ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Department</Text>
+            <Text style={[styles.value, { color: theme.textPrimary }]}>{params.department}</Text>
+          </View>
+        ) : null}
 
-        <View style={styles.detailRow}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            Language
-          </Text>
+        {params.isbn ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>ISBN</Text>
+            <Text style={[styles.value, { color: theme.textPrimary }]}>{params.isbn}</Text>
+          </View>
+        ) : null}
 
-          <Text style={[styles.value, { color: theme.textPrimary }]}>
-            {params.language}
-          </Text>
-        </View>
+        {params.shelf ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Shelf / Call Number</Text>
+            <Text style={[styles.value, { color: theme.textPrimary }]}>{params.shelf}</Text>
+          </View>
+        ) : null}
 
-        <View style={styles.detailRow}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            Pages
-          </Text>
+        {params.language ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Language</Text>
+            <Text style={[styles.value, { color: theme.textPrimary }]}>{params.language}</Text>
+          </View>
+        ) : null}
 
-          <Text style={[styles.value, { color: theme.textPrimary }]}>
-            {params.pages}
-          </Text>
-        </View>
-
-        <View style={styles.detailRow}>
-          <Text style={[styles.label, { color: theme.textSecondary }]}>
-            Call Number
-          </Text>
-
-          <Text style={[styles.value, { color: theme.textPrimary }]}>
-            {params.shelf}
-          </Text>
-        </View>
+        {params.pages ? (
+          <View style={styles.detailRow}>
+            <Text style={[styles.label, { color: theme.textSecondary }]}>Pages</Text>
+            <Text style={[styles.value, { color: theme.textPrimary }]}>{params.pages}</Text>
+          </View>
+        ) : null}
       </View>
 
       {/* DESCRIPTION */}
-      <View style={[styles.descriptionCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-        <Text style={[styles.sectionTitle, { color: theme.textPrimary }]}>
-          Description
-        </Text>
-
-        <Text style={[styles.description, { color: theme.textSecondary }]}>
-          {params.description}
-        </Text>
-      </View>
+      {params.description ? (
+        <View style={[styles.descriptionCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+          <Text style={[styles.sectionTitle, { color: theme.textPrimary, marginBottom: 12 }]}>
+            Description
+          </Text>
+          <Text style={[styles.description, { color: theme.textSecondary }]}>
+            {params.description}
+          </Text>
+        </View>
+      ) : null}
 
       {/* ACTION BUTTON */}
       <TouchableOpacity
@@ -264,7 +340,6 @@ export default function ReservationDetailsScreen() {
           </Text>
         )}
       </TouchableOpacity>
-
 
       <View style={{ height: 40 }} />
     </ScrollView>
@@ -291,6 +366,7 @@ const styles = StyleSheet.create({
 
   bookCard: {
     margin: 20,
+    marginBottom: 16,
     borderRadius: 24,
     padding: 24,
     alignItems: "center",
@@ -307,63 +383,125 @@ const styles = StyleSheet.create({
 
   bookTitle: {
     marginTop: 18,
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: "700",
     textAlign: "center",
   },
 
   author: {
-    marginTop: 8,
-    fontSize: 15,
+    marginTop: 6,
+    fontSize: 14,
   },
 
   queueBadge: {
-    marginTop: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 30,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 24,
+    borderWidth: 1,
   },
 
   queueBadgeText: {
+    fontSize: 13,
+  },
+
+  alertCard: {
+    marginHorizontal: 20,
+    marginBottom: 16,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+  },
+
+  claimButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#10B981",
+    borderRadius: 14,
+    paddingVertical: 14,
+  },
+
+  claimButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "700",
   },
 
   statusCard: {
     marginHorizontal: 20,
+    marginBottom: 16,
     borderRadius: 24,
-    padding: 22,
+    padding: 20,
     borderWidth: 1,
   },
 
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
     marginBottom: 18,
+  },
+
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "700",
   },
 
   infoRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     marginBottom: 16,
   },
 
-  infoText: {
-    marginLeft: 12,
-    fontSize: 14,
+  infoIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+    marginTop: 2,
+  },
+
+  infoContent: {
+    flex: 1,
+  },
+
+  infoLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+
+  infoValue: {
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 20,
+  },
+
+  infoSubtext: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginTop: 3,
   },
 
   detailsCard: {
-    marginTop: 20,
     marginHorizontal: 20,
+    marginBottom: 16,
     borderRadius: 24,
-    padding: 22,
+    padding: 20,
     borderWidth: 1,
   },
 
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 18,
+    alignItems: "center",
+    marginBottom: 14,
   },
 
   label: {
@@ -373,27 +511,29 @@ const styles = StyleSheet.create({
   value: {
     fontWeight: "600",
     fontSize: 14,
+    maxWidth: "60%",
+    textAlign: "right",
   },
 
   descriptionCard: {
-    marginTop: 20,
     marginHorizontal: 20,
+    marginBottom: 16,
     borderRadius: 24,
-    padding: 22,
+    padding: 20,
     borderWidth: 1,
   },
 
   description: {
-    lineHeight: 24,
+    lineHeight: 22,
     fontSize: 14,
   },
 
   cancelButton: {
-    marginTop: 28,
+    marginTop: 12,
     marginHorizontal: 20,
-    height: 58,
+    height: 54,
     backgroundColor: "#DC2626",
-    borderRadius: 18,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -401,6 +541,6 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: "#FFFFFF",
     fontWeight: "700",
-    fontSize: 16,
+    fontSize: 15,
   },
 });

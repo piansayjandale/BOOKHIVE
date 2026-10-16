@@ -173,10 +173,10 @@ export function Topbar({
 
             if (isPending) {
               const isBorrow = t.type === "Borrow" || t.type === "Borrowing";
-              title = isBorrow ? "NEW BORROW REQUEST" : "NEW RESERVATION REQUEST";
+              title = isBorrow ? "NEW BORROW REQUEST" : "NEW RESERVATION RECORD";
               description = isBorrow
                 ? `${t.studentName} requested to borrow "${t.resourceTitle}"`
-                : `${t.studentName} requested to reserve "${t.resourceTitle}"`;
+                : `${t.studentName} is waitlisted for "${t.resourceTitle}" (1st-come, 1st-served)`;
               unread = !storedReadIds.has(itemId) && !storedReadIds.has(t.id);
             } else if (isCancelled) {
               title = "RESERVATION CANCELLED";
@@ -193,12 +193,14 @@ export function Topbar({
             }
 
             const is_read = storedReadIds.has(itemId) || storedReadIds.has(t.id) || !unread;
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
 
             return {
               id: itemId,
               title,
               description,
-              timestamp: isDueToday ? t.dueDate : (t.requestedAt || new Date().toISOString()),
+              timestamp: isDueToday ? todayStart.toISOString() : (t.requestedAt || new Date().toISOString()),
               unread,
               is_read,
               // Raw transaction fields for the details popup
@@ -214,8 +216,18 @@ export function Topbar({
             };
           });
 
-        // Sort by timestamp descending
-        items.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+        // Priority sort: Actionable pending requests (3) > Due today (2) > Other (1), then newest timestamp
+        const getPriority = (item: any) => {
+          if (item.status === "Pending") return 3;
+          if (item.id?.startsWith("due-today-")) return 2;
+          return 1;
+        };
+
+        items.sort((a, b) => {
+          const pDiff = getPriority(b) - getPriority(a);
+          if (pDiff !== 0) return pDiff;
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+        });
 
         // Filter out items older than clearedAt timestamp
         const clearedTime = typeof window !== "undefined"
@@ -223,7 +235,7 @@ export function Topbar({
           : 0;
 
         const visibleItems = clearedTime > 0
-          ? items.filter((item) => new Date(item.timestamp).getTime() > clearedTime)
+          ? items.filter((item) => item.status === "Pending" || new Date(item.timestamp).getTime() > clearedTime)
           : items;
 
         setNotifications(visibleItems.slice(0, 15));
@@ -239,13 +251,6 @@ export function Topbar({
   // Real-time notification handler (instantly prepends incoming socket payloads)
   const handleRealtimeNotification = useCallback((data: any) => {
     if (!data) return;
-
-    // Check if cleared
-    const clearedTime = typeof window !== "undefined"
-      ? parseInt(localStorage.getItem("bookhive_notifications_cleared_at") || "0", 10)
-      : 0;
-    const nowTime = Date.now();
-    if (clearedTime > 0 && nowTime <= clearedTime) return;
 
     const rawId = data.id || `notif-${Date.now()}`;
     const isCancel = data.isCancelled || data.eventName === "reservation:cancelled" || data.status === "Cancelled";
@@ -293,9 +298,20 @@ export function Topbar({
     };
 
     setNotifications((prev) => {
-      // Remove any existing copy with the same ID and prepend the newest at the top
+      // Remove any existing copy with the same ID and sort with priority
       const filtered = prev.filter((item) => item.id !== rawId && item.id !== `due-today-${rawId}`);
-      return [newItem, ...filtered].slice(0, 15);
+      const combined = [newItem, ...filtered];
+      const getPriority = (item: any) => {
+        if (item.status === "Pending") return 3;
+        if (item.id?.startsWith("due-today-")) return 2;
+        return 1;
+      };
+      combined.sort((a, b) => {
+        const pDiff = getPriority(b) - getPriority(a);
+        if (pDiff !== 0) return pDiff;
+        return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+      });
+      return combined.slice(0, 15);
     });
 
     // Schedule background synchronization to keep server and cache consistent
@@ -417,6 +433,14 @@ export function Topbar({
   }, [notificationsOpen]);
 
   const handleDecide = async (id: string, nextStatus: "Approved" | "Declined", comment?: string) => {
+    if (nextStatus === "Approved" || nextStatus === "Declined") {
+      const confirmMessage = nextStatus === "Approved"
+        ? "Are you sure to approve this?"
+        : "Are you sure to decline this?";
+      if (typeof window !== "undefined" && !window.confirm(confirmMessage)) {
+        return;
+      }
+    }
     setIsDeciding(true);
     // Optimistically remove item from local notifications state
     setNotifications((prev) =>
@@ -452,7 +476,7 @@ export function Topbar({
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-md"
+        className="absolute inset-0 modal-backdrop bg-slate-950/60 backdrop-blur-md"
         onClick={handleCloseModal}
       />
       {/* Container */}
@@ -513,17 +537,31 @@ export function Topbar({
               </p>
               <span
                 className={`mt-1.5 inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
-                  selectedNotification.status === "Pending"
+                  selectedNotification.type === "Reservation"
+                    ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
+                    : selectedNotification.status === "Pending"
                     ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
                     : selectedNotification.status === "Returned"
                     ? "bg-sky-500/15 text-sky-400 border border-sky-500/30"
                     : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
                 }`}
               >
-                {selectedNotification.status}
+                {selectedNotification.type === "Reservation" ? "Waitlisted in Queue" : selectedNotification.status}
               </span>
             </div>
           </div>
+
+          {selectedNotification.type === "Reservation" && (
+            <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3.5 flex items-start gap-3">
+              <span className="text-purple-400 text-base">ℹ️</span>
+              <div>
+                <p className="text-xs font-bold text-purple-300">1st-Come, 1st-Served Reservation</p>
+                <p className="text-[11px] text-purple-200/80 mt-0.5 leading-relaxed">
+                  Reservations function as 1st-come, 1st-served and do not require manual approval or decline. This student is automatically queued in the waitlist. When the borrowed copy is returned, the system will automatically notify this student to claim and borrow the book.
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-3">
@@ -593,7 +631,16 @@ export function Topbar({
             <ArrowLeft className="h-3.5 w-3.5" />
             Back
           </button>
-          {selectedNotification.status === "Pending" ? (
+          {selectedNotification.type === "Reservation" ? (
+            <button
+              suppressHydrationWarning
+              disabled={isDeciding}
+              onClick={handleCloseModal}
+              className="rounded-xl bg-[var(--accent)] px-5 py-2 text-xs font-bold text-[#0b1c2c] shadow-lg shadow-[var(--accent)]/10 hover:brightness-110 active:scale-95 transition disabled:opacity-50"
+            >
+              Acknowledge & Close
+            </button>
+          ) : selectedNotification.status === "Pending" ? (
             isDecliningWithComment ? (
               <div className="flex gap-2">
                 <button
@@ -691,7 +738,7 @@ export function Topbar({
           >
             <Bell className="h-4 w-4" />
             {notificationsCount > 0 ? (
-              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-semibold text-[var(--background)]">
+              <span className="absolute -right-1 -top-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-[10px] font-black text-black shadow-xs" style={{ color: "#000000" }}>
                 {notificationsCount}
               </span>
             ) : null}

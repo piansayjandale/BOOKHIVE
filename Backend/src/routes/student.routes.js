@@ -2,6 +2,7 @@ import { Router } from "express";
 
 import { asyncHandler } from "../utils/async-handler.js";
 import { studentController } from "../controllers/student.controller.js";
+import { adminController } from "../controllers/admin.controller.js";
 import { authenticateToken, optionalAuthenticateToken } from "../middleware/auth.js";
 
 export const studentRouter = Router();
@@ -21,6 +22,11 @@ studentRouter.get("/verify/:qrCode", asyncHandler(studentController.renderStuden
 studentRouter.post("/return/:transactionId", optionalAuthenticateToken, asyncHandler(studentController.returnBook));
 studentRouter.patch("/return/:transactionId", optionalAuthenticateToken, asyncHandler(studentController.returnBook));
 
+// Pickup and Circulation Receipt routes
+studentRouter.post("/pickup/:transactionId", optionalAuthenticateToken, asyncHandler(studentController.pickupBook));
+studentRouter.patch("/pickup/:transactionId", optionalAuthenticateToken, asyncHandler(studentController.pickupBook));
+studentRouter.post("/resolve-receipt", optionalAuthenticateToken, asyncHandler(studentController.resolveReceiptQr));
+
 // OCR Paper / Words Scanner Route (Primary for Librarian Catalog)
 studentRouter.post("/ocr/scan-paper", optionalAuthenticateToken, asyncHandler(studentController.scanPaperOcr));
 
@@ -31,6 +37,15 @@ studentRouter.post("/ai-search", optionalAuthenticateToken, asyncHandler(student
 studentRouter.get("/books", optionalAuthenticateToken, asyncHandler(studentController.getBooks));
 studentRouter.get("/books/search", optionalAuthenticateToken, asyncHandler(studentController.searchBooks));
 studentRouter.get("/books/:id", optionalAuthenticateToken, asyncHandler(studentController.getBook));
+
+// Global circulation settings (borrow limit, standard loan duration)
+studentRouter.get("/settings", optionalAuthenticateToken, asyncHandler(studentController.getSettings));
+
+// Digitized Books Queue (Mobile Scanner Intake)
+studentRouter.get("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.listDigitizedBooks));
+studentRouter.post("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.addDigitizedBook));
+studentRouter.post("/digitized-books/:id/approve", optionalAuthenticateToken, asyncHandler(adminController.approveDigitizedBook));
+studentRouter.delete("/digitized-books/:id", optionalAuthenticateToken, asyncHandler(adminController.deleteDigitizedBook));
 
 // Protected routes
 studentRouter.use(authenticateToken);

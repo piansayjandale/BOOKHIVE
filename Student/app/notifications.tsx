@@ -8,6 +8,8 @@ import {
   StatusBar,
   TextInput,
   BackHandler,
+  Modal,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,9 +23,13 @@ import {
   markNotificationRead,
   deleteNotification,
   NotificationItem,
+  ReceiptData,
+  getOrGenerateReceipt,
   subscribe,
   deduplicateNotifications,
+  isDueToReturn,
 } from '../data/store';
+import QRCode from 'react-native-qrcode-svg';
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -32,6 +38,19 @@ export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'books' | 'updates' | 'general'>('all');
+  const [selectedReceipt, setSelectedReceipt] = useState<ReceiptData | null>(null);
+  const [selectedBook, setSelectedBook] = useState<any | null>(null);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<NotificationItem | null>(null);
+
+  const isReceiptDue = Boolean(selectedReceipt?.returnDate && isDueToReturn(selectedReceipt.returnDate));
+  const isBorrowApproved = Boolean(
+    selectedReceipt &&
+    (
+      selectedReceipt.status?.toLowerCase() === "approved" ||
+      selectedReceipt.status?.toLowerCase() === "ready for pickup" ||
+      selectedReceipt.status?.toLowerCase().includes("approved")
+    )
+  );
 
   useEffect(() => {
     setNotifications(deduplicateNotifications(getNotifications()));
@@ -73,68 +92,178 @@ export default function NotificationsScreen() {
     setNotifications(getNotifications());
   };
 
+  const resolveBookInfo = (item: NotificationItem) => {
+    if (item.bookData && (item.bookData.title || item.bookData.author)) {
+      const b = item.bookData;
+      return {
+        id: b.id || b.isbn || item.id,
+        title: b.title || "Book Title",
+        author: b.author || "Author",
+        description: b.description || b.summary || item.body,
+        year: b.year || b.publishedDate || "2024",
+        pages: b.pages || 320,
+        language: b.language || "EN",
+        category: b.category || b.department || "General Catalog",
+        available: b.available !== undefined ? String(b.available) : "Available",
+        shelf: b.shelf || b.shelfLocation || "Circulation Desk",
+        isbn: b.isbn || b.id || "N/A",
+      };
+    }
+
+    // Try finding in live catalog by title in body or title
+    const match = item.body.match(/['"]([^'"]+)['"]/);
+    const candidateTitle = match ? match[1] : (item.title.includes("for") ? item.title.split("for")[1].trim() : item.title);
+    const liveCatalog = getLiveBooks();
+    const found = liveCatalog.find(
+      (b) =>
+        (b.title && b.title.toLowerCase().trim() === candidateTitle.toLowerCase().trim()) ||
+        (b.title && b.title.toLowerCase().includes(candidateTitle.toLowerCase())) ||
+        (candidateTitle && candidateTitle.toLowerCase().includes(b.title?.toLowerCase() || ""))
+    );
+    if (found) {
+      return {
+        id: found.isbn || found.id,
+        title: found.title,
+        author: found.author,
+        description: found.description || found.summary || item.body,
+        year: found.year || "2024",
+        pages: found.pages || 300,
+        language: (found as any).language || "EN",
+        category: found.category || found.department || "General",
+        available: String(found.available),
+        shelf: found.shelf || found.shelf_location || "Main Stacks",
+        isbn: found.isbn || found.id || "N/A",
+      };
+    }
+
+    return {
+      id: item.id,
+      title: candidateTitle || item.title,
+      author: "Library Collection",
+      description: item.body,
+      year: "2024",
+      pages: 280,
+      language: "EN",
+      category: "Library Collection",
+      available: "Available",
+      shelf: "Main Stacks",
+      isbn: "N/A",
+    };
+  };
+
+  const handleOpenBookDetails = (book: any) => {
+    setSelectedBook(null);
+    router.push({
+      pathname: "/book-details",
+      params: {
+        from: "notifications",
+        id: String(book.id || book.isbn || ""),
+        title: String(book.title || ""),
+        author: String(book.author || ""),
+        description: String(book.description || ""),
+        year: String(book.year || ""),
+        pages: String(book.pages || ""),
+        language: String(book.language || "EN"),
+        category: String(book.category || ""),
+        available: String(book.available ?? "true"),
+        shelf: String(book.shelf || ""),
+        isbn: String(book.isbn || book.id || ""),
+      },
+    });
+  };
+
   const handleNotificationPress = (item: NotificationItem) => {
     if (!item.read) {
       handleMarkRead(item.id);
     }
 
-    let bookInfo = item.bookData;
+    const titleLower = item.title.toLowerCase();
+    const isBookNotif =
+      titleLower.includes("added") ||
+      titleLower.includes("new book") ||
+      (item.type === "general" && Boolean(item.bookData && !titleLower.includes("pickup") && !titleLower.includes("picked up")));
 
-    // If no direct bookData, attempt to extract quoted title from body
+    const isAnnouncementNotif =
+      item.type === "announcement" ||
+      titleLower.includes("announcement") ||
+      titleLower.includes("advisory") ||
+      titleLower.includes("bulletin");
+
+    if (isBookNotif) {
+      const bookDetails = resolveBookInfo(item);
+      setSelectedBook(bookDetails);
+      return;
+    }
+
+    if (isAnnouncementNotif) {
+      setSelectedAnnouncement(item);
+      return;
+    }
+
+    // Circulation loan or borrow transaction (Borrow Approved, Returned, Due, etc.)
+    const receipt = getOrGenerateReceipt(item);
+    setSelectedReceipt(receipt);
+  };
+
+  const handleViewBookFromReceipt = (receipt: ReceiptData) => {
+    setSelectedReceipt(null);
+
+    let bookInfo = receipt.bookData;
     if (!bookInfo) {
-      const match = item.body.match(/['"]([^'"]+)['"]/);
-      const extractedTitle = match ? match[1] : null;
-      if (extractedTitle) {
-        const liveCatalog = getLiveBooks();
-        const found = liveCatalog.find(
-          (b) =>
-            b.title.toLowerCase().trim() === extractedTitle.toLowerCase().trim() ||
-            b.title.toLowerCase().includes(extractedTitle.toLowerCase()) ||
-            extractedTitle.toLowerCase().includes(b.title.toLowerCase())
-        );
-        if (found) {
-          bookInfo = {
-            id: found.isbn,
-            title: found.title,
-            author: found.author,
-            description: found.description || found.summary,
-            year: found.year,
-            pages: found.pages,
-            category: found.category || found.department,
-            available: String(found.available),
-            shelf: found.shelf || found.shelf_location,
-          };
-        } else {
-          bookInfo = {
-            id: `notif-${item.id}`,
-            title: extractedTitle,
-            author: "Library Collection",
-            description: item.body,
-            category: "General",
-            available: "true",
-          };
-        }
+      const liveCatalog = getLiveBooks();
+      const found = liveCatalog.find(
+        (b) =>
+          (receipt.isbn && b.isbn === receipt.isbn) ||
+          b.title.toLowerCase().trim() === receipt.bookTitle.toLowerCase().trim() ||
+          b.title.toLowerCase().includes(receipt.bookTitle.toLowerCase()) ||
+          receipt.bookTitle.toLowerCase().includes(b.title.toLowerCase())
+      );
+      if (found) {
+        bookInfo = {
+          id: found.isbn,
+          title: found.title,
+          author: found.author,
+          description: found.description || found.summary,
+          year: found.year,
+          pages: found.pages,
+          language: (found as any).language || "EN",
+          category: found.category || found.department,
+          available: String(found.available),
+          shelf: found.shelf || found.shelf_location,
+        };
+      } else {
+        bookInfo = {
+          id: receipt.isbn || `notif-${receipt.receiptNumber}`,
+          title: receipt.bookTitle,
+          author: receipt.author || "Library Collection",
+          description: `Circulation and borrow details for "${receipt.bookTitle}".`,
+          year: "2024",
+          pages: 320,
+          language: "EN",
+          category: receipt.category || "General",
+          available: "false",
+          shelf: receipt.shelf || "Circulation Desk",
+        };
       }
     }
 
-    if (bookInfo) {
-      router.push({
-        pathname: "/book-details",
-        params: {
-          from: "notifications",
-          id: String(bookInfo.id || ""),
-          title: String(bookInfo.title || ""),
-          author: String(bookInfo.author || ""),
-          description: String(bookInfo.description || ""),
-          year: String(bookInfo.year || ""),
-          pages: String(bookInfo.pages || ""),
-          language: String(bookInfo.language || "EN"),
-          category: String(bookInfo.category || ""),
-          available: String(bookInfo.available ?? "true"),
-          shelf: String(bookInfo.shelf || ""),
-        },
-      });
-    }
+    router.push({
+      pathname: "/book-details",
+      params: {
+        from: "notifications",
+        id: String(bookInfo.id || ""),
+        title: String(bookInfo.title || receipt.bookTitle || ""),
+        author: String(bookInfo.author || receipt.author || ""),
+        description: String(bookInfo.description || ""),
+        year: String(bookInfo.year || ""),
+        pages: String(bookInfo.pages || ""),
+        language: String(bookInfo.language || "EN"),
+        category: String(bookInfo.category || receipt.category || ""),
+        available: String(bookInfo.available ?? "true"),
+        shelf: String(bookInfo.shelf || receipt.shelf || ""),
+        isbn: String(bookInfo.id || receipt.isbn || ""),
+      },
+    });
   };
 
   // Helper to extract reason/comment from body text
@@ -206,6 +335,19 @@ export default function NotificationsScreen() {
         isAlert: false,
       };
     }
+    if (t.includes("due") || t.includes("overdue") || t.includes("deadline")) {
+      const isOverdueAlert = t.includes("overdue");
+      return {
+        icon: isOverdueAlert ? ("alert-circle-outline" as const) : ("calendar-outline" as const),
+        color: isDarkMode ? "#EF4444" : "#DC2626", // Red
+        bgColor: isDarkMode ? "rgba(239, 68, 68, 0.12)" : "#FEF2F2",
+        borderColor: isDarkMode ? "rgba(239, 68, 68, 0.3)" : "#FECACA",
+        badge: isOverdueAlert ? "OVERDUE" : "DUE TODAY",
+        badgeBg: isDarkMode ? "rgba(239, 68, 68, 0.15)" : "#FEE2E2",
+        badgeText: isDarkMode ? "#F87171" : "#DC2626",
+        isAlert: true,
+      };
+    }
     if (t.includes("declined") || t.includes("failed") || t.includes("cancel")) {
       return {
         icon: "close-circle-outline" as const,
@@ -243,7 +385,8 @@ export default function NotificationsScreen() {
            titleLower.includes("approved") || titleLower.includes("pending") || 
            titleLower.includes("request") || titleLower.includes("reservation") || 
            titleLower.includes("declined") || titleLower.includes("failed") || 
-           titleLower.includes("cancel");
+           titleLower.includes("cancel") || titleLower.includes("due") || 
+           titleLower.includes("overdue") || titleLower.includes("deadline");
   }).length;
   const generalCount = notifications.filter(n => {
     const titleLower = n.title.toLowerCase();
@@ -252,7 +395,8 @@ export default function NotificationsScreen() {
                      titleLower.includes("approved") || titleLower.includes("pending") || 
                      titleLower.includes("request") || titleLower.includes("reservation") || 
                      titleLower.includes("declined") || titleLower.includes("failed") || 
-                     titleLower.includes("cancel");
+                     titleLower.includes("cancel") || titleLower.includes("due") || 
+                     titleLower.includes("overdue") || titleLower.includes("deadline");
     return !isBook && !isUpdate;
   }).length;
 
@@ -267,7 +411,8 @@ export default function NotificationsScreen() {
                      titleLower.includes("approved") || titleLower.includes("pending") || 
                      titleLower.includes("request") || titleLower.includes("reservation") || 
                      titleLower.includes("declined") || titleLower.includes("failed") || 
-                     titleLower.includes("cancel");
+                     titleLower.includes("cancel") || titleLower.includes("due") || 
+                     titleLower.includes("overdue") || titleLower.includes("deadline");
     const isGeneral = !isBook && !isUpdate;
 
     if (activeTab === 'unread') return !item.read;
@@ -504,15 +649,6 @@ export default function NotificationsScreen() {
                         <Ionicons name="checkmark-done" size={15} color="#059669" />
                       </TouchableOpacity>
                     )}
-                    <TouchableOpacity
-                      style={[styles.actionIconButton, { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEE2E2', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.25)' : '#FECACA' }]}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        handleDelete(item.id);
-                      }}
-                    >
-                      <Ionicons name="trash-outline" size={15} color="#DC2626" />
-                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -563,6 +699,646 @@ export default function NotificationsScreen() {
           })
         )}
       </ScrollView>
+
+      {/* ── Official Circulation Receipt Modal ── */}
+      <Modal
+        visible={selectedReceipt !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedReceipt(null)}
+      >
+        <View style={styles.receiptBackdrop}>
+          <View style={[
+            styles.receiptCard,
+            {
+              backgroundColor: isDarkMode ? '#0B1726' : '#FFFFFF',
+              borderColor: isDarkMode ? '#1E324A' : '#E2E8F0',
+            }
+          ]}>
+            {/* Top header row */}
+            <View style={[
+              styles.receiptHeaderRow,
+              {
+                borderBottomColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.02)' : '#F8FAFC',
+              }
+            ]}>
+              <View style={styles.receiptBrandRow}>
+                <View style={[styles.receiptLogoBox, { backgroundColor: isDarkMode ? '#FFD166' : '#0274BB' }]}>
+                  <Ionicons name="book" size={16} color={isDarkMode ? '#0F1D2B' : '#FFFFFF'} />
+                </View>
+                <View>
+                  <Text style={[styles.receiptBrandTitle, { color: isDarkMode ? '#FFD166' : '#0274BB' }]}>
+                    BOOKHIVE
+                  </Text>
+                  <Text style={[styles.receiptBrandSub, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                    Official Circulation Desk
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedReceipt(null)}
+                style={[styles.receiptCloseBtn, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
+              >
+                <Ionicons name="close" size={18} color={isDarkMode ? '#FFFFFF' : '#334155'} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              {/* Receipt Title & Status Pill */}
+              <View style={styles.receiptTitleBlock}>
+                <Text style={[styles.receiptDocumentTitle, { color: theme.textPrimary }]}>
+                  CIRCULATION LOAN SLIP
+                </Text>
+
+                {/* Live Status Pill */}
+                <View style={[
+                  styles.receiptBadge,
+                  isReceiptDue
+                    ? { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)' }
+                    : { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.35)' }
+                ]}>
+                  <View style={[
+                    styles.receiptStatusDot,
+                    { backgroundColor: isReceiptDue ? '#EF4444' : '#10B981' }
+                  ]} />
+                  <Text style={[
+                    styles.receiptBadgeText,
+                    { color: isReceiptDue ? '#EF4444' : '#10B981' }
+                  ]}>
+                    {isReceiptDue ? "DUE FOR RETURN TODAY" : (selectedReceipt?.status?.toUpperCase() || "ACTIVE LOAN")}
+                  </Text>
+                </View>
+
+                {/* Monospace Slip Badge */}
+                <View style={[styles.slipPillBox, { backgroundColor: isDarkMode ? '#132337' : '#F1F5F9' }]}>
+                  <Ionicons name="receipt-outline" size={12} color={isDarkMode ? '#94A3B8' : '#64748B'} />
+                  <Text style={[styles.receiptNumberText, { color: isDarkMode ? '#CBD5E1' : '#475569' }]}>
+                    Slip No: {selectedReceipt?.receiptNumber}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Perforated Ticket Notches & Divider */}
+              <View style={styles.ticketDividerContainer}>
+                <View style={[styles.ticketNotchLeft, { backgroundColor: 'rgba(0, 0, 0, 0.75)' }]} />
+                <View style={[styles.receiptDashedLine, { borderColor: isDarkMode ? '#1E324A' : '#CBD5E1' }]} />
+                <View style={[styles.ticketNotchRight, { backgroundColor: 'rgba(0, 0, 0, 0.75)' }]} />
+              </View>
+
+              {/* Book Details Section */}
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="book-outline" size={13} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                    BOOK DETAILS
+                  </Text>
+                </View>
+
+                <View style={[styles.receiptBookCard, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                  <Text style={[styles.receiptBookTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                    {selectedReceipt?.bookTitle}
+                  </Text>
+
+                  {selectedReceipt?.author ? (
+                    <View style={styles.receiptAuthorRow}>
+                      <Ionicons name="person-circle-outline" size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} />
+                      <Text style={[styles.receiptAuthorText, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                        {selectedReceipt?.author}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.receiptTagRow}>
+                    {selectedReceipt?.isbn ? (
+                      <View style={[styles.receiptMetaTag, { backgroundColor: isDarkMode ? 'rgba(56, 189, 248, 0.12)' : '#E0F2FE' }]}>
+                        <Ionicons name="barcode-outline" size={11} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                        <Text style={[styles.receiptMetaTagText, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                          {selectedReceipt.isbn}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {selectedReceipt?.category ? (
+                      <View style={[styles.receiptMetaTag, { backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.12)' : '#F3E8FF' }]}>
+                        <Ionicons name="pricetag-outline" size={11} color={isDarkMode ? '#C084FC' : '#7E22CE'} />
+                        <Text style={[styles.receiptMetaTagText, { color: isDarkMode ? '#C084FC' : '#7E22CE' }]}>
+                          {selectedReceipt.category}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {selectedReceipt?.shelf ? (
+                      <View style={[styles.receiptMetaTag, { backgroundColor: isDarkMode ? 'rgba(251, 191, 36, 0.12)' : '#FEF3C7' }]}>
+                        <Ionicons name="library-outline" size={11} color={isDarkMode ? '#FBBF24' : '#B45309'} />
+                        <Text style={[styles.receiptMetaTagText, { color: isDarkMode ? '#FBBF24' : '#B45309' }]}>
+                          {selectedReceipt.shelf}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </View>
+
+              {/* Circulation Timeline & Dates */}
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="time-outline" size={13} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                    CIRCULATION TIMELINE
+                  </Text>
+                </View>
+
+                <View style={styles.receiptDateGrid}>
+                  <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                    <View style={styles.dateBoxHeader}>
+                      <Ionicons name="calendar-outline" size={12} color="#64748B" />
+                      <Text style={styles.receiptDateBoxLabel}>DATE BORROWED</Text>
+                    </View>
+                    <Text style={[styles.receiptDateBoxValue, { color: theme.textPrimary }]}>
+                      {selectedReceipt?.borrowDate}
+                    </Text>
+                  </View>
+
+                  <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                    <View style={styles.dateBoxHeader}>
+                      <Ionicons name="checkmark-done-circle-outline" size={13} color="#10B981" />
+                      <Text style={[styles.receiptDateBoxLabel, { color: '#10B981' }]}>PICKED UP</Text>
+                    </View>
+                    <Text style={[styles.receiptDateBoxValue, { color: '#10B981', fontWeight: '800' }]}>
+                      {selectedReceipt?.pickupDate}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Due Date Hero Card - Completely Prevents Overflow */}
+                <View style={[
+                  styles.receiptDueHeroCard,
+                  isReceiptDue
+                    ? {
+                        backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                        borderColor: isDarkMode ? '#EF4444' : '#F87171',
+                      }
+                    : {
+                        backgroundColor: isDarkMode ? 'rgba(2, 116, 187, 0.10)' : '#F0F9FF',
+                        borderColor: isDarkMode ? '#0284C7' : '#BAE6FD',
+                      }
+                ]}>
+                  <View style={styles.dueHeroTopRow}>
+                    <View style={styles.dueHeroLabelGroup}>
+                      <Ionicons
+                        name={isReceiptDue ? "alert-circle" : "calendar"}
+                        size={16}
+                        color={isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7')}
+                      />
+                      <Text style={[
+                        styles.dueHeroTitle,
+                        { color: isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7') }
+                      ]}>
+                        DUE RETURN DEADLINE
+                      </Text>
+                    </View>
+
+                    <View style={[
+                      styles.dueHeroStatusPill,
+                      { backgroundColor: isReceiptDue ? 'rgba(239, 68, 68, 0.2)' : 'rgba(2, 132, 199, 0.15)' }
+                    ]}>
+                      <Text style={[
+                        styles.dueHeroStatusPillText,
+                        { color: isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7') }
+                      ]}>
+                        {isReceiptDue ? "DUE TODAY" : "ON SCHEDULE"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={[
+                    styles.dueHeroDateValue,
+                    { color: isReceiptDue ? (isDarkMode ? '#F87171' : '#DC2626') : (isDarkMode ? '#38BDF8' : '#0369A1') }
+                  ]}>
+                    {selectedReceipt?.returnDate}
+                  </Text>
+
+                  <View style={styles.dueHeroNoticeRow}>
+                    <Ionicons
+                      name="information-circle-outline"
+                      size={13}
+                      color={isReceiptDue ? (isDarkMode ? '#FCA5A5' : '#B91C1C') : (isDarkMode ? '#94A3B8' : '#64748B')}
+                    />
+                    <Text style={[
+                      styles.dueHeroNoticeText,
+                      { color: isReceiptDue ? (isDarkMode ? '#FCA5A5' : '#B91C1C') : (isDarkMode ? '#94A3B8' : '#64748B') }
+                    ]}>
+                      {isReceiptDue
+                        ? "Please return this copy to the circulation desk to avoid overdue penalties."
+                        : "Return book on or before the due date to keep your library account clear."}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Borrower Details Section */}
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="id-card-outline" size={13} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                    BORROWER DETAILS
+                  </Text>
+                </View>
+
+                <View style={[styles.receiptBorrowerCard, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                  <View style={styles.borrowerInfoRow}>
+                    <View style={[styles.borrowerAvatarBox, { backgroundColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <Ionicons name="person" size={16} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.borrowerNameText, { color: theme.textPrimary }]}>
+                        {selectedReceipt?.studentName || "Student Borrower"}
+                      </Text>
+                      <View style={styles.borrowerPillRow}>
+                        <View style={[styles.borrowerPill, { backgroundColor: isDarkMode ? '#1E2D40' : '#EDE9FE' }]}>
+                          <Text style={[styles.borrowerPillText, { color: isDarkMode ? '#A78BFA' : '#6D28D9' }]}>
+                            ID: {selectedReceipt?.studentId || "N/A"}
+                          </Text>
+                        </View>
+                        <View style={[styles.borrowerPill, { backgroundColor: isDarkMode ? '#1E2D40' : '#E0F2FE' }]}>
+                          <Text style={[styles.borrowerPillText, { color: isDarkMode ? '#38BDF8' : '#0369A1' }]}>
+                            {selectedReceipt?.department || "General"}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Perforated Ticket Notches & Divider */}
+              <View style={styles.ticketDividerContainer}>
+                <View style={[styles.ticketNotchLeft, { backgroundColor: 'rgba(0, 0, 0, 0.75)' }]} />
+                <View style={[styles.receiptDashedLine, { borderColor: isDarkMode ? '#1E324A' : '#CBD5E1' }]} />
+                <View style={[styles.ticketNotchRight, { backgroundColor: 'rgba(0, 0, 0, 0.75)' }]} />
+              </View>
+
+              {/* Dedicated Unique QR Code Section for Borrow Approved */}
+              {isBorrowApproved && (
+                <View style={styles.qrPassSection}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="qr-code-outline" size={14} color={isDarkMode ? '#FCD34D' : '#0274BB'} />
+                    <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#FCD34D' : '#0274BB' }]}>
+                      PICKUP VERIFICATION QR CODE
+                    </Text>
+                  </View>
+
+                  <View style={[
+                    styles.qrPassCard,
+                    {
+                      backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC',
+                      borderColor: isDarkMode ? '#FCD34D' : '#0274BB',
+                    }
+                  ]}>
+                    <Text style={[styles.qrPassInstructions, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                      Present this unique QR code to the developmental librarian upon claiming your physical book copy at the circulation desk.
+                    </Text>
+
+                    <View style={styles.qrCodeWrapper}>
+                      <View style={styles.qrCodeBox}>
+                        <QRCode
+                          value={selectedReceipt?.qrPayload || JSON.stringify({
+                            type: "PICKUP_PASS",
+                            transactionId: selectedReceipt?.transactionId || selectedReceipt?.receiptNumber,
+                            receiptNumber: selectedReceipt?.receiptNumber,
+                            studentId: selectedReceipt?.studentId,
+                            studentName: selectedReceipt?.studentName,
+                            isbn: selectedReceipt?.isbn,
+                            bookTitle: selectedReceipt?.bookTitle,
+                            author: selectedReceipt?.author,
+                            category: selectedReceipt?.category,
+                            shelf: selectedReceipt?.shelf,
+                            department: selectedReceipt?.department,
+                            borrowDate: selectedReceipt?.borrowDate,
+                            pickupDate: selectedReceipt?.pickupDate,
+                            returnDate: selectedReceipt?.returnDate,
+                            status: selectedReceipt?.status,
+                            qrCode: selectedReceipt?.studentId,
+                          })}
+                          size={155}
+                          color="#0F172A"
+                          backgroundColor="#FFFFFF"
+                        />
+                      </View>
+                    </View>
+
+                    <View style={styles.qrPassFooter}>
+                      <View style={[styles.qrPassBadge, { backgroundColor: isDarkMode ? 'rgba(252, 211, 77, 0.15)' : '#FEF3C7' }]}>
+                        <Ionicons name="shield-checkmark" size={12} color={isDarkMode ? '#FCD34D' : '#B45309'} />
+                        <Text style={[styles.qrPassBadgeText, { color: isDarkMode ? '#FCD34D' : '#B45309' }]}>
+                          PASS NO: {selectedReceipt?.receiptNumber}
+                        </Text>
+                      </View>
+                      <Text style={[styles.qrPassSubNotice, { color: isDarkMode ? '#64748B' : '#94A3B8' }]}>
+                        Unique verification token for librarian pickup scanning
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Verified Digital Record Badge */}
+              <View style={styles.receiptVerifiedBadgeContainer}>
+                <View style={[styles.qrVerifiedBadge, { backgroundColor: isDarkMode ? '#102334' : '#F0FDF4' }]}>
+                  <Ionicons name="shield-checkmark" size={14} color="#10B981" />
+                  <Text style={styles.qrVerifiedBadgeText}>Verified STI WNU Digital Record</Text>
+                </View>
+              </View>
+
+              {/* Action Buttons */}
+              <View style={styles.modalActionButtonsWrapper}>
+                <TouchableOpacity
+                  style={[
+                    styles.receiptViewBookBtn,
+                    { backgroundColor: isDarkMode ? '#0284C7' : '#0274BB' }
+                  ]}
+                  onPress={() => selectedReceipt && handleViewBookFromReceipt(selectedReceipt)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="book-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.receiptViewBookBtnText}>
+                    View Book
+                  </Text>
+                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                </TouchableOpacity>
+
+                <View style={styles.receiptActionRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.receiptSaveBtn,
+                      { backgroundColor: isDarkMode ? '#FFD166' : '#F59E0B' }
+                    ]}
+                    onPress={() => {
+                      Alert.alert(
+                        "Receipt Saved",
+                        `Circulation receipt #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
+                      );
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="download-outline" size={16} color={isDarkMode ? '#0F1D2B' : '#FFFFFF'} />
+                    <Text style={[styles.receiptSaveBtnText, { color: isDarkMode ? '#0F1D2B' : '#FFFFFF' }]}>
+                      Save Receipt
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.receiptDoneBtn,
+                      {
+                        backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                        borderColor: isDarkMode ? '#1E324A' : '#CBD5E1',
+                      }
+                    ]}
+                    onPress={() => setSelectedReceipt(null)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.receiptDoneBtnText, { color: theme.textPrimary }]}>
+                      Close
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Book Details Modal (for New Book Available / New Added Book) ── */}
+      <Modal
+        visible={selectedBook !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedBook(null)}
+      >
+        <View style={styles.receiptBackdrop}>
+          <View style={[
+            styles.bookModalCard,
+            {
+              backgroundColor: isDarkMode ? '#0B1726' : '#FFFFFF',
+              borderColor: isDarkMode ? '#1E324A' : '#E2E8F0',
+            }
+          ]}>
+            <View style={[
+              styles.receiptHeaderRow,
+              {
+                borderBottomColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.02)' : '#F8FAFC',
+              }
+            ]}>
+              <View style={styles.receiptBrandRow}>
+                <View style={[styles.receiptLogoBox, { backgroundColor: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                  <Ionicons name="book" size={16} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.receiptBrandTitle, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                    BOOK DETAILS
+                  </Text>
+                  <Text style={[styles.receiptBrandSub, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                    New Catalog Release
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedBook(null)}
+                style={[styles.receiptCloseBtn, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
+              >
+                <Ionicons name="close" size={18} color={isDarkMode ? '#FFFFFF' : '#334155'} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+              <View style={styles.bookModalHero}>
+                <View style={[styles.bookCoverPlaceholder, { backgroundColor: isDarkMode ? '#102A45' : '#E0F2FE', borderColor: isDarkMode ? '#38BDF8' : '#0284C7' }]}>
+                  <Ionicons name="book-outline" size={42} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                </View>
+                <Text style={[styles.bookModalTitle, { color: theme.textPrimary }]} numberOfLines={2}>
+                  {selectedBook?.title}
+                </Text>
+                <Text style={[styles.bookModalAuthor, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                  by {selectedBook?.author}
+                </Text>
+
+                <View style={styles.bookModalBadgesRow}>
+                  <View style={[styles.bookBadgePill, { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.3)' }]}>
+                    <View style={[styles.receiptStatusDot, { backgroundColor: '#10B981' }]} />
+                    <Text style={[styles.bookBadgeText, { color: '#10B981' }]}>
+                      Available
+                    </Text>
+                  </View>
+
+                  {selectedBook?.category ? (
+                    <View style={[styles.bookBadgePill, { backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.12)' : '#F3E8FF', borderColor: isDarkMode ? 'rgba(168, 85, 247, 0.3)' : '#E9D5FF' }]}>
+                      <Text style={[styles.bookBadgeText, { color: isDarkMode ? '#C084FC' : '#7E22CE' }]}>
+                        {selectedBook.category}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.bookInfoGrid}>
+                <View style={[styles.bookInfoTile, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                  <Ionicons name="calendar-outline" size={14} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={styles.bookInfoTileLabel}>YEAR</Text>
+                  <Text style={[styles.bookInfoTileValue, { color: theme.textPrimary }]}>
+                    {selectedBook?.year || "2024"}
+                  </Text>
+                </View>
+                <View style={[styles.bookInfoTile, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                  <Ionicons name="document-text-outline" size={14} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={styles.bookInfoTileLabel}>PAGES</Text>
+                  <Text style={[styles.bookInfoTileValue, { color: theme.textPrimary }]}>
+                    {selectedBook?.pages || "320"}
+                  </Text>
+                </View>
+                <View style={[styles.bookInfoTile, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                  <Ionicons name="location-outline" size={14} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={styles.bookInfoTileLabel}>LOCATION</Text>
+                  <Text style={[styles.bookInfoTileValue, { color: theme.textPrimary }]}>
+                    {selectedBook?.shelf || "Main Stacks"}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="information-circle-outline" size={14} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                  <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                    OVERVIEW & SUMMARY
+                  </Text>
+                </View>
+                <View style={[styles.bookDescriptionBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                  <Text style={[styles.bookDescriptionText, { color: isDarkMode ? '#CBD5E1' : '#475569' }]}>
+                    {selectedBook?.description || "No overview available for this book."}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.modalActionButtonsWrapper}>
+                <TouchableOpacity
+                  style={[
+                    styles.receiptViewBookBtn,
+                    { backgroundColor: isDarkMode ? '#0284C7' : '#0274BB' }
+                  ]}
+                  onPress={() => selectedBook && handleOpenBookDetails(selectedBook)}
+                  activeOpacity={0.85}
+                >
+                  <Ionicons name="book-outline" size={18} color="#FFFFFF" />
+                  <Text style={styles.receiptViewBookBtnText}>
+                    View Book / Borrow
+                  </Text>
+                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 2 }} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.receiptDoneBtn,
+                    {
+                      backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                      borderColor: isDarkMode ? '#1E324A' : '#CBD5E1',
+                      marginTop: 8,
+                    }
+                  ]}
+                  onPress={() => setSelectedBook(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.receiptDoneBtnText, { color: theme.textPrimary }]}>
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Announcement Modal (for Bulletins / Notices) ── */}
+      <Modal
+        visible={selectedAnnouncement !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedAnnouncement(null)}
+      >
+        <View style={styles.receiptBackdrop}>
+          <View style={[
+            styles.bookModalCard,
+            {
+              backgroundColor: isDarkMode ? '#0B1726' : '#FFFFFF',
+              borderColor: isDarkMode ? '#1E324A' : '#E2E8F0',
+            }
+          ]}>
+            <View style={[
+              styles.receiptHeaderRow,
+              {
+                borderBottomColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9',
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.02)' : '#F8FAFC',
+              }
+            ]}>
+              <View style={styles.receiptBrandRow}>
+                <View style={[styles.receiptLogoBox, { backgroundColor: isDarkMode ? '#F59E0B' : '#D97706' }]}>
+                  <Ionicons name="megaphone" size={16} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={[styles.receiptBrandTitle, { color: isDarkMode ? '#F59E0B' : '#D97706' }]}>
+                    LIBRARY ANNOUNCEMENT
+                  </Text>
+                  <Text style={[styles.receiptBrandSub, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                    Official Notice
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={() => setSelectedAnnouncement(null)}
+                style={[styles.receiptCloseBtn, { backgroundColor: isDarkMode ? 'rgba(255,255,255,0.08)' : '#F1F5F9' }]}
+              >
+                <Ionicons name="close" size={18} color={isDarkMode ? '#FFFFFF' : '#334155'} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: 20 }}>
+              <Text style={[styles.bookModalTitle, { color: theme.textPrimary, textAlign: 'left', marginTop: 0 }]}>
+                {selectedAnnouncement?.title}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 16 }}>
+                <Ionicons name="time-outline" size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} style={{ marginRight: 4 }} />
+                <Text style={{ fontSize: 13, color: isDarkMode ? '#94A3B8' : '#64748B' }}>
+                  {selectedAnnouncement?.timestamp}
+                </Text>
+              </View>
+
+              <View style={[styles.bookDescriptionBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0', padding: 16 }]}>
+                <Text style={[styles.bookDescriptionText, { color: isDarkMode ? '#CBD5E1' : '#334155', fontSize: 14, lineHeight: 22 }]}>
+                  {selectedAnnouncement?.body}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.receiptDoneBtn,
+                  {
+                    backgroundColor: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F8FAFC',
+                    borderColor: isDarkMode ? '#1E324A' : '#CBD5E1',
+                    marginTop: 20,
+                  }
+                ]}
+                onPress={() => setSelectedAnnouncement(null)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.receiptDoneBtnText, { color: theme.textPrimary }]}>
+                  Close
+                </Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </AnimatedScreen>
   );
 }
@@ -815,5 +1591,523 @@ const styles = StyleSheet.create({
   resetBtnText: {
     fontWeight: '700',
     fontSize: 12,
+  },
+  receiptBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+  },
+  receiptCard: {
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: '90%',
+    borderRadius: 24,
+    borderWidth: 1,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  receiptHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+  },
+  receiptBrandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  receiptLogoBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  receiptBrandTitle: {
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 1.5,
+  },
+  receiptBrandSub: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  receiptCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  receiptTitleBlock: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 4,
+    alignItems: 'center',
+  },
+  receiptDocumentTitle: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  receiptBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 20,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  receiptStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    marginRight: 6,
+  },
+  receiptBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  slipPillBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 3.5,
+    borderRadius: 8,
+  },
+  receiptNumberText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  ticketDividerContainer: {
+    position: 'relative',
+    marginVertical: 12,
+    justifyContent: 'center',
+  },
+  ticketNotchLeft: {
+    position: 'absolute',
+    left: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    zIndex: 10,
+  },
+  ticketNotchRight: {
+    position: 'absolute',
+    right: -12,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    zIndex: 10,
+  },
+  receiptDashedLine: {
+    borderStyle: 'dashed',
+    borderBottomWidth: 1.5,
+    marginHorizontal: 16,
+  },
+  receiptSection: {
+    paddingHorizontal: 18,
+    marginVertical: 4,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  receiptSectionHeader: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  receiptBookCard: {
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  receiptBookTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    lineHeight: 22,
+    letterSpacing: 0.2,
+  },
+  receiptAuthorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  receiptAuthorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  receiptTagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  receiptMetaTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  receiptMetaTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  receiptDateGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 10,
+  },
+  receiptDateBox: {
+    flex: 1,
+    padding: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  dateBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 5,
+  },
+  receiptDateBoxLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  receiptDateBoxValue: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  receiptDueHeroCard: {
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+  },
+  dueHeroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  dueHeroLabelGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dueHeroTitle: {
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  dueHeroStatusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  dueHeroStatusPillText: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  dueHeroDateValue: {
+    fontSize: 19,
+    fontWeight: '900',
+    letterSpacing: 0.3,
+    marginBottom: 6,
+  },
+  dueHeroNoticeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 5,
+  },
+  dueHeroNoticeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 15,
+    flex: 1,
+  },
+  receiptBorrowerCard: {
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  borrowerInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  borrowerAvatarBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  borrowerNameText: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  borrowerPillRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  borrowerPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  borrowerPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  receiptVerifiedBadgeContainer: {
+    alignItems: 'center',
+    marginVertical: 4,
+    paddingHorizontal: 20,
+  },
+  qrVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  qrVerifiedBadgeText: {
+    color: '#10B981',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  modalActionButtonsWrapper: {
+    gap: 10,
+    paddingHorizontal: 18,
+    marginTop: 14,
+  },
+  receiptViewBookBtn: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 13,
+    borderRadius: 14,
+    shadowColor: '#0274BB',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  receiptViewBookBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  receiptActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  receiptSaveBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  receiptSaveBtnText: {
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  receiptDoneBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  receiptDoneBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  qrPassSection: {
+    paddingHorizontal: 18,
+    marginVertical: 10,
+  },
+  qrPassCard: {
+    padding: 16,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    alignItems: 'center',
+  },
+  qrPassInstructions: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 14,
+    lineHeight: 16,
+  },
+  qrCodeWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  qrCodeBox: {
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  qrPassFooter: {
+    alignItems: 'center',
+    gap: 6,
+    width: '100%',
+  },
+  qrPassBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  qrPassBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  qrPassSubNotice: {
+    fontSize: 10,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  bookModalCard: {
+    width: '92%',
+    maxWidth: 420,
+    maxHeight: '85%',
+    borderRadius: 24,
+    borderWidth: 1.5,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 20,
+  },
+  bookModalHero: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 10,
+    alignItems: 'center',
+  },
+  bookCoverPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    marginBottom: 12,
+  },
+  bookModalTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0.2,
+    marginBottom: 4,
+  },
+  bookModalAuthor: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  bookModalBadgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  bookBadgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 4.5,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  bookBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  bookInfoGrid: {
+    flexDirection: 'row',
+    paddingHorizontal: 18,
+    gap: 8,
+    marginVertical: 10,
+  },
+  bookInfoTile: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    gap: 3,
+  },
+  bookInfoTileLabel: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  bookInfoTileValue: {
+    fontSize: 11.5,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  bookDescriptionBox: {
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  bookDescriptionText: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    fontWeight: '500',
   },
 });

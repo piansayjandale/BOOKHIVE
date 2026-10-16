@@ -5,6 +5,7 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../../components/AnimatedScreen';
@@ -28,6 +29,7 @@ import {
   getReservations,
   getReservationHistory,
   getLibraryCardHistory,
+  formatBorrowDateTime,
   ReservationBook,
 } from '../../data/store';
 
@@ -42,6 +44,7 @@ export default function BooksScreen() {
 
   const [activeTab, setActiveTab] = useState<MainTabType>('History');
   const [activeHistorySubTab, setActiveHistorySubTab] = useState<HistorySubTabType>('Filtered');
+  const [selectedBorrowDetail, setSelectedBorrowDetail] = useState<ReservationBook | null>(null);
 
   // Handle active tab parameter or global override passed from other screens
   useFocusEffect(
@@ -195,11 +198,15 @@ export default function BooksScreen() {
     for (const item of allHistory) {
       const isBorrowRecord =
         item.action === 'Borrow' ||
+        (item as any).type === 'Borrow' ||
+        (item as any).type === 'Borrowing' ||
         item.status === 'Approved' ||
+        item.status === 'Picked Up' ||
+        item.status === 'On Loan' ||
         item.status === 'Completed' ||
+        item.status === 'Returned' ||
         item.isReturned === true ||
-        item.date === 'Returned' ||
-        (item as any).type === 'Borrowing';
+        item.date === 'Returned';
 
       if (isBorrowRecord && !seenIds.has(item.id)) {
         seenIds.add(item.id);
@@ -230,6 +237,10 @@ export default function BooksScreen() {
         rating: book.rating || '4.8',
         description: book.description || book.summary || '',
         available: book.available !== undefined ? String(book.available) : 'true',
+        status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
+        availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+        reservedCount: String(book.reservedCount || 0),
+        borrowedCount: String(book.borrowedCount || 0),
         year: book.publicationDate ? String(book.publicationDate).substring(0, 4) : (book.year ? String(book.year) : '2026'),
         publicationDate: book.publicationDate || (book.year ? `${book.year}-01-01` : '2026-09-01'),
         pages: book.pages || '320',
@@ -240,6 +251,30 @@ export default function BooksScreen() {
         volume: book.volume || 'Single Volume / None',
         edition: book.edition || 'Single Edition / None',
         accessionNumber: book.accessionNumber || '',
+      },
+    });
+  };
+
+  const handleReservationPress = (item: any) => {
+    router.push({
+      pathname: '/reservation-details',
+      params: {
+        from: 'books',
+        id: item.id,
+        title: item.title,
+        author: item.author,
+        isbn: item.isbn || '',
+        category: item.category || item.genres || item.department || 'Circulation',
+        department: item.department || 'Circulation',
+        shelf: item.shelfLocation || item.callNumber || item.shelf || 'General Shelf',
+        pages: String(item.pages || '320'),
+        language: item.language || 'EN',
+        description: item.description || item.summary || '',
+        queuePosition: String(item.queuePosition || '1'),
+        dateReserved: item.dateReserved || item.pickupDate || item.date || 'Today',
+        available: String(item.available === 'true' || item.available === 'Available' || !!item.expiresAt),
+        expiresAt: item.expiresAt || '',
+        status: item.status || 'Pending',
       },
     });
   };
@@ -684,9 +719,11 @@ export default function BooksScreen() {
                 const isCompleted = item.status === "Completed";
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={`res-item-${item.id || idx}-${idx}`}
                     style={[styles.historyItemCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+                    onPress={() => handleReservationPress(item)}
+                    activeOpacity={0.85}
                   >
                     <View style={styles.historyCardTopRow}>
                       <View style={[styles.historyCardIconSquare, { backgroundColor: isDarkMode ? "rgba(168, 85, 247, 0.12)" : "#F3E8FF", borderColor: isDarkMode ? "rgba(168, 85, 247, 0.3)" : "#D8B4FE" }]}>
@@ -706,11 +743,11 @@ export default function BooksScreen() {
                       <View style={[
                         styles.statusPill,
                         isClaimReady
-                          ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "#10B981" }
+                          ? { backgroundColor: "rgba(168, 85, 247, 0.15)", borderColor: "#A855F7" }
                           : isPending
                           ? { backgroundColor: "rgba(168, 85, 247, 0.15)", borderColor: "#A855F7" }
                           : isApproved
-                          ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "#10B981" }
+                          ? { backgroundColor: "rgba(168, 85, 247, 0.15)", borderColor: "#A855F7" }
                           : isCompleted
                           ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "#38BDF8" : "rgba(2, 116, 187, 0.3)" }
                           : { backgroundColor: "rgba(239, 68, 68, 0.15)", borderColor: "#EF4444" }
@@ -718,11 +755,11 @@ export default function BooksScreen() {
                         <Text style={[
                           styles.statusPillText,
                           isClaimReady
-                            ? { color: "#10B981" }
+                            ? { color: "#C084FC" }
                             : isPending
                             ? { color: "#C084FC" }
                             : isApproved
-                            ? { color: "#10B981" }
+                            ? { color: "#C084FC" }
                             : isCompleted
                             ? { color: isDarkMode ? "#38BDF8" : "#0274BB" }
                             : { color: "#EF4444" }
@@ -732,7 +769,7 @@ export default function BooksScreen() {
                             : isPending
                             ? `WAITLIST #${item.queuePosition || 1}`
                             : isApproved
-                            ? "APPROVED"
+                            ? "RESERVED"
                             : isCompleted
                             ? "CLAIMED"
                             : "CANCELLED"}
@@ -742,9 +779,9 @@ export default function BooksScreen() {
 
                     {/* Countdown banner if copy is ready for 24h pickup */}
                     {isClaimReady && (
-                      <View style={[styles.claimCountdownBanner, { backgroundColor: countdown.isUrgent ? "rgba(239, 68, 68, 0.12)" : "rgba(16, 185, 129, 0.12)", borderColor: countdown.isUrgent ? "#EF4444" : "#10B981" }]}>
-                        <Ionicons name="timer-outline" size={15} color={countdown.isUrgent ? "#EF4444" : "#10B981"} />
-                        <Text style={[styles.claimCountdownText, { color: countdown.isUrgent ? "#EF4444" : "#10B981" }]}>
+                      <View style={[styles.claimCountdownBanner, { backgroundColor: countdown.isUrgent ? "rgba(239, 68, 68, 0.12)" : "rgba(168, 85, 247, 0.12)", borderColor: countdown.isUrgent ? "#EF4444" : "#A855F7" }]}>
+                        <Ionicons name="timer-outline" size={15} color={countdown.isUrgent ? "#EF4444" : "#A855F7"} />
+                        <Text style={[styles.claimCountdownText, { color: countdown.isUrgent ? "#EF4444" : "#A855F7" }]}>
                           Pickup Window: {countdown.text}
                         </Text>
                       </View>
@@ -755,31 +792,29 @@ export default function BooksScreen() {
                       <View style={styles.historyDetailItem}>
                         <Ionicons name="calendar-outline" size={13} color={theme.textSecondary} />
                         <Text style={[styles.historyDetailText, { color: theme.textSecondary }]}>
-                          {item.pickupDate || item.date || "Requested"}
+                          Reserved: {item.dateReserved || item.pickupDate || item.date || "Requested"}
                         </Text>
                       </View>
-                      {item.department ? (
-                        <View style={styles.historyDetailItem}>
-                          <Ionicons name="business-outline" size={13} color={theme.textSecondary} />
-                          <Text style={[styles.historyDetailText, { color: theme.textSecondary }]}>
-                            {item.department}
-                          </Text>
-                        </View>
-                      ) : null}
+                      <View style={styles.historyDetailItem}>
+                        <Ionicons name="people-outline" size={13} color={isDarkMode ? "#A855F7" : "#7C3AED"} />
+                        <Text style={[styles.historyDetailText, { color: isDarkMode ? "#C084FC" : "#6D28D9" }]}>
+                          1st-Come, 1st-Served
+                        </Text>
+                      </View>
                     </View>
 
                     {/* Action Button */}
                     <TouchableOpacity
                       style={[styles.historyCardActionBtn, { backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.05)" : "#F0F7FF", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.2)" }]}
-                      onPress={() => handleBookPress(item)}
+                      onPress={() => handleReservationPress(item)}
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.historyCardActionBtnText, { color: isDarkMode ? "#FCD34D" : theme.accentBlue }]}>
-                        View Book Details
+                        View Reservation Details
                       </Text>
                       <Ionicons name="chevron-forward" size={14} color={isDarkMode ? "#FCD34D" : theme.accentBlue} />
                     </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -795,18 +830,20 @@ export default function BooksScreen() {
             <View style={[styles.summaryBannerCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
               <View style={styles.summaryBannerRow}>
                 <View style={[styles.summaryStatBox, { borderRightColor: theme.cardBorder, borderRightWidth: 1 }]}>
-                  <Text style={[styles.summaryStatNumber, { color: theme.textPrimary }]}>{borrowList.length}</Text>
+                  <Text style={[styles.summaryStatNumber, { color: theme.textPrimary }]}>
+                    {borrowList.filter(b => b.status === 'Approved' || b.status === 'Picked Up' || b.status === 'On Loan' || b.status === 'Completed' || b.status === 'Returned' || b.isReturned || b.date === 'Returned').length}
+                  </Text>
                   <Text style={[styles.summaryStatLabel, !isDarkMode && { color: theme.accentBlue }]}>Total Borrowed</Text>
                 </View>
                 <View style={[styles.summaryStatBox, { borderRightColor: theme.cardBorder, borderRightWidth: 1 }]}>
                   <Text style={[styles.summaryStatNumber, { color: "#10B981" }]}>
-                    {borrowList.filter(b => (b.status === 'Approved' || b.status === 'On Loan') && !b.isReturned && b.date !== 'Returned').length}
+                    {borrowList.filter(b => (b.status === 'Approved' || b.status === 'Picked Up' || b.status === 'On Loan' || b.isPickedUp) && !b.isReturned && b.date !== 'Returned' && b.status !== 'Completed' && b.status !== 'Returned').length}
                   </Text>
                   <Text style={[styles.summaryStatLabel, { color: "#10B981" }]}>Active Loans</Text>
                 </View>
                 <View style={styles.summaryStatBox}>
                   <Text style={[styles.summaryStatNumber, { color: isDarkMode ? "#38BDF8" : theme.accentBlue }]}>
-                    {borrowList.filter(b => b.status === 'Completed' || b.isReturned || b.date === 'Returned').length}
+                    {borrowList.filter(b => b.status === 'Completed' || b.status === 'Returned' || b.isReturned || b.date === 'Returned').length}
                   </Text>
                   <Text style={[styles.summaryStatLabel, { color: isDarkMode ? "#38BDF8" : theme.accentBlue }]}>Returned</Text>
                 </View>
@@ -848,28 +885,38 @@ export default function BooksScreen() {
               </View>
             ) : (
               borrowList.map((item, idx) => {
-                const isReturned = item.status === "Completed" || item.isReturned || item.date === "Returned";
-                const isPending = item.status === "Pending";
-                const isActiveLoan = (item.status === "Approved" || item.status === "On Loan") && !isReturned;
+                const isReturned = item.status === "Completed" || item.status === "Returned" || item.isReturned || item.date === "Returned";
+                const isPickedUp = !isReturned && (item.status === "Picked Up" || Boolean(item.isPickedUp || item.pickedUpAt));
+                const isApprovedWaitingPickup = !isReturned && !isPickedUp && item.status === "Approved";
+                const isPending = !isReturned && !isPickedUp && !isApprovedWaitingPickup && (item.status === "Pending" || (item.action === "Borrow" && item.status === "Upcoming"));
+                const isActiveLoan = (isPickedUp || isApprovedWaitingPickup || item.status === "On Loan") && !isReturned;
+                const countdown = isApprovedWaitingPickup ? getReservationCountdown(item) : null;
+
+                const borrowDateFormatted = item.borrowDate || item.pickupDate || item.dateReserved || (item.date !== 'Returned' ? item.date : undefined);
+                const returnDateFormatted = item.returnDate || (item.date && item.date !== 'Returned' ? item.date : "Done");
 
                 return (
-                  <View
+                  <TouchableOpacity
                     key={`borrow-item-${item.id || idx}-${idx}`}
                     style={[styles.historyItemCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+                    onPress={() => setSelectedBorrowDetail(item)}
+                    activeOpacity={0.75}
                   >
                     <View style={styles.historyCardTopRow}>
                       <View style={[
                         styles.historyCardIconSquare,
                         isReturned
                           ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "rgba(56, 189, 248, 0.3)" : "rgba(2, 116, 187, 0.25)" }
-                          : isActiveLoan
+                          : isPickedUp
                           ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "rgba(16, 185, 129, 0.3)" }
+                          : isApprovedWaitingPickup
+                          ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "#38BDF8" : "rgba(2, 116, 187, 0.3)" }
                           : { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "rgba(245, 158, 11, 0.3)" }
                       ]}>
                         <Ionicons
-                          name="book"
+                          name={isReturned ? "checkmark-circle" : isPickedUp ? "book" : isApprovedWaitingPickup ? "time" : "hourglass-outline"}
                           size={16}
-                          color={isReturned ? (isDarkMode ? "#38BDF8" : "#0274BB") : (isActiveLoan ? "#10B981" : "#F59E0B")}
+                          color={isReturned ? (isDarkMode ? "#38BDF8" : "#0274BB") : isPickedUp ? "#10B981" : isApprovedWaitingPickup ? (isDarkMode ? "#38BDF8" : "#0274BB") : "#F59E0B"}
                         />
                       </View>
 
@@ -887,8 +934,10 @@ export default function BooksScreen() {
                         styles.statusPill,
                         isReturned
                           ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "#38BDF8" : "rgba(2, 116, 187, 0.35)" }
-                          : isActiveLoan
+                          : isPickedUp
                           ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "#10B981" }
+                          : isApprovedWaitingPickup
+                          ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "#38BDF8" : "rgba(2, 116, 187, 0.35)" }
                           : { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "#F59E0B" }
                       ]}>
                         {isReturned && (
@@ -899,11 +948,27 @@ export default function BooksScreen() {
                             style={{ marginRight: 4 }}
                           />
                         )}
-                        {isActiveLoan && (
+                        {isPickedUp && (
                           <Ionicons
-                            name="book"
+                            name="checkmark-done"
                             size={12}
                             color="#10B981"
+                            style={{ marginRight: 4 }}
+                          />
+                        )}
+                        {isApprovedWaitingPickup && (
+                          <Ionicons
+                            name="time-outline"
+                            size={12}
+                            color={isDarkMode ? "#38BDF8" : "#0274BB"}
+                            style={{ marginRight: 4 }}
+                          />
+                        )}
+                        {isPending && (
+                          <Ionicons
+                            name="hourglass-outline"
+                            size={12}
+                            color="#F59E0B"
                             style={{ marginRight: 4 }}
                           />
                         )}
@@ -911,25 +976,39 @@ export default function BooksScreen() {
                           styles.statusPillText,
                           isReturned
                             ? { color: isDarkMode ? "#38BDF8" : "#0274BB" }
-                            : isActiveLoan
+                            : isPickedUp
                             ? { color: "#10B981" }
+                            : isApprovedWaitingPickup
+                            ? { color: isDarkMode ? "#38BDF8" : "#0274BB" }
                             : { color: "#F59E0B" }
                         ]}>
                           {isReturned
                             ? "RETURNED"
-                            : isActiveLoan
-                            ? "ACTIVE LOAN"
+                            : isPickedUp
+                            ? "BORROWED (PICKED UP)"
+                            : isApprovedWaitingPickup
+                            ? "READY FOR PICKUP"
                             : "BORROW PENDING"}
                         </Text>
                       </View>
                     </View>
+
+                    {/* Pickup countdown banner if approved and waiting for pickup */}
+                    {isApprovedWaitingPickup && countdown?.text && (
+                      <View style={[styles.claimCountdownBanner, { backgroundColor: countdown.isUrgent ? "rgba(239, 68, 68, 0.12)" : "rgba(56, 189, 248, 0.12)", borderColor: countdown.isUrgent ? "#EF4444" : "#38BDF8", marginTop: 8 }]}>
+                        <Ionicons name="timer-outline" size={15} color={countdown.isUrgent ? "#EF4444" : "#38BDF8"} />
+                        <Text style={[styles.claimCountdownText, { color: countdown.isUrgent ? "#EF4444" : "#38BDF8" }]}>
+                          Pickup Window: {countdown.text}
+                        </Text>
+                      </View>
+                    )}
 
                     {/* Timeline & Metadata */}
                     <View style={[styles.historyCardDetailsRow, { borderTopColor: isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.05)" }]}>
                       <View style={styles.historyDetailItem}>
                         <Ionicons name="log-out-outline" size={13} color={theme.textSecondary} />
                         <Text style={[styles.historyDetailText, { color: theme.textSecondary }]}>
-                          Borrowed: {item.pickupDate || item.date || "Active"}
+                          {isPickedUp ? `Picked Up: ${item.pickupDate || borrowDateFormatted || "Today"}` : `Borrowed: ${borrowDateFormatted || "Active"}`}
                         </Text>
                       </View>
 
@@ -943,7 +1022,7 @@ export default function BooksScreen() {
                           styles.historyDetailText,
                           { color: isReturned ? (isDarkMode ? "#38BDF8" : theme.accentBlue) : (isActiveLoan ? "#10B981" : theme.textSecondary) }
                         ]}>
-                          {isReturned ? `Returned: ${item.returnDate || "Done"}` : `Due: ${item.returnDate || item.date || "7 Days"}`}
+                          {isReturned ? `Returned: ${returnDateFormatted}` : `Due: ${item.returnDate || item.date || "7 Days"}`}
                         </Text>
                       </View>
                     </View>
@@ -951,7 +1030,10 @@ export default function BooksScreen() {
                     {/* Action Button */}
                     <TouchableOpacity
                       style={[styles.historyCardActionBtn, { backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.05)" : "#F0F7FF", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.2)" }]}
-                      onPress={() => handleBookPress(item)}
+                      onPress={(e) => {
+                        e?.stopPropagation?.();
+                        handleBookPress(item);
+                      }}
                       activeOpacity={0.8}
                     >
                       <Text style={[styles.historyCardActionBtnText, { color: isDarkMode ? "#FCD34D" : theme.accentBlue }]}>
@@ -959,7 +1041,7 @@ export default function BooksScreen() {
                       </Text>
                       <Ionicons name="chevron-forward" size={14} color={isDarkMode ? "#FCD34D" : theme.accentBlue} />
                     </TouchableOpacity>
-                  </View>
+                  </TouchableOpacity>
                 );
               })
             )}
@@ -1040,6 +1122,242 @@ export default function BooksScreen() {
 
         <View style={{ height: 60 }} />
       </ScrollView>
+
+      {/* Borrow & Return Details Modal */}
+      <Modal
+        visible={!!selectedBorrowDetail}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedBorrowDetail(null)}
+      >
+        {selectedBorrowDetail && (() => {
+          const item = selectedBorrowDetail;
+          const isReturned = item.status === "Completed" || item.status === "Returned" || item.isReturned || item.date === "Returned";
+          const isPickedUp = !isReturned && (item.status === "Picked Up" || Boolean(item.isPickedUp || item.pickedUpAt));
+          const isApproved = !isReturned && !isPickedUp && item.status === "Approved";
+          const isPending = !isReturned && !isPickedUp && !isApproved;
+          const countdown = isApproved ? getReservationCountdown(item) : null;
+          const borrowDateText = item.borrowDate || item.pickupDate || item.dateReserved || (item.date !== "Returned" ? item.date : undefined) || "Recorded";
+          const returnDateText = item.returnDate || (item.date && item.date !== "Returned" ? item.date : "Returned");
+          const dueDateText = item.dueDate || (item.date && item.date !== "Returned" ? item.date : "7 Days");
+
+          return (
+            <View style={styles.detailModalBackdrop}>
+              <TouchableOpacity
+                style={StyleSheet.absoluteFill}
+                activeOpacity={1}
+                onPress={() => setSelectedBorrowDetail(null)}
+              />
+              <View style={[styles.detailModalCard, { backgroundColor: isDarkMode ? '#111A2E' : '#FFFFFF', borderColor: isDarkMode ? '#24334C' : '#CBD5E1' }]}>
+                {/* Modal Header */}
+                <View style={[styles.detailModalHeader, { borderBottomColor: isDarkMode ? '#1E293B' : '#E2E8F0' }]}>
+                  <View style={styles.detailModalHeaderLeft}>
+                    <View style={[
+                      styles.detailModalHeaderIcon,
+                      {
+                        backgroundColor: isReturned
+                          ? (isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE")
+                          : isPickedUp
+                          ? "rgba(16, 185, 129, 0.15)"
+                          : isApproved
+                          ? (isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE")
+                          : "rgba(245, 158, 11, 0.15)",
+                      }
+                    ]}>
+                      <Ionicons
+                        name={isReturned ? "checkmark-circle" : isPickedUp ? "book" : isApproved ? "time" : "hourglass-outline"}
+                        size={20}
+                        color={isReturned ? (isDarkMode ? "#38BDF8" : "#0274BB") : isPickedUp ? "#10B981" : isApproved ? (isDarkMode ? "#38BDF8" : "#0274BB") : "#F59E0B"}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.detailModalTitle, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }]}>
+                        {isReturned ? "Return Details" : isPickedUp ? "Borrow Loan Details" : isApproved ? "Pickup Ready Details" : "Borrow Request Details"}
+                      </Text>
+                      <Text style={[styles.detailModalSubtitle, { color: theme.textSecondary }]}>
+                        {isReturned ? "Completed Book Return Record" : isPickedUp ? "Active Circulation Desk Loan" : isApproved ? "Ready for Counter Pickup" : "Pending Librarian Verification"}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setSelectedBorrowDetail(null)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    style={styles.detailModalCloseBtn}
+                  >
+                    <Ionicons name="close-circle" size={24} color={theme.textSecondary} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView showsVerticalScrollIndicator={false}>
+                  {/* Book Summary Card */}
+                  <View style={[styles.detailBookCard, { backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.04)" : "#F8FAFC", borderColor: isDarkMode ? "#1E293B" : "#E2E8F0" }]}>
+                    <Text style={[styles.detailBookTitle, { color: theme.textPrimary }]}>{item.title}</Text>
+                    <Text style={[styles.detailBookAuthor, { color: theme.textSecondary }]}>by {item.author}</Text>
+
+                    {/* Status Pill in Modal */}
+                    <View style={[
+                      styles.statusPill,
+                      { alignSelf: 'flex-start', marginTop: 2 },
+                      isReturned
+                        ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "#38BDF8" : "rgba(2, 116, 187, 0.35)" }
+                        : isPickedUp
+                        ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "#10B981" }
+                        : isApproved
+                        ? { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE", borderColor: isDarkMode ? "#38BDF8" : "rgba(2, 116, 187, 0.35)" }
+                        : { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "#F59E0B" }
+                    ]}>
+                      <Text style={[
+                        styles.statusPillText,
+                        isReturned
+                          ? { color: isDarkMode ? "#38BDF8" : "#0274BB" }
+                          : isPickedUp
+                          ? { color: "#10B981" }
+                          : isApproved
+                          ? { color: isDarkMode ? "#38BDF8" : "#0274BB" }
+                          : { color: "#F59E0B" }
+                      ]}>
+                        {isReturned
+                          ? "RETURNED"
+                          : isPickedUp
+                          ? "BORROWED (PICKED UP)"
+                          : isApproved
+                          ? "READY FOR PICKUP"
+                          : "BORROW PENDING"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Pickup countdown banner if applicable */}
+                  {isApproved && countdown?.text && (
+                    <View style={[styles.claimCountdownBanner, { backgroundColor: countdown.isUrgent ? "rgba(239, 68, 68, 0.12)" : "rgba(56, 189, 248, 0.12)", borderColor: countdown.isUrgent ? "#EF4444" : "#38BDF8", marginBottom: 14 }]}>
+                      <Ionicons name="timer-outline" size={16} color={countdown.isUrgent ? "#EF4444" : "#38BDF8"} />
+                      <Text style={[styles.claimCountdownText, { color: countdown.isUrgent ? "#EF4444" : "#38BDF8" }]}>
+                        Pickup Window: {countdown.text}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Info Rows */}
+                  <View style={styles.detailInfoGrid}>
+                    <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                      <View style={styles.detailInfoLabelRow}>
+                        <Ionicons name="calendar-outline" size={15} color={theme.textSecondary} />
+                        <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Borrow Date</Text>
+                      </View>
+                      <Text style={[styles.detailInfoValue, { color: theme.textPrimary }]}>{borrowDateText}</Text>
+                    </View>
+
+                    {isPickedUp && (
+                      <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                        <View style={styles.detailInfoLabelRow}>
+                          <Ionicons name="checkmark-done-circle-outline" size={15} color="#10B981" />
+                          <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Picked Up</Text>
+                        </View>
+                        <Text style={[styles.detailInfoValue, { color: "#10B981" }]}>{item.pickupDate || borrowDateText}</Text>
+                      </View>
+                    )}
+
+                    {isReturned ? (
+                      <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                        <View style={styles.detailInfoLabelRow}>
+                          <Ionicons name="checkmark-circle-outline" size={15} color={isDarkMode ? "#38BDF8" : theme.accentBlue} />
+                          <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Return Date</Text>
+                        </View>
+                        <Text style={[styles.detailInfoValue, { color: isDarkMode ? "#38BDF8" : theme.accentBlue }]}>{returnDateText}</Text>
+                      </View>
+                    ) : (
+                      <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                        <View style={styles.detailInfoLabelRow}>
+                          <Ionicons name="alarm-outline" size={15} color={isPickedUp ? "#10B981" : theme.textSecondary} />
+                          <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Due Return Date</Text>
+                        </View>
+                        <Text style={[styles.detailInfoValue, { color: isPickedUp ? "#10B981" : theme.textPrimary }]}>{dueDateText}</Text>
+                      </View>
+                    )}
+
+                    <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                      <View style={styles.detailInfoLabelRow}>
+                        <Ionicons name="information-circle-outline" size={15} color={theme.textSecondary} />
+                        <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Circulation Status</Text>
+                      </View>
+                      <Text style={[
+                        styles.detailInfoValue,
+                        { color: isReturned ? (isDarkMode ? "#38BDF8" : theme.accentBlue) : isPickedUp ? "#10B981" : isApproved ? (isDarkMode ? "#38BDF8" : theme.accentBlue) : "#F59E0B" }
+                      ]}>
+                        {isReturned
+                          ? "Returned · Loan Closed"
+                          : isPickedUp
+                          ? "Active Loan · In Student Hand"
+                          : isApproved
+                          ? "Approved · Ready for Pickup"
+                          : "Pending Approval"}
+                      </Text>
+                    </View>
+
+                    {item.shelf ? (
+                      <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                        <View style={styles.detailInfoLabelRow}>
+                          <Ionicons name="location-outline" size={15} color={theme.textSecondary} />
+                          <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Shelf</Text>
+                        </View>
+                        <Text style={[styles.detailInfoValue, { color: theme.textPrimary }]}>{item.shelf}</Text>
+                      </View>
+                    ) : null}
+
+                    {item.department || item.category ? (
+                      <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                        <View style={styles.detailInfoLabelRow}>
+                          <Ionicons name="business-outline" size={15} color={theme.textSecondary} />
+                          <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>Department</Text>
+                        </View>
+                        <Text style={[styles.detailInfoValue, { color: theme.textPrimary }]}>{item.department || item.category}</Text>
+                      </View>
+                    ) : null}
+
+                    {item.isbn ? (
+                      <View style={[styles.detailInfoRow, { borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9" }]}>
+                        <View style={styles.detailInfoLabelRow}>
+                          <Ionicons name="barcode-outline" size={15} color={theme.textSecondary} />
+                          <Text style={[styles.detailInfoLabel, { color: theme.textSecondary }]}>ISBN</Text>
+                        </View>
+                        <Text style={[styles.detailInfoValue, { color: theme.textPrimary }]}>{item.isbn}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {/* Actions */}
+                  <View style={styles.detailModalActions}>
+                    <TouchableOpacity
+                      style={[styles.detailModalBtnPrimary, { backgroundColor: isDarkMode ? theme.accentGold : theme.accentBlue }]}
+                      onPress={() => {
+                        const target = selectedBorrowDetail;
+                        setSelectedBorrowDetail(null);
+                        handleBookPress(target);
+                      }}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.detailModalBtnPrimaryText, { color: isDarkMode ? '#080F1E' : '#FFFFFF' }]}>
+                        View Book Details
+                      </Text>
+                      <Ionicons name="chevron-forward" size={15} color={isDarkMode ? '#080F1E' : '#FFFFFF'} />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.detailModalBtnSecondary, { borderColor: theme.cardBorder, backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.05)" : "#F1F5F9" }]}
+                      onPress={() => setSelectedBorrowDetail(null)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.detailModalBtnSecondaryText, { color: theme.textPrimary }]}>
+                        Close
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </View>
+            </View>
+          );
+        })()}
+      </Modal>
     </AnimatedScreen>
   );
 }
@@ -1436,5 +1754,129 @@ const styles = StyleSheet.create({
   },
   bookmarkTouchArea: {
     padding: 4,
+  },
+
+  // Detail Modal Styles
+  detailModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailModalCard: {
+    width: '100%',
+    maxHeight: '85%',
+    borderRadius: 22,
+    borderWidth: 1,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  detailModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    marginBottom: 16,
+  },
+  detailModalHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  detailModalHeaderIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+  },
+  detailModalTitle: {
+    fontSize: 16.5,
+    fontWeight: '800',
+  },
+  detailModalSubtitle: {
+    fontSize: 11.5,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  detailModalCloseBtn: {
+    padding: 6,
+  },
+  detailBookCard: {
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+  },
+  detailBookTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  detailBookAuthor: {
+    fontSize: 13,
+    marginBottom: 10,
+  },
+  detailInfoGrid: {
+    marginBottom: 16,
+  },
+  detailInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+  },
+  detailInfoLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailInfoLabel: {
+    fontSize: 13,
+    marginLeft: 8,
+    fontWeight: '600',
+  },
+  detailInfoValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    maxWidth: '55%',
+    textAlign: 'right',
+  },
+  detailModalActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  detailModalBtnPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  detailModalBtnPrimaryText: {
+    fontSize: 14,
+    fontWeight: '800',
+    marginRight: 6,
+  },
+  detailModalBtnSecondary: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  detailModalBtnSecondaryText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
 });

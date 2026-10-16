@@ -1,12 +1,31 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { startTransition, useEffect, useRef, useState } from "react";
-import { Plus, Search, Sparkles, Paperclip, User, BookOpen, Trash2, X } from "lucide-react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Plus,
+  Search,
+  Sparkles,
+  Filter,
+  Paperclip,
+  User,
+  BookOpen,
+  Trash2,
+  X,
+  ArrowRight,
+  CheckCircle2,
+  History,
+  Layers,
+  LayoutGrid,
+  Table as TableIcon,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+} from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useNotice } from "@/components/providers/notice-provider";
-import { AdminPageHeader, AdminSection, AdminTable } from "@/components/admin/shared";
+import { AdminPageHeader, AdminSection } from "@/components/admin/shared";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
 import { requestJson } from "@/lib/admin/client";
 import type { PromptSearchPayload, PromptSearchLog } from "@/lib/admin/types";
@@ -26,12 +45,12 @@ function getAvatarGradient(name: string) {
 }
 
 const DEPT_CONFIG: Record<string, { text: string; bg: string; border: string }> = {
-  All: { text: "text-amber-400 border-amber-500/20 bg-amber-500/10", bg: "bg-amber-500/10", border: "border-amber-500/20" },
-  "Computer Science": { text: "text-cyan-400 border-cyan-500/20 bg-cyan-500/10", bg: "bg-cyan-500/10", border: "border-cyan-500/20" },
-  Engineering: { text: "text-indigo-400 border-indigo-500/20 bg-indigo-500/10", bg: "bg-indigo-500/10", border: "border-indigo-500/20" },
-  Education: { text: "text-emerald-400 border-emerald-500/20 bg-emerald-500/10", bg: "bg-emerald-500/10", border: "border-emerald-500/20" },
-  "Business & Accountancy": { text: "text-rose-400 border-rose-500/20 bg-rose-500/10", bg: "bg-rose-500/10", border: "border-rose-500/20" },
-  Arts: { text: "text-purple-400 border-purple-500/20 bg-purple-500/10", bg: "bg-purple-500/10", border: "border-purple-500/20" },
+  All: { text: "text-amber-800 bg-amber-50 border-amber-200", bg: "bg-amber-50", border: "border-amber-200" },
+  "Computer Science": { text: "text-cyan-800 bg-cyan-50 border-cyan-200", bg: "bg-cyan-50", border: "border-cyan-200" },
+  Engineering: { text: "text-indigo-800 bg-indigo-50 border-indigo-200", bg: "bg-indigo-50", border: "border-indigo-200" },
+  Education: { text: "text-emerald-800 bg-emerald-50 border-emerald-200", bg: "bg-emerald-50", border: "border-emerald-200" },
+  "Business & Accountancy": { text: "text-rose-800 bg-rose-50 border-rose-200", bg: "bg-rose-50", border: "border-rose-200" },
+  Arts: { text: "text-purple-800 bg-purple-50 border-purple-200", bg: "bg-purple-50", border: "border-purple-200" },
 };
 
 const getDeptConfig = (dept: string) => DEPT_CONFIG[dept] ?? DEPT_CONFIG.All;
@@ -41,9 +60,9 @@ const containerVariants = {
   show: {
     opacity: 1,
     transition: {
-      staggerChildren: 0.04
-    }
-  }
+      staggerChildren: 0.04,
+    },
+  },
 };
 
 const itemVariants = {
@@ -54,9 +73,9 @@ const itemVariants = {
     transition: {
       type: "spring" as const,
       stiffness: 120,
-      damping: 18
-    }
-  }
+      damping: 18,
+    },
+  },
 };
 
 export function AiSearchPage() {
@@ -68,12 +87,21 @@ export function AiSearchPage() {
   const [department, setDepartment] = useState(
     () => searchParams.get("department") ?? "All",
   );
+  const [isPrefixFilter, setIsPrefixFilter] = useState(() => {
+    const filterParam = searchParams.get("filter");
+    if (filterParam !== null) {
+      return filterParam === "1" || filterParam === "true";
+    }
+    return true; // Default to Filter: ON just like in Student app
+  });
   const [files, setFiles] = useState<File[]>([]);
   const [payload, setPayload] = useState<PromptSearchPayload | null>(null);
   const [logs, setLogs] = useState<PromptSearchLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedBook, setSelectedBook] = useState<any | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageInput, setPageInput] = useState("1");
+  const [resultsViewMode, setResultsViewMode] = useState<"list" | "table">("list");
   const [isFocused, setIsFocused] = useState(false);
   const PAGE_SIZE = 6;
   const autoSearchKeyRef = useRef<string | null>(null);
@@ -84,10 +112,19 @@ export function AiSearchPage() {
     });
   }, []);
 
-  async function executeSearch(searchQuery: string, searchDepartment: string, updateUrl = true) {
+  async function executeSearch(
+    searchQuery: string,
+    searchDepartment: string,
+    updateUrl = true,
+    overrideMode?: boolean,
+  ) {
     if (!searchQuery.trim()) {
       return;
     }
+
+    const activeMode = overrideMode !== undefined ? overrideMode : isPrefixFilter;
+    const cleanSearchKey = `${searchQuery.trim()}::${searchDepartment}::${activeMode ? "filter" : "ai"}`;
+    autoSearchKeyRef.current = cleanSearchKey;
 
     setLoading(true);
     setCurrentPage(1);
@@ -96,8 +133,12 @@ export function AiSearchPage() {
       const formData = new FormData();
       formData.set("query", searchQuery);
       formData.set("department", searchDepartment);
-      for (const file of files) {
-        formData.append("files", file);
+      formData.set("mode", activeMode ? "prefix" : "ai");
+
+      if (!activeMode) {
+        for (const file of files) {
+          formData.append("files", file);
+        }
       }
 
       const response = await requestJson<PromptSearchPayload>("/api/admin/prompt-search", {
@@ -114,12 +155,15 @@ export function AiSearchPage() {
         router.replace(
           `${pathname}?query=${encodeURIComponent(searchQuery)}&department=${encodeURIComponent(
             searchDepartment,
-          )}`,
+          )}&filter=${activeMode ? "1" : "0"}`,
           { scroll: false },
         );
       }
 
-      notify("AI prompt search completed.", "success");
+      notify(
+        activeMode ? "Prefix filter search completed." : "AI prompt search completed.",
+        "success",
+      );
     } catch (error) {
       notify(error instanceof Error ? error.message : "Search failed.", "error");
     } finally {
@@ -127,11 +171,20 @@ export function AiSearchPage() {
     }
   }
 
-
+  function handleToggleFilter(newMode: boolean) {
+    setIsPrefixFilter(newMode);
+    if (query.trim()) {
+      void executeSearch(query, department, true, newMode);
+    }
+  }
 
   useEffect(() => {
     const queryParam = searchParams.get("query") ?? "";
     const departmentParam = searchParams.get("department") ?? "All";
+    const filterParam = searchParams.get("filter");
+    if (filterParam !== null) {
+      setIsPrefixFilter(filterParam === "1" || filterParam === "true");
+    }
     setQuery(queryParam);
     setDepartment(departmentParam);
   }, [searchParams]);
@@ -140,7 +193,9 @@ export function AiSearchPage() {
     const queryParam = searchParams.get("query") ?? "";
     const departmentParam = searchParams.get("department") ?? "";
     const searchDepartment = departmentParam || department;
-    const searchKey = queryParam ? `${queryParam}::${searchDepartment}` : "";
+    const filterParam = searchParams.get("filter");
+    const activeFilter = filterParam !== null ? filterParam === "1" || filterParam === "true" : isPrefixFilter;
+    const searchKey = queryParam ? `${queryParam}::${searchDepartment}::${activeFilter ? "filter" : "ai"}` : "";
 
     if (!searchKey || loading || autoSearchKeyRef.current === searchKey) {
       return;
@@ -151,7 +206,7 @@ export function AiSearchPage() {
     let isMounted = true;
     const timeoutId = window.setTimeout(() => {
       if (isMounted) {
-        void executeSearch(queryParam, searchDepartment, false);
+        void executeSearch(queryParam, searchDepartment, false, activeFilter);
       }
     }, 0);
 
@@ -167,130 +222,247 @@ export function AiSearchPage() {
     await executeSearch(query, department);
   }
 
-  async function handleDeleteLog(id: string) {
-    try {
-      const response = await requestJson<{ success: boolean; logs: PromptSearchLog[] }>(
-        `/api/admin/prompt-search?id=${encodeURIComponent(id)}`,
-        { method: "DELETE" }
-      );
-      if (response.success) {
-        startTransition(() => {
-          setLogs(response.logs);
-        });
-        notify("Search log entry deleted.", "success");
-      }
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Failed to delete log entry.", "error");
-    }
-  }
 
-  async function handleClearAllLogs() {
-    if (!window.confirm("Are you sure you want to clear all prompt search history? This cannot be undone.")) {
-      return;
-    }
-    try {
-      const response = await requestJson<{ success: boolean; logs: PromptSearchLog[] }>(
-        "/api/admin/prompt-search",
-        { method: "DELETE" }
-      );
-      if (response.success) {
-        startTransition(() => {
-          setLogs([]);
-        });
-        notify("All search history cleared.", "success");
-      }
-    } catch (error) {
-      notify(error instanceof Error ? error.message : "Failed to clear search history.", "error");
-    }
-  }
 
   const results = payload?.results ?? [];
+  const totalPages = Math.max(1, Math.ceil(results.length / PAGE_SIZE));
   const visibleResults = results.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+
+  useEffect(() => {
+    setPageInput(String(currentPage));
+  }, [currentPage]);
+
+  const handlePageCommit = (val: string) => {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setPageInput(String(currentPage));
+      return;
+    }
+    const num = parseInt(trimmed, 10);
+    if (!isNaN(num)) {
+      const target = Math.max(1, Math.min(totalPages, num));
+      setCurrentPage(target);
+      setPageInput(String(target));
+    } else {
+      setPageInput(String(currentPage));
+    }
+  };
 
   return (
     <div className="space-y-6">
       <AdminPageHeader
         eyebrow="Administration"
-        title="AI Prompt Search"
-        description="Search the live library catalog with natural language prompts and supporting PDF, DOCX, PPT, and image uploads."
+        title="Catalog & AI Prompt Search"
+        description="Filter the live library catalog with prefix search or run AI prompts with supporting PDF, DOCX, PPT, and image uploads."
+        actions={
+          <button
+            type="button"
+            onClick={() => router.push(pathname.includes("/librarian") ? "/librarian/history" : "/admin/history")}
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-white shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 transition-all cursor-pointer"
+          >
+            <History className="h-4 w-4 text-[#0274BB] dark:text-[#FFD600]" />
+            <span>View Search History</span>
+          </button>
+        }
       />
 
       <AdminSection
         title="Prompt Search"
-        description="Upload supporting files and inspect relevance percentages for matched books."
+        description="Toggle between strict Prefix Filter search and natural language AI Prompt analysis."
       >
-        <form className="rounded-[24px] bg-gradient-to-b from-[#14293E] to-[#0E1F30] p-8 md:p-10 mb-8 shadow-xl border border-white/5 relative overflow-hidden panel-hero" onSubmit={handleSearch}>
+        <form
+          className="rounded-[24px] bg-gradient-to-b from-[#14293E] to-[#0E1F30] p-6 sm:p-8 md:p-10 mb-8 shadow-xl border border-white/5 relative overflow-hidden panel-hero"
+          onSubmit={handleSearch}
+        >
           {/* Subtle top glow line */}
-          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#FFD600]/20 to-transparent" />
+          <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-[#FFD600]/25 to-transparent" />
 
-          {/* Section Label */}
-          <div className="flex items-center gap-2 text-[#FFD600] mb-4">
-            <Sparkles className="h-4 w-4 fill-current animate-pulse" />
-            <span className="text-xs font-bold tracking-widest uppercase">
-              ASK BOOKHIVE
-            </span>
+          {/* Top Bar: Section Label & Filter Toggle (just like Student app) */}
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+            <div className="flex items-center gap-2">
+              {isPrefixFilter ? (
+                <div className="flex items-center gap-2 text-[#0274BB] dark:text-[#FFD600]">
+                  <Filter className="h-4 w-4" />
+                  <span className="text-xs font-bold tracking-widest uppercase">
+                    CATALOG PREFIX FILTER
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 text-purple-600 dark:text-[#FFD600]">
+                  <Sparkles className="h-4 w-4 fill-current animate-pulse" />
+                  <span className="text-xs font-bold tracking-widest uppercase">
+                    ASK BOOKHIVE (AI PROMPT)
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* FILTER TOGGLE (Exact design inspired by Student app) */}
+            <button
+              type="button"
+              onClick={() => handleToggleFilter(!isPrefixFilter)}
+              className={cn(
+                "flex items-center justify-between gap-3.5 px-4 py-1.5 rounded-full border transition-all duration-200 select-none cursor-pointer shadow-sm",
+                isPrefixFilter
+                  ? "bg-blue-50/90 border-[#0274BB] text-[#0274BB] dark:bg-amber-400/15 dark:border-[#FFD600] dark:text-[#FFD600]"
+                  : "bg-purple-50/90 border-purple-300 text-purple-700 dark:bg-slate-800/80 dark:border-slate-600 dark:text-slate-300",
+              )}
+              title={
+                isPrefixFilter
+                  ? "Filter mode is ON (searches strictly by title prefix). Click to switch to AI Prompt mode."
+                  : "Filter mode is OFF (AI prompts work). Click to switch to Prefix Filter mode."
+              }
+            >
+              <div className="flex items-center gap-2">
+                {isPrefixFilter ? (
+                  <Filter className="h-3.5 w-3.5 text-[#0274BB] dark:text-[#FFD600]" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5 text-purple-600 dark:text-slate-400" />
+                )}
+                <span className="text-[11px] font-extrabold tracking-wider uppercase">
+                  {isPrefixFilter ? "FILTER: ON" : "FILTER: OFF"}
+                </span>
+              </div>
+
+              {/* Toggle switch track + thumb */}
+              <div
+                className={cn(
+                  "w-8 h-4 rounded-full transition-colors duration-200 relative p-0.5 flex items-center",
+                  isPrefixFilter
+                    ? "bg-[#0274BB] dark:bg-[#FFD600]"
+                    : "bg-slate-300 dark:bg-slate-700",
+                )}
+              >
+                <div
+                  className={cn(
+                    "w-3 h-3 rounded-full transition-transform duration-200 shadow-sm",
+                    isPrefixFilter
+                      ? "translate-x-4 bg-white dark:bg-[#0A1624]"
+                      : "translate-x-0 bg-white dark:bg-slate-400",
+                  )}
+                />
+              </div>
+            </button>
           </div>
 
           {/* Main Heading */}
-          <h1 className="mb-8 text-[32px] font-bold tracking-tight text-white md:text-[36px]">
+          <h1 className="mb-6 text-[28px] sm:text-[32px] md:text-[36px] font-bold tracking-tight text-white leading-tight">
             Find resources across the entire STI WNU digital ecosystem.
           </h1>
 
-          {/* AI Prompt Search Box */}
-          <div className={cn(
-            "flex w-full items-center gap-3 rounded-full border px-4 py-3 shadow-inner mb-2 transition-all duration-300",
-            isFocused
-              ? "border-[#FFD600] bg-[#0A1624] shadow-[0_0_20px_rgba(255,214,0,0.15)] ring-1 ring-[#FFD600]"
-              : "border-white/10 bg-[#0B1724]"
-          )}>
-            <Search className={cn("h-5 w-5 ml-2 transition-colors duration-300", isFocused ? "text-[#FFD600]" : "text-slate-400")} />
+          {/* Search Box */}
+          <div
+            className={cn(
+              "flex w-full items-center gap-3 rounded-full border px-4 py-2.5 sm:py-3 shadow-inner mb-2 transition-all duration-300",
+              isFocused
+                ? "border-[#FFD600] bg-[#0A1624] shadow-[0_0_20px_rgba(255,214,0,0.15)] ring-1 ring-[#FFD600]"
+                : "border-white/10 bg-[#0B1724]",
+            )}
+          >
+            {isPrefixFilter ? (
+              <Search
+                className={cn(
+                  "h-5 w-5 ml-2 transition-colors duration-300",
+                  isFocused ? "text-[#FFD600]" : "text-slate-400",
+                )}
+              />
+            ) : (
+              <Sparkles
+                className={cn(
+                  "h-5 w-5 ml-2 transition-colors duration-300",
+                  isFocused ? "text-[#FFD600]" : "text-purple-400",
+                )}
+              />
+            )}
+
             <input
               type="text"
               suppressHydrationWarning
-              placeholder="Search by Title, Author, ISBN, or ask a question..."
+              placeholder={
+                isPrefixFilter
+                  ? "Search by title prefix (e.g. B, BR, Yana)..."
+                  : "Ask BookHive or search prompt/keywords..."
+              }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
-              className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-500 outline-none"
+              className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-400 outline-none"
             />
-            
+
             <div className="flex items-center gap-2">
-              <label className="cursor-pointer p-2 text-slate-400 hover:text-white transition rounded-full hover:bg-white/5" title="Upload Attachment">
+              {/* Attachment upload: active only in AI Prompt mode */}
+              <label
+                className={cn(
+                  "p-2 transition rounded-full",
+                  !isPrefixFilter
+                    ? "cursor-pointer text-slate-400 hover:text-white hover:bg-white/10"
+                    : "cursor-not-allowed opacity-25 text-slate-500",
+                )}
+                title={
+                  !isPrefixFilter
+                    ? "Upload Supporting Attachment (PDF, DOCX, PPT, Image)"
+                    : "Turn FILTER: OFF to attach supporting documents for AI analysis"
+                }
+              >
                 <Paperclip className="h-5 w-5" />
                 <input
                   id="prompt-upload-input"
                   type="file"
+                  disabled={isPrefixFilter}
                   className="hidden"
                   accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
                   multiple
                   onChange={(event) => setFiles(Array.from(event.target.files ?? []))}
                 />
               </label>
-              
+
               <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
                 type="submit"
                 disabled={loading}
                 suppressHydrationWarning
-                className="rounded-full bg-[#FFD600] disabled:bg-slate-700 disabled:text-slate-450 disabled:cursor-not-allowed disabled:scale-100 px-6 py-2.5 text-sm font-bold tracking-wide text-[#0A1624] transition hover:bg-[#FCD400]/90 flex items-center justify-center gap-2"
+                className="rounded-full bg-[#FFD600] disabled:bg-slate-700 disabled:text-slate-450 disabled:cursor-not-allowed disabled:scale-100 px-6 py-2.5 text-sm font-bold tracking-wide text-[#0A1624] transition hover:bg-[#FCD400]/90 shadow-sm flex items-center justify-center gap-2"
               >
                 {loading ? (
                   <>
                     <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#0A1624] border-t-transparent" />
-                    ANALYZING...
+                    {isPrefixFilter ? "FILTERING..." : "ANALYZING..."}
+                  </>
+                ) : isPrefixFilter ? (
+                  <>
+                    <Search className="h-4 w-4" />
+                    SEARCH
                   </>
                 ) : (
-                  "ANALYZE"
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    ANALYZE
+                  </>
                 )}
               </motion.button>
             </div>
           </div>
 
-          {/* File list */}
-          {files.length > 0 ? (
-            <div className="mt-5 flex flex-wrap gap-2">
+          {/* Mode helper hint */}
+          <div className="mt-2 text-xs text-white/70 flex items-center gap-2 px-2">
+            {isPrefixFilter ? (
+              <span className="inline-flex items-center gap-1.5 text-sky-300 font-medium">
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Filter Mode is ON: Searches books strictly by title prefix & keywords. AI prompts bypassed.
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-amber-300 font-medium">
+                <Sparkles className="h-3.5 w-3.5" />
+                AI Prompt Mode is ON: Ask natural language questions or attach documents to match books conceptually.
+              </span>
+            )}
+          </div>
+
+          {/* File list (AI Prompt mode only) */}
+          {files.length > 0 && !isPrefixFilter ? (
+            <div className="mt-4 flex flex-wrap gap-2">
               {files.map((file, idx) => (
                 <motion.span
                   initial={{ opacity: 0, scale: 0.9 }}
@@ -317,41 +489,209 @@ export function AiSearchPage() {
           ) : null}
         </form>
 
-        <div className="mt-6 flex flex-col gap-8 w-full">
+        {/* SEARCH RESULTS SECTION (Clean Lightmode, NOT Black!) */}
+        <div className="space-y-6 w-full">
+          {/* Results Status Header */}
+          {results.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2.5">
+                  {isPrefixFilter ? (
+                    <Filter className="h-5 w-5 text-[#0274BB] dark:text-[#FFD600]" />
+                  ) : (
+                    <Sparkles className="h-5 w-5 text-purple-600 dark:text-[#FFD600]" />
+                  )}
+                  <span>Search Results</span>
+                  <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                    {results.length} {results.length === 1 ? "match" : "matches"}
+                  </span>
+                </h2>
+                {query && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Showing results for <span className="font-semibold text-slate-800 dark:text-slate-200">"{query}"</span>
+                    {department !== "All" && <span> in {department}</span>}
+                  </p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {/* View Mode Toggle: List vs Table */}
+                <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setResultsViewMode("list")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer select-none",
+                      resultsViewMode === "list"
+                        ? "bg-white text-[#0274BB] shadow-sm"
+                        : "text-slate-600 hover:text-slate-900",
+                    )}
+                    title="Card List view"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                    <span>List</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setResultsViewMode("table")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer select-none",
+                      resultsViewMode === "table"
+                        ? "bg-white text-[#0274BB] shadow-sm"
+                        : "text-slate-600 hover:text-slate-900",
+                    )}
+                    title="Dense Table view"
+                  >
+                    <TableIcon className="h-3.5 w-3.5" />
+                    <span>Table</span>
+                  </button>
+                </div>
+
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 text-[10px] font-extrabold uppercase px-3 py-1 rounded-full border shadow-sm",
+                    isPrefixFilter
+                      ? "bg-blue-50 text-[#0274BB] border-blue-200 dark:bg-amber-400/10 dark:text-[#FFD600] dark:border-amber-400/30"
+                      : "bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-400/30",
+                  )}
+                >
+                  {isPrefixFilter ? <Filter className="h-3 w-3" /> : <Sparkles className="h-3 w-3" />}
+                  {isPrefixFilter ? "PREFIX FILTER MODE" : "AI PROMPT MODE"}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Lightmode Results: Table vs List */}
           {visibleResults.length > 0 ? (
-            <div className="grid gap-6 md:grid-cols-2 w-full">
+            resultsViewMode === "table" ? (
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm w-full">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/80">
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500">Book Details</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 whitespace-nowrap">Department</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 whitespace-nowrap">Relevance</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 whitespace-nowrap">ISBN & Language</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500">Matched Reasons</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 text-right whitespace-nowrap">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {visibleResults.map((result) => {
+                      const relevance = result.relevance;
+                      const isHigh = relevance >= 90;
+                      const isMedium = relevance >= 75;
+
+                      const relevanceBadgeClass = isHigh
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                        : isMedium
+                        ? "bg-amber-50 text-amber-700 border border-amber-200 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                        : "bg-sky-50 text-sky-700 border border-sky-200 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs";
+
+                      return (
+                        <tr
+                          key={result.id}
+                          onClick={() => setSelectedBook(result)}
+                          className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                        >
+                          <td className="px-5 py-3.5 max-w-[280px]">
+                            <div className="font-bold text-sm text-slate-900 group-hover:text-[#0274BB] transition-colors truncate">
+                              {result.title}
+                            </div>
+                            <div className="mt-0.5 text-xs text-slate-500 truncate">
+                              By <span className="font-semibold text-slate-800">{result.author}</span>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase">
+                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" />
+                              {result.department}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 whitespace-nowrap">
+                            <span className={relevanceBadgeClass}>
+                              {relevance}% MATCH
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 whitespace-nowrap font-mono text-[11px] text-slate-600">
+                            <div>ISBN: {result.isbn}</div>
+                            {result.language && (
+                              <div className="text-[10px] text-slate-500 font-sans mt-0.5">
+                                🌐 {result.language.toUpperCase()}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            {result.matchedBy && result.matchedBy.length > 0 ? (
+                              <div className="flex flex-wrap gap-1">
+                                {result.matchedBy.map((match) => (
+                                  <span
+                                    key={match}
+                                    className="inline-flex items-center gap-1 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shadow-xs"
+                                  >
+                                    <Sparkles className="h-2.5 w-2.5 text-emerald-600" />
+                                    {match}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-slate-400 text-xs italic">Catalog Match</span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedBook(result);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-[#FFD600] hover:text-[#0A1624] hover:border-[#FFD600] transition cursor-pointer"
+                            >
+                              <Eye className="h-3.5 w-3.5" />
+                              <span>Details</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 w-full">
               {visibleResults.map((result, idx) => {
                 const relevance = result.relevance;
                 const isHigh = relevance >= 90;
                 const isMedium = relevance >= 75;
+
                 const relevanceBadgeClass = isHigh
-                  ? "border border-emerald-500/35 bg-emerald-500/10 text-emerald-400 font-extrabold shadow-[0_0_12px_rgba(16,185,129,0.25)] rounded-full px-3 py-1 text-xs"
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-extrabold rounded-full px-3 py-1 text-xs shadow-sm"
                   : isMedium
-                  ? "border border-amber-500/35 bg-amber-500/10 text-amber-400 font-extrabold shadow-[0_0_12px_rgba(245,158,11,0.25)] rounded-full px-3 py-1 text-xs"
-                  : "border border-sky-500/35 bg-sky-500/10 text-sky-300 font-extrabold rounded-full px-3 py-1 text-xs";
+                  ? "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 font-extrabold rounded-full px-3 py-1 text-xs shadow-sm"
+                  : "bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 font-extrabold rounded-full px-3 py-1 text-xs shadow-sm";
 
                 const relevanceBarColor = isHigh
-                  ? "from-emerald-500 to-teal-400 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
+                  ? "from-emerald-500 to-teal-400"
                   : isMedium
-                  ? "from-amber-500 to-yellow-400 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
-                  : "from-sky-500 to-cyan-400 shadow-[0_0_8px_rgba(56,189,248,0.4)]";
+                  ? "from-amber-500 to-yellow-400"
+                  : "from-sky-500 to-cyan-400";
 
                 return (
-                  <motion.button
+                  <motion.div
                     key={result.id}
-                    type="button"
                     onClick={() => setSelectedBook(result)}
-                    initial={{ opacity: 0, y: 16 }}
+                    initial={{ opacity: 0, y: 14 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.35, delay: idx * 0.05, ease: "easeOut" }}
-                    whileHover={{ y: -6, scale: 1.015 }}
-                    className="flex flex-col justify-between w-full text-left p-6 bg-gradient-to-b from-[#14283F]/70 to-[#0A1724]/90 backdrop-blur-xl rounded-[28px] border border-white/[0.07] hover:border-[#FFD600]/30 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.6)] transition-all duration-300 group"
+                    transition={{ duration: 0.3, delay: idx * 0.04 }}
+                    whileHover={{ y: -4 }}
+                    className="flex flex-col justify-between w-full text-left p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-amber-400 transition-all duration-200 group cursor-pointer relative"
                   >
                     <div className="space-y-4">
                       {/* Top bar with category & relevance */}
                       <div className="flex items-center justify-between gap-3 w-full">
-                        <span className="inline-flex items-center rounded-full bg-white/5 border border-white/5 px-3 py-1 text-[10px] font-black tracking-[0.18em] text-[#FFD600] uppercase">
-                          <span className="inline-block w-2 h-2 rounded-full bg-[#FFD600] mr-2 animate-pulse"></span>
+                        <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-800 border border-slate-200 px-3 py-0.5 text-[10px] font-bold tracking-wider uppercase">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-2" />
                           {result.department}
                         </span>
                         <span className={relevanceBadgeClass}>
@@ -361,26 +701,39 @@ export function AiSearchPage() {
 
                       {/* Title & Metadata */}
                       <div>
-                        <h3 className="text-lg font-bold tracking-tight text-white group-hover:text-[#FFD600] transition-colors duration-200 line-clamp-2 leading-snug text-left">
+                        <h3 className="text-lg font-bold tracking-tight text-slate-900 group-hover:text-[#0274BB] transition-colors duration-200 line-clamp-2 leading-snug text-left">
                           {result.title}
                         </h3>
                         <div className="mt-3 space-y-2 text-left">
-                          <p className="flex items-center gap-2 text-xs text-white/80">
+                          <p className="flex items-center gap-2 text-xs text-slate-600">
                             <User className="h-4 w-4 text-slate-400" />
-                            By <span className="font-semibold text-white/95">{result.author}</span>
+                            By <span className="font-semibold text-slate-900">{result.author}</span>
                           </p>
-                          <div className="flex items-center flex-wrap gap-2 text-[11px] text-white/50">
-                            <span className="font-mono bg-white/5 border border-white/5 px-2 py-0.5 rounded-md">
+
+                          <div className="flex items-center flex-wrap gap-2 text-[11px]">
+                            <span className="font-mono bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-md">
                               ISBN: {result.isbn}
                             </span>
                             {result.language && (
-                              <span className="bg-white/5 border border-white/5 px-2 py-0.5 rounded-md uppercase font-bold tracking-wider text-[9px]">
+                              <span className="bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-md uppercase font-bold text-[10px]">
                                 🌐 {result.language}
                               </span>
                             )}
                             {typeof result.rating === "number" && result.rating > 0 && (
-                              <span className="inline-flex items-center gap-0.5 bg-[#FFD600]/10 border border-[#FFD600]/20 px-2 py-0.5 rounded-md text-[#FFD600] font-bold">
+                              <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md font-bold">
                                 ⭐ {result.rating.toFixed(1)}
+                              </span>
+                            )}
+                            {result.availability && (
+                              <span
+                                className={cn(
+                                  "px-2 py-0.5 rounded-md font-semibold text-[11px] border",
+                                  result.availability === "Available"
+                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    : "bg-rose-50 text-rose-700 border-rose-200",
+                                )}
+                              >
+                                {result.availability}
                               </span>
                             )}
                           </div>
@@ -389,13 +742,13 @@ export function AiSearchPage() {
 
                       {/* Visual Relevance Meter */}
                       <div className="space-y-1.5 w-full">
-                        <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-white/40">
+                        <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-slate-500">
                           <span>Relevance Meter</span>
-                          <span className={isHigh ? "text-emerald-400" : isMedium ? "text-amber-400" : "text-sky-300"}>
+                          <span className={isHigh ? "text-emerald-600 font-extrabold" : isMedium ? "text-amber-600 font-extrabold" : "text-sky-600 font-extrabold"}>
                             {relevance}%
                           </span>
                         </div>
-                        <div className="h-2 w-full rounded-full bg-white/[0.04] overflow-hidden border border-white/[0.02]">
+                        <div className="h-2 w-full rounded-full bg-slate-100 border border-slate-200 overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${relevance}%` }}
@@ -406,90 +759,137 @@ export function AiSearchPage() {
                       </div>
 
                       {/* Book Summary */}
-                      <div className="border-l-2 border-[#FFD600]/30 pl-3.5 pt-1.5 pb-1 text-left">
-                        <p className="text-xs text-white/70 leading-relaxed line-clamp-3 italic">
-                          "{result.summary}"
+                      <div className="bg-slate-50 border-l-4 border-amber-400 p-3 rounded-r-xl text-left">
+                        <p className="text-xs text-slate-700 leading-relaxed line-clamp-3 italic">
+                          "{result.summary || "No description available for this catalog entry."}"
                         </p>
                       </div>
                     </div>
 
                     {/* Matched explanation details */}
                     {result.matchedBy && result.matchedBy.length > 0 && (
-                      <div className="mt-5 flex flex-wrap gap-1.5 pt-4 border-t border-white/[0.04] justify-start w-full">
+                      <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-slate-100 justify-start w-full">
                         {result.matchedBy.map((match) => (
                           <span
                             key={match}
-                            className="inline-flex items-center gap-1.5 text-[9px] font-black tracking-widest uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full shadow-sm"
+                            className="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-wide uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-sm"
                           >
-                            <Sparkles className="h-2.5 w-2.5 text-emerald-400" />
+                            <Sparkles className="h-2.5 w-2.5 text-emerald-600" />
                             {match}
                           </span>
                         ))}
                       </div>
                     )}
-                  </motion.button>
+
+                    <div className="mt-3 flex items-center justify-end text-xs font-semibold text-[#0274BB] group-hover:underline">
+                      <span>View Details →</span>
+                    </div>
+                  </motion.div>
                 );
               })}
             </div>
+            )
           ) : payload !== null ? (
-            <div className="rounded-3xl border border-red-500/20 bg-red-500/5 p-8 text-center text-sm text-red-500/70 w-full">
-              No matching records found. Try adjusting your search prompt.
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-8 text-center text-sm text-amber-900 shadow-sm w-full">
+              <p className="font-semibold text-base mb-1">No matching catalog records found.</p>
+              <p className="text-xs text-slate-600">
+                {isPrefixFilter
+                  ? `No books start with "${query}". Try typing fewer letters or switch FILTER to OFF to try AI Prompt matching.`
+                  : "Try rephrasing your prompt or selecting a different department."}
+              </p>
             </div>
           ) : (
-            <div className="rounded-3xl border border-[var(--line)] bg-[var(--surface-muted)] p-8 text-center text-sm text-[var(--module-muted-color)] w-full">
-              Enter a prompt above to see AI prompt search results here.
+            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm w-full">
+              <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 mb-3">
+                {isPrefixFilter ? (
+                  <Filter className="h-6 w-6 text-[#0274BB]" />
+                ) : (
+                  <Sparkles className="h-6 w-6 text-purple-600" />
+                )}
+              </div>
+              <h3 className="text-base font-bold text-slate-800">
+                {isPrefixFilter ? "Prefix & Title Filter Search" : "AI Prompt Search"}
+              </h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+                {isPrefixFilter
+                  ? "Enter letters or title keywords above (e.g. Yana, B, Algorithm) to filter books by title prefix."
+                  : "Enter a natural language prompt or upload documents above to see semantic recommendations."}
+              </p>
             </div>
           )}
 
+          {/* Pagination Controls */}
           {results.length > 0 && (
-            <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-[20px] border border-white/[0.05] bg-white/[0.02] w-full">
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl border border-slate-200 bg-white shadow-sm w-full">
               {/* Pagination Info */}
-              <div className="text-xs font-semibold text-white/50 text-left">
-                Showing <span className="text-white">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
-                <span className="text-white">{Math.min(currentPage * PAGE_SIZE, results.length)}</span> of{" "}
-                <span className="text-[#FFD600]">{results.length}</span> matches found
+              <div className="text-xs font-semibold text-slate-600 text-left">
+                Showing <span className="font-bold text-slate-900">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                <span className="font-bold text-slate-900">{Math.min(currentPage * PAGE_SIZE, results.length)}</span> of{" "}
+                <span className="font-bold text-[#0274BB]">{results.length}</span> matches found
               </div>
 
-              {/* Pagination Toggles */}
+              {/* Prev, Box with page selector, Next */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  disabled={currentPage === 1}
+                  disabled={currentPage <= 1}
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                  className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10 hover:border-white/20 active:scale-95 disabled:opacity-30 disabled:hover:bg-white/5 disabled:hover:border-white/10 disabled:active:scale-100"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-xs select-none"
                 >
-                  Previous
+                  <ChevronLeft className="h-3.5 w-3.5" /> Previous
                 </button>
-                
+
                 <div className="flex items-center gap-1.5">
-                  {Array.from({ length: Math.ceil(results.length / PAGE_SIZE) }).map((_, idx) => {
-                    const pageNum = idx + 1;
-                    const isActive = currentPage === pageNum;
-                    return (
-                      <button
-                        key={pageNum}
-                        type="button"
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={cn(
-                          "h-8 w-8 rounded-full text-xs font-black transition-all flex items-center justify-center",
-                          isActive
-                            ? "bg-[#FFD600] text-[#0A1624] shadow-[0_0_12px_rgba(255,214,0,0.35)] scale-110"
-                            : "border border-white/10 bg-white/5 text-white hover:bg-white/10 hover:border-white/20"
-                        )}
-                      >
-                        {pageNum}
-                      </button>
-                    );
-                  })}
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    value={pageInput}
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/[^0-9]/g, "");
+                      setPageInput(val);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        handlePageCommit(pageInput);
+                        (e.target as HTMLInputElement).blur();
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        const nextP = Math.min(totalPages, currentPage + 1);
+                        setCurrentPage(nextP);
+                        setPageInput(String(nextP));
+                      } else if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        const prevP = Math.max(1, currentPage - 1);
+                        setCurrentPage(prevP);
+                        setPageInput(String(prevP));
+                      }
+                    }}
+                    onBlur={() => handlePageCommit(pageInput)}
+                    style={{
+                      width: "52px",
+                      minWidth: "52px",
+                      maxWidth: "52px",
+                      height: "32px",
+                      padding: "0 4px",
+                    }}
+                    className="h-8 w-[52px] min-w-[52px] max-w-[52px] shrink-0 rounded-xl border border-slate-200 bg-white text-center font-mono text-xs font-bold text-slate-900 shadow-xs transition outline-none cursor-pointer focus:cursor-text focus:border-[#0274BB] focus:ring-2 focus:ring-[#0274BB]/20"
+                    title={`Page ${currentPage} of ${totalPages} - Click to enter page number and press Enter`}
+                    aria-label="Current page number"
+                  />
+                  <span className="text-xs font-bold text-slate-500">
+                    / {totalPages}
+                  </span>
                 </div>
 
                 <button
                   type="button"
-                  disabled={currentPage === Math.ceil(results.length / PAGE_SIZE)}
-                  onClick={() => setCurrentPage((prev) => Math.min(Math.ceil(results.length / PAGE_SIZE), prev + 1))}
-                  className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:bg-white/10 hover:border-white/20 active:scale-95 disabled:opacity-30 disabled:hover:bg-white/5 disabled:hover:border-white/10 disabled:active:scale-100"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-xs select-none"
                 >
-                  Next
+                  Next <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
@@ -497,118 +897,7 @@ export function AiSearchPage() {
         </div>
       </AdminSection>
 
-      <AdminSection
-        title="Search History"
-        description="Prompt history with actor, scope, uploaded context, and result counts."
-        action={
-          logs.length > 0 && (
-            <button
-              type="button"
-              onClick={handleClearAllLogs}
-              className="inline-flex items-center gap-2 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 px-4 py-2 text-xs font-bold text-red-400 hover:text-red-300 shadow-sm transition-all"
-            >
-              <Trash2 className="h-4 w-4" />
-              Clear History
-            </button>
-          )
-        }
-      >
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="show"
-          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 w-full"
-        >
-          {logs.map((entry) => (
-            <motion.div
-              key={entry.id}
-              variants={itemVariants}
-              onClick={() => {
-                setQuery(entry.query);
-                setDepartment(entry.department);
-                void executeSearch(entry.query, entry.department);
-              }}
-              whileHover={{ y: -4, scale: 1.015 }}
-              className="flex flex-col justify-between p-5 bg-gradient-to-b from-[#14283F]/35 to-[#0A1724]/75 backdrop-blur-md rounded-2xl border border-white/[0.05] hover:border-[#FFD600]/25 hover:shadow-[0_12px_28px_rgba(0,0,0,0.45)] text-left transition-all duration-300 group w-full cursor-pointer relative overflow-hidden"
-            >
-              {/* Left accent color glow line on card hover */}
-              <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-transparent group-hover:bg-[#FFD600] transition-all duration-300" />
 
-              <div className="space-y-3 w-full">
-                {/* Meta Header */}
-                <div className="flex items-center justify-between text-[10px] font-bold text-white/40 tracking-wider w-full">
-                  <div className="flex items-center gap-2">
-                    <div className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br font-bold text-[9px] shadow-sm select-none uppercase", getAvatarGradient(entry.actor))}>
-                      {entry.actor.charAt(0)}
-                    </div>
-                    <span className="font-semibold text-white/80 group-hover:text-white transition-colors duration-200 truncate max-w-[110px]">
-                      {entry.actor}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center gap-1.5 ml-auto">
-                    <span className="text-[10px] text-slate-500 font-medium">{formatDateTime(entry.createdAt)}</span>
-                    <motion.button
-                      whileHover={{ scale: 1.15, backgroundColor: "rgba(239, 68, 68, 0.15)" }}
-                      whileTap={{ scale: 0.9 }}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDeleteLog(entry.id);
-                      }}
-                      className="text-white/30 hover:text-red-400 p-1.5 rounded-lg transition-colors flex items-center justify-center hover:bg-red-500/5"
-                      title="Delete entry"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </motion.button>
-                  </div>
-                </div>
-
-                {/* Search Query Wrapper */}
-                <div className="border-l-2 border-white/10 group-hover:border-[#FFD600]/40 pl-3 py-0.5 transition-colors duration-300">
-                  <p className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors leading-relaxed line-clamp-2">
-                    "{entry.query}"
-                  </p>
-                </div>
-              </div>
-
-              {/* Badges footer */}
-              <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center justify-between w-full">
-                {/* Dynamic department tag */}
-                {(() => {
-                  const deptCfg = getDeptConfig(entry.department);
-                  return (
-                    <span className={cn(
-                      "inline-flex items-center rounded-full border px-2.5 py-0.5 text-[9px] font-bold tracking-wider uppercase transition-all duration-300",
-                      deptCfg.text
-                    )}>
-                      {entry.department}
-                    </span>
-                  );
-                })()}
-
-                {/* Dynamic matches tag */}
-                {entry.matchesFound > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-[9px] font-extrabold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full shadow-sm transition-all duration-300 group-hover:shadow-[0_0_8px_rgba(52,211,153,0.2)]">
-                    <Sparkles className="h-2.5 w-2.5 text-emerald-400" />
-                    {entry.matchesFound} matches
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[9px] font-bold text-slate-400 bg-slate-500/10 border border-slate-500/20 px-2.5 py-0.5 rounded-full shadow-sm">
-                    <X className="h-2.5 w-2.5 text-slate-400" />
-                    0 matches
-                  </span>
-                )}
-              </div>
-            </motion.div>
-          ))}
-          {logs.length === 0 && (
-            <div className="col-span-full py-8 text-center text-sm text-white/40 border border-dashed border-white/10 rounded-2xl bg-white/[0.01]">
-              No search history entries recorded yet.
-            </div>
-          )}
-        </motion.div>
-      </AdminSection>
 
       <BookDetailModal
         open={Boolean(selectedBook)}

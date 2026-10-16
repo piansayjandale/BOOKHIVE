@@ -80,6 +80,15 @@ export function DashboardHome() {
   }
 
   async function updateRequestStatus(id: string, status: TransactionStatus) {
+    if (status === "Approved" || status === "Declined") {
+      const confirmMessage = status === "Approved"
+        ? "Are you sure to approve this?"
+        : "Are you sure to decline this?";
+      if (typeof window !== "undefined" && !window.confirm(confirmMessage)) {
+        return;
+      }
+    }
+
     setProcessingQueueId(id);
 
     await fetch(`/api/transactions/${id}`, {

@@ -4,9 +4,10 @@ import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Clock3, Info, Tag, X, BookOpen, ChevronDown, ChevronUp, Calendar, Layers, Bookmark, Sparkles } from "lucide-react";
 
-import { generateApaCitation, formatDate } from "@/lib/utils";
+import { generateApaCitation, formatDate, cn } from "@/lib/utils";
 import type { BookAvailability, BookRecord } from "@/lib/types";
 import { generateAccessionNumber } from "@/lib/catalog/call-number";
+import { useTheme } from "@/components/providers/theme-provider";
 
 export interface BorrowHistoryEntry {
   id?: string;
@@ -79,10 +80,16 @@ export function computeBookCopyStats(
   const totalCopies = Math.max(1, Number(book?.copies) || 1);
   const baseStatus = normalizeStatus(book?.availability);
 
-  // Active loans: status is Approved / Borrowed / On Loan / Active or type Borrow and not returned/declined
+  const isBorrowType = (t?: string) => !t || t.toLowerCase() === "borrow";
+  const isReservationType = (t?: string) => t?.toLowerCase() === "reservation" || t?.toLowerCase() === "reserve";
+
+  // Active loans: type is Borrow (or generic checkout) and status is active (not returned/declined/cancelled)
   const activeLoans = borrowHistory.filter((tx) => {
     const st = (tx.status || "").toLowerCase();
     if (st === "returned" || st === "declined" || st === "cancelled" || st === "completed") {
+      return false;
+    }
+    if (!isBorrowType(tx.type)) {
       return false;
     }
     return (
@@ -91,50 +98,70 @@ export function computeBookCopyStats(
       st === "on loan" ||
       st === "onloan" ||
       st === "active" ||
-      (tx.type?.toLowerCase() === "borrow" && st !== "pending")
+      st === "pending"
     );
   });
 
-  // Active reservations: Pending or Reserved holds
+  // Active reservations: type is Reservation / Reserve and status is active (Pending, Approved, Reserved, Upcoming)
   const activeReservations = borrowHistory.filter((tx) => {
     const st = (tx.status || "").toLowerCase();
-    if (st === "returned" || st === "declined" || st === "cancelled" || st === "completed" || st === "approved") {
+    if (st === "returned" || st === "declined" || st === "cancelled" || st === "completed") {
       return false;
     }
-    return st === "pending" || st === "reserved" || st === "upcoming" || tx.type?.toLowerCase() === "reservation";
+    if (!isReservationType(tx.type)) {
+      return false;
+    }
+    return (
+      st === "pending" ||
+      st === "approved" ||
+      st === "reserved" ||
+      st === "upcoming" ||
+      st === "active"
+    );
   });
 
-  let unavailableCopies = activeLoans.length;
-  let reservedCopies = activeReservations.length;
+  let unavailableCopies = Math.min(totalCopies, activeLoans.length);
+  let reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), activeReservations.length);
   let availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
 
   let status: NormalizedStatus = "Available";
 
-  if (activeLoans.length > 0 || activeReservations.length > 0) {
-    if (unavailableCopies >= totalCopies || availableCopies === 0) {
-      status = unavailableCopies > 0 ? "Unavailable" : "Reserved";
-    } else if (reservedCopies > 0 && availableCopies <= reservedCopies) {
-      status = "Reserved";
-    } else if (activeLoans.length > 0 && totalCopies === 1) {
-      status = "Unavailable";
-    } else {
+  if (borrowHistory.length > 0) {
+    if (availableCopies > 0) {
       status = "Available";
+    } else if (reservedCopies > 0 || activeReservations.length > 0) {
+      status = "Reserved";
+    } else {
+      status = "Unavailable";
     }
   } else {
-    // Fallback to base book availability when no active transaction entries exist
-    status = baseStatus;
-    if (status === "Unavailable") {
-      unavailableCopies = totalCopies;
-      availableCopies = 0;
-      reservedCopies = 0;
-    } else if (status === "Reserved") {
-      reservedCopies = 1;
-      availableCopies = Math.max(0, totalCopies - 1);
-      unavailableCopies = 0;
+    // If book object already has explicit dynamic copy stats from the backend API
+    const bAny = book as any;
+    if (bAny?.availableCopies !== undefined || bAny?.borrowedCount !== undefined || bAny?.reservedCount !== undefined) {
+      const bBorrow = Number(bAny?.borrowedCount ?? 0);
+      const bRes = Number(bAny?.reservedCount ?? 0);
+      unavailableCopies = Math.min(totalCopies, bBorrow);
+      reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), bRes);
+      availableCopies = bAny?.availableCopies !== undefined
+        ? Math.min(totalCopies, Math.max(0, Number(bAny.availableCopies)))
+        : Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+      status = availableCopies > 0 ? "Available" : (reservedCopies > 0 ? "Reserved" : "Unavailable");
     } else {
-      availableCopies = totalCopies;
-      reservedCopies = 0;
-      unavailableCopies = 0;
+      // Fallback to base book availability when no active transaction entries exist
+      status = baseStatus;
+      if (status === "Unavailable") {
+        unavailableCopies = totalCopies;
+        availableCopies = 0;
+        reservedCopies = 0;
+      } else if (status === "Reserved") {
+        reservedCopies = Math.min(1, totalCopies);
+        availableCopies = Math.max(0, totalCopies - reservedCopies);
+        unavailableCopies = 0;
+      } else {
+        availableCopies = totalCopies;
+        reservedCopies = 0;
+        unavailableCopies = 0;
+      }
     }
   }
 
@@ -197,27 +224,62 @@ function isMatchingBook(tx: any, currentBook: BookDetailPayload | null | undefin
   return false;
 }
 
-function resolveBorrowerName(tx: any, defaultStudentName?: string): string {
+function isApprovedOrActiveRecord(st?: string, tp?: string): boolean {
+  const s = (st || "").toLowerCase();
+  if (s === "pending" || s === "declined" || s === "cancelled" || s === "waitlisted") {
+    return false;
+  }
   return (
+    s === "approved" ||
+    s === "picked up" ||
+    s === "pickedup" ||
+    s === "on loan" ||
+    s === "onloan" ||
+    s === "completed" ||
+    s === "returned" ||
+    s === "active"
+  );
+}
+
+function resolveBorrowerName(tx: any, defaultStudentName?: string): string {
+  const name =
     tx.borrowerName ||
+    tx.borrower_name ||
     tx.studentName ||
+    tx.student_name ||
     tx.studentFullName ||
     tx.userName ||
-    tx.userFullName ||
     tx.user_name ||
-    tx.name ||
-    (tx.studentId ? `Student (${tx.studentId})` : defaultStudentName || "Student")
-  );
+    tx.userFullName ||
+    tx.user?.name ||
+    tx.user?.fullName ||
+    tx.name;
+
+  if (name && String(name).trim() && String(name).trim() !== "undefined") {
+    return String(name).trim();
+  }
+
+  const sid = tx.studentId || tx.student_id;
+  if (sid) {
+    return `Student (${sid})`;
+  }
+
+  return defaultStudentName || "Student Borrower";
 }
 
 function resolveBorrowDate(tx: any): string {
   const rawDate =
     tx.borrowDate ||
+    tx.borrow_date ||
     tx.pickupDate ||
+    tx.picked_up_at ||
+    tx.pickedUpAt ||
     tx.requestedAt ||
+    tx.requested_at ||
+    tx.decidedAt ||
+    tx.decided_at ||
     tx.date ||
     tx.createdAt ||
-    tx.requested_at ||
     tx.created_at;
 
   return formatBorrowDate(rawDate);
@@ -225,17 +287,23 @@ function resolveBorrowDate(tx: any): string {
 
 const TOTAL_BOOK_CARD_ROWS = 12;
 
-const availabilityClasses = (availability?: BookAvailability | string) => {
+const availabilityClasses = (availability?: BookAvailability | string, isLight: boolean = false) => {
   const normalized = normalizeStatus(availability);
   if (normalized === "Available") {
-    return "bg-emerald-500/20 text-emerald-300 border-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.35)]";
+    return isLight
+      ? "bg-emerald-50 text-emerald-800 border-emerald-300 shadow-xs"
+      : "bg-emerald-500/20 text-emerald-300 border-emerald-400/40 shadow-[0_0_20px_rgba(16,185,129,0.35)]";
   }
 
   if (normalized === "Reserved") {
-    return "bg-amber-500/20 text-amber-300 border-amber-400/40 shadow-[0_0_20px_rgba(245,158,11,0.35)]";
+    return isLight
+      ? "bg-amber-50 text-amber-800 border-amber-300 shadow-xs"
+      : "bg-amber-500/20 text-amber-300 border-amber-400/40 shadow-[0_0_20px_rgba(245,158,11,0.35)]";
   }
 
-  return "bg-rose-500/20 text-rose-300 border-rose-400/40 shadow-[0_0_20px_rgba(244,63,94,0.35)]";
+  return isLight
+    ? "bg-rose-50 text-rose-800 border-rose-300 shadow-xs"
+    : "bg-rose-500/20 text-rose-300 border-rose-400/40 shadow-[0_0_20px_rgba(244,63,94,0.35)]";
 };
 
 export function BookDetailModal({
@@ -247,6 +315,8 @@ export function BookDetailModal({
   book: BookDetailPayload | null;
   onClose: () => void;
 }) {
+  const { theme } = useTheme();
+  const isLight = theme === "light";
   const [copied, setCopied] = useState(false);
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [borrowHistory, setBorrowHistory] = useState<BorrowHistoryEntry[]>([]);
@@ -269,7 +339,7 @@ export function BookDetailModal({
       // 1. Explicit prop history
       if (book?.borrowHistory && Array.isArray(book.borrowHistory)) {
         book.borrowHistory.forEach((entry, idx) => {
-          if (isMatchingBook(entry, book)) {
+          if (isMatchingBook(entry, book) && isApprovedOrActiveRecord(entry.status, entry.type)) {
             allTxMap.set(entry.id || `prop-${idx}`, {
               id: entry.id || `prop-${idx}`,
               borrowDate: resolveBorrowDate(entry),
@@ -292,7 +362,7 @@ export function BookDetailModal({
           const data = await resTx.value.json();
           const list: any[] = Array.isArray(data.transactions) ? data.transactions : (Array.isArray(data) ? data : []);
           list.forEach((t) => {
-            if (isMatchingBook(t, book)) {
+            if (isMatchingBook(t, book) && isApprovedOrActiveRecord(t.status, t.type)) {
               allTxMap.set(t.id || `api-${t.isbn || t.resourceTitle}`, {
                 id: t.id,
                 borrowDate: resolveBorrowDate(t),
@@ -312,7 +382,7 @@ export function BookDetailModal({
             ? data
             : [];
           list.forEach((t) => {
-            if (isMatchingBook(t, book)) {
+            if (isMatchingBook(t, book) && isApprovedOrActiveRecord(t.status, t.type)) {
               allTxMap.set(t.id || `admin-${t.isbn || t.resourceTitle}`, {
                 id: t.id,
                 borrowDate: resolveBorrowDate(t),
@@ -348,7 +418,7 @@ export function BookDetailModal({
             const parsedRes: any[] = JSON.parse(resStr);
             if (Array.isArray(parsedRes)) {
               parsedRes.forEach((r, idx) => {
-                if (isMatchingBook(r, book)) {
+                if (isMatchingBook(r, book) && isApprovedOrActiveRecord(r.status, r.action || r.type)) {
                   allTxMap.set(r.id || `local-res-${idx}`, {
                     id: r.id || `local-res-${idx}`,
                     borrowDate: resolveBorrowDate(r),
@@ -367,7 +437,7 @@ export function BookDetailModal({
             const parsedHist: any[] = JSON.parse(histStr);
             if (Array.isArray(parsedHist)) {
               parsedHist.forEach((h, idx) => {
-                if (isMatchingBook(h, book)) {
+                if (isMatchingBook(h, book) && isApprovedOrActiveRecord(h.status, h.action || h.type)) {
                   allTxMap.set(h.id || `local-hist-${idx}`, {
                     id: h.id || `local-hist-${idx}`,
                     borrowDate: resolveBorrowDate(h),
@@ -386,7 +456,7 @@ export function BookDetailModal({
             const parsedGen: any[] = JSON.parse(genStr);
             if (Array.isArray(parsedGen)) {
               parsedGen.forEach((g, idx) => {
-                if (isMatchingBook(g, book)) {
+                if (isMatchingBook(g, book) && isApprovedOrActiveRecord(g.status, g.type)) {
                   allTxMap.set(g.id || `local-gen-${idx}`, {
                     id: g.id || `local-gen-${idx}`,
                     borrowDate: resolveBorrowDate(g),
@@ -410,8 +480,21 @@ export function BookDetailModal({
 
     void loadAllTransactions();
 
+    const handleTxUpdate = () => {
+      void loadAllTransactions();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("transaction-updated", handleTxUpdate);
+      window.addEventListener("storage", handleTxUpdate);
+    }
+
     return () => {
       isMounted = false;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("transaction-updated", handleTxUpdate);
+        window.removeEventListener("storage", handleTxUpdate);
+      }
     };
   }, [book?.id, book?.isbn, book?.title, book?.borrowHistory, open]);
 
@@ -441,24 +524,37 @@ export function BookDetailModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) onClose();
+        }}
+        className="fixed inset-0 z-50 flex items-center justify-center modal-backdrop bg-slate-950/60 p-4 backdrop-blur-md"
       >
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 20, scale: 0.98 }}
           transition={{ duration: 0.25, ease: "easeOut" }}
-          className="w-full max-w-lg overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#0E1B28]/95 backdrop-blur-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.85)] text-white"
+          className={cn(
+            "w-full max-w-lg overflow-hidden rounded-[28px] transition-colors",
+            isLight
+              ? "border-2 border-slate-200 bg-white text-slate-900 shadow-2xl shadow-slate-900/15"
+              : "border border-white/[0.08] bg-[#0E1B28]/95 backdrop-blur-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.85)] text-white"
+          )}
         >
           {/* Header */}
-          <div className="relative border-b border-white/[0.06] px-6 py-5">
+          <div className={cn("relative px-6 py-5 border-b", isLight ? "border-slate-200 bg-white" : "border-white/[0.06] bg-transparent")}>
             <div className="flex items-center justify-between gap-4">
-              <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FFD600]">
+              <span className={cn("text-[10px] font-black uppercase tracking-[0.25em]", isLight ? "text-[#0274BB]" : "text-[#FFD600]")}>
                 BOOK ARCHIVE DETAILS
               </span>
               <button
                 type="button"
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/10 text-white/50 transition hover:bg-white/5 hover:text-white hover:border-white/20 hover:scale-105 active:scale-95"
+                className={cn(
+                  "inline-flex h-8 w-8 items-center justify-center rounded-full border transition hover:scale-105 active:scale-95 cursor-pointer",
+                  isLight
+                    ? "border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                    : "border-white/10 text-white/50 hover:bg-white/5 hover:text-white hover:border-white/20"
+                )}
                 onClick={onClose}
                 aria-label="Close book details"
               >
@@ -468,14 +564,23 @@ export function BookDetailModal({
             
             <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="min-w-0 flex-1 text-left">
-                <h2 className="text-xl font-bold tracking-tight text-white leading-tight line-clamp-2">{book.title}</h2>
-                <p className="mt-1 text-xs font-semibold text-white/50">By {book.author}</p>
+                <h2 className={cn("text-xl font-bold tracking-tight leading-tight line-clamp-2", isLight ? "text-slate-900" : "text-white")}>
+                  {book.title}
+                </h2>
+                <p className={cn("mt-1 text-xs font-semibold", isLight ? "text-slate-600" : "text-white/50")}>
+                  By {book.author}
+                </p>
                 {typeof book.relevance === "number" && (
                   <div className="mt-2.5 flex items-center gap-2">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-[#FFD600] bg-[#FFD600]/10 border border-[#FFD600]/20 rounded px-1.5 py-0.5">
+                    <span className={cn(
+                      "text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border",
+                      isLight
+                        ? "bg-[#0274BB]/10 text-[#0274BB] border-[#0274BB]/25"
+                        : "bg-[#FFD600]/10 text-[#FFD600] border-[#FFD600]/20"
+                    )}>
                       AI Match Score
                     </span>
-                    <span className="text-xs font-black text-white/90">
+                    <span className={cn("text-xs font-black", isLight ? "text-slate-800" : "text-white/90")}>
                       {book.relevance}% Relevance
                     </span>
                   </div>
@@ -483,9 +588,10 @@ export function BookDetailModal({
               </div>
               <div className="flex-shrink-0 self-start sm:self-center">
                 <span
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-black tracking-widest uppercase ${availabilityClasses(
-                    copyStats.status,
-                  )}`}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-black tracking-widest uppercase",
+                    availabilityClasses(copyStats.status, isLight)
+                  )}
                 >
                   <span className="inline-block h-2 w-2 rounded-full bg-current animate-pulse" />
                   {copyStats.status}
@@ -495,57 +601,91 @@ export function BookDetailModal({
           </div>
 
           {/* Content Area */}
-          <div className="space-y-4 sm:space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+          <div className={cn(
+            "space-y-4 sm:space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin",
+            isLight
+              ? "scrollbar-thumb-slate-300 scrollbar-track-transparent text-slate-800"
+              : "scrollbar-thumb-white/10 scrollbar-track-transparent text-white"
+          )}>
             {/* Dedicated Copy Inventory & Availability Section */}
-            <div className="rounded-2xl border border-[#FFD600]/20 bg-gradient-to-br from-[#152E47]/70 to-[#0F1D29]/90 p-4 shadow-lg text-left">
+            <div className={cn(
+              "rounded-2xl border p-4 text-left transition-colors",
+              isLight
+                ? "border-2 border-slate-200 bg-gradient-to-br from-[#F4F9FF] via-[#EBF3FC] to-[#E3EFFB] text-slate-900 shadow-sm"
+                : "border border-[#FFD600]/20 bg-gradient-to-br from-[#152E47]/70 to-[#0F1D29]/90 text-white shadow-lg"
+            )}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#FFD600]/15 text-[#FFD600]">
+                  <div className={cn(
+                    "flex h-6 w-6 items-center justify-center rounded-lg",
+                    isLight ? "bg-[#0274BB]/15 text-[#0274BB]" : "bg-[#FFD600]/15 text-[#FFD600]"
+                  )}>
                     <BookOpen className="h-3.5 w-3.5" />
                   </div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-[#FFD600]">
+                  <span className={cn(
+                    "text-[10px] font-black uppercase tracking-widest",
+                    isLight ? "text-[#0274BB]" : "text-[#FFD600]"
+                  )}>
                     COPY INVENTORY & AVAILABILITY
                   </span>
                 </div>
-                <span className="text-xs font-mono font-bold text-white/90">
+                <span className={cn(
+                  "text-xs font-mono font-bold",
+                  isLight ? "text-slate-800" : "text-white/90"
+                )}>
                   {copyStats.availableCopies} of {copyStats.totalCopies} Available
                 </span>
               </div>
 
               {/* 4-metric copy breakdown cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="rounded-xl border border-white/5 bg-black/25 p-2 text-center">
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Total Physical</p>
-                  <p className="mt-0.5 text-base font-black text-white">{copyStats.totalCopies}</p>
-                  <p className="text-[9px] text-slate-500">In System</p>
+                <div className={cn(
+                  "rounded-xl border p-2 text-center transition-colors",
+                  isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-black/25"
+                )}>
+                  <p className={cn("text-[8px] font-bold uppercase tracking-wider", isLight ? "text-slate-600" : "text-slate-400")}>Total Physical</p>
+                  <p className={cn("mt-0.5 text-base font-black", isLight ? "text-slate-900" : "text-white")}>{copyStats.totalCopies}</p>
+                  <p className={cn("text-[9px]", isLight ? "text-slate-500 font-medium" : "text-slate-500")}>In System</p>
                 </div>
 
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-2 text-center">
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-emerald-400">Available</p>
-                  <p className="mt-0.5 text-base font-black text-emerald-300">{copyStats.availableCopies}</p>
-                  <p className="text-[9px] text-emerald-400/70">For Checkout</p>
+                <div className={cn(
+                  "rounded-xl border p-2 text-center transition-colors",
+                  isLight ? "border-emerald-300 bg-emerald-50 shadow-xs" : "border-emerald-500/20 bg-emerald-500/5"
+                )}>
+                  <p className={cn("text-[8px] font-bold uppercase tracking-wider", isLight ? "text-emerald-800" : "text-emerald-400")}>Available</p>
+                  <p className={cn("mt-0.5 text-base font-black", isLight ? "text-emerald-700" : "text-emerald-300")}>{copyStats.availableCopies}</p>
+                  <p className={cn("text-[9px] font-medium", isLight ? "text-emerald-700/80" : "text-emerald-400/70")}>For Checkout</p>
                 </div>
 
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-2 text-center">
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-amber-400">Reserved</p>
-                  <p className="mt-0.5 text-base font-black text-amber-300">{copyStats.reservedCopies}</p>
-                  <p className="text-[9px] text-amber-400/70">Pending Holds</p>
+                <div className={cn(
+                  "rounded-xl border p-2 text-center transition-colors",
+                  isLight ? "border-amber-300 bg-amber-50 shadow-xs" : "border-amber-500/20 bg-amber-500/5"
+                )}>
+                  <p className={cn("text-[8px] font-bold uppercase tracking-wider", isLight ? "text-amber-800" : "text-amber-400")}>Reserved</p>
+                  <p className={cn("mt-0.5 text-base font-black", isLight ? "text-amber-700" : "text-amber-300")}>{copyStats.reservedCopies}</p>
+                  <p className={cn("text-[9px] font-medium", isLight ? "text-amber-700/80" : "text-amber-400/70")}>Pending Holds</p>
                 </div>
 
-                <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-2 text-center">
-                  <p className="text-[8px] font-bold uppercase tracking-wider text-rose-400">On Loan</p>
-                  <p className="mt-0.5 text-base font-black text-rose-300">{copyStats.unavailableCopies}</p>
-                  <p className="text-[9px] text-rose-400/70">Borrowed</p>
+                <div className={cn(
+                  "rounded-xl border p-2 text-center transition-colors",
+                  isLight ? "border-rose-300 bg-rose-50 shadow-xs" : "border-rose-500/20 bg-rose-500/5"
+                )}>
+                  <p className={cn("text-[8px] font-bold uppercase tracking-wider", isLight ? "text-rose-800" : "text-rose-400")}>On Loan</p>
+                  <p className={cn("mt-0.5 text-base font-black", isLight ? "text-rose-700" : "text-rose-300")}>{copyStats.unavailableCopies}</p>
+                  <p className={cn("text-[9px] font-medium", isLight ? "text-rose-700/80" : "text-rose-400/70")}>Borrowed</p>
                 </div>
               </div>
 
               {/* Allocation bar */}
               <div className="mt-3 space-y-1">
-                <div className="flex justify-between text-[9px] text-slate-400 font-medium">
+                <div className={cn("flex justify-between text-[9px] font-semibold", isLight ? "text-slate-600" : "text-slate-400 font-medium")}>
                   <span>Stock Allocation</span>
                   <span>{percentAvailable}% In Circulation Ready</span>
                 </div>
-                <div className="h-1.5 w-full rounded-full bg-white/5 overflow-hidden flex border border-white/5">
+                <div className={cn(
+                  "h-1.5 w-full rounded-full overflow-hidden flex border",
+                  isLight ? "bg-slate-200 border-slate-300" : "bg-white/5 border-white/5"
+                )}>
                   {copyStats.availableCopies > 0 && (
                     <div
                       className="bg-emerald-500 transition-all duration-300"
@@ -570,19 +710,35 @@ export function BookDetailModal({
 
             {/* Visual Relevance Meter (if applicable) */}
             {typeof book.relevance === "number" && (
-              <div className="rounded-2xl border border-[#FFD600]/20 bg-gradient-to-r from-[#FFD600]/5 to-transparent p-4 text-left">
-                <div className="flex items-center justify-between text-[9px] uppercase font-black tracking-widest text-[#FFD600] mb-2">
+              <div className={cn(
+                "rounded-2xl border p-4 text-left transition-colors",
+                isLight
+                  ? "border-blue-200 bg-blue-50/60"
+                  : "border-[#FFD600]/20 bg-gradient-to-r from-[#FFD600]/5 to-transparent"
+              )}>
+                <div className={cn(
+                  "flex items-center justify-between text-[9px] uppercase font-black tracking-widest mb-2",
+                  isLight ? "text-[#0274BB]" : "text-[#FFD600]"
+                )}>
                   <span>SEMANTIC MATCH STRENGTH</span>
-                  <span className="text-xs font-black text-white">
+                  <span className={cn("text-xs font-black", isLight ? "text-slate-900" : "text-white")}>
                     {book.relevance}%
                   </span>
                 </div>
-                <div className="h-2 w-full rounded-full bg-white/[0.04] overflow-hidden border border-white/[0.02]">
+                <div className={cn(
+                  "h-2 w-full rounded-full overflow-hidden border",
+                  isLight ? "bg-slate-200 border-slate-300" : "bg-white/[0.04] border-white/[0.02]"
+                )}>
                   <motion.div
                     initial={{ width: 0 }}
                     animate={{ width: `${book.relevance}%` }}
                     transition={{ duration: 1, ease: "easeOut" }}
-                    className="h-full rounded-full bg-gradient-to-r from-[#FFD600] to-amber-400 shadow-[0_0_12px_rgba(255,214,0,0.4)]"
+                    className={cn(
+                      "h-full rounded-full",
+                      isLight
+                        ? "bg-gradient-to-r from-[#0274BB] to-blue-500 shadow-[0_0_12px_rgba(2,116,187,0.3)]"
+                        : "bg-gradient-to-r from-[#FFD600] to-amber-400 shadow-[0_0_12px_rgba(255,214,0,0.4)]"
+                    )}
                   />
                 </div>
               </div>
@@ -590,19 +746,21 @@ export function BookDetailModal({
 
             {/* Standard Key-Value Grid */}
             <div className="grid gap-3 sm:grid-cols-2">
-              <Detail label="ISBN" value={book.isbn} icon={Tag} isMono />
-              <Detail label="Department" value={book.department} icon={Info} />
-              <Detail label="Genre" value={book.genres || book.category || "General Collection"} icon={Tag} />
+              <Detail label="ISBN" value={book.isbn} icon={Tag} isMono isLight={isLight} />
+              <Detail label="Department" value={book.department} icon={Info} isLight={isLight} />
+              <Detail label="Genre" value={book.genres || book.category || "General Collection"} icon={Tag} isLight={isLight} />
               <Detail
                 label="Call Number"
                 value={book.callNumber || book.shelfLocation || "Unavailable"}
                 icon={Clock3}
                 isMono
+                isLight={isLight}
               />
               <Detail
                 label="Pub. Date"
                 value={book.publicationDate || book.publishedDate ? formatDate(book.publicationDate || book.publishedDate || "") : "—"}
                 icon={Calendar}
+                isLight={isLight}
               />
               <Detail
                 label="Accession No."
@@ -615,51 +773,75 @@ export function BookDetailModal({
                 })}
                 icon={Sparkles}
                 isMono
+                isLight={isLight}
               />
               <Detail
                 label="Volume"
                 value={book.volume || "Single Volume / None"}
                 icon={Layers}
+                isLight={isLight}
               />
               <Detail
                 label="Edition"
                 value={book.edition || "Single Edition / None"}
                 icon={Bookmark}
+                isLight={isLight}
               />
               <Detail
                 label="Copies In System"
                 value={String(copyStats.totalCopies)}
                 icon={Copy}
+                isLight={isLight}
               />
             </div>
 
             {/* Book Card (Physical Library Checkout Card) */}
-            <div className="rounded-2xl border border-white/10 bg-[#1a2332] overflow-hidden shadow-xl text-left">
+            <div className={cn(
+              "rounded-2xl border-2 overflow-hidden shadow-sm text-left transition-colors",
+              isLight
+                ? "border-slate-300 bg-white"
+                : "border-white/10 bg-[#1a2332] shadow-xl"
+            )}>
               {/* Header: Centered titled BOOK CARD */}
-              <div className="border-b border-white/15 bg-white/[0.02] py-2.5 sm:py-3 text-center">
-                <h3 className="text-sm sm:text-base font-black tracking-wider text-white uppercase">
+              <div className={cn(
+                "border-b-2 py-2.5 sm:py-3 text-center",
+                isLight ? "border-slate-300 bg-[#F0F7FF] text-[#0274BB]" : "border-white/15 bg-white/[0.02] text-white"
+              )}>
+                <h3 className="text-sm sm:text-base font-black tracking-wider uppercase">
                   BOOK CARD
                 </h3>
               </div>
 
               {/* Subheader: Title of Book */}
-              <div className="border-b border-white/15 bg-white/[0.01] px-4 py-2 text-xs sm:text-sm font-bold text-white flex items-center gap-1.5 min-w-0">
-                <span className="shrink-0 text-slate-300">Title of Book:</span>
-                <span className="truncate text-white font-extrabold">{book.title}</span>
+              <div className={cn(
+                "border-b-2 px-4 py-2 text-xs sm:text-sm font-bold flex items-center gap-1.5 min-w-0",
+                isLight ? "border-slate-300 bg-slate-50 text-slate-700" : "border-white/15 bg-white/[0.01] text-white"
+              )}>
+                <span className={cn("shrink-0", isLight ? "text-slate-600 font-bold" : "text-slate-300")}>Title of Book:</span>
+                <span className={cn("truncate font-extrabold", isLight ? "text-slate-900" : "text-white")}>{book.title}</span>
               </div>
 
               {/* Column Headers */}
-              <div className="flex border-b border-white/15 bg-white/[0.03] text-xs font-bold text-slate-200">
-                <div className="w-[120px] sm:w-[140px] shrink-0 px-3.5 py-2 border-r border-white/15">
+              <div className={cn(
+                "flex border-b-2 text-xs font-bold",
+                isLight ? "border-slate-300 bg-[#F0F7FF] text-[#0274BB]" : "border-white/15 bg-white/[0.03] text-slate-200"
+              )}>
+                <div className={cn(
+                  "w-[120px] sm:w-[140px] shrink-0 px-3.5 py-2 border-r-2",
+                  isLight ? "border-slate-300 font-extrabold" : "border-white/15"
+                )}>
                   Borrow Date:
                 </div>
-                <div className="flex-1 min-w-0 px-3.5 py-2">
+                <div className={cn("flex-1 min-w-0 px-3.5 py-2", isLight ? "font-extrabold" : "")}>
                   Borrower’s Name:
                 </div>
               </div>
 
-              {/* Fixed 12 Rows Table */}
-              <div className="divide-y divide-white/10">
+              {/* Fixed 12 Rows Table with crisp border lines */}
+              <div className={cn(
+                "divide-y",
+                isLight ? "divide-slate-300 bg-white" : "divide-white/10"
+              )}>
                 {Array.from({ length: Math.max(TOTAL_BOOK_CARD_ROWS, borrowHistory.length) }).map((_, idx) => {
                   const entry = borrowHistory[idx];
                   const borrowDateFormatted = entry?.borrowDate ? formatBorrowDate(entry.borrowDate) : "";
@@ -668,13 +850,24 @@ export function BookDetailModal({
                   return (
                     <div
                       key={idx}
-                      className="flex min-h-[26px] sm:min-h-[28px] items-center text-xs transition-colors hover:bg-white/[0.02]"
+                      className={cn(
+                        "flex min-h-[30px] sm:min-h-[32px] items-stretch text-xs transition-colors border-b last:border-b-0",
+                        isLight
+                          ? "border-slate-300 hover:bg-sky-50/60"
+                          : "border-white/10 hover:bg-white/[0.02]"
+                      )}
                     >
-                      <div className="w-[120px] sm:w-[140px] shrink-0 px-3.5 py-1 font-mono text-[11px] sm:text-xs text-slate-300 border-r border-white/10 truncate">
-                        {borrowDateFormatted ? borrowDateFormatted : <span className="opacity-0 select-none">-</span>}
+                      <div className={cn(
+                        "w-[120px] sm:w-[140px] shrink-0 px-3.5 py-1.5 font-mono text-[11px] sm:text-xs truncate flex items-center border-r-2",
+                        isLight ? "border-slate-300 text-slate-800 font-bold" : "border-white/10 text-slate-300"
+                      )}>
+                        {borrowDateFormatted ? borrowDateFormatted : <span className="opacity-0 select-none">&nbsp;</span>}
                       </div>
-                      <div className="flex-1 min-w-0 px-3.5 py-1 text-xs text-slate-200 font-medium truncate">
-                        {borrowerName ? borrowerName : <span className="opacity-0 select-none">-</span>}
+                      <div className={cn(
+                        "flex-1 min-w-0 px-3.5 py-1.5 text-xs truncate flex items-center",
+                        isLight ? "text-slate-900 font-semibold" : "text-slate-200 font-medium"
+                      )}>
+                        {borrowerName ? borrowerName : <span className="opacity-0 select-none">&nbsp;</span>}
                       </div>
                     </div>
                   );
@@ -683,17 +876,27 @@ export function BookDetailModal({
             </div>
 
             {/* Summary Description with Truncation (3-4 lines + See More/Less toggle) */}
-            <div className="rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 sm:p-5 text-left transition-all">
+            <div className={cn(
+              "rounded-2xl border p-4 sm:p-5 text-left transition-all",
+              isLight
+                ? "border-2 border-slate-200 bg-slate-50/80 text-slate-800"
+                : "border border-white/[0.05] bg-white/[0.02] text-white"
+            )}>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FFD600]/80">
+                <p className={cn(
+                  "text-[10px] font-black uppercase tracking-[0.25em]",
+                  isLight ? "text-[#0274BB]" : "text-[#FFD600]/80"
+                )}>
                   Summary Description
                 </p>
               </div>
               <div className="relative">
                 <p
-                  className={`text-xs leading-relaxed text-white/70 transition-all duration-200 ${
+                  className={cn(
+                    "text-xs leading-relaxed transition-all duration-200",
+                    isLight ? "text-slate-700" : "text-white/70",
                     !isSummaryExpanded ? "line-clamp-3 sm:line-clamp-4" : ""
-                  }`}
+                  )}
                 >
                   {book.summary || "No summary available for this title."}
                 </p>
@@ -701,7 +904,10 @@ export function BookDetailModal({
                   <button
                     type="button"
                     onClick={() => setIsSummaryExpanded((prev) => !prev)}
-                    className="mt-2.5 inline-flex items-center gap-1 text-[11px] font-bold tracking-wide text-[#FFD600] hover:text-[#FFE55C] transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-[#FFD600]/50 rounded px-1 -ml-1 py-0.5 select-none cursor-pointer"
+                    className={cn(
+                      "mt-2.5 inline-flex items-center gap-1 text-[11px] font-bold tracking-wide transition-colors focus:outline-none rounded px-1 -ml-1 py-0.5 select-none cursor-pointer",
+                      isLight ? "text-[#0274BB] hover:text-[#02568B]" : "text-[#FFD600] hover:text-[#FFE55C]"
+                    )}
                   >
                     <span>{isSummaryExpanded ? "See Less" : "See More"}</span>
                     {isSummaryExpanded ? (
@@ -715,21 +921,36 @@ export function BookDetailModal({
             </div>
 
             {/* APA Scholarly Citation Box */}
-            <div className="rounded-2xl border border-white/[0.05] bg-[#14293E]/30 p-5 relative overflow-hidden group">
-              <div className="absolute -right-20 -bottom-20 w-32 h-32 rounded-full bg-[#FFD600]/5 blur-3xl group-hover:bg-[#FFD600]/8 transition-all duration-500" />
+            <div className={cn(
+              "rounded-2xl border p-5 relative overflow-hidden group transition-colors",
+              isLight
+                ? "border-2 border-slate-200 bg-gradient-to-br from-[#F4F9FF] to-white"
+                : "border border-white/[0.05] bg-[#14293E]/30"
+            )}>
+              {!isLight && (
+                <div className="absolute -right-20 -bottom-20 w-32 h-32 rounded-full bg-[#FFD600]/5 blur-3xl group-hover:bg-[#FFD600]/8 transition-all duration-500" />
+              )}
               
               <div className="flex items-center justify-between mb-3 relative z-10">
-                <span className="text-[10px] font-black uppercase tracking-[0.25em] text-[#FFD600]">
+                <span className={cn(
+                  "text-[10px] font-black uppercase tracking-[0.25em]",
+                  isLight ? "text-[#0274BB]" : "text-[#FFD600]"
+                )}>
                   APA SCHOLARLY CITATION
                 </span>
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 px-3 py-1.5 text-[9px] font-black tracking-widest uppercase text-white/80 transition active:scale-95"
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[9px] font-black tracking-widest uppercase transition active:scale-95 cursor-pointer",
+                    isLight
+                      ? "bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 shadow-xs"
+                      : "bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/80"
+                  )}
                 >
                   {copied ? (
                     <>
-                      <Check className="h-3 w-3 text-emerald-400" />
+                      <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
                       COPIED
                     </>
                   ) : (
@@ -740,7 +961,12 @@ export function BookDetailModal({
                   )}
                 </button>
               </div>
-              <p className="text-xs font-medium text-white/85 leading-relaxed font-mono bg-black/25 p-4 rounded-xl border border-white/5 select-all text-left relative z-10 break-words">
+              <p className={cn(
+                "text-xs font-medium leading-relaxed font-mono p-4 rounded-xl border select-all text-left relative z-10 break-words",
+                isLight
+                  ? "bg-white border-2 border-slate-200 text-slate-800 shadow-xs"
+                  : "bg-black/25 border border-white/5 text-white/85"
+              )}>
                 {citation}
               </p>
             </div>
@@ -756,20 +982,44 @@ function Detail({
   value,
   icon: Icon,
   isMono = false,
+  isLight = false,
 }: {
   label: string;
   value: string;
   icon: typeof Info;
   isMono?: boolean;
+  isLight?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border border-white/[0.04] bg-white/[0.02] px-4 py-3 shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]">
-      <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-[#FFD600]/10 text-[#FFD600] border border-[#FFD600]/15">
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-2xl border px-4 py-3 transition-colors",
+        isLight
+          ? "border-2 border-slate-200 bg-slate-50/80 shadow-xs"
+          : "border-white/[0.04] bg-white/[0.02] shadow-[inset_0_1px_1px_rgba(255,255,255,0.02)]"
+      )}
+    >
+      <div
+        className={cn(
+          "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl border",
+          isLight
+            ? "bg-blue-50 text-[#0274BB] border-blue-200"
+            : "bg-[#FFD600]/10 text-[#FFD600] border-[#FFD600]/15"
+        )}
+      >
         <Icon className="h-4 w-4" />
       </div>
       <div className="min-w-0 text-left">
-        <p className="text-[9px] font-black uppercase tracking-wider text-white/40">{label}</p>
-        <p className={`mt-0.5 truncate text-xs font-bold text-white/95 ${isMono ? "font-mono" : ""}`}>
+        <p className={cn("text-[9px] font-black uppercase tracking-wider", isLight ? "text-slate-500" : "text-white/40")}>
+          {label}
+        </p>
+        <p
+          className={cn(
+            "mt-0.5 truncate text-xs font-bold",
+            isLight ? "text-slate-900" : "text-white/95",
+            isMono ? "font-mono" : ""
+          )}
+        >
           {value || "Unavailable"}
         </p>
       </div>

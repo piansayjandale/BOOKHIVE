@@ -197,6 +197,7 @@ const TABLE_DEFINITIONS = [
         comment TEXT,
         available_at DATETIME DEFAULT NULL,
         expires_at DATETIME DEFAULT NULL,
+        picked_up_at DATETIME DEFAULT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
         INDEX idx_transactions_student_id (student_id),

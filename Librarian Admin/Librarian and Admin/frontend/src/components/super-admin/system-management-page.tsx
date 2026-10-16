@@ -350,6 +350,82 @@ const emptyUserForm = {
   password: "",
 };
 
+function PageSelectorBox({
+  page,
+  totalPages,
+  onPageChange,
+  isLight,
+}: {
+  page: number;
+  totalPages: number;
+  onPageChange: (newPage: number) => void;
+  isLight: boolean;
+}) {
+  const [val, setVal] = useState(String(page));
+
+  useEffect(() => {
+    setVal(String(page));
+  }, [page]);
+
+  const commit = (inputStr: string) => {
+    const num = parseInt(inputStr.trim(), 10);
+    if (isNaN(num) || num < 1) {
+      onPageChange(1);
+      setVal("1");
+    } else if (num > totalPages) {
+      onPageChange(totalPages);
+      setVal(String(totalPages));
+    } else {
+      onPageChange(num);
+      setVal(String(num));
+    }
+  };
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      value={val}
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => {
+        const cleaned = e.target.value.replace(/[^0-9]/g, "");
+        setVal(cleaned);
+        const num = parseInt(cleaned, 10);
+        if (!isNaN(num) && num >= 1 && num <= totalPages) {
+          onPageChange(num);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          commit(val);
+          (e.target as HTMLInputElement).blur();
+        } else if (e.key === "ArrowUp") {
+          e.preventDefault();
+          const next = Math.min(totalPages, page + 1);
+          onPageChange(next);
+          setVal(String(next));
+        } else if (e.key === "ArrowDown") {
+          e.preventDefault();
+          const prev = Math.max(1, page - 1);
+          onPageChange(prev);
+          setVal(String(prev));
+        }
+      }}
+      onBlur={() => commit(val)}
+      style={{ width: "38px", minWidth: "38px", maxWidth: "38px", height: "38px", padding: 0 }}
+      className={cn(
+        "rounded-lg border text-center font-bold text-sm transition outline-none shadow-xs mx-1",
+        isLight
+          ? "border-slate-300 bg-white text-slate-900 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+          : "border-white/10 bg-white/5 text-white focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+      )}
+      title={`Page ${page} of ${totalPages} - Type a number or press Enter to jump`}
+      aria-label="Current page number"
+    />
+  );
+}
+
 export function SystemManagementPage() {
   const { notify } = useNotice();
   const { theme } = useTheme();
@@ -824,7 +900,7 @@ export function SystemManagementPage() {
       </div>
 
       {/* ── Main Tab Navigation Bar ──────────────────────────────────── */}
-      <div className="flex flex-wrap gap-2 border-b border-white/10 pb-0.5">
+      <div className={cn("flex flex-wrap gap-2 border-b pb-0.5", isLight ? "border-slate-200" : "border-white/10")}>
         {/* Tab 1: Accounts */}
         <button
           type="button"
@@ -832,13 +908,26 @@ export function SystemManagementPage() {
           className={cn(
             "flex items-center gap-2.5 px-4 py-3 text-xs font-bold transition-all relative rounded-t-xl border-b-2",
             activeTab === "accounts"
-              ? "border-[#FCD400] bg-white/5 text-[#FCD400]"
-              : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
+              ? isLight
+                ? "border-[#FCD400] bg-white text-slate-900 shadow-sm"
+                : "border-[#FCD400] bg-white/5 text-[#FCD400]"
+              : isLight
+                ? "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/60"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
           )}
         >
           <Users className="h-4 w-4" />
           <span>Accounts Management</span>
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[10px] font-mono font-bold transition-colors",
+              isLight
+                ? activeTab === "accounts"
+                  ? "bg-slate-200/90 text-slate-900 border border-slate-300"
+                  : "bg-slate-100 text-slate-700 border border-slate-300/60"
+                : "bg-white/10 text-slate-300"
+            )}
+          >
             {vitals?.totalUsers ?? totalUsers}
           </span>
         </button>
@@ -850,13 +939,26 @@ export function SystemManagementPage() {
           className={cn(
             "flex items-center gap-2.5 px-4 py-3 text-xs font-bold transition-all relative rounded-t-xl border-b-2",
             activeTab === "books"
-              ? "border-[#FCD400] bg-white/5 text-[#FCD400]"
-              : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
+              ? isLight
+                ? "border-[#FCD400] bg-white text-slate-900 shadow-sm"
+                : "border-[#FCD400] bg-white/5 text-[#FCD400]"
+              : isLight
+                ? "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/60"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
           )}
         >
           <BookOpen className="h-4 w-4" />
           <span>Books Catalog</span>
-          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-mono text-slate-300">
+          <span
+            className={cn(
+              "rounded-full px-2 py-0.5 text-[10px] font-mono font-bold transition-colors",
+              isLight
+                ? activeTab === "books"
+                  ? "bg-slate-200/90 text-slate-900 border border-slate-300"
+                  : "bg-slate-100 text-slate-700 border border-slate-300/60"
+                : "bg-white/10 text-slate-300"
+            )}
+          >
             {totalBooks}
           </span>
         </button>
@@ -868,14 +970,25 @@ export function SystemManagementPage() {
           className={cn(
             "flex items-center gap-2.5 px-4 py-3 text-xs font-bold transition-all relative rounded-t-xl border-b-2",
             activeTab === "archived"
-              ? "border-[#FCD400] bg-white/5 text-[#FCD400]"
-              : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
+              ? isLight
+                ? "border-[#FCD400] bg-white text-slate-900 shadow-sm"
+                : "border-[#FCD400] bg-white/5 text-[#FCD400]"
+              : isLight
+                ? "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/60"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
           )}
         >
-          <Archive className="h-4 w-4 text-orange-400" />
+          <Archive className={cn("h-4 w-4", isLight ? "text-orange-900" : "text-orange-400")} />
           <span>Archived Records</span>
           {(totalArchivedBooks + archivedUsers.length) > 0 && (
-            <span className="rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30 px-2 py-0.5 text-[10px] font-mono font-bold">
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] font-mono font-bold",
+                isLight
+                  ? "bg-orange-100 text-orange-900 border border-orange-300"
+                  : "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+              )}
+            >
               {totalArchivedBooks + archivedUsers.length}
             </span>
           )}
@@ -888,11 +1001,15 @@ export function SystemManagementPage() {
           className={cn(
             "flex items-center gap-2.5 px-4 py-3 text-xs font-bold transition-all relative rounded-t-xl border-b-2",
             activeTab === "infrastructure"
-              ? "border-[#FCD400] bg-white/5 text-[#FCD400]"
-              : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
+              ? isLight
+                ? "border-[#FCD400] bg-white text-slate-900 shadow-sm"
+                : "border-[#FCD400] bg-white/5 text-[#FCD400]"
+              : isLight
+                ? "border-transparent text-slate-600 hover:text-slate-900 hover:bg-slate-100/60"
+                : "border-transparent text-slate-400 hover:text-white hover:bg-white/[0.02]"
           )}
         >
-          <Server className="h-4 w-4 text-sky-400" />
+          <Server className={cn("h-4 w-4", isLight ? "text-sky-600" : "text-sky-400")} />
           <span>Infrastructure & Retention</span>
         </button>
       </div>
@@ -903,9 +1020,9 @@ export function SystemManagementPage() {
       {activeTab === "accounts" && (
         <div className="space-y-6">
           {/* Summary Metric Strip */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             <div className={cn(
-              "rounded-2xl p-4 shadow-sm border transition-all",
+              "col-span-2 sm:col-span-1 rounded-2xl p-4 shadow-sm border transition-all",
               isLight ? "border-slate-200 bg-white" : "border-white/10 bg-[#122033]"
             )}>
               <div className={cn(
@@ -934,13 +1051,37 @@ export function SystemManagementPage() {
                 isLight ? "text-purple-800" : "text-purple-300"
               )}>
                 <ShieldCheck className={cn("h-3.5 w-3.5", isLight ? "text-purple-700" : "text-purple-400")} />
-                <span>Super Admins & Admins</span>
+                <span>Super Admins</span>
               </div>
               <div className={cn(
                 "mt-1 text-2xl font-black tracking-tight",
                 isLight ? "text-purple-950 font-black" : "text-purple-200"
               )}>
-                {vitals ? vitals.superAdminsCount + vitals.adminsCount : users.filter((u) => u.role.includes("Admin")).length}
+                {vitals?.superAdminsCount ?? users.filter((u) => u.role.toLowerCase().replace(/_/g, " ").includes("super admin")).length}
+              </div>
+            </div>
+
+            <div className={cn(
+              "rounded-2xl p-4 shadow-sm border transition-all",
+              isLight
+                ? "border-amber-300 bg-amber-50/80 ring-1 ring-amber-400/25 shadow-amber-500/5"
+                : "border-amber-500/20 bg-[#251E1A]"
+            )}>
+              <div className={cn(
+                "text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5",
+                isLight ? "text-amber-800" : "text-amber-300"
+              )}>
+                <Shield className={cn("h-3.5 w-3.5", isLight ? "text-amber-700" : "text-amber-400")} />
+                <span>Admins</span>
+              </div>
+              <div className={cn(
+                "mt-1 text-2xl font-black tracking-tight",
+                isLight ? "text-amber-950 font-black" : "text-amber-200"
+              )}>
+                {vitals?.adminsCount ?? users.filter((u) => {
+                  const r = u.role.toLowerCase().replace(/_/g, " ");
+                  return r.includes("admin") && !r.includes("super admin");
+                }).length}
               </div>
             </div>
 
@@ -961,7 +1102,7 @@ export function SystemManagementPage() {
                 "mt-1 text-2xl font-black tracking-tight",
                 isLight ? "text-sky-950 font-black" : "text-sky-200"
               )}>
-                {vitals?.librariansCount ?? users.filter((u) => u.role.includes("Librarian")).length}
+                {vitals?.librariansCount ?? users.filter((u) => u.role.toLowerCase().includes("librarian")).length}
               </div>
             </div>
 
@@ -982,7 +1123,7 @@ export function SystemManagementPage() {
                 "mt-1 text-2xl font-black tracking-tight",
                 isLight ? "text-emerald-950 font-black" : "text-emerald-200"
               )}>
-                {vitals?.studentsCount ?? users.filter((u) => u.role === "Student").length}
+                {vitals?.studentsCount ?? users.filter((u) => u.role.toLowerCase().includes("student")).length}
               </div>
             </div>
           </div>
@@ -1002,7 +1143,7 @@ export function SystemManagementPage() {
                     setUserPage(1);
                   }}
                   placeholder="Search name, email, ID number..."
-                  className="glass-input w-full pl-9 pr-3 py-2 text-xs text-white"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 text-sm text-white"
                 />
               </div>
 
@@ -1013,7 +1154,7 @@ export function SystemManagementPage() {
                     setUserRoleFilter(e.target.value);
                     setUserPage(1);
                   }}
-                  className="glass-input w-full px-3 py-2 text-xs text-white bg-[#101D2D]"
+                  className="glass-input w-full px-3 py-2.5 text-sm text-white bg-[#101D2D]"
                 >
                   <option value="All" className="bg-[#101D2D] text-white">All Roles</option>
                   {ALL_ROLES.map((r) => (
@@ -1031,7 +1172,7 @@ export function SystemManagementPage() {
                     setUserStatusFilter(e.target.value);
                     setUserPage(1);
                   }}
-                  className="glass-input w-full px-3 py-2 text-xs text-white bg-[#101D2D]"
+                  className="glass-input w-full px-3 py-2.5 text-sm text-white bg-[#101D2D]"
                 >
                   <option value="All" className="bg-[#101D2D] text-white">All Statuses</option>
                   <option value="Active" className="bg-[#101D2D] text-white">Active</option>
@@ -1042,30 +1183,30 @@ export function SystemManagementPage() {
 
             {/* Users Table */}
             <AdminTable>
-              <table className="min-w-full text-left text-xs">
-                <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[10px]">
+              <table className="min-w-full text-left text-base">
+                <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[13px]">
                   <tr>
-                    <th className="px-4 py-3">User</th>
-                    <th className="px-4 py-3">ID Number</th>
-                    <th className="px-4 py-3">Role</th>
-                    <th className="px-4 py-3">Department / Course</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Created</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-4">User</th>
+                    <th className="px-4 py-4">ID Number</th>
+                    <th className="px-4 py-4">Role</th>
+                    <th className="px-4 py-4">Department / Course</th>
+                    <th className="px-4 py-4">Status</th>
+                    <th className="px-4 py-4">Created</th>
+                    <th className="px-4 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-slate-200">
                   {users.map((user, idx) => (
                     <tr key={user.id ? `u-${user.id}-${idx}` : `u-idx-${idx}`} className="hover:bg-white/[0.02] transition">
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-white">{user.name}</div>
-                        <div className="text-slate-400 font-mono text-[11px]">{user.email}</div>
+                      <td className="px-4 py-4">
+                        <div className="font-bold text-[16px] text-white leading-snug">{user.name}</div>
+                        <div className="text-slate-400 font-mono text-[13px] mt-1">{user.email}</div>
                       </td>
-                      <td className="px-4 py-3 font-mono text-slate-300">{user.idNumber}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-4 font-mono text-[14px] text-slate-300 font-medium">{user.idNumber}</td>
+                      <td className="px-4 py-4">
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider",
+                            "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
                             user.role.includes("Super Admin")
                               ? isLight
                                 ? "bg-purple-100 text-purple-900 border border-purple-300 font-black shadow-xs"
@@ -1086,25 +1227,29 @@ export function SystemManagementPage() {
                           {user.role}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-300">
-                        <div className="truncate max-w-[220px]">{user.department}</div>
-                        <div className="text-[10px] text-slate-400 truncate max-w-[220px]">{user.course}</div>
+                      <td className="px-4 py-4 text-slate-300">
+                        <div className="truncate max-w-[240px] font-bold text-[14px]">{user.department}</div>
+                        <div className="text-[13px] text-slate-400 truncate max-w-[240px] mt-1">{user.course}</div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-4">
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                            "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
                             user.status === "Active"
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                              : "bg-orange-500/10 text-orange-400 border border-orange-500/20"
+                              ? isLight
+                                ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
+                                : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                              : isLight
+                              ? "bg-orange-100 text-orange-900 border border-orange-300 font-bold"
+                              : "bg-orange-500/20 text-orange-400 border border-orange-500/30 font-bold"
                           )}
                         >
                           {user.status === "Suspended" ? "ARCHIVED" : user.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{formatDate(user.createdAt)}</td>
-                      <td className="px-4 py-3 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
+                      <td className="px-4 py-4 text-slate-400 text-[14px] font-medium">{formatDate(user.createdAt)}</td>
+                      <td className="px-4 py-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
                             onClick={() => {
@@ -1124,28 +1269,38 @@ export function SystemManagementPage() {
                               setShowPassword(false);
                               setUserModalOpen(true);
                             }}
-                            className="rounded-lg border border-white/10 bg-white/5 p-1.5 text-slate-300 hover:bg-white/10 hover:text-white transition"
+                            className="rounded-lg border border-white/10 bg-white/5 p-2.5 text-slate-300 hover:bg-white/10 hover:text-white transition"
                             title="Edit Account"
                           >
-                            <Edit2 className="h-3.5 w-3.5 text-[#FCD400]" />
+                            <Edit2 className="h-4 w-4 text-[#FCD400]" />
                           </button>
                           {user.status === "Suspended" || user.status === "Archived" ? (
                             <button
                               type="button"
                               onClick={() => void handleRestoreUser(user)}
-                              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-1.5 text-emerald-300 hover:bg-emerald-500/20 transition"
+                              className={cn(
+                                "rounded-lg border p-2.5 transition",
+                                isLight
+                                  ? "border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
+                                  : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                              )}
                               title="Reactivate Account"
                             >
-                              <RotateCcw className="h-3.5 w-3.5" />
+                              <RotateCcw className="h-4 w-4" />
                             </button>
                           ) : (
                             <button
                               type="button"
                               onClick={() => setArchiveConfirmUser(user)}
-                              className="rounded-lg border border-orange-500/40 bg-orange-500/15 p-1.5 text-orange-400 hover:bg-orange-500/25 hover:border-orange-500/60 transition"
+                              className={cn(
+                                "rounded-lg border p-2.5 transition",
+                                isLight
+                                  ? "border-orange-300 bg-orange-100 text-orange-900 hover:bg-orange-200"
+                                  : "border-orange-500/40 bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 hover:border-orange-500/60"
+                              )}
                               title="Archive Account"
                             >
-                              <Archive className="h-3.5 w-3.5" />
+                              <Archive className="h-4 w-4" />
                             </button>
                           )}
                         </div>
@@ -1166,7 +1321,10 @@ export function SystemManagementPage() {
 
             {/* Pagination */}
             {totalUsers > 10 && (
-              <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-4 text-xs text-slate-400">
+              <div className={cn(
+                "mt-4 flex items-center justify-between border-t pt-4 text-sm font-medium",
+                isLight ? "border-slate-200 text-slate-700" : "border-white/5 text-slate-300"
+              )}>
                 <span>
                   Showing page {userPage} of {Math.max(1, Math.ceil(totalUsers / 10))} ({totalUsers} users)
                 </span>
@@ -1175,15 +1333,31 @@ export function SystemManagementPage() {
                     type="button"
                     disabled={userPage <= 1}
                     onClick={() => setUserPage((p) => Math.max(1, p - 1))}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-40"
+                    className={cn(
+                      "rounded-lg border px-3.5 py-2 font-bold text-sm transition disabled:opacity-40",
+                      isLight
+                        ? "border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                        : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                    )}
                   >
                     Previous
                   </button>
+                  <PageSelectorBox
+                    page={userPage}
+                    totalPages={Math.max(1, Math.ceil(totalUsers / 10))}
+                    onPageChange={(p) => setUserPage(p)}
+                    isLight={isLight}
+                  />
                   <button
                     type="button"
                     disabled={userPage >= Math.ceil(totalUsers / 10)}
                     onClick={() => setUserPage((p) => p + 1)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-40"
+                    className={cn(
+                      "rounded-lg border px-3.5 py-2 font-bold text-sm transition disabled:opacity-40",
+                      isLight
+                        ? "border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                        : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                    )}
                   >
                     Next
                   </button>
@@ -1201,23 +1375,55 @@ export function SystemManagementPage() {
         <div className="space-y-6">
           {/* Summary Metric Strip */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="rounded-2xl border border-white/10 bg-[#122033] p-4 shadow-sm">
-              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Active Catalog Resources</div>
-              <div className="mt-1 text-2xl font-black text-white">{totalBooks}</div>
+            <div className={cn(
+              "rounded-2xl border p-4 shadow-sm transition-all",
+              isLight ? "border-slate-200 bg-white" : "border-white/10 bg-[#122033]"
+            )}>
+              <div className={cn("text-[11px] font-bold uppercase tracking-wider", isLight ? "text-slate-600" : "text-slate-400")}>
+                Active Catalog Resources
+              </div>
+              <div className={cn("mt-1 text-2xl font-black", isLight ? "text-slate-900" : "text-white")}>
+                {totalBooks}
+              </div>
             </div>
-            <div className="rounded-2xl border border-emerald-500/20 bg-[#10292B] p-4 shadow-sm">
-              <div className="text-[11px] font-bold text-emerald-300 uppercase tracking-wider">Available for Loan</div>
-              <div className="mt-1 text-2xl font-black text-emerald-300">
+            <div className={cn(
+              "rounded-2xl border p-4 shadow-sm transition-all",
+              isLight
+                ? "border-emerald-300 bg-emerald-50/80 ring-1 ring-emerald-400/25 shadow-emerald-500/5"
+                : "border-emerald-500/20 bg-[#10292B]"
+            )}>
+              <div className={cn("text-[11px] font-bold uppercase tracking-wider", isLight ? "text-emerald-800" : "text-emerald-300")}>
+                Available for Loan
+              </div>
+              <div className={cn("mt-1 text-2xl font-black tracking-tight", isLight ? "text-emerald-950 font-black" : "text-emerald-300")}>
                 {books.filter((b) => (b.availability || "").toLowerCase() === "available").length}
               </div>
             </div>
-            <div className="rounded-2xl border border-orange-500/20 bg-[#291B10] p-4 shadow-sm">
-              <div className="text-[11px] font-bold text-orange-400 uppercase tracking-wider">Archived Vault Total</div>
-              <div className="mt-1 text-2xl font-black text-orange-400">{totalArchivedBooks}</div>
+            <div className={cn(
+              "rounded-2xl border p-4 shadow-sm transition-all",
+              isLight
+                ? "border-amber-300 bg-amber-50/80 ring-1 ring-amber-400/25 shadow-amber-500/5"
+                : "border-orange-500/20 bg-[#291B10]"
+            )}>
+              <div className={cn("text-[11px] font-bold uppercase tracking-wider", isLight ? "text-amber-800" : "text-orange-400")}>
+                Archived Vault Total
+              </div>
+              <div className={cn("mt-1 text-2xl font-black tracking-tight", isLight ? "text-amber-950 font-black" : "text-orange-400")}>
+                {totalArchivedBooks}
+              </div>
             </div>
-            <div className="rounded-2xl border border-sky-500/20 bg-[#12273D] p-4 shadow-sm">
-              <div className="text-[11px] font-bold text-sky-300 uppercase tracking-wider">Departments Covered</div>
-              <div className="mt-1 text-2xl font-black text-sky-300">7 Colleges</div>
+            <div className={cn(
+              "rounded-2xl border p-4 shadow-sm transition-all",
+              isLight
+                ? "border-sky-300 bg-sky-50/80 ring-1 ring-sky-400/25 shadow-sky-500/5"
+                : "border-sky-500/20 bg-[#12273D]"
+            )}>
+              <div className={cn("text-[11px] font-bold uppercase tracking-wider", isLight ? "text-sky-800" : "text-sky-300")}>
+                Departments Covered
+              </div>
+              <div className={cn("mt-1 text-2xl font-black tracking-tight", isLight ? "text-sky-950 font-black" : "text-sky-300")}>
+                7 Colleges
+              </div>
             </div>
           </div>
 
@@ -1236,7 +1442,7 @@ export function SystemManagementPage() {
                     setBookPage(1);
                   }}
                   placeholder="Search book title, author, ISBN, shelf location..."
-                  className="glass-input w-full pl-9 pr-3 py-2 text-xs text-white"
+                  className="glass-input w-full pl-9 pr-3 py-2.5 text-sm text-white"
                 />
               </div>
 
@@ -1247,7 +1453,7 @@ export function SystemManagementPage() {
                     setBookDeptFilter(e.target.value);
                     setBookPage(1);
                   }}
-                  className="glass-input w-full px-3 py-2 text-xs text-white bg-[#101D2D]"
+                  className="glass-input w-full px-3 py-2.5 text-sm text-white bg-[#101D2D]"
                 >
                   <option value="All" className="bg-[#101D2D] text-white">All Departments</option>
                   <option value="Circulation" className="bg-[#101D2D] text-white">Circulation</option>
@@ -1262,59 +1468,68 @@ export function SystemManagementPage() {
 
             {/* Books Table */}
             <AdminTable>
-              <table className="min-w-full text-left text-xs">
-                <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[10px]">
+              <table className="min-w-full text-left text-base">
+                <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[13px]">
                   <tr>
-                    <th className="px-4 py-3">Book Resource</th>
-                    <th className="px-4 py-3">ISBN & Shelf</th>
-                    <th className="px-4 py-3">Department</th>
-                    <th className="px-4 py-3">Copies / Borrows</th>
-                    <th className="px-4 py-3">Availability</th>
-                    <th className="px-4 py-3 text-right">Actions</th>
+                    <th className="px-4 py-4">Book Resource</th>
+                    <th className="px-4 py-4">ISBN & Shelf</th>
+                    <th className="px-4 py-4">Department</th>
+                    <th className="px-4 py-4">Copies / Borrows</th>
+                    <th className="px-4 py-4">Availability</th>
+                    <th className="px-4 py-4 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 text-slate-200">
                   {books.map((book, idx) => (
                     <tr key={book.id ? `b-${book.id}-${idx}` : `b-idx-${idx}`} className="hover:bg-white/[0.02] transition">
-                      <td className="px-4 py-3">
-                        <div className="font-semibold text-white">{book.title}</div>
-                        <div className="text-slate-400 text-[11px]">{book.author || "STI Library"}</div>
+                      <td className="px-4 py-4">
+                        <div className="font-bold text-[16px] text-white leading-snug">{book.title}</div>
+                        <div className="text-slate-400 text-[13px] mt-1">{book.author || "STI Library"}</div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="font-mono text-slate-300 text-[11px]">{book.isbn || "—"}</div>
-                        <div className="font-mono text-slate-400 text-[10px]">{book.shelfLocation || "—"}</div>
+                      <td className="px-4 py-4">
+                        <div className="font-mono text-slate-300 text-[13px]">{book.isbn || "—"}</div>
+                        <div className="font-mono text-slate-400 text-[13px] mt-1">{book.shelfLocation || "—"}</div>
                       </td>
-                      <td className="px-4 py-3">
-                        <span className="rounded-lg bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-slate-300 font-medium">
+                      <td className="px-4 py-4">
+                        <span className="rounded-lg bg-white/5 border border-white/10 px-3 py-1 text-[12px] text-slate-300 font-medium">
                           {book.department || "Circulation"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-300">
+                      <td className="px-4 py-4 text-slate-300 text-[14px]">
                         <span className="font-bold text-white">{book.copies ?? 1}</span> copies
                         <span className="text-slate-500 mx-1">·</span>
                         <span className="text-amber-300 font-semibold">{book.borrowCount ?? 0}</span> borrows
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-4">
                         <span
                           className={cn(
-                            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                            "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
                             (book.availability || "").toLowerCase() === "available"
-                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                              : "bg-amber-500/10 text-amber-300 border border-amber-500/20"
+                              ? isLight
+                                ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
+                                : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                              : isLight
+                              ? "bg-amber-100 text-amber-950 border border-amber-300 font-bold"
+                              : "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
                           )}
                         >
                           {book.availability || "Available"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-4 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
                             type="button"
                             onClick={() => setArchiveConfirmBook(book)}
-                            className="flex items-center gap-1.5 rounded-lg border border-orange-500/40 bg-orange-500/15 px-2.5 py-1 text-[11px] font-bold text-orange-400 hover:bg-orange-500/25 hover:border-orange-500/60 transition"
+                            className={cn(
+                              "flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs sm:text-sm font-bold transition",
+                              isLight
+                                ? "border-orange-300 bg-orange-100 text-orange-900 hover:bg-orange-200"
+                                : "border-orange-500/40 bg-orange-500/15 text-orange-400 hover:bg-orange-500/25 hover:border-orange-500/60"
+                            )}
                             title="Archive this book"
                           >
-                            <Archive className="h-3.5 w-3.5" />
+                            <Archive className="h-4 w-4" />
                             <span>Archive</span>
                           </button>
                         </div>
@@ -1335,7 +1550,10 @@ export function SystemManagementPage() {
 
             {/* Pagination */}
             {totalBooks > 10 && (
-              <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-4 text-xs text-slate-400">
+              <div className={cn(
+                "mt-4 flex items-center justify-between border-t pt-4 text-sm font-medium",
+                isLight ? "border-slate-200 text-slate-700" : "border-white/5 text-slate-300"
+              )}>
                 <span>
                   Showing page {bookPage} of {Math.max(1, Math.ceil(totalBooks / 10))} ({totalBooks} books)
                 </span>
@@ -1344,15 +1562,31 @@ export function SystemManagementPage() {
                     type="button"
                     disabled={bookPage <= 1}
                     onClick={() => setBookPage((p) => Math.max(1, p - 1))}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-40"
+                    className={cn(
+                      "rounded-lg border px-3.5 py-2 font-bold text-sm transition disabled:opacity-40",
+                      isLight
+                        ? "border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                        : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                    )}
                   >
                     Previous
                   </button>
+                  <PageSelectorBox
+                    page={bookPage}
+                    totalPages={Math.max(1, Math.ceil(totalBooks / 10))}
+                    onPageChange={(p) => setBookPage(p)}
+                    isLight={isLight}
+                  />
                   <button
                     type="button"
                     disabled={bookPage >= Math.ceil(totalBooks / 10)}
                     onClick={() => setBookPage((p) => p + 1)}
-                    className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-40"
+                    className={cn(
+                      "rounded-lg border px-3.5 py-2 font-bold text-sm transition disabled:opacity-40",
+                      isLight
+                        ? "border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                        : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                    )}
                   >
                     Next
                   </button>
@@ -1369,9 +1603,17 @@ export function SystemManagementPage() {
       {activeTab === "archived" && (
         <div className="space-y-6">
           {/* Archive Vault Directive Banner */}
-          <div className="rounded-2xl border border-orange-500/30 bg-orange-500/5 p-5 shadow-lg flex flex-wrap items-center justify-between gap-4">
+          <div className={cn(
+            "rounded-2xl border p-5 shadow-lg flex flex-wrap items-center justify-between gap-4 transition-all",
+            isLight
+              ? "border-orange-300 bg-orange-50/80 shadow-orange-500/5"
+              : "border-orange-500/30 bg-orange-500/5"
+          )}>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400">
+              <div className={cn(
+                "flex h-10 w-10 items-center justify-center rounded-xl",
+                isLight ? "border border-orange-300 bg-orange-100 text-orange-900" : "bg-orange-500/20 text-orange-400"
+              )}>
                 <Archive className="h-5 w-5" />
               </div>
               <div>
@@ -1383,7 +1625,7 @@ export function SystemManagementPage() {
             </div>
 
             {/* Archive Sub-Tab Segmented Selector */}
-            <div className="flex items-center rounded-xl bg-[#0E1A26] border border-white/10 p-1">
+            <div className={cn("flex items-center rounded-xl border p-1", isLight ? "bg-slate-100 border-slate-200" : "bg-[#0E1A26] border-white/10")}>
               <button
                 type="button"
                 onClick={() => setArchiveSubTab("books")}
@@ -1391,7 +1633,9 @@ export function SystemManagementPage() {
                   "rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all",
                   archiveSubTab === "books"
                     ? "bg-[#FCD400] text-[#0B1A2C] shadow"
-                    : "text-slate-400 hover:text-white"
+                    : isLight
+                      ? "text-slate-700 hover:text-slate-900"
+                      : "text-slate-400 hover:text-white"
                 )}
               >
                 Archived Books ({totalArchivedBooks})
@@ -1403,7 +1647,9 @@ export function SystemManagementPage() {
                   "rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all",
                   archiveSubTab === "accounts"
                     ? "bg-[#FCD400] text-[#0B1A2C] shadow"
-                    : "text-slate-400 hover:text-white"
+                    : isLight
+                      ? "text-slate-700 hover:text-slate-900"
+                      : "text-slate-400 hover:text-white"
                 )}
               >
                 Archived Accounts ({archivedUsers.length > 0 ? archivedUsers.length : suspendedAccounts.length})
@@ -1441,63 +1687,70 @@ export function SystemManagementPage() {
                       setArchivedPage(1);
                     }}
                     placeholder="Search archived books by title, author, ISBN..."
-                    className="glass-input w-full pl-9 pr-3 py-2 text-xs text-white"
+                    className="glass-input w-full pl-9 pr-3 py-2.5 text-sm text-white"
                   />
                 </div>
               </div>
 
               {/* Archived Books Table */}
               <AdminTable>
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[10px]">
+                <table className="min-w-full text-left text-base">
+                  <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[13px]">
                     <tr>
-                      <th className="px-4 py-3">Archived Book</th>
-                      <th className="px-4 py-3">ISBN & Call No.</th>
-                      <th className="px-4 py-3">Department</th>
-                      <th className="px-4 py-3">Archived Date</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      <th className="px-4 py-4">Archived Book</th>
+                      <th className="px-4 py-4">ISBN & Call No.</th>
+                      <th className="px-4 py-4">Department</th>
+                      <th className="px-4 py-4">Archived Date</th>
+                      <th className="px-4 py-4">Status</th>
+                      <th className="px-4 py-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-slate-200">
                     {archivedBooks.map((book, idx) => (
                       <tr key={book.id ? `ab-${book.id}-${idx}` : `ab-idx-${idx}`} className="hover:bg-white/[0.02] transition">
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-white">{book.title}</div>
-                          <div className="text-slate-400 text-[11px]">{book.author || "STI Library"}</div>
+                        <td className="px-4 py-4">
+                          <div className="font-bold text-[16px] text-white leading-snug">{book.title}</div>
+                          <div className="text-slate-400 text-[13px] mt-1">{book.author || "STI Library"}</div>
                         </td>
-                        <td className="px-4 py-3">
-                          <div className="font-mono text-slate-300 text-[11px]">{book.isbn || "—"}</div>
-                          <div className="font-mono text-slate-400 text-[10px]">{book.shelfLocation || "—"}</div>
+                        <td className="px-4 py-4">
+                          <div className="font-mono text-slate-300 text-[13px]">{book.isbn || "—"}</div>
+                          <div className="font-mono text-slate-400 text-[13px] mt-1">{book.shelfLocation || "—"}</div>
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="rounded-lg bg-white/5 border border-white/10 px-2 py-0.5 text-[10px] text-slate-300">
+                        <td className="px-4 py-4">
+                          <span className="rounded-lg bg-white/5 border border-white/10 px-3 py-1 text-[12px] text-slate-300 font-medium">
                             {book.department || "Circulation"}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-300">
+                        <td className="px-4 py-4 text-slate-300 text-[14px] font-medium">
                           {book.archivedAt ? formatDate(book.archivedAt) : "Archived"}
                         </td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-bold uppercase text-amber-300 border border-amber-500/20">
+                        <td className="px-4 py-4">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
+                              isLight
+                                ? "bg-orange-100 text-orange-900 border border-orange-300 font-bold"
+                                : "bg-orange-500/20 text-orange-400 border border-orange-500/30 font-bold"
+                            )}
+                          >
                             ARCHIVED
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             {/* Restore to Active Catalog */}
                             <button
                               type="button"
                               onClick={() => handleRestoreBook(book)}
                               className={cn(
-                                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition shadow-sm",
+                                "flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-bold transition shadow-sm",
                                 isLight
-                                  ? "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                  ? "border border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
                                   : "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
                               )}
                               title="Restore back to active catalog"
                             >
-                              <RotateCcw className="h-3.5 w-3.5" />
+                              <RotateCcw className="h-4 w-4" />
                               <span>Restore Book</span>
                             </button>
 
@@ -1506,7 +1759,7 @@ export function SystemManagementPage() {
                               type="button"
                               onClick={() => setPurgeConfirmBook(book)}
                               className={cn(
-                                "rounded-lg p-1.5 transition",
+                                "rounded-lg p-2.5 transition",
                                 isLight
                                   ? "border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
                                   : "border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
@@ -1533,7 +1786,10 @@ export function SystemManagementPage() {
 
               {/* Pagination */}
               {totalArchivedBooks > 10 && (
-                <div className="mt-4 flex items-center justify-between border-t border-white/5 pt-4 text-xs text-slate-400">
+                <div className={cn(
+                  "mt-4 flex items-center justify-between border-t pt-4 text-sm font-medium",
+                  isLight ? "border-slate-200 text-slate-700" : "border-white/5 text-slate-300"
+                )}>
                   <span>
                     Showing page {archivedPage} of {Math.max(1, Math.ceil(totalArchivedBooks / 10))} ({totalArchivedBooks} archived books)
                   </span>
@@ -1542,15 +1798,31 @@ export function SystemManagementPage() {
                       type="button"
                       disabled={archivedPage <= 1}
                       onClick={() => setArchivedPage((p) => Math.max(1, p - 1))}
-                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-40"
+                      className={cn(
+                        "rounded-lg border px-3.5 py-2 font-bold text-sm transition disabled:opacity-40",
+                        isLight
+                          ? "border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                          : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                      )}
                     >
                       Previous
                     </button>
+                    <PageSelectorBox
+                      page={archivedPage}
+                      totalPages={Math.max(1, Math.ceil(totalArchivedBooks / 10))}
+                      onPageChange={(p) => setArchivedPage(p)}
+                      isLight={isLight}
+                    />
                     <button
                       type="button"
                       disabled={archivedPage >= Math.ceil(totalArchivedBooks / 10)}
                       onClick={() => setArchivedPage((p) => p + 1)}
-                      className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 font-semibold text-white hover:bg-white/10 disabled:opacity-40"
+                      className={cn(
+                        "rounded-lg border px-3.5 py-2 font-bold text-sm transition disabled:opacity-40",
+                        isLight
+                          ? "border-slate-300 bg-white text-slate-900 hover:bg-slate-100"
+                          : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                      )}
                     >
                       Next
                     </button>
@@ -1567,36 +1839,36 @@ export function SystemManagementPage() {
               description="User accounts that have been archived. These users cannot authenticate into the platform. You can restore them to active status anytime."
             >
               <AdminTable>
-                <table className="min-w-full text-left text-xs">
-                  <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[10px]">
+                <table className="min-w-full text-left text-base">
+                  <thead className="bg-[#132338] uppercase tracking-wider text-slate-300 font-bold text-[13px]">
                     <tr>
-                      <th className="px-4 py-3">User</th>
-                      <th className="px-4 py-3">ID Number</th>
-                      <th className="px-4 py-3">Role</th>
-                      <th className="px-4 py-3">Department</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
+                      <th className="px-4 py-4">User</th>
+                      <th className="px-4 py-4">ID Number</th>
+                      <th className="px-4 py-4">Role</th>
+                      <th className="px-4 py-4">Department</th>
+                      <th className="px-4 py-4">Status</th>
+                      <th className="px-4 py-4 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-slate-200">
                     {(archivedUsers.length > 0 ? archivedUsers : suspendedAccounts).map((user, idx) => (
                       <tr key={user.id ? `su-${user.id}-${idx}` : `su-idx-${idx}`} className="hover:bg-white/[0.02] transition">
-                        <td className="px-4 py-3">
-                          <div className="font-semibold text-white">{user.name}</div>
-                          <div className="text-slate-400 font-mono text-[11px]">{user.email}</div>
+                        <td className="px-4 py-4">
+                          <div className="font-bold text-[16px] text-white leading-snug">{user.name}</div>
+                          <div className="text-slate-400 font-mono text-[13px] mt-1">{user.email}</div>
                         </td>
-                        <td className="px-4 py-3 font-mono text-slate-300">{user.idNumber}</td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-4 font-mono text-[14px] text-slate-300 font-medium">{user.idNumber}</td>
+                        <td className="px-4 py-4">
                           <span
                             className={cn(
-                              "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] uppercase tracking-wider",
+                              "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
                               user.role.includes("Super Admin")
                                 ? isLight
-                                  ? "bg-purple-100 text-purple-900 border border-purple-300 font-black"
+                                  ? "bg-purple-100 text-purple-900 border border-purple-300 font-black shadow-xs"
                                   : "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
                                 : user.role.includes("Admin")
                                 ? isLight
-                                  ? "bg-amber-100 text-amber-950 border border-amber-400 font-black"
+                                  ? "bg-amber-100 text-amber-950 border border-amber-400 font-black shadow-xs"
                                   : "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
                                 : user.role.includes("Librarian")
                                 ? isLight
@@ -1610,25 +1882,32 @@ export function SystemManagementPage() {
                             {user.role}
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-slate-300">{user.department}</td>
-                        <td className="px-4 py-3">
-                          <span className="inline-flex items-center rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-bold text-orange-400 border border-orange-500/20">
+                        <td className="px-4 py-4 text-slate-300 font-bold text-[14px]">{user.department}</td>
+                        <td className="px-4 py-4">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
+                              isLight
+                                ? "bg-orange-100 text-orange-900 border border-orange-300 font-bold"
+                                : "bg-orange-500/20 text-orange-400 border border-orange-500/30 font-bold"
+                            )}
+                          >
                             ARCHIVED
                           </span>
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="px-4 py-4 text-right">
                           <button
                             type="button"
                             onClick={() => void handleRestoreUser(user)}
                             className={cn(
-                              "flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-bold transition ml-auto",
+                              "flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-bold transition ml-auto shadow-sm",
                               isLight
-                                ? "border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                ? "border border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
                                 : "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
                             )}
                             title="Restore Account"
                           >
-                            <RotateCcw className="h-3.5 w-3.5" />
+                            <RotateCcw className="h-4 w-4" />
                             <span>Restore Account</span>
                           </button>
                         </td>

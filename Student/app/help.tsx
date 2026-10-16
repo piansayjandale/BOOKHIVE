@@ -225,7 +225,7 @@ const PAGE_GUIDES: PageGuide[] = [
     summary: 'Understanding loan periods, daily penalty rates, account restrictions, and clearance restoration.',
     keyFeatures: [
       'Standard Loan Duration: 7 days for general circulation books.',
-      'Daily Overdue Fine: ₱20.00 per book for each calendar day beyond the return due date.',
+      'Daily Overdue Fine: ₱50.00 per book for each calendar day beyond the return due date.',
       'Automatic Account Restrictions: Incurring overdue fines temporarily freezes new borrowing requests.',
     ],
     howToOperate: [
@@ -254,7 +254,7 @@ const FAQS = [
   },
   {
     q: 'How much is the penalty for overdue books?',
-    a: 'The standard library policy assesses a fine of ₱20.00 per book per day for late returns. Fines must be settled at the Circulation Desk to clear account holds.',
+    a: 'The standard library policy assesses a fine of ₱50.00 per book per day for late returns. Fines must be settled at the Circulation Desk to clear account holds.',
   },
   {
     q: 'How do I present my digital library card at checkout?',

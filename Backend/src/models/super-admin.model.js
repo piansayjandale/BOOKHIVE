@@ -15,10 +15,15 @@ export const superAdminModel = {
           (SELECT COUNT(*) FROM users WHERE role IN ('Student', 'STUDENT')) AS "studentsCount",
           (SELECT COUNT(*) FROM books WHERE archived_at IS NULL) AS "activeBooksCount",
           (SELECT COUNT(*) FROM books WHERE archived_at IS NOT NULL) AS "archivedBooksCount",
+          (SELECT COUNT(*) FROM books WHERE archived_at IS NULL AND availability = 'Available') AS "shelfReadyBooksCount",
           (SELECT COUNT(*) FROM transactions) AS "totalTransactions",
           (SELECT COUNT(*) FROM transactions WHERE status = 'Pending') AS "pendingTransactions",
           (SELECT COUNT(*) FROM transactions WHERE type = 'Borrow' AND status = 'Approved') AS "activeBorrows",
+          (SELECT COUNT(*) FROM transactions WHERE type = 'Borrow') AS "totalBorrows",
+          (SELECT COUNT(*) FROM transactions WHERE type = 'Return' OR status = 'Returned') AS "totalReturns",
+          (SELECT COUNT(*) FROM transactions WHERE type = 'Reservation') AS "totalReservations",
           (SELECT COUNT(*) FROM ai_search_logs) AS "totalAiSearches",
+          (SELECT COALESCE(SUM(matches_found), 0) FROM ai_search_logs) AS "totalSearchResults",
           (SELECT COUNT(*) FROM activity_logs) AS "totalAuditLogs"
       `;
 
@@ -41,10 +46,15 @@ export const superAdminModel = {
           studentsCount: Number(row.studentsCount || 0),
           activeBooksCount: Number(row.activeBooksCount || 0),
           archivedBooksCount: Number(row.archivedBooksCount || 0),
+          shelfReadyBooksCount: Number(row.shelfReadyBooksCount || 0),
           totalTransactions: Number(row.totalTransactions || 0),
           pendingTransactions: Number(row.pendingTransactions || 0),
           activeBorrows: Number(row.activeBorrows || 0),
+          totalBorrows: Number(row.totalBorrows || 0),
+          totalReturns: Number(row.totalReturns || 0),
+          totalReservations: Number(row.totalReservations || 0),
           totalAiSearches: Number(row.totalAiSearches || 0),
+          totalSearchResults: Number(row.totalSearchResults || 0),
           totalAuditLogs: Number(row.totalAuditLogs || 0),
         },
         telemetry: {
@@ -75,6 +85,7 @@ export const superAdminModel = {
           pendingTransactions: 0,
           activeBorrows: 0,
           totalAiSearches: 0,
+          totalSearchResults: 0,
           totalAuditLogs: 0,
         },
         telemetry: {
@@ -166,6 +177,8 @@ export const superAdminModel = {
       reports: true,
       history: true,
       settings: true,
+      export: true,
+      import: true,
     };
 
     if (r === "Super Admin" || r === "SUPER_ADMIN") {
@@ -393,11 +406,13 @@ export const superAdminModel = {
       }
 
       if (from) {
-        filters.push(from);
+        const fromVal = from.includes(" ") || from.includes("T") ? from : `${from} 00:00:00`;
+        filters.push(fromVal);
         where.push(`created_at >= $${filters.length}`);
       }
       if (to) {
-        filters.push(to);
+        const toVal = to.includes(" ") || to.includes("T") ? to : `${to} 23:59:59.999`;
+        filters.push(toVal);
         where.push(`created_at <= $${filters.length}`);
       }
 

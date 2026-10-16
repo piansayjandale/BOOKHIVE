@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { BACKEND_URL } from "@/lib/config";
 
-export async function proxyToBackend(path: string, request: Request) {
+export async function proxyToBackend(path: string, request: Request, customBody?: string) {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
 
@@ -21,9 +21,9 @@ export async function proxyToBackend(path: string, request: Request) {
   }
 
   const method = request.method;
-  let body: string | undefined = undefined;
+  let body: string | undefined = typeof customBody === "string" ? customBody : undefined;
 
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+  if (body === undefined && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     try {
       const clonedReq = request.clone();
       body = await clonedReq.text();
@@ -40,7 +40,15 @@ export async function proxyToBackend(path: string, request: Request) {
       cache: "no-store",
     });
 
-    const data = await response.json();
+    const rawText = await response.text();
+    let data: any = {};
+    if (rawText && rawText.trim().length > 0) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = { message: rawText };
+      }
+    }
     return NextResponse.json(data, { status: response.status });
   } catch (error) {
     console.error(`Proxy failure on ${method} ${path}:`, error);

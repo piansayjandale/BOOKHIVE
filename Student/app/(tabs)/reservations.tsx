@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -25,6 +25,7 @@ import {
   ReservationBook,
   getNotifications,
   NotificationItem,
+  isDueToReturn,
 } from '../../data/store';
 
 export default function ReservationsScreen() {
@@ -86,9 +87,15 @@ export default function ReservationsScreen() {
       setLibraryCardBooks(getLibraryCardHistory());
     });
 
+    const unsubDecided = socketService.subscribeToTransactionDecided(() => {
+      setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
+    });
+
     return () => {
       unsubStore();
       unsubReturn();
+      unsubDecided();
     };
   }, []);
 
@@ -104,7 +111,7 @@ export default function ReservationsScreen() {
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const reservedBooks = activeReservations.filter(
-    (book) => book.action === 'Reserve' || (book.status === 'Pending' && book.action !== 'Borrow') || book.status === 'Waitlisted'
+    (book) => book.action === 'Reserve' || book.status === 'Pending' || book.status === 'Waitlisted'
   );
 
   const studentFullName = user?.fullName || profile.name || "Student";
@@ -138,7 +145,7 @@ export default function ReservationsScreen() {
     }
 
     router.push({
-      pathname: "/book-details",
+      pathname: "/reservation-details",
       params: {
         from: "reservations",
         id: book.id,
@@ -146,28 +153,109 @@ export default function ReservationsScreen() {
         author: book.author,
         isbn: book.isbn || "",
         description: book.description || "No description available.",
+        category: book.category || book.department || "Circulation",
+        department: book.department || "Circulation",
+        shelf: book.shelf || "General Shelf",
         year: String(book.year || "2024"),
         pages: String(book.pages || "320"),
         language: book.language || "EN",
-        available: book.available !== undefined ? String(book.available) : 'true',
+        queuePosition: String(book.queuePosition || "1"),
+        dateReserved: book.dateReserved || book.pickupDate || book.date || "Today",
+        available: String(book.available === "true" || book.available === "Available"),
         copies: (book as any).copies ? String((book as any).copies) : undefined,
       },
     });
   };
 
   // Build rows for the Library Card table (minimum 16 rows to match the reference design visual)
-  // All borrowed books (active + returned history) are preserved here and never disappear
-  const TOTAL_CARD_ROWS = Math.max(16, libraryCardBooks.length);
+  // Officially approved borrowed books, active loans, active reservations, and returned history belong here
+  const approvedLibraryCardBooks = useMemo(() => {
+    return libraryCardBooks.filter((item) => {
+      if (!item) return false;
+      if (item.status === 'Declined' || item.status === 'Cancelled') return false;
+      const isRes =
+        item.action === 'Reserve' ||
+        (item as any).type === 'Reservation' ||
+        item.status === 'Reserved' ||
+        item.status === 'Reservation';
+      if (isRes) {
+        // Active reservations belong on the card in Violet
+        return item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Reserved' || item.status === 'Approved';
+      }
+      if (item.status === 'Pending' || item.status === 'Waitlisted') return false;
+      if (item.action === 'Borrow' && item.status === 'Upcoming') return false;
+      return true;
+    });
+  }, [libraryCardBooks]);
+
+  const TOTAL_CARD_ROWS = Math.max(16, approvedLibraryCardBooks.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
-    const item = libraryCardBooks[index];
-    const isReturned = !!(item?.isReturned || item?.status === 'Completed' || item?.date === 'Returned');
+    const item = approvedLibraryCardBooks[index];
+    const isReturned = !!(item?.isReturned || item?.status === 'Completed' || item?.status === 'Returned' || item?.date === 'Returned');
+    const isReservation = !!(
+      item &&
+      (item.action === 'Reserve' ||
+        (item as any).type === 'Reservation' ||
+        item.status === 'Reserved' ||
+        item.status === 'Reservation' ||
+        (item as any).dueReturnDate === 'Reservation')
+    );
+    const isNowAvailable = !!(
+      item &&
+      (item.available === 'true' ||
+        item.available === 'Available' ||
+        String(item.available).toLowerCase() === 'true' ||
+        !!item.availableAt)
+    );
+
+    let dueReturnText = "";
+    let highlightType: 'none' | 'green' | 'violet' | 'red' = 'none';
+
+    if (item) {
+      if (isReturned) {
+        dueReturnText = "Returned";
+        highlightType = 'none';
+      } else if (isReservation) {
+        // Active reservations appear in VIOLET indicating reservation status
+        dueReturnText = "Reservation";
+        highlightType = "violet";
+      } else {
+        const rawDue = item?.dueDate || item?.returnDate;
+        if (rawDue) {
+          dueReturnText = typeof rawDue === 'string' ? rawDue.split('T')[0] : new Date(rawDue).toISOString().split('T')[0];
+        } else {
+          dueReturnText = "7 days";
+        }
+        // Green for active loans, Red when due to return today or overdue
+        if (isDueToReturn(item?.dueDate || rawDue || dueReturnText)) {
+          highlightType = "red";
+        } else {
+          highlightType = "green";
+        }
+      }
+    }
+
+    let borrowDateText = "";
+    if (item) {
+      const rawBorrow = item?.borrowDate || item?.pickupDate || item?.dateReserved || (item?.date !== 'Returned' ? item?.date : "") || "";
+      if (rawBorrow) {
+        borrowDateText = typeof rawBorrow === 'string' ? rawBorrow.split('T')[0] : new Date(rawBorrow).toISOString().split('T')[0];
+      } else {
+        borrowDateText = new Date().toISOString().split("T")[0];
+      }
+    }
+
     return {
       id: item?.id || `empty-row-${index}`,
-      borrowDate: item?.pickupDate || (item?.date !== 'Returned' ? item?.date : "") || "",
-      dueReturnDate: item?.returnDate || (item?.date !== 'Returned' ? item?.date : "") || "",
+      borrowDate: borrowDateText,
+      dueReturnDate: dueReturnText,
       bookTitle: item?.title || "",
       hasData: !!item,
       isReturned,
+      isReservation,
+      isNowAvailable,
+      highlightType,
+      rawItem: item,
     };
   });
 
@@ -357,13 +445,29 @@ export default function ReservationsScreen() {
 
               {/* Table Data / Lined Grid Rows */}
               {cardTableRows.map((row, idx) => (
-                <View
+                <TouchableOpacity
                   key={`card-row-${row.id}-${idx}`}
+                  disabled={!row.hasData || !(row.isReservation && row.isNowAvailable)}
+                  onPress={() => {
+                    if (row.isReservation && row.isNowAvailable && row.rawItem) {
+                      navigateToDetails(row.rawItem, true);
+                    }
+                  }}
+                  activeOpacity={0.7}
                   style={[
                     styles.tableDataRow,
                     {
                       borderBottomColor: isDarkMode ? '#273752' : '#E2E8F0',
                       borderBottomWidth: idx === cardTableRows.length - 1 ? 0 : 1,
+                    },
+                    row.hasData && !row.isReturned && row.highlightType === 'violet' && {
+                      backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.08)' : 'rgba(233, 213, 255, 0.25)',
+                    },
+                    row.hasData && !row.isReturned && row.highlightType === 'green' && {
+                      backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.08)' : 'rgba(134, 239, 172, 0.25)',
+                    },
+                    row.hasData && !row.isReturned && row.highlightType === 'red' && {
+                      backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.10)' : 'rgba(254, 202, 202, 0.35)',
                     },
                   ]}
                 >
@@ -377,17 +481,33 @@ export default function ReservationsScreen() {
                     style={[
                       styles.colDueDate,
                       { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
-                      row.hasData && !row.isReturned && {
+                      row.hasData && !row.isReturned && row.highlightType === 'green' && {
                         backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                      },
+                      row.hasData && !row.isReturned && row.highlightType === 'violet' && {
+                        backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.28)' : '#E9D5FF',
+                      },
+                      row.hasData && !row.isReturned && row.highlightType === 'red' && {
+                        backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.28)' : '#FCA5A5',
                       },
                     ]}
                   >
                     <Text
                       style={[
                         styles.cellDataText,
-                        row.hasData && !row.isReturned
+                        row.hasData && !row.isReturned && row.highlightType === 'green'
                           ? {
                               color: isDarkMode ? '#86EFAC' : '#064E3B',
+                              fontWeight: '700',
+                            }
+                          : row.hasData && !row.isReturned && row.highlightType === 'violet'
+                          ? {
+                              color: isDarkMode ? '#D8B4FE' : '#6B21A8',
+                              fontWeight: '700',
+                            }
+                          : row.hasData && !row.isReturned && row.highlightType === 'red'
+                          ? {
+                              color: isDarkMode ? '#F87171' : '#991B1B',
                               fontWeight: '700',
                             }
                           : {
@@ -405,8 +525,37 @@ export default function ReservationsScreen() {
                       {row.bookTitle}
                     </Text>
                   </View>
-                </View>
+                </TouchableOpacity>
               ))}
+            </View>
+
+            {/* CARD STATUS LEGEND */}
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 16,
+              marginTop: 12,
+              paddingTop: 4,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#86EFAC' }} />
+                <Text style={{ fontSize: 11, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
+                  Green: Borrow (Active)
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#F87171' }} />
+                <Text style={{ fontSize: 11, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
+                  Red: Due to Return
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#C084FC' }} />
+                <Text style={{ fontSize: 11, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
+                  Violet: Reservation
+                </Text>
+              </View>
             </View>
           </View>
         ) : (
@@ -425,7 +574,8 @@ export default function ReservationsScreen() {
             {/* STATE 3 or STATE 4 */}
             {reservedBooks.length > 0 ? (
               reservedBooks.map((book, bIdx) => {
-                const isReadyToBorrow = book.available === "true" || book.available === "Available";
+                const isPendingBorrow = (book.action === 'Borrow' || (book as any).type === 'Borrow') && book.status === 'Pending';
+                const isReadyToBorrow = !isPendingBorrow && (book.available === "true" || book.available === "Available");
                 const countdown = isReadyToBorrow ? getReservationCountdown(book) : null;
 
                 return (
@@ -435,7 +585,11 @@ export default function ReservationsScreen() {
                       styles.cardContainer,
                       {
                         backgroundColor: theme.cardBg,
-                        borderColor: isReadyToBorrow ? "#10B981" : theme.cardBorder,
+                        borderColor: isPendingBorrow
+                          ? (isDarkMode ? "#F59E0B" : "#F59E0B")
+                          : isReadyToBorrow
+                          ? (isDarkMode ? "#A855F7" : "#8B5CF6")
+                          : theme.cardBorder,
                         shadowColor: theme.shadowColor,
                         shadowOpacity: isDarkMode ? 0.3 : 0.05,
                       },
@@ -449,29 +603,49 @@ export default function ReservationsScreen() {
                         <Text style={[styles.bookAuthor, { color: theme.textSecondary }]}>
                           {book.author}
                         </Text>
-                        {isReadyToBorrow ? (
-                          <Text style={{ color: "#10B981", fontSize: 12, fontWeight: "700", marginTop: 4 }}>
+                        {isPendingBorrow ? (
+                          <View style={{ marginTop: 4 }}>
+                            <Text style={{ color: isDarkMode ? "#FCD34D" : "#D97706", fontSize: 12, fontWeight: "700" }}>
+                              ⏳ Borrow Request Pending
+                            </Text>
+                            <Text style={{ color: theme.textMuted, fontSize: 11, marginTop: 2 }}>
+                              Submitted · Waiting for Librarian Approval at Circulation Desk
+                            </Text>
+                          </View>
+                        ) : isReadyToBorrow ? (
+                          <Text style={{ color: isDarkMode ? "#C4B5FD" : "#7C3AED", fontSize: 12, fontWeight: "700", marginTop: 4 }}>
                             ✓ 1 Copy Available · Ready to Borrow!
                           </Text>
                         ) : (
-                          <Text style={{ color: theme.textMuted, fontSize: 11, marginTop: 4 }}>
-                            Waitlist Queue #{book.queuePosition || 1} {book.estimatedWait ? `· Est. ${book.estimatedWait}` : ""}
-                          </Text>
+                          <View style={{ marginTop: 4 }}>
+                            <Text style={{ color: isDarkMode ? theme.accentGold : theme.accentBlue, fontSize: 12, fontWeight: "700" }}>
+                              Reserve Que #{book.queuePosition || 1} (1st Come, 1st Served)
+                            </Text>
+                            <Text style={{ color: theme.textMuted, fontSize: 11, marginTop: 2 }}>
+                              Queues after active borrow · Next copy returned is yours!
+                            </Text>
+                          </View>
                         )}
                       </View>
 
                       <View style={styles.cardRightColumn}>
                         <View style={[
                           styles.reservedBadge,
-                          isReadyToBorrow
-                            ? { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "#10B981" }
-                            : { backgroundColor: "rgba(168, 85, 247, 0.15)", borderColor: "#A855F7" }
+                          isPendingBorrow
+                            ? { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "#F59E0B" }
+                            : isReadyToBorrow
+                            ? { backgroundColor: "rgba(139, 92, 246, 0.15)", borderColor: "#8B5CF6" }
+                            : { backgroundColor: "rgba(245, 158, 11, 0.15)", borderColor: "#F59E0B" }
                         ]}>
                           <Text style={[
                             styles.reservedBadgeText,
-                            isReadyToBorrow ? { color: "#10B981" } : { color: "#C084FC" }
+                            isPendingBorrow
+                              ? { color: isDarkMode ? theme.accentGold : "#D97706" }
+                              : isReadyToBorrow
+                              ? { color: isDarkMode ? "#C4B5FD" : "#7C3AED" }
+                              : { color: isDarkMode ? theme.accentGold : "#D97706" }
                           ]}>
-                            {isReadyToBorrow ? "AVAILABLE (1 DAY)" : "WAITLISTED"}
+                            {isPendingBorrow ? "PENDING APPROVAL" : isReadyToBorrow ? "AVAILABLE (1 DAY)" : `QUE #${book.queuePosition || 1}`}
                           </Text>
                         </View>
                       </View>
@@ -483,16 +657,16 @@ export default function ReservationsScreen() {
                         marginBottom: 10,
                         padding: 10,
                         borderRadius: 12,
-                        backgroundColor: countdown.isUrgent ? "rgba(239, 68, 68, 0.12)" : "rgba(16, 185, 129, 0.12)",
+                        backgroundColor: countdown.isUrgent ? "rgba(239, 68, 68, 0.12)" : "rgba(139, 92, 246, 0.12)",
                         borderWidth: 1,
-                        borderColor: countdown.isUrgent ? "#EF4444" : "#10B981",
+                        borderColor: countdown.isUrgent ? "#EF4444" : "#8B5CF6",
                         flexDirection: "row",
                         alignItems: "center",
                         gap: 8,
                       }}>
-                        <Ionicons name="timer-outline" size={18} color={countdown.isUrgent ? "#EF4444" : "#10B981"} />
+                        <Ionicons name="timer-outline" size={18} color={countdown.isUrgent ? "#EF4444" : "#8B5CF6"} />
                         <View style={{ flex: 1 }}>
-                          <Text style={{ fontSize: 12, fontWeight: "800", color: countdown.isUrgent ? "#EF4444" : "#10B981" }}>
+                          <Text style={{ fontSize: 12, fontWeight: "800", color: countdown.isUrgent ? "#EF4444" : (isDarkMode ? "#C4B5FD" : "#7C3AED") }}>
                             Claim Window: {countdown.text}
                           </Text>
                           <Text style={{ fontSize: 10.5, color: theme.textSecondary, marginTop: 2 }}>
@@ -504,13 +678,32 @@ export default function ReservationsScreen() {
                       </View>
                     )}
 
-                    {isReadyToBorrow ? (
+                    {isPendingBorrow ? (
+                      <View
+                        style={[
+                          styles.fullWidthActionBtn,
+                          {
+                            backgroundColor: isDarkMode ? '#1E293B' : '#F1F5F9',
+                            borderColor: isDarkMode ? '#334155' : '#CBD5E1',
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                          },
+                        ]}
+                      >
+                        <Ionicons name="hourglass-outline" size={16} color={isDarkMode ? '#FCD34D' : '#D97706'} />
+                        <Text style={[styles.actionBtnText, { color: isDarkMode ? '#FCD34D' : '#D97706', fontWeight: '700' }]}>
+                          Awaiting Librarian Approval
+                        </Text>
+                      </View>
+                    ) : isReadyToBorrow ? (
                       <TouchableOpacity
                         style={[
                           styles.fullWidthActionBtn,
                           {
-                            backgroundColor: countdown?.isExpired ? "#64748B" : "#10B981",
-                            borderColor: countdown?.isExpired ? "#64748B" : "#10B981",
+                            backgroundColor: countdown?.isExpired ? "#64748B" : (isDarkMode ? "#7C3AED" : "#8B5CF6"),
+                            borderColor: countdown?.isExpired ? "#64748B" : (isDarkMode ? "#7C3AED" : "#8B5CF6"),
                           },
                         ]}
                         disabled={countdown?.isExpired}

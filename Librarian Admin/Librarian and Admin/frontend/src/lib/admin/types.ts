@@ -120,6 +120,7 @@ export interface PromptSearchLog {
   actor: string;
   query: string;
   department: string;
+  mode?: "filter" | "ai" | "prefix";
   fileNames: string[];
   matchesFound: number;
   createdAt: string;

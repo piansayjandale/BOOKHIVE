@@ -25,6 +25,12 @@ adminRouter.patch("/books/:id", asyncHandler(adminController.updateBook));
 adminRouter.delete("/books/:id", asyncHandler(adminController.deleteBook));
 adminRouter.get("/records-catalog", asyncHandler(adminController.getRecordsCatalog));
 
+// Digitized Books Queue
+adminRouter.get("/digitized-books", asyncHandler(adminController.listDigitizedBooks));
+adminRouter.post("/digitized-books", asyncHandler(adminController.addDigitizedBook));
+adminRouter.post("/digitized-books/:id/approve", asyncHandler(adminController.approveDigitizedBook));
+adminRouter.delete("/digitized-books/:id", asyncHandler(adminController.deleteDigitizedBook));
+
 // Announcements (Admin Only)
 adminRouter.get("/announcements", asyncHandler(adminController.listAnnouncements));
 adminRouter.post("/announcements", requireAdmin, asyncHandler(adminController.addAnnouncement));

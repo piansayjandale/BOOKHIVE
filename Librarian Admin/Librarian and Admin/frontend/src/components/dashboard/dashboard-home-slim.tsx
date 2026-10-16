@@ -88,10 +88,10 @@ const librarianActions = [
     href: "/librarian/reports",
   },
   {
-    label: "Post Alerts",
-    description: "Share announcements with students and staff.",
+    label: "View Notices",
+    description: "Read announcements and campus notices.",
     icon: Bell,
-    href: "/librarian/announcements",
+    href: "/librarian",
   },
   {
     label: "Audit History",

@@ -104,7 +104,7 @@ export function AdminModal({
   }
 
   return (
-    <div className="admin-overlay fixed inset-0 z-[80] flex items-center justify-center px-4 py-8 transition-opacity duration-300 ease-out">
+    <div className="admin-overlay modal-backdrop fixed inset-0 z-[80] flex items-center justify-center px-4 py-8 transition-opacity duration-300 ease-out">
       <div className="w-full max-w-3xl rounded-[16px] border border-[var(--line)] bg-[var(--card-bg)] p-8 shadow-2xl">
         <div className="flex items-start justify-between gap-6">
           <div className="flex-1">

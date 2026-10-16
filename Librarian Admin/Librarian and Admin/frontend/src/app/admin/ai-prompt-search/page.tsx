@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { AiSearchPage } from "@/components/admin/ai-search-page";
 
-export default function AdminAiPromptSearchRedirectPage() {
-  redirect("/admin/home");
+export default function AdminAiSearchPage() {
+  return <AiSearchPage />;
 }

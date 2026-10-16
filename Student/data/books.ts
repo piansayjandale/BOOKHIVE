@@ -28,6 +28,8 @@ export type Book = {
   cover_img?: string;
   coverUrl?: string;
   rating?: number | string;
+  publisher?: string;
+  docType?: string;
 };
 
 let liveBooksCatalog: Book[] = (booksCatalog as any[]).map((item, idx) => ({

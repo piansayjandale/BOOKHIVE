@@ -1,6 +1,7 @@
 import { superAdminModel } from "../models/super-admin.model.js";
 import { adminModel } from "../models/admin.model.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
+import { emitSettingsUpdated } from "../socket.js";
 
 export const superAdminController = {
   // 1. Dashboard Vitals & Infrastructure Overview
@@ -248,6 +249,13 @@ export const superAdminController = {
       module: "Settings",
       detail: "Updated global platform parameters and environment constants.",
     });
+    try {
+      if (updated?.settings) {
+        emitSettingsUpdated(updated.settings);
+      }
+    } catch (e) {
+      // safe fallback
+    }
     return res.json(updated);
   },
 

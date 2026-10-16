@@ -9,6 +9,7 @@ import { adminModel } from "../models/admin.model.js";
 import { adminController } from "../controllers/admin.controller.js";
 import { studentController } from "../controllers/student.controller.js";
 import { asyncHandler } from "../utils/async-handler.js";
+import { optionalAuthenticateToken } from "../middleware/auth.js";
 
 export const apiRouter = Router();
 
@@ -47,6 +48,19 @@ apiRouter.patch("/student/cancel/:id", asyncHandler(studentController.cancelRese
 apiRouter.post("/transactions/:transactionId/return", asyncHandler(studentController.returnBook));
 apiRouter.post("/return/:transactionId", asyncHandler(studentController.returnBook));
 apiRouter.patch("/return/:transactionId", asyncHandler(studentController.returnBook));
+apiRouter.post("/transactions/:transactionId/pickup", asyncHandler(studentController.pickupBook));
+apiRouter.post("/pickup/:transactionId", asyncHandler(studentController.pickupBook));
+apiRouter.patch("/pickup/:transactionId", asyncHandler(studentController.pickupBook));
+apiRouter.post("/resolve-receipt", optionalAuthenticateToken, asyncHandler(studentController.resolveReceiptQr));
+apiRouter.get("/settings", asyncHandler(studentController.getSettings));
+apiRouter.get("/circulation/settings", asyncHandler(studentController.getSettings));
+
+// Digitized Books Queue (Mobile Scanner Intake)
+apiRouter.get("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.listDigitizedBooks));
+apiRouter.post("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.addDigitizedBook));
+apiRouter.post("/digitized-books/:id/approve", optionalAuthenticateToken, asyncHandler(adminController.approveDigitizedBook));
+apiRouter.delete("/digitized-books/:id", optionalAuthenticateToken, asyncHandler(adminController.deleteDigitizedBook));
+
 
 
 

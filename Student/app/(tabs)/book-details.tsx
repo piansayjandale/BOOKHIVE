@@ -40,9 +40,15 @@ import {
   addReservation,
   getStudentProfile,
   fetchBookDetailsWithLedger,
+  isDueToReturn,
+  getActiveBorrowCount,
+  getSystemSettings,
+  getOverdueBooks,
+  syncSystemSettingsWithBackend,
 } from "../../data/store";
 import { useThemeColors } from "../../hooks/useThemeColors";
 import { useAuth } from "../../data/AuthContext";
+import { socketService } from "../../services/socketService";
 
 export default function BookDetailsScreen() {
   const router = useRouter();
@@ -151,18 +157,30 @@ export default function BookDetailsScreen() {
       }
     }
     loadLiveBook();
+
+    const unsubSocket = socketService.subscribeToTransactionDecided(() => {
+      void loadLiveBook();
+    });
+
     return () => {
       isMounted = false;
+      unsubSocket();
     };
   }, [id, title, isbn, params.isbn]);
 
-  const activeRequest = reservations.find(
+  const matchingRequests = reservations.filter(
     (book) =>
       book.id === id ||
       (isbn && book.isbn === isbn) ||
       (params.isbn && book.isbn === params.isbn) ||
       (book.title && title && book.title.toLowerCase() === title.toLowerCase())
   );
+
+  const activeRequest =
+    matchingRequests.find((r) => r.status === 'Approved' || r.status === 'Picked Up' || r.status === 'On Loan') ||
+    matchingRequests.find((r) => r.status === 'Pending' || r.status === 'Upcoming') ||
+    matchingRequests[0];
+
   const isReserved = !!activeRequest;
   const requestStatus = activeRequest?.status; // 'Approved', 'Pending', 'Upcoming', etc.
   const isReservationWaitlist = isReserved && (activeRequest?.action === 'Reserve' || (activeRequest as any)?.type === 'Reservation') && requestStatus !== 'Completed' && requestStatus !== 'Cancelled';
@@ -190,21 +208,49 @@ export default function BookDetailsScreen() {
   
   // Check if current user is borrower either via local reservations or via backend live active loan
   const isMyActiveLoan =
-    (isReserved && !isReservationWaitlist && requestStatus === 'Approved') ||
-    (liveBookData?.activeLoan && (
+    (isReserved && !isReservationWaitlist && (requestStatus === 'Approved' || requestStatus === 'Picked Up' || requestStatus === 'On Loan')) ||
+    Boolean(liveBookData?.activeLoan && (
       (user?.studentId && liveBookData.activeLoan.studentId === user.studentId) ||
       (user?.id && liveBookData.activeLoan.userId === user.id) ||
       (user?.fullName && liveBookData.activeLoan.borrowerName?.toLowerCase() === user.fullName.toLowerCase())
     ));
 
   const isApprovedLoan = isMyActiveLoan;
-  const isPendingBorrowApproval = isReserved && !isReservationWaitlist && requestStatus !== 'Approved' && requestStatus !== 'Completed';
+  const isPendingBorrowApproval =
+    !isApprovedLoan &&
+    isReserved &&
+    !isReservationWaitlist &&
+    (requestStatus === 'Pending' || requestStatus === 'Upcoming');
+
+  const loanDueDate = activeRequest?.dueDate || (liveBookData?.activeLoan as any)?.dueDate;
+  const isLoanDue = isApprovedLoan && Boolean(loanDueDate && isDueToReturn(loanDueDate));
 
   const isBorrowedByOther =
     !isMyActiveLoan &&
     ((liveBookData?.borrowedCount !== undefined ? liveBookData.borrowedCount > 0 : false) || !!liveBookData?.activeLoan);
 
-  const rawStatus = (params.status as string) || "";
+  const studentIdentifier = user?.studentId || getStudentProfile()?.studentId || "";
+  const [systemSettings, setSystemSettings] = useState(() => getSystemSettings());
+  const [activeBorrowCount, setActiveBorrowCount] = useState(() => getActiveBorrowCount(studentIdentifier));
+  const [overdueBooks, setOverdueBooks] = useState(() => getOverdueBooks(studentIdentifier));
+
+  useEffect(() => {
+    void syncSystemSettingsWithBackend();
+    const updateBorrowState = () => {
+      setSystemSettings(getSystemSettings());
+      setActiveBorrowCount(getActiveBorrowCount(studentIdentifier));
+      setOverdueBooks(getOverdueBooks(studentIdentifier));
+    };
+    updateBorrowState();
+    const unsub = subscribe(updateBorrowState);
+    return unsub;
+  }, [studentIdentifier]);
+
+  const borrowLimit = systemSettings.borrowLimit ?? 5;
+  const isBorrowLimitReached = activeBorrowCount >= borrowLimit;
+  const hasOverdueLoans = overdueBooks.length > 0;
+
+  const rawStatus = (params.status as string) || (params.availability as string) || "";
   const rawAvailable = (params.available as string) || "";
 
   const volume = (params.volume as string) || "Single Volume / None";
@@ -224,18 +270,22 @@ export default function BookDetailsScreen() {
   // Copies distribution aligned with backend and web system
   const unavailableCopies = liveBookData?.borrowedCount !== undefined
     ? Math.min(totalCopies, Math.max(Number(liveBookData.borrowedCount), isApprovedLoan ? 1 : 0))
-    : (isApprovedLoan ? 1 : ((rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable") ? totalCopies : 0));
+    : (isApprovedLoan ? 1 : ((rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable") ? totalCopies : (params.borrowedCount ? Number(params.borrowedCount) : 0)));
 
   const reservedCopies = liveBookData?.reservedCount !== undefined
     ? Math.min(totalCopies - unavailableCopies, Math.max(Number(liveBookData.reservedCount), (isPendingBorrowApproval || isReservationWaitlist) ? 1 : 0))
-    : ((isPendingBorrowApproval || isReservationWaitlist || rawStatus.toLowerCase() === "reserved" || rawAvailable.toLowerCase() === "reserved") ? Math.min(1, Math.max(0, totalCopies - unavailableCopies)) : 0);
+    : ((isPendingBorrowApproval || isReservationWaitlist || rawStatus.toLowerCase() === "reserved" || rawAvailable.toLowerCase() === "reserved") ? Math.min(1, Math.max(0, totalCopies - unavailableCopies)) : (params.reservedCopies ? Number(params.reservedCopies) : (params.reservedCount ? Math.min(totalCopies - unavailableCopies, Number(params.reservedCount)) : 0)));
 
   const availableCopies = liveBookData?.availableCopies !== undefined
     ? Math.min(totalCopies, Math.max(0, Number(liveBookData.availableCopies)))
-    : Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+    : (params.availableCopies !== undefined && !isNaN(Number(params.availableCopies))
+        ? Math.min(totalCopies, Math.max(0, Number(params.availableCopies)))
+        : Math.max(0, totalCopies - unavailableCopies - reservedCopies));
 
   // Book is available as long as physical copies are available for checkout
   const isAvailable = availableCopies > 0;
+
+  const nextQuePos = liveBookData?.nextQueuePosition || Math.max(1, Number(liveBookData?.reservedCount || 0) + 1);
 
   const hasAvailableCopyForReserved = isReservationWaitlist && availableCopies > 0;
 
@@ -556,6 +606,23 @@ export default function BookDetailsScreen() {
     const studentDept = user?.course || user?.department || profile?.course || profile?.department || 'BS in Information Technology';
 
     if (isAvailable) {
+      if (isBorrowLimitReached) {
+        Alert.alert(
+          'Borrow Limit Reached',
+          `You currently have ${activeBorrowCount} books borrowed, reaching the library limit of ${borrowLimit} books. Please return a borrowed book before checking out new titles.`
+        );
+        return;
+      }
+
+      if (hasOverdueLoans) {
+        const titles = overdueBooks.map(b => `'${b.title}'`).slice(0, 2).join(', ');
+        Alert.alert(
+          'Overdue Return Required',
+          `You have ${overdueBooks.length} book(s) due or overdue for return (${titles}). Please return overdue books to the library before borrowing new titles.`
+        );
+        return;
+      }
+
       router.push({
         pathname: '/borrow',
         params: {
@@ -569,37 +636,17 @@ export default function BookDetailsScreen() {
       return;
     }
 
-    setIsSubmitting(true);
-    try {
-      const reservationDate = new Date();
-      const formattedResDate = reservationDate.toISOString().replace('T', ' ').substring(0, 16);
-
-      const profile = getStudentProfile();
-
-      await addReservation({
-        id: id,
-        title: title,
-        author: author,
+    // When all copies are unavailable, the reservation functions as a borrowing form (action: 'Reserve')
+    router.push({
+      pathname: '/borrow',
+      params: {
+        title,
+        author,
         isbn: (params.isbn as string) || '',
-        category: category,
-        pickupDate: formattedResDate,
-        status: 'Pending',
-        action: 'Reserve',
-        studentName: user?.fullName || profile?.name || 'Student',
-        studentId: user?.studentId || profile?.studentId || '653705',
         department: studentDept,
-      });
-
-      Alert.alert(
-        "Book Reserved (Waitlisted)",
-        `You have joined the waitlist for "${title}". As soon as a copy becomes available, the system will automatically notify you so you can borrow it.`
-      );
-      setReservations(getReservations());
-    } catch (error) {
-      console.error("Direct reservation failed:", error);
-    } finally {
-      setIsSubmitting(false);
-    }
+        action: 'Reserve',
+      },
+    });
   };
 
   const detailBoxBg = isDarkMode ? "rgba(255, 214, 0, 0.12)" : "#E0F2FE";
@@ -708,9 +755,29 @@ export default function BookDetailsScreen() {
 
               {/* Active Loan status badge moved below Currently Unavailable */}
               {isApprovedLoan && (
-                <View style={styles.topActiveLoanBadge}>
-                  <Ionicons name="checkmark-circle-outline" size={13} color="#10B981" style={{ marginRight: 4 }} />
-                  <Text style={styles.topActiveLoanText}>Active Loan</Text>
+                <View
+                  style={[
+                    styles.topActiveLoanBadge,
+                    isLoanDue && {
+                      borderColor: "#EF4444",
+                      backgroundColor: "rgba(239, 68, 68, 0.15)",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={isLoanDue ? "alert-circle-outline" : "checkmark-circle-outline"}
+                    size={13}
+                    color={isLoanDue ? "#EF4444" : "#10B981"}
+                    style={{ marginRight: 4 }}
+                  />
+                  <Text
+                    style={[
+                      styles.topActiveLoanText,
+                      isLoanDue && { color: "#EF4444" },
+                    ]}
+                  >
+                    {isLoanDue ? "Active Loan · Due to Return" : "Active Loan"}
+                  </Text>
                 </View>
               )}
 
@@ -1003,21 +1070,21 @@ export default function BookDetailsScreen() {
             <View style={styles.bookCardRowsWrapper}>
               {Array.from({ length: 10 }).map((_, idx) => {
                 const ledgerEntry = liveBookData?.ledger ? liveBookData.ledger[idx] : null;
-                const hasLedger = liveBookData?.ledger && liveBookData.ledger.length > 0;
-                const isFirstActiveRow = idx === 0 && (isReserved || isApprovedLoan || isBorrowedByOther || !!liveBookData?.activeLoan || hasLedger);
+                const hasLedger = Boolean(liveBookData?.ledger && liveBookData.ledger.length > 0);
+                const isFirstActiveRow = idx === 0 && !hasLedger && (isApprovedLoan || isBorrowedByOther || !!liveBookData?.activeLoan);
 
                 let borrowDate = "";
                 let borrowerName = "";
 
                 if (ledgerEntry) {
-                  const rawD = ledgerEntry.dueDate || ledgerEntry.borrowDate;
-                  borrowDate = rawD ? rawD.split("T")[0] : "";
-                  borrowerName = ledgerEntry.borrowerName || "";
+                  const rawD = ledgerEntry.borrowDate || ledgerEntry.requestedAt || ledgerEntry.decidedAt || ledgerEntry.date;
+                  borrowDate = rawD ? String(rawD).split("T")[0] : "";
+                  borrowerName = ledgerEntry.borrowerName || ledgerEntry.studentName || (isMyActiveLoan ? (user?.fullName || "Student Borrower") : "Student Borrower");
                 } else if (isFirstActiveRow) {
-                  const source = liveBookData?.activeLoan || activeRequest;
-                  const rawD = source?.dueDate || source?.date || (source as any)?.borrowDate;
-                  borrowDate = rawD ? String(rawD).split("T")[0] : "2026-09-08";
-                  borrowerName = source?.borrowerName || source?.studentName || user?.fullName || "Student Borrower";
+                  const source = liveBookData?.activeLoan || (isApprovedLoan ? activeRequest : null);
+                  const rawD = source?.borrowDate || source?.pickupDate || source?.requestedAt || source?.decidedAt || source?.date;
+                  borrowDate = rawD ? String(rawD).split("T")[0] : (isMyActiveLoan ? new Date().toISOString().split("T")[0] : "");
+                  borrowerName = source?.borrowerName || source?.studentName || (isMyActiveLoan ? (user?.fullName || "Student Borrower") : "Active Borrower");
                 }
 
                 return (
@@ -1074,6 +1141,21 @@ export default function BookDetailsScreen() {
                   ]}
                   disabled={isSubmitting || getHoldCountdown().isExpired}
                   onPress={() => {
+                    if (isBorrowLimitReached) {
+                      Alert.alert(
+                        'Borrow Limit Reached',
+                        `You currently have ${activeBorrowCount} books borrowed, reaching the library limit of ${borrowLimit} books. Please return a borrowed book before checking out this reserved copy.`
+                      );
+                      return;
+                    }
+                    if (hasOverdueLoans) {
+                      const titles = overdueBooks.map(b => `'${b.title}'`).slice(0, 2).join(', ');
+                      Alert.alert(
+                        'Overdue Return Required',
+                        `You have ${overdueBooks.length} book(s) due or overdue for return (${titles}). Please return overdue books before checking out this copy.`
+                      );
+                      return;
+                    }
                     const profile = getStudentProfile();
                     const studentDept = user?.course || user?.department || profile?.course || profile?.department || 'BS in Information Technology';
                     router.push({
@@ -1107,26 +1189,51 @@ export default function BookDetailsScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity
-                style={[
-                  styles.cancelReservationSolidBtn,
-                  isSubmitting && { opacity: 0.6 },
-                ]}
-                disabled={isSubmitting}
-                onPress={() => setCancelModalVisible(true)}
-                activeOpacity={0.85}
-              >
-                {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <>
-                    <Ionicons name="close-circle-outline" size={19} color="#FFFFFF" />
-                    <Text style={styles.cancelReservationSolidBtnText}>
-                      Cancel Reservation (In Waitlist)
+              <View style={{ gap: 10 }}>
+                <View style={{
+                  padding: 12,
+                  borderRadius: 14,
+                  backgroundColor: isDarkMode ? "rgba(168, 85, 247, 0.12)" : "#F3E8FF",
+                  borderWidth: 1.5,
+                  borderColor: "#A855F7",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                }}>
+                  <MaterialCommunityIcons name="podium-gold" size={24} color="#A855F7" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: "#A855F7" }}>
+                      Reserved: Que #{activeRequest?.queuePosition || 1} in Line
                     </Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                      {Number(activeRequest?.queuePosition || 1) === 1
+                        ? "You are 1st in the reservation queue! When a copy is returned, you will receive a 24-hour claim window to borrow."
+                        : `You are #${activeRequest?.queuePosition || 1} in queue (1st-come, 1st-served). You will advance as earlier loans are returned.`}
+                    </Text>
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.cancelReservationSolidBtn,
+                    isSubmitting && { opacity: 0.6 },
+                  ]}
+                  disabled={isSubmitting}
+                  onPress={() => setCancelModalVisible(true)}
+                  activeOpacity={0.85}
+                >
+                  {isSubmitting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="close-circle-outline" size={19} color="#FFFFFF" />
+                      <Text style={styles.cancelReservationSolidBtnText}>
+                        Cancel Reservation (Que #{activeRequest?.queuePosition || 1})
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             )
           ) : isReserved ? (
             <TouchableOpacity
@@ -1150,34 +1257,142 @@ export default function BookDetailsScreen() {
               )}
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity
-              style={[
-                styles.reserveButton,
-                {
-                  backgroundColor: theme.buttonPrimaryBg,
-                  borderColor: theme.buttonPrimaryBorder,
-                },
-                isSubmitting && { opacity: 0.6 },
-              ]}
-              disabled={isSubmitting}
-              onPress={handleReservation}
-              activeOpacity={0.85}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator size="small" color={theme.buttonPrimaryText} />
-              ) : (
-                <>
-                  <Ionicons
-                    name={isAvailable ? "cart-outline" : "bookmark-outline"}
-                    size={18}
-                    color={theme.buttonPrimaryText}
-                  />
-                  <Text style={[styles.reserveText, { color: theme.buttonPrimaryText, fontWeight: "800" }]}>
-                    {isAvailable ? "Borrow Book" : "Reserve Book (Waitlist)"}
-                  </Text>
-                </>
+            <View style={{ gap: 10 }}>
+              {!isAvailable && (
+                <View style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: isDarkMode ? "rgba(249, 115, 22, 0.12)" : "#FFF7ED",
+                  borderWidth: 1,
+                  borderColor: "#F97316",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                }}>
+                  <Ionicons name="information-circle-outline" size={22} color="#F97316" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: "800", color: "#F97316" }}>
+                      All Copies Unavailable
+                    </Text>
+                    <Text style={{ fontSize: 11, color: theme.textSecondary, marginTop: 2 }}>
+                      All copies are currently checked out. You can reserve to join the 1st-come, 1st-served queue (Spot #{nextQuePos}).
+                    </Text>
+                  </View>
+                </View>
               )}
-            </TouchableOpacity>
+
+              {isAvailable && isBorrowLimitReached && (
+                <View style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: isDarkMode ? "rgba(239, 68, 68, 0.15)" : "#FEE2E2",
+                  borderWidth: 1,
+                  borderColor: isDarkMode ? "rgba(239, 68, 68, 0.4)" : "#FCA5A5",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                }}>
+                  <Ionicons name="alert-circle" size={22} color={isDarkMode ? "#F87171" : "#DC2626"} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: isDarkMode ? "#F87171" : "#B91C1C" }}>
+                      Borrow Limit Reached ({activeBorrowCount}/{borrowLimit})
+                    </Text>
+                    <Text style={{ fontSize: 11, color: isDarkMode ? "#FCA5A5" : "#991B1B", marginTop: 2, lineHeight: 16 }}>
+                      You currently have {activeBorrowCount} books borrowed. Please return your borrowed book(s) before checking out new titles.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {isAvailable && !isBorrowLimitReached && hasOverdueLoans && (
+                <View style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  backgroundColor: isDarkMode ? "rgba(245, 158, 11, 0.15)" : "#FEF3C7",
+                  borderWidth: 1,
+                  borderColor: isDarkMode ? "rgba(245, 158, 11, 0.4)" : "#FDE68A",
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 10,
+                }}>
+                  <Ionicons name="warning" size={22} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: "800", color: isDarkMode ? "#FBBF24" : "#B45309" }}>
+                      Overdue Return Required ({overdueBooks.length})
+                    </Text>
+                    <Text style={{ fontSize: 11, color: isDarkMode ? "#FDE68A" : "#92400E", marginTop: 2, lineHeight: 16 }}>
+                      You have {overdueBooks.length} book(s) due or overdue for return. Please return them to restore borrowing privileges.
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[
+                  styles.reserveButton,
+                  {
+                    backgroundColor: (isAvailable && isBorrowLimitReached)
+                      ? (isDarkMode ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2")
+                      : (isAvailable && hasOverdueLoans)
+                      ? (isDarkMode ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7")
+                      : theme.buttonPrimaryBg,
+                    borderColor: (isAvailable && isBorrowLimitReached)
+                      ? (isDarkMode ? "#EF4444" : "#F87171")
+                      : (isAvailable && hasOverdueLoans)
+                      ? (isDarkMode ? "#F59E0B" : "#FBBF24")
+                      : theme.buttonPrimaryBorder,
+                    marginTop: 0,
+                  },
+                  isSubmitting && { opacity: 0.6 },
+                ]}
+                disabled={isSubmitting}
+                onPress={handleReservation}
+                activeOpacity={0.85}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator size="small" color={theme.buttonPrimaryText} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name={
+                        isAvailable
+                          ? (isBorrowLimitReached ? "alert-circle" : (hasOverdueLoans ? "warning" : "cart-outline"))
+                          : "bookmark-outline"
+                      }
+                      size={18}
+                      color={
+                        (isAvailable && isBorrowLimitReached)
+                          ? (isDarkMode ? "#F87171" : "#DC2626")
+                          : (isAvailable && hasOverdueLoans)
+                          ? (isDarkMode ? "#FBBF24" : "#D97706")
+                          : theme.buttonPrimaryText
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.reserveText,
+                        {
+                          color: (isAvailable && isBorrowLimitReached)
+                            ? (isDarkMode ? "#F87171" : "#DC2626")
+                            : (isAvailable && hasOverdueLoans)
+                            ? (isDarkMode ? "#FBBF24" : "#D97706")
+                            : theme.buttonPrimaryText,
+                          fontWeight: "800",
+                        },
+                      ]}
+                    >
+                      {isAvailable
+                        ? (isBorrowLimitReached
+                            ? `Borrow Limit Reached (${activeBorrowCount}/${borrowLimit})`
+                            : (hasOverdueLoans
+                                ? `Overdue Return Required (${overdueBooks.length})`
+                                : "Borrow Book"))
+                        : `Reserve Book (Que #${nextQuePos})`}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           )}
 
         </View>

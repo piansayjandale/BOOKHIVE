@@ -15,6 +15,104 @@ function warnIfNotOffline(label, error) {
 }
 
 import { pool } from "../db/pool.js";
+import { eventDispatcher } from "../services/event-dispatcher.js";
+
+let mockDigitizedBooks = [
+  {
+    id: "digi-001",
+    title: "The Struggle",
+    author: "Betty",
+    isbn: "978-0-123456-78-9",
+    genre: "Action and Adventure",
+    category: "Action and Adventure",
+    department: "General Reference",
+    shelfLocation: "GEN-ACT-002",
+    accessionNumber: "ACC-2026-0042",
+    copies: 2,
+    edition: "1st Edition",
+    volume: "Vol. 1",
+    publisher: "Scholastic Press",
+    publishedDate: "2018-06-15",
+    year: "2018",
+    pages: 320,
+    summary: "A thrilling adventure highlighting personal struggles, resilience and courage in the face of adversity.",
+    docType: "Catalog Intake Slip",
+    ocrEngine: "Tesseract Neural OCR",
+    confidence: 96.4,
+    rawText: "Title: The Struggle\nAuthor: Betty\nGenre: Action and Adventure\nDepartment: General Reference\nCopies: 2\nYear: 2018",
+    scannedBy: "Librarian Mobile App (Scanner)",
+    status: "Pending Review",
+    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+  },
+  {
+    id: "digi-002",
+    title: "Philippine Folk Literature: The Epics",
+    author: "Damiana L. Eugenio",
+    isbn: "978-971-542-294-9",
+    genre: "Folklore & Literature",
+    category: "Filipiniana",
+    department: "Filipiniana",
+    shelfLocation: "FIL-EUG-014",
+    accessionNumber: "ACC-2026-0089",
+    copies: 3,
+    edition: "2nd Edition",
+    volume: "Vol. 3",
+    publisher: "University of the Philippines Press",
+    publishedDate: "2001-08-20",
+    year: "2001",
+    pages: 450,
+    summary: "Comprehensive collection and analysis of indigenous Philippine oral epics with English translations.",
+    docType: "Title Page Scan",
+    ocrEngine: "Tesseract Neural OCR",
+    confidence: 98.2,
+    rawText: "Philippine Folk Literature: The Epics\nDamiana L. Eugenio\nUP Press 2001\nISBN 978-971-542-294-9",
+    scannedBy: "Librarian Mobile App (Scanner)",
+    status: "Pending Review",
+    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
+    updatedAt: new Date(Date.now() - 3600000 * 8).toISOString(),
+  }
+];
+
+function sanitizeIsbn(val) {
+  if (!val) return "";
+  return String(val)
+    .replace(/[—–]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .trim();
+}
+
+function mapDigitizedRow(row) {
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    title: row.title || "Untitled Book",
+    author: row.author || "Unknown Author",
+    isbn: sanitizeIsbn(row.isbn),
+    genre: row.genre || row.category || "General",
+    category: row.category || row.genre || "General",
+    department: row.department || "Circulation",
+    shelfLocation: row.shelf_location || "",
+    accessionNumber: row.accession_number || "",
+    copies: Number(row.copies ?? 1),
+    edition: row.edition || "1st Edition",
+    volume: row.volume || "Vol. 1",
+    publisher: row.publisher || "",
+    publishedDate: row.publication_date ? new Date(row.publication_date).toISOString().split('T')[0] : (row.year ? `${row.year}-01-01` : ""),
+    year: row.year || (row.publication_date ? new Date(row.publication_date).getFullYear().toString() : ""),
+    pages: Number(row.pages ?? 1),
+    summary: row.summary || "",
+    docType: row.doc_type || "Catalog Intake Slip",
+    ocrEngine: row.ocr_engine || "Tesseract Neural OCR",
+    confidence: Number(row.confidence ?? 95.0),
+    rawText: row.raw_text || "",
+    scannedBy: row.scanned_by || "Librarian Mobile App",
+    status: row.status || "Pending Review",
+    createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+    updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString(),
+  };
+}
 
 export const adminModel = {
   async findUserByIdentifier(identifier) {
@@ -53,7 +151,12 @@ export const adminModel = {
         SELECT
           (SELECT COUNT(*) FROM users) AS "totalUsers",
           (SELECT COUNT(*) FROM books WHERE archived_at IS NULL) AS "totalBooks",
+          (SELECT COUNT(*) FROM books WHERE archived_at IS NULL AND availability = 'Available') AS "shelfReadyBooks",
+          (SELECT COUNT(*) FROM transactions) AS "totalTransactions",
           (SELECT COUNT(*) FROM transactions WHERE type = 'Borrow' AND status = 'Approved') AS "activeBorrowedBooks",
+          (SELECT COUNT(*) FROM transactions WHERE type = 'Borrow') AS "totalBorrows",
+          (SELECT COUNT(*) FROM transactions WHERE type = 'Return' OR status = 'Returned') AS "totalReturns",
+          (SELECT COUNT(*) FROM transactions WHERE type = 'Reservation') AS "totalReservations",
           (SELECT COUNT(*) FROM transactions WHERE status = 'Pending') AS "pendingRequests"
       `;
       const { rows } = await pool.query(query);
@@ -501,7 +604,36 @@ export const adminModel = {
           t.decided_by AS "decidedBy",
           t.decided_at AS "decidedAt",
           t.student_id_image AS "studentIdImage",
-          t.comment
+          t.comment,
+          t.available_at AS "availableAt",
+          t.expires_at AS "expiresAt",
+          t.picked_up_at AS "pickedUpAt",
+          CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
+          CASE 
+            WHEN t.type = 'Reservation' AND t.status IN ('Pending', 'Approved') THEN (
+              SELECT COUNT(*)::int + 1
+              FROM transactions sub
+              WHERE (sub.isbn = t.isbn OR LOWER(sub.resource_title) = LOWER(t.resource_title))
+                AND sub.type = 'Reservation'
+                AND sub.status IN ('Pending', 'Approved')
+                AND sub.requested_at < t.requested_at
+            )
+            ELSE NULL
+          END AS "queuePosition",
+          CASE 
+            WHEN t.type = 'Reservation' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 'true'
+            WHEN t.type = 'Reservation' AND (
+              SELECT GREATEST(0, COALESCE(MAX(b_sub.copies), 1) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END))
+              FROM transactions sub_t
+              LEFT JOIN books b_sub ON (
+                (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b_sub.isbn = sub_t.isbn)
+                OR (sub_t.resource_title IS NOT NULL AND LOWER(b_sub.title) = LOWER(sub_t.resource_title))
+              )
+              WHERE (sub_t.isbn = t.isbn OR LOWER(sub_t.resource_title) = LOWER(t.resource_title))
+            ) > 0 THEN 'true'
+            WHEN t.type = 'Reservation' THEN 'false'
+            ELSE 'Available'
+          END AS "available"
         FROM transactions t
         LEFT JOIN users u ON t.user_id = u.id
         LEFT JOIN LATERAL (
@@ -523,7 +655,7 @@ export const adminModel = {
     }
   },
 
-  async decideTransaction({ transactionId, status, decidedBy, comment }) {
+  async decideTransaction({ transactionId, status, decidedBy, comment, type, dueDate, resourceTitle, isbn, studentId, studentName }) {
     try {
       // Validate decidedBy as UUID; PostgreSQL column transactions.decided_by is type UUID REFERENCES users(id).
       // If a non-UUID string was passed (e.g. 'Librarian Scanner' or staff label), store it in comment and pass null for decided_by.
@@ -537,13 +669,55 @@ export const adminModel = {
         finalComment = comment ? `${comment} (${decidedBy})` : decidedBy;
       }
 
+      // Check existing transaction type and availability
+      let extraConversionSql = "";
+      try {
+        const checkAvail = await pool.query(
+          `
+          SELECT 
+            t.type,
+            (
+              SELECT GREATEST(0, COALESCE(MAX(b.copies), 1) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END))
+              FROM transactions sub_t
+              LEFT JOIN books b ON (
+                (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b.isbn = sub_t.isbn)
+                OR (sub_t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(sub_t.resource_title))
+              )
+              WHERE (sub_t.isbn = t.isbn OR LOWER(sub_t.resource_title) = LOWER(t.resource_title))
+            ) AS "netAvailable"
+          FROM transactions t
+          WHERE t.id::text = $1::text
+          `,
+          [transactionId]
+        );
+        if (checkAvail.rows.length > 0 && checkAvail.rows[0].type === "Reservation") {
+          const netAvail = parseInt(checkAvail.rows[0].netAvailable || 0, 10);
+          // If explicitly converting to Borrow, OR approving a reservation where a copy is free, automatically turn into Borrow!
+          if (type === "Borrow" || (status === "Approved" && netAvail > 0)) {
+            extraConversionSql = `, type = 'Borrow', requested_at = NOW(), available_at = NOW(), expires_at = NOW() + INTERVAL '24 hours', picked_up_at = NULL`;
+          }
+        }
+      } catch (availErr) {
+        console.warn("Check available copies during reservation decision:", availErr.message);
+      }
+
+      // If approving, start the 1-day pickup timer window (only if not already set by extraConversionSql)
+      let approvalPickupSql = "";
+      if (status === "Approved" && !extraConversionSql) {
+        approvalPickupSql = `, available_at = COALESCE(available_at, NOW()), expires_at = CASE WHEN picked_up_at IS NOT NULL THEN NULL ELSE COALESCE(expires_at, NOW() + INTERVAL '24 hours') END, picked_up_at = CASE WHEN picked_up_at IS NOT NULL THEN picked_up_at ELSE NULL END`;
+      }
+
       const query = `
         UPDATE transactions
         SET
           status = $2,
+          student_name = COALESCE(NULLIF(student_name, ''), (SELECT name FROM users WHERE id = transactions.user_id OR lower(id_number) = lower(transactions.student_id) LIMIT 1), 'Student Borrower'),
           decided_by = $3,
           decided_at = NOW(),
-          comment = $4
+          comment = $4,
+          due_date = COALESCE($5::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7)))
+          ${extraConversionSql}
+          ${approvalPickupSql}
         WHERE id::text = $1::text
         RETURNING
           id,
@@ -560,44 +734,268 @@ export const adminModel = {
           decided_by AS "decidedBy",
           decided_at AS "decidedAt",
           student_id_image AS "studentIdImage",
-          comment
+          comment,
+          available_at AS "availableAt",
+          expires_at AS "expiresAt",
+          picked_up_at AS "pickedUpAt"
       `;
 
       let rows = [];
+      const queryParams = [transactionId, status, validDecidedBy, finalComment, dueDate || null];
       try {
-        const res = await pool.query(query, [transactionId, status, validDecidedBy, finalComment]);
+        const res = await pool.query(query, queryParams);
         rows = res.rows;
       } catch (dbErr) {
         // If foreign key constraint or UUID syntax failed on decided_by, retry with NULL decided_by
         if (validDecidedBy) {
           console.warn("DB decideTransaction foreign key retry with null decided_by:", dbErr.message);
-          const res = await pool.query(query, [transactionId, status, null, finalComment]);
+          const res = await pool.query(query, [transactionId, status, null, finalComment, dueDate || null]);
           rows = res.rows;
         } else {
           throw dbErr;
         }
       }
 
-      if (rows.length > 0) {
-        return rows[0];
+      // Fallback: If not matched by transactionId (e.g. temporary socket ID), recover by matching latest pending transaction by book/student details
+      if (rows.length === 0 && (resourceTitle || isbn || studentId || studentName)) {
+        try {
+          const fallbackQuery = `
+            UPDATE transactions
+            SET
+              status = $1,
+              student_name = COALESCE(NULLIF(student_name, ''), (SELECT name FROM users WHERE id = transactions.user_id OR lower(id_number) = lower(transactions.student_id) LIMIT 1), 'Student Borrower'),
+              decided_by = $2,
+              decided_at = NOW(),
+              comment = $3,
+              due_date = COALESCE($4::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7)))
+              ${extraConversionSql}
+              ${approvalPickupSql}
+            WHERE id IN (
+              SELECT id FROM transactions
+              WHERE (
+                ($5::text != '' AND $5::text != 'N/A' AND isbn = $5::text)
+                OR ($6::text != '' AND LOWER(resource_title) = LOWER($6::text))
+              )
+              AND (
+                ($7::text != '' AND LOWER(student_id) = LOWER($7::text))
+                OR ($8::text != '' AND LOWER(student_name) = LOWER($8::text))
+              )
+              ORDER BY requested_at DESC
+              LIMIT 1
+            )
+            RETURNING
+              id,
+              user_id AS "userId",
+              student_name AS "studentName",
+              student_id AS "studentId",
+              resource_title AS "resourceTitle",
+              isbn,
+              department,
+              type,
+              status,
+              requested_at AS "requestedAt",
+              due_date AS "dueDate",
+              decided_by AS "decidedBy",
+              decided_at AS "decidedAt",
+              student_id_image AS "studentIdImage",
+              comment,
+              available_at AS "availableAt",
+              expires_at AS "expiresAt",
+              picked_up_at AS "pickedUpAt"
+          `;
+          const fbRes = await pool.query(fallbackQuery, [
+            status,
+            validDecidedBy,
+            finalComment,
+            dueDate || null,
+            isbn || "",
+            resourceTitle || "",
+            studentId || "",
+            studentName || "",
+          ]);
+          rows = fbRes.rows;
+        } catch (fbErr) {
+          console.warn("DB decideTransaction fallback query error:", fbErr.message);
+        }
       }
 
-      return {
-        id: transactionId,
-        status,
-        decidedBy: validDecidedBy,
-        decidedAt: new Date().toISOString(),
-        comment: finalComment,
-      };
+      if (rows.length > 0) {
+        const tx = rows[0];
+        void this.syncBookAvailability(tx.isbn || tx.resourceTitle);
+        return tx;
+      }
+
+      return null;
     } catch (error) {
-      warnIfNotOffline("DB decideTransaction fallback used:", error.message);
-      return {
-        id: transactionId,
-        status,
-        decidedBy: null,
-        decidedAt: new Date().toISOString(),
-        comment: comment || null,
-      };
+      console.error("DB decideTransaction error:", error.message || error);
+      return null;
+    }
+  },
+
+  async markTransactionPickedUp({ transactionId, librarianId, librarianName, resourceTitle, isbn, studentId, studentName }) {
+    try {
+      const isUuid = Boolean(
+        librarianId &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(librarianId))
+      );
+      const validDecidedBy = isUuid ? librarianId : null;
+
+      const query = `
+        UPDATE transactions
+        SET
+          type = 'Borrow',
+          status = 'Approved',
+          picked_up_at = NOW(),
+          expires_at = NULL,
+          due_date = NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7)),
+          decided_by = COALESCE($2, decided_by),
+          decided_at = NOW()
+        WHERE id::text = $1::text
+        RETURNING
+          id,
+          user_id AS "userId",
+          student_name AS "studentName",
+          student_id AS "studentId",
+          resource_title AS "resourceTitle",
+          isbn,
+          department,
+          type,
+          status,
+          requested_at AS "requestedAt",
+          due_date AS "dueDate",
+          decided_by AS "decidedBy",
+          decided_at AS "decidedAt",
+          student_id_image AS "studentIdImage",
+          comment,
+          available_at AS "availableAt",
+          expires_at AS "expiresAt",
+          picked_up_at AS "pickedUpAt"
+      `;
+      let rows = [];
+      try {
+        const res = await pool.query(query, [transactionId, validDecidedBy]);
+        rows = res.rows;
+      } catch (dbErr) {
+        if (validDecidedBy) {
+          const res = await pool.query(query, [transactionId, null]);
+          rows = res.rows;
+        } else {
+          throw dbErr;
+        }
+      }
+
+      // Fallback: If not matched by transactionId (e.g. temporary socket ID), recover by matching approved transaction by book/student details
+      if (rows.length === 0 && (resourceTitle || isbn || studentId || studentName)) {
+        try {
+          const fallbackQuery = `
+            UPDATE transactions
+            SET
+              type = 'Borrow',
+              status = 'Approved',
+              picked_up_at = NOW(),
+              expires_at = NULL,
+              due_date = NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7)),
+              decided_by = COALESCE($1, decided_by),
+              decided_at = NOW()
+            WHERE id IN (
+              SELECT id FROM transactions
+              WHERE (
+                ($2::text != '' AND $2::text != 'N/A' AND isbn = $2::text)
+                OR ($3::text != '' AND LOWER(resource_title) = LOWER($3::text))
+              )
+              AND (
+                ($4::text != '' AND LOWER(student_id) = LOWER($4::text))
+                OR ($5::text != '' AND LOWER(student_name) = LOWER($5::text))
+              )
+              ORDER BY requested_at DESC
+              LIMIT 1
+            )
+            RETURNING
+              id,
+              user_id AS "userId",
+              student_name AS "studentName",
+              student_id AS "studentId",
+              resource_title AS "resourceTitle",
+              isbn,
+              department,
+              type,
+              status,
+              requested_at AS "requestedAt",
+              due_date AS "dueDate",
+              decided_by AS "decidedBy",
+              decided_at AS "decidedAt",
+              student_id_image AS "studentIdImage",
+              comment,
+              available_at AS "availableAt",
+              expires_at AS "expiresAt",
+              picked_up_at AS "pickedUpAt"
+          `;
+          const fbRes = await pool.query(fallbackQuery, [
+            validDecidedBy,
+            isbn || "",
+            resourceTitle || "",
+            studentId || "",
+            studentName || "",
+          ]);
+          rows = fbRes.rows;
+        } catch (fbErr) {
+          console.warn("DB markTransactionPickedUp fallback query error:", fbErr.message);
+        }
+      }
+
+      if (rows.length > 0) {
+        const tx = rows[0];
+        tx.isPickedUp = true;
+        void this.syncBookAvailability(tx.isbn || tx.resourceTitle);
+        return tx;
+      }
+
+      return null;
+    } catch (error) {
+      warnIfNotOffline("DB markTransactionPickedUp error:", error);
+      return null;
+    }
+  },
+
+  async syncBookAvailability(bookIdOrIsbnOrTitle) {
+    if (!bookIdOrIsbnOrTitle) return null;
+    try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(bookIdOrIsbnOrTitle));
+      let bookRes;
+      if (isUuid) {
+        bookRes = await pool.query("SELECT id, title, isbn, copies FROM books WHERE id = $1 LIMIT 1", [bookIdOrIsbnOrTitle]);
+      } else {
+        bookRes = await pool.query(
+          "SELECT id, title, isbn, copies FROM books WHERE (isbn IS NOT NULL AND isbn != '' AND isbn != 'N/A' AND isbn = $1) OR LOWER(title) = LOWER($2) LIMIT 1",
+          [bookIdOrIsbnOrTitle, bookIdOrIsbnOrTitle]
+        );
+      }
+      const book = bookRes.rows[0];
+      if (!book) return null;
+
+      const txRes = await pool.query(
+        `SELECT
+           COUNT(CASE WHEN type = 'Borrow' AND status IN ('Approved', 'Pending') THEN 1 END)::int AS "borrowedCount",
+           COUNT(CASE WHEN type = 'Reservation' AND status IN ('Approved', 'Pending') AND (expires_at IS NULL OR expires_at > NOW()) THEN 1 END)::int AS "reservedCount"
+         FROM transactions
+         WHERE ((isbn IS NOT NULL AND isbn != '' AND isbn != 'N/A' AND isbn = $1)
+            OR (resource_title IS NOT NULL AND LOWER(resource_title) = LOWER($2)))`,
+        [book.isbn, book.title]
+      );
+      const counts = txRes.rows[0] || {};
+      const totalCopies = Math.max(1, Number(book.copies || 1));
+      const borrowedCount = Number(counts.borrowedCount || 0);
+      const reservedCount = Number(counts.reservedCount || 0);
+      const unavailableCopies = Math.min(totalCopies, borrowedCount);
+      const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+      const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+      const status = availableCopies > 0 ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
+
+      await pool.query("UPDATE books SET availability = $1, updated_at = NOW() WHERE id = $2", [status, book.id]);
+      return { bookId: book.id, status, availableCopies, unavailableCopies, reservedCopies };
+    } catch (err) {
+      console.warn("syncBookAvailability error:", err.message);
+      return null;
     }
   },
 
@@ -658,30 +1056,30 @@ export const adminModel = {
 
       if (department !== "All") {
         filters.push(department);
-        whereClauses.push(`department = $${filters.length}`);
+        whereClauses.push(`b.department = $${filters.length}`);
       }
 
       if (archivedOnly) {
-        whereClauses.push("archived_at IS NOT NULL");
+        whereClauses.push("b.archived_at IS NOT NULL");
       } else if (!includeArchived) {
-        whereClauses.push("archived_at IS NULL");
+        whereClauses.push("b.archived_at IS NULL");
       }
 
       if (search) {
         filters.push(`%${search.toLowerCase()}%`);
         const searchParamIndex = filters.length;
         whereClauses.push(`(
-          lower(title) LIKE $${searchParamIndex}
-          OR lower(author) LIKE $${searchParamIndex}
-          OR lower(isbn) LIKE $${searchParamIndex}
-          OR lower(summary) LIKE $${searchParamIndex}
-          OR lower(genres) LIKE $${searchParamIndex}
+          lower(b.title) LIKE $${searchParamIndex}
+          OR lower(b.author) LIKE $${searchParamIndex}
+          OR lower(b.isbn) LIKE $${searchParamIndex}
+          OR lower(b.summary) LIKE $${searchParamIndex}
+          OR lower(b.genres) LIKE $${searchParamIndex}
         )`);
       }
 
       const whereClause = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
 
-      const totalQuery = `SELECT COUNT(*)::int as total FROM books ${whereClause}`;
+      const totalQuery = `SELECT COUNT(*)::int as total FROM books b ${whereClause}`;
       const { rows: totalRows } = await pool.query(totalQuery, filters);
       const total = totalRows[0]?.total ?? 0;
 
@@ -690,15 +1088,23 @@ export const adminModel = {
       filters.push(offset);
       const offsetParamIndex = filters.length;
 
-      let orderClause = "ORDER BY borrow_count DESC, title ASC";
+      let orderClause = "ORDER BY b.borrow_count DESC, b.title ASC";
       if (options.sortBy === "recent" || options.sortBy === "newest") {
-        orderClause = "ORDER BY created_at DESC, id DESC";
+        orderClause = "ORDER BY b.created_at DESC, b.id DESC";
       }
 
       const booksQuery = `
-        SELECT *
-        FROM books
+        SELECT
+          b.*,
+          COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+          COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
+        FROM books b
+        LEFT JOIN transactions t ON (
+          (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+          OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
+        )
         ${whereClause}
+        GROUP BY b.id
         ${orderClause}
         LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
       `;
@@ -886,6 +1292,194 @@ export const adminModel = {
       console.error("DB deleteBook failed:", error.message);
       throw error;
     }
+  },
+
+  async listDigitizedBooks(options = {}) {
+    const search = options.search?.trim()?.toLowerCase() ?? "";
+    const department = options.department ?? "All";
+    const status = options.status ?? "All";
+
+    try {
+      const filters = [];
+      const whereClauses = [];
+
+      if (department !== "All") {
+        filters.push(department);
+        whereClauses.push(`department = $${filters.length}`);
+      }
+      if (status !== "All") {
+        filters.push(status);
+        whereClauses.push(`status = $${filters.length}`);
+      }
+      if (search) {
+        filters.push(`%${search}%`);
+        const idx = filters.length;
+        whereClauses.push(`(
+          lower(title) LIKE $${idx}
+          OR lower(author) LIKE $${idx}
+          OR lower(isbn) LIKE $${idx}
+          OR lower(raw_text) LIKE $${idx}
+          OR lower(doc_type) LIKE $${idx}
+        )`);
+      }
+
+      const where = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
+      const query = `
+        SELECT * FROM digitized_books
+        ${where}
+        ORDER BY created_at DESC
+      `;
+      const { rows } = await pool.query(query, filters);
+      return rows.map(mapDigitizedRow);
+    } catch (error) {
+      warnIfNotOffline("DB listDigitizedBooks fallback:", error.message);
+      return mockDigitizedBooks.filter((book) => {
+        if (department !== "All" && book.department !== department) return false;
+        if (status !== "All" && book.status !== status) return false;
+        if (search) {
+          const match = book.title?.toLowerCase().includes(search) ||
+            book.author?.toLowerCase().includes(search) ||
+            book.isbn?.toLowerCase().includes(search) ||
+            book.rawText?.toLowerCase().includes(search);
+          if (!match) return false;
+        }
+        return true;
+      });
+    }
+  },
+
+  async addDigitizedBook(input) {
+    const id = `digi-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newRecord = {
+      id,
+      title: input.title || "Untitled Book",
+      author: input.author || "Unknown Author",
+      isbn: sanitizeIsbn(input.isbn) || `SCAN-${Date.now().toString().slice(-6)}`,
+      genre: input.genre || input.category || "General",
+      category: input.category || input.genre || "General",
+      department: input.department || "Circulation",
+      shelfLocation: input.shelfLocation || input.shelf || "",
+      accessionNumber: input.accessionNumber || "",
+      copies: Math.max(1, Number(input.copies ?? 1)),
+      edition: input.edition || "1st Edition",
+      volume: input.volume || "Vol. 1",
+      publisher: input.publisher || "",
+      publicationDate: input.publicationDate || input.publishedDate || new Date().toISOString().split('T')[0],
+      year: input.year || (input.publishedYear || new Date().getFullYear().toString()),
+      pages: Number(input.pages ?? 1),
+      summary: input.summary || input.description || "",
+      docType: input.docType || "Catalog Intake Slip",
+      ocrEngine: input.ocrEngine || "Tesseract Neural OCR",
+      confidence: Number(input.confidence ?? 95.0),
+      rawText: input.rawText || "",
+      scannedBy: input.scannedBy || "Librarian Mobile App",
+      status: "Pending Review",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    mockDigitizedBooks.unshift(newRecord);
+
+    try {
+      const query = `
+        INSERT INTO digitized_books (
+          title, author, isbn, genre, category, department, shelf_location,
+          accession_number, copies, edition, volume, publisher, publication_date,
+          year, pages, summary, doc_type, ocr_engine, confidence, raw_text,
+          scanned_by, status
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7,
+          $8, $9, $10, $11, $12, COALESCE($13::date, NOW()::date),
+          $14, $15, $16, $17, $18, $19, $20,
+          $21, $22
+        )
+        RETURNING *
+      `;
+      const values = [
+        newRecord.title,
+        newRecord.author,
+        newRecord.isbn,
+        newRecord.genre,
+        newRecord.category,
+        newRecord.department,
+        newRecord.shelfLocation,
+        newRecord.accessionNumber,
+        newRecord.copies,
+        newRecord.edition,
+        newRecord.volume,
+        newRecord.publisher,
+        newRecord.publicationDate,
+        newRecord.year,
+        newRecord.pages,
+        newRecord.summary,
+        newRecord.docType,
+        newRecord.ocrEngine,
+        newRecord.confidence,
+        newRecord.rawText,
+        newRecord.scannedBy,
+        newRecord.status,
+      ];
+      const { rows } = await pool.query(query, values);
+      return (rows && rows[0]) ? mapDigitizedRow(rows[0]) : newRecord;
+    } catch (error) {
+      warnIfNotOffline("DB addDigitizedBook fallback:", error.message);
+      return newRecord;
+    }
+  },
+
+  async approveDigitizedBook(id, approvedData = {}) {
+    let existing = null;
+    try {
+      const { rows } = await pool.query("SELECT * FROM digitized_books WHERE id = $1", [id]);
+      if (rows[0]) existing = mapDigitizedRow(rows[0]);
+    } catch {
+      // fallback
+    }
+    if (!existing) {
+      existing = mockDigitizedBooks.find(b => b.id === id);
+    }
+
+    const merged = {
+      title: approvedData.title || existing?.title || "Untitled Book",
+      author: approvedData.author || existing?.author || "Unknown Author",
+      isbn: sanitizeIsbn(approvedData.isbn || existing?.isbn) || `CAT-${Date.now().toString().slice(-6)}`,
+      department: approvedData.department || existing?.department || "Circulation",
+      category: approvedData.category || approvedData.genre || existing?.genre || "General",
+      genres: approvedData.genres || approvedData.genre || existing?.genre || "General",
+      shelfLocation: approvedData.shelfLocation || approvedData.shelf || existing?.shelfLocation || "Circulation Desk",
+      accessionNumber: approvedData.accessionNumber || existing?.accessionNumber || null,
+      copies: Number(approvedData.copies ?? existing?.copies ?? 1),
+      edition: approvedData.edition || existing?.edition || "1st Edition",
+      volume: approvedData.volume || existing?.volume || "Vol. 1",
+      publisher: approvedData.publisher || existing?.publisher || "",
+      publicationDate: approvedData.publicationDate || approvedData.publishedDate || existing?.publishedDate || new Date().toISOString().split('T')[0],
+      publishedDate: approvedData.publishedDate || approvedData.publicationDate || existing?.publishedDate || new Date().toISOString().split('T')[0],
+      pages: Number(approvedData.pages ?? existing?.pages ?? 1),
+      summary: approvedData.summary || existing?.summary || "",
+      availability: "Available",
+      source: "Librarian Scanner (Approved)",
+    };
+
+    const officialBook = await this.addBook(merged);
+
+    try {
+      await pool.query("UPDATE digitized_books SET status = 'Cataloged', updated_at = NOW() WHERE id = $1", [id]);
+    } catch (error) {
+      warnIfNotOffline("DB update digitized_books status fallback:", error.message);
+    }
+    mockDigitizedBooks = mockDigitizedBooks.filter(b => b.id !== id);
+
+    return { officialBook, digitizedId: id };
+  },
+
+  async deleteDigitizedBook(id) {
+    try {
+      await pool.query("DELETE FROM digitized_books WHERE id = $1", [id]);
+    } catch (error) {
+      warnIfNotOffline("DB deleteDigitizedBook fallback:", error.message);
+    }
+    mockDigitizedBooks = mockDigitizedBooks.filter(b => b.id !== id);
+    return true;
   },
 
   async listAnnouncements(options = {}) {
@@ -1106,8 +1700,15 @@ export const adminModel = {
       let whereClauses = [];
       
       if (moduleName !== "All") {
-        filters.push(moduleName);
-        whereClauses.push(`module = $${filters.length}`);
+        if (moduleName === "Pickups Only" || moduleName === "Pickups") {
+          whereClauses.push(`(lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`);
+        } else if (moduleName === "Transactions") {
+          filters.push("Transactions");
+          whereClauses.push(`module = $${filters.length} AND NOT (lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`);
+        } else {
+          filters.push(moduleName);
+          whereClauses.push(`module = $${filters.length}`);
+        }
       }
       
       if (search) {
@@ -1384,19 +1985,24 @@ export const adminModel = {
               WHEN LOWER(COALESCE(u.course, t.department, '')) LIKE '%tourism%' OR LOWER(COALESCE(u.course, t.department, '')) = 'bstm' THEN 'BSTM'
               WHEN LOWER(COALESCE(u.course, t.department, '')) LIKE '%hospitality%' OR LOWER(COALESCE(u.course, t.department, '')) = 'bshm' THEN 'BSHM'
               WHEN LOWER(COALESCE(u.course, t.department, '')) LIKE '%business%' OR LOWER(COALESCE(u.course, t.department, '')) = 'bsba' THEN 'BSBA'
-              WHEN LOWER(COALESCE(u.course, t.department, '')) LIKE '%general%' THEN 'General Program'
               WHEN COALESCE(u.course, t.department, '') != '' THEN COALESCE(u.course, t.department)
-              ELSE 'General Program'
+              ELSE ''
             END as course_code,
             COUNT(*)::int as borrow_count,
             COUNT(DISTINCT COALESCE(t.student_id, t.user_id::text))::int as student_count
           FROM transactions t
           LEFT JOIN users u ON (t.user_id = u.id OR t.student_id = u.id_number)
+          WHERE 
+            COALESCE(u.course, t.department, '') != '' 
+            AND LOWER(COALESCE(u.course, t.department, '')) NOT LIKE '%general%'
           GROUP BY 1
+          HAVING COUNT(*)::int > 0
           ORDER BY borrow_count DESC
         `;
         const { rows } = await pool.query(courseQuery);
-        courseRows = rows;
+        courseRows = rows.filter(
+          (r) => r.course_code && r.course_code !== "General Program" && !r.course_code.toLowerCase().includes("general")
+        );
       } catch (cErr) {
         console.warn("Course borrowing query notice:", cErr.message);
       }
@@ -1407,16 +2013,22 @@ export const adminModel = {
         BSTM: "BS Tourism Management",
         BSBA: "BS Business Administration",
         BSHM: "BS Hospitality Management",
-        "General Program": "General Academic Program",
       };
 
       const courseColorMap = {
-        BSIT: "#FCD400",
-        "General Program": "#10B981",
-        BSTM: "#38BDF8",
-        BSCS: "#C084FC",
-        BSBA: "#F97316",
-        BSHM: "#EC4899",
+        BSIT: "#EF4444", // CICT - Red Sentinels
+        BSCS: "#EF4444", // CICT - Red Sentinels
+        ACT: "#EF4444",  // CICT - Red Sentinels
+        BSTM: "#EC4899", // CHTM - Pink Vikings
+        BSHM: "#EC4899", // CHTM - Pink Vikings
+        BSCpE: "#FF6B00", // COE - Orange Erudites
+        BSBA: "#EAB308", // CBMA - Yellow Tycoons
+        BSA: "#EAB308",  // CBMA - Yellow Tycoons
+        BACOMM: "#10B981", // CAS - Green Titans
+        BSPsych: "#10B981", // CAS - Green Titans
+        BSED: "#3B82F6", // CED - Blue Guardians
+        BEED: "#3B82F6", // CED - Blue Guardians
+        BSCrim: "#8B5CF6", // CCJE - Purple Wizards
       };
 
       const totalCourseLoans = courseRows.reduce((acc, cur) => acc + (cur.borrow_count || 0), 0) || totalTxn;
@@ -1431,7 +2043,7 @@ export const adminModel = {
           borrowCount: bCount,
           studentCount: sCount,
           percentage,
-          fill: courseColorMap[code] || (idx === 0 ? "#FCD400" : idx === 1 ? "#10B981" : idx === 2 ? "#38BDF8" : "#C084FC"),
+          fill: courseColorMap[code] || (idx === 0 ? "#EF4444" : idx === 1 ? "#EC4899" : idx === 2 ? "#FF6B00" : "#EAB308"),
         };
       });
 
@@ -1440,12 +2052,12 @@ export const adminModel = {
         fullTitle: "BS Information Technology",
         borrowCount: 4,
         studentCount: 2,
-        percentage: 57.1,
+        percentage: 66.7,
       };
 
       const mostCourseBorrowed = {
         totalBorrows: totalCourseLoans,
-        activeCoursesCount: formattedCourses.length || 3,
+        activeCoursesCount: formattedCourses.length || 2,
         topCourse: {
           name: topCourseObj.course,
           fullTitle: topCourseObj.fullTitle,
@@ -1453,9 +2065,8 @@ export const adminModel = {
           percentage: topCourseObj.percentage,
         },
         courses: formattedCourses.length > 0 ? formattedCourses : [
-          { course: "BSIT", fullTitle: "BS Information Technology", borrowCount: 4, studentCount: 2, percentage: 57.1, fill: "#FCD400" },
-          { course: "General Program", fullTitle: "General Academic Program", borrowCount: 2, studentCount: 1, percentage: 28.6, fill: "#10B981" },
-          { course: "BSTM", fullTitle: "BS Tourism Management", borrowCount: 1, studentCount: 1, percentage: 14.3, fill: "#38BDF8" },
+          { course: "BSIT", fullTitle: "BS Information Technology", borrowCount: 4, studentCount: 2, percentage: 66.7, fill: "#EF4444" },
+          { course: "BSTM", fullTitle: "BS Tourism Management", borrowCount: 2, studentCount: 1, percentage: 33.3, fill: "#EC4899" },
         ],
       };
 
@@ -1628,18 +2239,17 @@ export const adminModel = {
           safeMonthlyRate: 83,
         },
         mostCourseBorrowed: {
-          totalBorrows: 7,
-          activeCoursesCount: 3,
+          totalBorrows: 6,
+          activeCoursesCount: 2,
           topCourse: {
             name: "BSIT",
             fullTitle: "BS Information Technology",
             borrowCount: 4,
-            percentage: 57.1,
+            percentage: 66.7,
           },
           courses: [
-            { course: "BSIT", fullTitle: "BS Information Technology", borrowCount: 4, studentCount: 2, percentage: 57.1, fill: "#FCD400" },
-            { course: "General Program", fullTitle: "General Academic Program", borrowCount: 2, studentCount: 1, percentage: 28.6, fill: "#10B981" },
-            { course: "BSTM", fullTitle: "BS Tourism Management", borrowCount: 1, studentCount: 1, percentage: 14.3, fill: "#38BDF8" },
+            { course: "BSIT", fullTitle: "BS Information Technology", borrowCount: 4, studentCount: 2, percentage: 66.7, fill: "#EF4444" },
+            { course: "BSTM", fullTitle: "BS Tourism Management", borrowCount: 2, studentCount: 1, percentage: 33.3, fill: "#EC4899" },
           ],
         },
         mostSearchedBooks: {
@@ -1782,12 +2392,16 @@ export const adminModel = {
           actor_name AS actor,
           prompt AS query,
           department,
+          CASE 
+            WHEN mode = 'prefix' THEN 'filter' 
+            ELSE COALESCE(mode, 'ai') 
+          END AS mode,
           file_names AS "fileNames",
           matches_found AS "matchesFound",
           created_at AS "createdAt"
         FROM ai_search_logs
         ORDER BY created_at DESC
-        LIMIT 25
+        LIMIT 60
       `;
       const { rows } = await pool.query(query);
       return rows.map(row => ({
@@ -1803,6 +2417,7 @@ export const adminModel = {
   async deleteSearchLog(id) {
     try {
       await pool.query("DELETE FROM ai_search_logs WHERE id = $1", [id]);
+      void eventDispatcher.dispatchTelemetryRefresh().catch(() => {});
       return this.getSearchLogs();
     } catch (error) {
       console.error("DB deleteSearchLog failed:", error.message);
@@ -1810,10 +2425,17 @@ export const adminModel = {
     }
   },
 
-  async clearSearchLogs() {
+  async clearSearchLogs(mode) {
     try {
-      await pool.query("DELETE FROM ai_search_logs");
-      return [];
+      if (mode === "filter" || mode === "prefix") {
+        await pool.query("DELETE FROM ai_search_logs WHERE mode = 'filter' OR mode = 'prefix'");
+      } else if (mode === "ai") {
+        await pool.query("DELETE FROM ai_search_logs WHERE COALESCE(mode, 'ai') = 'ai'");
+      } else {
+        await pool.query("DELETE FROM ai_search_logs");
+      }
+      void eventDispatcher.dispatchTelemetryRefresh().catch(() => {});
+      return this.getSearchLogs();
     } catch (error) {
       console.error("DB clearSearchLogs failed:", error.message);
       return [];
@@ -1824,6 +2446,169 @@ export const adminModel = {
     const queryText = input.query || "";
     const combinedContext = [queryText, input.uploadedContext].filter(Boolean).join(" ");
     const department = input.department || "All";
+    const isFilterMode = input.mode === "prefix" || input.mode === "filter";
+
+    if (isFilterMode) {
+      try {
+        const cleanQ = queryText.trim().toLowerCase();
+        const rawClean = cleanQ.replace(/[^a-z0-9\s]/g, "").trim();
+
+        if (!rawClean) {
+          return { results: [], logs: await this.getSearchLogs() };
+        }
+
+        let sql = `
+          SELECT id, title, author, isbn, department, category, shelf_location, summary, rating, cover_img, ai_score, genres, language, publisher, borrow_count
+          FROM books
+          WHERE archived_at IS NULL
+        `;
+        const params = [];
+        let paramIdx = 1;
+
+        if (department !== "All") {
+          sql += ` AND department = $${paramIdx}`;
+          params.push(department);
+          paramIdx++;
+        }
+
+        const p1 = `${rawClean}%`;
+        const p2 = `the ${rawClean}%`;
+        const p3 = `a ${rawClean}%`;
+        const p4 = `an ${rawClean}%`;
+        const p5 = `%${rawClean}%`;
+
+        const prefixIdx = paramIdx++;
+        const thePrefixIdx = paramIdx++;
+        const aPrefixIdx = paramIdx++;
+        const anPrefixIdx = paramIdx++;
+        const subIdx = paramIdx++;
+        const exactIdx = paramIdx++;
+
+        params.push(p1, p2, p3, p4, p5, rawClean);
+
+        sql += ` AND (
+          LOWER(title) LIKE LOWER($${prefixIdx})
+          OR LOWER(title) LIKE LOWER($${thePrefixIdx})
+          OR LOWER(title) LIKE LOWER($${aPrefixIdx})
+          OR LOWER(title) LIKE LOWER($${anPrefixIdx})
+          OR LOWER(title) LIKE LOWER($${subIdx})
+          OR LOWER(author) LIKE LOWER($${subIdx})
+          OR LOWER(isbn) LIKE LOWER($${subIdx})
+        )`;
+
+        sql += `
+          ORDER BY
+            CASE
+              WHEN LOWER(title) = LOWER($${exactIdx}) THEN 1
+              WHEN LOWER(title) LIKE LOWER($${prefixIdx}) THEN 2
+              WHEN LOWER(title) LIKE LOWER($${thePrefixIdx}) OR LOWER(title) LIKE LOWER($${aPrefixIdx}) OR LOWER(title) LIKE LOWER($${anPrefixIdx}) THEN 3
+              WHEN LOWER(title) LIKE LOWER($${subIdx}) THEN 4
+              ELSE 5
+            END,
+            title ASC
+          LIMIT 60
+        `;
+
+        const { rows } = await pool.query(sql, params);
+        const results = rows.map(row => {
+          const book = mapBookRow(row);
+          const titleLower = (book.title || "").toLowerCase();
+          let relevance = 75;
+          const matchedBy = [];
+
+          if (titleLower === cleanQ || titleLower.replace(/[^a-z0-9]/g, "") === rawClean) {
+            relevance = 100;
+            matchedBy.push("exact title match");
+          } else if (titleLower.startsWith(cleanQ) || titleLower.startsWith(rawClean)) {
+            const ratio = Math.min(1, rawClean.length / Math.max(1, titleLower.length));
+            relevance = Math.min(98, Math.round(85 + ratio * 14));
+            matchedBy.push("title prefix filter");
+          } else if (titleLower.replace(/^(the|a|an)\s+/i, "").startsWith(cleanQ)) {
+            relevance = 90;
+            matchedBy.push("title prefix filter");
+          } else if (titleLower.includes(cleanQ)) {
+            relevance = 85;
+            matchedBy.push("title keyword filter");
+          } else if ((book.author || "").toLowerCase().includes(cleanQ)) {
+            relevance = 80;
+            matchedBy.push("author filter match");
+          } else {
+            relevance = 75;
+            matchedBy.push("filter match");
+          }
+
+          return {
+            id: book.id,
+            title: book.title,
+            author: book.author,
+            isbn: book.isbn,
+            department: book.department,
+            availability: book.availability,
+            relevance,
+            summary: book.summary,
+            matchedBy,
+            genres: book.genres,
+            language: book.language,
+            rating: book.rating,
+            coverImg: book.coverImg,
+            score: relevance
+          };
+        });
+
+        const cleanQuery = (queryText || "Filter search").trim();
+        const actorName = input.actorName || "Staff";
+        const actorId = input.actorId || null;
+
+        // Deduplicate prior identical or sub-prefix queries to avoid duplicate clutter
+        try {
+          await pool.query(
+            `DELETE FROM ai_search_logs 
+             WHERE (mode = 'filter' OR mode = 'prefix')
+               AND (
+                 LOWER(TRIM(prompt)) = LOWER(TRIM($1))
+                 OR ($1 ILIKE TRIM(prompt) || '%' AND LENGTH(TRIM(prompt)) < LENGTH($1))
+               )`,
+            [cleanQuery]
+          );
+        } catch (delErr) {
+          console.warn("Could not delete prior duplicate logs:", delErr.message);
+        }
+
+        const insertQuery = `
+          INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, mode, file_names, matches_found)
+          VALUES ($1, $2, $3, $4, 'filter', $5, $6)
+          RETURNING id
+        `;
+        await pool.query(insertQuery, [
+          actorId,
+          actorName,
+          cleanQuery,
+          department,
+          input.fileNames || [],
+          results.length
+        ]);
+
+        const logs = await this.getSearchLogs();
+
+        try {
+          void eventDispatcher.dispatchSearchEvent({
+            query: queryText,
+            mode: "filter-search",
+            actor: input.actorName || "Staff",
+            department,
+            matches: results.length,
+          });
+        } catch {}
+
+        return {
+          results,
+          logs
+        };
+      } catch (err) {
+        console.error("Filter search execution error:", err.message);
+        return { results: [], logs: await this.getSearchLogs() };
+      }
+    }
 
     const extractSearchTokens = (text, max = 15) => {
       if (!text) return [];
@@ -2114,21 +2899,47 @@ Only include books with relevance >= 20%. If no books match, return an empty "ma
         results = await runLocalFallback();
       }
 
+      const cleanPrompt = (queryText || "Uploaded context search").trim();
+      const actorName = input.actorName || "Staff";
+      const actorId = input.actorId || null;
+
+      // Deduplicate before inserting to prevent duplicate entries
+      try {
+        await pool.query(
+          `DELETE FROM ai_search_logs 
+           WHERE LOWER(TRIM(prompt)) = LOWER(TRIM($1)) 
+             AND COALESCE(mode, 'ai') = 'ai'`,
+          [cleanPrompt]
+        );
+      } catch (delErr) {
+        console.warn("Could not delete prior duplicate AI logs:", delErr.message);
+      }
+
       const insertQuery = `
-        INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, file_names, matches_found)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, mode, file_names, matches_found)
+        VALUES ($1, $2, $3, $4, 'ai', $5, $6)
         RETURNING id
       `;
       await pool.query(insertQuery, [
-        input.actorId || null,
-        input.actorName || "System",
-        queryText || "Uploaded context search",
+        actorId,
+        actorName,
+        cleanPrompt,
         department,
         input.fileNames || [],
         results.length
       ]);
       
       const logs = await this.getSearchLogs();
+
+      try {
+        void eventDispatcher.dispatchSearchEvent({
+          query: queryText || "Uploaded context search",
+          mode: "prompt-search",
+          actor: input.actorName || "Staff",
+          department,
+          matches: results.length,
+        });
+      } catch {}
       
       return {
         results,
@@ -2170,6 +2981,8 @@ Only include books with relevance >= 20%. If no books match, return an empty "ma
           reports: true,
           history: true,
           settings: true,
+          export: true,
+          import: true,
         },
       }));
     } catch (error) {
@@ -2193,6 +3006,8 @@ Only include books with relevance >= 20%. If no books match, return an empty "ma
             reports: true,
             history: true,
             settings: true,
+            export: true,
+            import: true,
           },
         },
       ];
@@ -2229,6 +3044,15 @@ Only include books with relevance >= 20%. If no books match, return an empty "ma
 
 function mapBookRow(row) {
   if (!row) return null;
+  const totalCopies = Math.max(1, Number(row.copies ?? 1));
+  const borrowedCount = Number(row.borrowedCount ?? 0);
+  const reservedCount = Number(row.reservedCount ?? 0);
+  const unavailableCopies = Math.min(totalCopies, borrowedCount);
+  const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+  const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+  const dynamicStatus = availableCopies > 0 ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
+  const computedAvailability = row.borrowedCount !== undefined ? dynamicStatus : (row.availability ?? "Available");
+
   return {
     id: String(row.id),
     source: row.source ?? "bookhive",
@@ -2254,11 +3078,18 @@ function mapBookRow(row) {
     bbeScore: row.bbe_score ?? 0,
     bbeVotes: row.bbe_votes ?? 0,
     borrowCount: row.borrow_count ?? 0,
-    availability: row.availability ?? "Available",
+    availability: computedAvailability,
+    status: computedAvailability,
     aiScore: row.ai_score ?? 70,
     archived: row.archived_at !== null && row.archived_at !== undefined,
     archivedAt: row.archived_at ? new Date(row.archived_at).toISOString() : null,
-    copies: row.copies ?? 1,
+    copies: totalCopies,
+    totalCopies,
+    availableCopies,
+    borrowedCount,
+    reservedCount,
+    reservedCopies,
+    unavailableCopies,
     volume: row.volume ?? "Vol. 1",
     edition: row.edition ?? "1st Edition",
     accessionNumber: row.accession_number ?? "",

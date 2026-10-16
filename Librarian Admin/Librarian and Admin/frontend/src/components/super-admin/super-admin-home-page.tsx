@@ -13,11 +13,9 @@ import {
   Clock,
   Database,
   Layers,
-  RefreshCw,
   Server,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Terminal,
   Users,
   ChevronRight,
@@ -96,9 +94,6 @@ export function SuperAdminHomePage() {
     vitals,
     telemetry,
     isLoading,
-    isRefreshing,
-    isLiveConnected,
-    refresh,
   } = useSuperAdminVitals({
     pollingIntervalMs: 4000,
     enableLiveSocket: true,
@@ -281,62 +276,7 @@ export function SuperAdminHomePage() {
         </div>
       </motion.div>
 
-      {/* ── Executive Hero Section (`panel-hero`) ─────────────────────── */}
-      <motion.section
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="rounded-[24px] bg-[#14293E] p-8 md:p-10 shadow-xl panel-hero relative overflow-hidden"
-      >
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-          <div className="flex items-center gap-2 text-[#FFD600]">
-            <Sparkles className="h-4 w-4 fill-current" />
-            <span className="text-xs font-bold tracking-widest uppercase">
-              SUPER ADMIN EXECUTIVE COMMAND
-            </span>
-          </div>
 
-          <div className="flex items-center gap-3">
-            {/* Live Socket Stream Indicator */}
-            <div
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold backdrop-blur-md transition-colors ${
-                isLiveConnected
-                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                  : "border-amber-500/30 bg-amber-500/10 text-amber-300"
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  isLiveConnected ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
-                }`}
-              />
-              <span>{isLiveConnected ? "Live Socket Active" : "Adaptive Polling"}</span>
-            </div>
-
-            {/* Refresh Vitals Trigger */}
-            <button
-              type="button"
-              onClick={() => {
-                void refresh();
-                void fetchSecondaryData();
-              }}
-              disabled={isRefreshing}
-              className="flex items-center gap-2 rounded-full bg-[#FFD600] px-4 py-1.5 text-xs font-bold text-[#0A1624] transition-all hover:bg-[#FCD400]/90 hover:scale-105 active:scale-95 shadow-md disabled:opacity-75 disabled:cursor-not-allowed"
-            >
-              <RefreshCw className={`h-3 w-3 ${isRefreshing || isLoading ? "animate-spin" : ""}`} />
-              <span>{isRefreshing ? "Syncing..." : "Refresh Vitals"}</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Main Heading & Executive Subtitle */}
-        <h1 className="text-[28px] md:text-[34px] font-bold tracking-tight text-white leading-tight">
-          Command & oversee the entire STI WNU digital ecosystem.
-        </h1>
-        <p className="mt-2 text-sm text-slate-300 max-w-3xl leading-relaxed">
-          Executive oversight of platform throughput, role distribution, system telemetry, and institutional ecosystem integrity.
-        </p>
-      </motion.section>
 
       {/* ── 5-Metric Analytics & Cluster Health Row ───────────────────── */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
@@ -345,12 +285,17 @@ export function SuperAdminHomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="flex flex-col justify-center overflow-hidden rounded-2xl border border-white/10 border-l-[6px] border-l-[#FCD400] bg-[#152E47]/80 px-6 py-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#1E3445]"
+          className={cn(
+            "flex flex-col justify-center overflow-hidden rounded-2xl border px-6 py-5 shadow-sm transition-all duration-300 hover:-translate-y-1",
+            isLight
+              ? "border-slate-200/80 bg-white border-l-[6px] border-l-[#FCD400] shadow-slate-200/50 hover:shadow-md hover:bg-slate-50/50"
+              : "border-white/10 border-l-[6px] border-l-[#FCD400] bg-[#152E47]/80 shadow-lg backdrop-blur-md hover:bg-[#1E3445]"
+          )}
         >
-          <div className="mb-1 text-[11px] font-bold tracking-[0.15em] text-[#94A3B8]">
+          <div className={cn("mb-1 text-[11px] font-bold tracking-[0.15em]", isLight ? "text-slate-500" : "text-[#94A3B8]")}>
             TOTAL_USER_BASE
           </div>
-          <div className="text-[32px] font-black tracking-tight text-white">
+          <div className={cn("text-[32px] font-black tracking-tight", isLight ? "text-slate-900" : "text-white")}>
             {mounted ? (
               <AnimatedNumber value={vitals?.totalUsers ?? 0} />
             ) : (
@@ -358,15 +303,15 @@ export function SuperAdminHomePage() {
             )}
           </div>
           <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px]">
-            <span className="rounded bg-white/5 px-1.5 py-0.5 text-amber-300 font-semibold border border-amber-500/20">
+            <span className={cn("rounded px-1.5 py-0.5 font-semibold border", isLight ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-white/5 text-amber-300 border-amber-500/20")}>
               {vitals?.adminsCount ?? 0} Admins
             </span>
-            <span className="text-slate-500">·</span>
-            <span className="rounded bg-white/5 px-1.5 py-0.5 text-sky-300 font-semibold border border-sky-500/20">
+            <span className={isLight ? "text-slate-400" : "text-slate-500"}>·</span>
+            <span className={cn("rounded px-1.5 py-0.5 font-semibold border", isLight ? "bg-sky-50 text-sky-700 border-sky-200" : "bg-white/5 text-sky-300 border-sky-500/20")}>
               {vitals?.librariansCount ?? 0} Librarians
             </span>
-            <span className="text-slate-500">·</span>
-            <span className="text-slate-400 font-semibold">
+            <span className={isLight ? "text-slate-400" : "text-slate-500"}>·</span>
+            <span className={isLight ? "text-slate-600 font-semibold" : "text-slate-400 font-semibold"}>
               {vitals?.studentsCount ?? 0} Students
             </span>
           </div>
@@ -377,20 +322,25 @@ export function SuperAdminHomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="flex flex-col justify-center overflow-hidden rounded-2xl border border-white/10 border-l-[6px] border-l-[#38BDF8] bg-[#152E47]/80 px-6 py-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#1E3445]"
+          className={cn(
+            "flex flex-col justify-center overflow-hidden rounded-2xl border px-6 py-5 shadow-sm transition-all duration-300 hover:-translate-y-1",
+            isLight
+              ? "border-slate-200/80 bg-white border-l-[6px] border-l-[#38BDF8] shadow-slate-200/50 hover:shadow-md hover:bg-slate-50/50"
+              : "border-white/10 border-l-[6px] border-l-[#38BDF8] bg-[#152E47]/80 shadow-lg backdrop-blur-md hover:bg-[#1E3445]"
+          )}
         >
-          <div className="mb-1 text-[11px] font-bold tracking-[0.15em] text-[#94A3B8]">
+          <div className={cn("mb-1 text-[11px] font-bold tracking-[0.15em]", isLight ? "text-slate-500" : "text-[#94A3B8]")}>
             ACTIVE_CIRCULATION
           </div>
-          <div className="text-[32px] font-black tracking-tight text-[#38BDF8]">
+          <div className={cn("text-[32px] font-black tracking-tight", isLight ? "text-[#0274BB]" : "text-[#38BDF8]")}>
             {mounted ? (
               <AnimatedNumber value={vitals?.activeBorrows ?? 0} />
             ) : (
               <span>{vitals?.activeBorrows ?? 0}</span>
             )}
           </div>
-          <div className="mt-2.5 text-[11px] text-slate-300 truncate">
-            Out of <strong className="text-white font-bold">{vitals?.activeBooksCount ?? 0}</strong> active catalog resources
+          <div className={cn("mt-2.5 text-[11px] truncate", isLight ? "text-slate-600" : "text-slate-300")}>
+            Out of <strong className={cn("font-bold", isLight ? "text-slate-900" : "text-white")}>{vitals?.activeBooksCount ?? 0}</strong> active catalog resources
           </div>
         </motion.div>
 
@@ -399,24 +349,36 @@ export function SuperAdminHomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.3 }}
-          className="flex flex-col justify-center overflow-hidden rounded-2xl border border-white/10 border-l-[6px] border-l-[#A855F7] bg-[#152E47]/80 px-6 py-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#1E3445]"
+          className={cn(
+            "flex flex-col justify-center overflow-hidden rounded-2xl border px-6 py-5 shadow-sm transition-all duration-300 hover:-translate-y-1",
+            isLight
+              ? "border-slate-200/80 bg-white border-l-[6px] border-l-[#A855F7] shadow-slate-200/50 hover:shadow-md hover:bg-slate-50/50"
+              : "border-white/10 border-l-[6px] border-l-[#A855F7] bg-[#152E47]/80 shadow-lg backdrop-blur-md hover:bg-[#1E3445]"
+          )}
         >
-          <div className="mb-1 text-[11px] font-bold tracking-[0.15em] text-[#94A3B8]">
+          <div className={cn("mb-1 text-[11px] font-bold tracking-[0.15em]", isLight ? "text-slate-500" : "text-[#94A3B8]")}>
             AI_SEARCH_EVENTS
           </div>
-          <div className="text-[32px] font-black tracking-tight text-[#C084FC]">
+          <div className={cn("text-[32px] font-black tracking-tight", isLight ? "text-slate-900" : "text-[#C084FC]")}>
             {mounted ? (
               <AnimatedNumber value={vitals?.totalAiSearches ?? 0} />
             ) : (
               <span>{vitals?.totalAiSearches ?? 0}</span>
             )}
           </div>
-          <div className="mt-2.5 flex items-center gap-1.5 text-[11px] text-slate-300">
-            <span>Neural Index:</span>
-            <span className="font-bold text-white inline-flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
-              {telemetry?.searchIndexStatus || "Healthy"}
-            </span>
+          <div className={cn("mt-2.5 flex flex-wrap items-center justify-between gap-1 text-[11px]", isLight ? "text-slate-600" : "text-slate-300")}>
+            <div className="flex items-center gap-1.5">
+              <span>Neural Index:</span>
+              <span className={cn("font-bold inline-flex items-center gap-1", isLight ? "text-slate-900" : "text-white")}>
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-pulse" />
+                {telemetry?.searchIndexStatus || "Healthy"}
+              </span>
+            </div>
+            {Number(vitals?.totalSearchResults || 0) > 0 && (
+              <span className={cn("text-[10px] font-semibold truncate", isLight ? "text-violet-600" : "text-violet-300")}>
+                {Number(vitals?.totalSearchResults || 0).toLocaleString()} matches
+              </span>
+            )}
           </div>
         </motion.div>
 
@@ -425,20 +387,25 @@ export function SuperAdminHomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.4 }}
-          className="flex flex-col justify-center overflow-hidden rounded-2xl border border-white/10 border-l-[6px] border-l-[#F97316] bg-[#152E47]/80 px-6 py-5 shadow-lg backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:bg-[#1E3445]"
+          className={cn(
+            "flex flex-col justify-center overflow-hidden rounded-2xl border px-6 py-5 shadow-sm transition-all duration-300 hover:-translate-y-1",
+            isLight
+              ? "border-slate-200/80 bg-white border-l-[6px] border-l-[#F97316] shadow-slate-200/50 hover:shadow-md hover:bg-slate-50/50"
+              : "border-white/10 border-l-[6px] border-l-[#F97316] bg-[#152E47]/80 shadow-lg backdrop-blur-md hover:bg-[#1E3445]"
+          )}
         >
-          <div className="mb-1 text-[11px] font-bold tracking-[0.15em] text-[#94A3B8]">
+          <div className={cn("mb-1 text-[11px] font-bold tracking-[0.15em]", isLight ? "text-slate-500" : "text-[#94A3B8]")}>
             TOTAL_TRANSACTIONS
           </div>
-          <div className="text-[32px] font-black tracking-tight text-[#FB923C]">
+          <div className={cn("text-[32px] font-black tracking-tight", isLight ? "text-[#EA580C]" : "text-[#FB923C]")}>
             {mounted ? (
               <AnimatedNumber value={vitals?.totalTransactions ?? 0} />
             ) : (
               <span>{vitals?.totalTransactions ?? 0}</span>
             )}
           </div>
-          <div className="mt-2.5 text-[11px] text-slate-300">
-            <strong className="text-[#FCD400] font-bold">{vitals?.pendingTransactions ?? 0}</strong> pending queue actions
+          <div className={cn("mt-2.5 text-[11px]", isLight ? "text-slate-600" : "text-slate-300")}>
+            <strong className={cn("font-bold", isLight ? "text-amber-600" : "text-[#FCD400]")}>{vitals?.pendingTransactions ?? 0}</strong> pending queue actions
           </div>
         </motion.div>
 
@@ -447,7 +414,12 @@ export function SuperAdminHomePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.5 }}
-          className="group flex flex-col justify-between overflow-hidden rounded-2xl bg-[#041E30] p-6 shadow-sm transition-all duration-300 hover:shadow-xl hover:shadow-[#041E30]/20"
+          className={cn(
+            "group flex flex-col justify-between overflow-hidden rounded-2xl p-6 shadow-sm transition-all duration-300 hover:shadow-xl",
+            isLight
+              ? "bg-slate-900 border border-slate-800 text-white hover:shadow-slate-300/40"
+              : "bg-[#041E30] text-white hover:shadow-[#041E30]/20"
+          )}
         >
           <div className="mb-6 flex items-center justify-between">
             <div className="text-xs font-bold tracking-widest text-[#FCD400]">SYSTEM_HEALTH</div>
@@ -545,7 +517,7 @@ export function SuperAdminHomePage() {
               <div className="h-[270px] w-full flex flex-row items-center justify-between gap-3">
                 {/* Donut Chart with Centered Info */}
                 <div className="relative h-full w-[160px] shrink-0 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 500, height: 300 }}>
                     <PieChart>
                       <Pie
                         data={totalDistributionAccounts === 0 ? [{ value: 1 }] : activeDistributionList}
@@ -683,7 +655,7 @@ export function SuperAdminHomePage() {
 
               <div className="h-[240px] w-full">
                 {throughputViewMode === "columns" ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 500, height: 300 }}>
                     <BarChart
                       data={throughputData}
                       margin={{ top: 24, right: 12, left: -22, bottom: 20 }}
@@ -885,7 +857,7 @@ export function SuperAdminHomePage() {
                 type="button"
                 onClick={() => router.push("/super-admin/system-management")}
                 className={cn(
-                  "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
+                  "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
                     ? "border-slate-200 bg-white hover:border-[#0274BB]/50 hover:shadow-md"
                     : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -893,7 +865,7 @@ export function SuperAdminHomePage() {
               >
                 <div className={cn("absolute inset-0 transition-opacity duration-300 group-hover:opacity-100 opacity-0", isLight ? "bg-gradient-to-b from-[#0274BB]/0 to-[#0274BB]/5" : "bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10")} />
                 <div className={cn(
-                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110",
+                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110 shrink-0",
                   isLight
                     ? "bg-slate-100 text-slate-600 group-hover:bg-[#0274BB]/15 group-hover:text-[#0274BB]"
                     : "bg-white/5 text-slate-400 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -901,7 +873,7 @@ export function SuperAdminHomePage() {
                   <Users className="h-5 w-5" />
                 </div>
                 <span className={cn(
-                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300",
+                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300 text-center",
                   isLight ? "text-slate-600 group-hover:text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]"
                 )}>
                   USER_CRUD
@@ -913,7 +885,7 @@ export function SuperAdminHomePage() {
                 type="button"
                 onClick={() => router.push("/super-admin/audit-logs")}
                 className={cn(
-                  "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
+                  "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
                     ? "border-slate-200 bg-white hover:border-[#0274BB]/50 hover:shadow-md"
                     : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -921,7 +893,7 @@ export function SuperAdminHomePage() {
               >
                 <div className={cn("absolute inset-0 transition-opacity duration-300 group-hover:opacity-100 opacity-0", isLight ? "bg-gradient-to-b from-[#0274BB]/0 to-[#0274BB]/5" : "bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10")} />
                 <div className={cn(
-                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110",
+                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110 shrink-0",
                   isLight
                     ? "bg-slate-100 text-slate-600 group-hover:bg-[#0274BB]/15 group-hover:text-[#0274BB]"
                     : "bg-white/5 text-slate-400 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -929,7 +901,7 @@ export function SuperAdminHomePage() {
                   <ShieldAlert className="h-5 w-5" />
                 </div>
                 <span className={cn(
-                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300",
+                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300 text-center",
                   isLight ? "text-slate-600 group-hover:text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]"
                 )}>
                   AUDIT_LOGS
@@ -941,7 +913,7 @@ export function SuperAdminHomePage() {
                 type="button"
                 onClick={() => router.push("/super-admin/records")}
                 className={cn(
-                  "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
+                  "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
                     ? "border-slate-200 bg-white hover:border-[#0274BB]/50 hover:shadow-md"
                     : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -949,7 +921,7 @@ export function SuperAdminHomePage() {
               >
                 <div className={cn("absolute inset-0 transition-opacity duration-300 group-hover:opacity-100 opacity-0", isLight ? "bg-gradient-to-b from-[#0274BB]/0 to-[#0274BB]/5" : "bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10")} />
                 <div className={cn(
-                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110",
+                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110 shrink-0",
                   isLight
                     ? "bg-slate-100 text-slate-600 group-hover:bg-[#0274BB]/15 group-hover:text-[#0274BB]"
                     : "bg-white/5 text-slate-400 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -957,7 +929,7 @@ export function SuperAdminHomePage() {
                   <ClipboardList className="h-5 w-5" />
                 </div>
                 <span className={cn(
-                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300",
+                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300 text-center",
                   isLight ? "text-slate-600 group-hover:text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]"
                 )}>
                   MASTER_RECORDS
@@ -969,7 +941,7 @@ export function SuperAdminHomePage() {
                 type="button"
                 onClick={() => router.push("/super-admin/settings")}
                 className={cn(
-                  "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
+                  "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
                     ? "border-slate-200 bg-white hover:border-[#0274BB]/50 hover:shadow-md"
                     : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -977,7 +949,7 @@ export function SuperAdminHomePage() {
               >
                 <div className={cn("absolute inset-0 transition-opacity duration-300 group-hover:opacity-100 opacity-0", isLight ? "bg-gradient-to-b from-[#0274BB]/0 to-[#0274BB]/5" : "bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10")} />
                 <div className={cn(
-                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110",
+                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110 shrink-0",
                   isLight
                     ? "bg-slate-100 text-slate-600 group-hover:bg-[#0274BB]/15 group-hover:text-[#0274BB]"
                     : "bg-white/5 text-slate-400 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -985,7 +957,7 @@ export function SuperAdminHomePage() {
                   <Settings2 className="h-5 w-5" />
                 </div>
                 <span className={cn(
-                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300",
+                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300 text-center",
                   isLight ? "text-slate-600 group-hover:text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]"
                 )}>
                   SYS_SETTINGS
@@ -997,7 +969,7 @@ export function SuperAdminHomePage() {
                 type="button"
                 onClick={() => router.push("/super-admin/settings")}
                 className={cn(
-                  "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
+                  "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
                     ? "border-slate-200 bg-white hover:border-[#0274BB]/50 hover:shadow-md"
                     : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1005,7 +977,7 @@ export function SuperAdminHomePage() {
               >
                 <div className={cn("absolute inset-0 transition-opacity duration-300 group-hover:opacity-100 opacity-0", isLight ? "bg-gradient-to-b from-[#0274BB]/0 to-[#0274BB]/5" : "bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10")} />
                 <div className={cn(
-                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110",
+                  "z-10 flex h-12 w-12 items-center justify-center rounded-2xl shadow-inner transition-all duration-300 group-hover:scale-110 shrink-0",
                   isLight
                     ? "bg-slate-100 text-slate-600 group-hover:bg-[#0274BB]/15 group-hover:text-[#0274BB]"
                     : "bg-white/5 text-slate-400 group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1013,7 +985,7 @@ export function SuperAdminHomePage() {
                   <Database className="h-5 w-5" />
                 </div>
                 <span className={cn(
-                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300",
+                  "z-10 text-[9px] font-bold tracking-[0.15em] transition-colors duration-300 text-center",
                   isLight ? "text-slate-600 group-hover:text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]"
                 )}>
                   DB_RECOVERY

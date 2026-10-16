@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { X, CreditCard, BookOpen, Clock, CheckCircle2, QrCode } from "lucide-react";
 import type { TransactionRecord } from "@/lib/types";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, formatCourseShortcut } from "@/lib/utils";
 import { useTheme } from "@/components/providers/theme-provider";
 
 interface StudentLibraryCardModalProps {
@@ -44,6 +44,20 @@ function formatDueDate(dateStr?: string | Date) {
   }
 }
 
+function isDueToReturn(dateStr?: string | Date) {
+  if (!dateStr) return false;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+    const dueDayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    return dueDayStart.getTime() <= todayStart.getTime();
+  } catch {
+    return false;
+  }
+}
+
 export function StudentLibraryCardModal({
   open,
   onClose,
@@ -77,8 +91,17 @@ export function StudentLibraryCardModal({
         (targetStudentName && (targetStudentName.includes(currentStudentName) || currentStudentName.includes(targetStudentName)));
       const isBorrow =
         t.type === "Borrow" || (t as any).action === "Borrow" || !t.type;
-      const isApprovedOrActive = t.status === "Approved" || t.status === "Returned" || (t.status as string) === "Completed";
-      if (!matchesStudent || !isBorrow || !isApprovedOrActive) return false;
+      const isReservation =
+        t.type === "Reservation" || (t as any).action === "Reserve";
+      const statusStr = String(t.status || "");
+      const isApprovedOrActive =
+        statusStr === "Approved" ||
+        statusStr === "Returned" ||
+        statusStr === "Completed" ||
+        statusStr === "Picked Up" ||
+        statusStr === "On Loan" ||
+        (isReservation && (statusStr === "Pending" || statusStr === "Waitlisted" || statusStr === "Reserved"));
+      if (!matchesStudent || (!isBorrow && !isReservation) || !isApprovedOrActive) return false;
 
       const uniqueKey = t.id || `${t.studentId}-${t.resourceTitle}-${t.requestedAt}`;
       if (seen.has(uniqueKey)) return false;
@@ -88,7 +111,15 @@ export function StudentLibraryCardModal({
   }, [student, transactions]);
 
   const activeLoansCount = useMemo(() => {
-    return studentBorrows.filter((t) => t.status === "Approved").length;
+    return studentBorrows.filter((t) => t.status === "Approved" && t.type !== "Reservation" && (t as any).action !== "Reserve").length;
+  }, [studentBorrows]);
+
+  const reservationsCount = useMemo(() => {
+    return studentBorrows.filter((t) => {
+      const isRes = t.type === "Reservation" || (t as any).action === "Reserve";
+      const s = String(t.status || "");
+      return isRes && (s === "Approved" || s === "Pending" || s === "Waitlisted" || s === "Reserved");
+    }).length;
   }, [studentBorrows]);
 
   const returnedCount = useMemo(() => {
@@ -105,7 +136,7 @@ export function StudentLibraryCardModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       {/* Backdrop */}
       <div
-        className={cn("fixed inset-0 backdrop-blur-sm transition-opacity", isLight ? "bg-slate-900/40" : "bg-black/80")}
+        className={cn("fixed inset-0 modal-backdrop backdrop-blur-md transition-opacity", isLight ? "bg-slate-900/40" : "bg-black/80")}
         onClick={onClose}
       />
 
@@ -164,12 +195,12 @@ export function StudentLibraryCardModal({
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto space-y-5 py-4 pr-1">
           {/* Quick Metrics */}
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className={cn(
               "rounded-xl border p-3 text-center",
               isLight ? "border-2 border-slate-200 bg-slate-50" : "border border-white/5 bg-[#15233A]"
             )}>
-              <span className={cn("text-[10px] font-bold uppercase tracking-wider", isLight ? "text-slate-600" : "text-slate-400")}>Total Borrowed</span>
+              <span className={cn("text-[10px] font-bold uppercase tracking-wider", isLight ? "text-slate-600" : "text-slate-400")}>Total Records</span>
               <p className={cn("mt-1 text-xl font-black", isLight ? "text-[#0274BB]" : "text-white")}>{studentBorrows.length}</p>
             </div>
             <div className={cn(
@@ -178,6 +209,13 @@ export function StudentLibraryCardModal({
             )}>
               <span className={cn("text-[10px] font-bold uppercase tracking-wider", isLight ? "text-emerald-800" : "text-emerald-300")}>Active Loans</span>
               <p className={cn("mt-1 text-xl font-black", isLight ? "text-emerald-800" : "text-emerald-400")}>{activeLoansCount}</p>
+            </div>
+            <div className={cn(
+              "rounded-xl border p-3 text-center",
+              isLight ? "border-2 border-purple-300 bg-purple-50 text-purple-800 shadow-xs" : "border border-purple-500/20 bg-purple-500/10"
+            )}>
+              <span className={cn("text-[10px] font-bold uppercase tracking-wider", isLight ? "text-purple-800" : "text-purple-300")}>Reservations</span>
+              <p className={cn("mt-1 text-xl font-black", isLight ? "text-purple-800" : "text-purple-400")}>{reservationsCount}</p>
             </div>
             <div className={cn(
               "rounded-xl border p-3 text-center",
@@ -222,7 +260,7 @@ export function StudentLibraryCardModal({
                   Course & Section:
                 </div>
                 <div className={cn("flex-1 px-3.5 py-2.5 font-bold", isLight ? "text-[#0274BB]" : "text-white")}>
-                  {student.course || student.department || "BS in Information Technology"}
+                  {formatCourseShortcut(student.course || student.department) || "BSIT"}
                 </div>
               </div>
 
@@ -243,27 +281,96 @@ export function StudentLibraryCardModal({
               </div>
 
               {/* Data / Grid Rows */}
-              {rows.map((row, idx) => (
-                <div
-                  key={row?.id ? `borrow-row-${row.id}-${idx}` : `empty-row-${idx}`}
-                  className={cn(
-                    "flex border-b last:border-b-0 min-h-[30px] items-center transition-colors",
-                    isLight
-                      ? "border-slate-100 hover:bg-blue-50/40 text-slate-800"
-                      : "border-[#24334C] hover:bg-white/[0.02] text-white"
-                  )}
-                >
-                  <div className={cn("w-[36%] px-3.5 py-1.5 border-r font-mono text-[11px]", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300")}>
-                    {row?.requestedAt ? formatBorrowDateTime(row.requestedAt) : ""}
+              {rows.map((row, idx) => {
+                const isReservation = row?.type === "Reservation" || (row as any)?.action === "Reserve";
+                const isReturned = row?.status === "Returned" || (row?.status as string) === "Completed";
+                const isNowAvailable = !!(
+                  row && (
+                    row.available === "true" ||
+                    (row.available as any) === true ||
+                    (row as any).isAvailable === true ||
+                    !!row.availableAt
+                  )
+                );
+
+                let dueReturnText = "";
+                let highlightClass = "";
+
+                if (row) {
+                  if (isReturned) {
+                    dueReturnText = "Returned";
+                    highlightClass = "";
+                  } else if (isReservation) {
+                    dueReturnText = "Reservation";
+                    highlightClass = isLight
+                      ? "bg-purple-100 text-purple-800 font-bold"
+                      : "bg-purple-500/25 text-purple-300 font-bold";
+                  } else {
+                    dueReturnText = row.dueDate ? formatDueDate(row.dueDate) : "7 days";
+                    if (isDueToReturn(row.dueDate)) {
+                      highlightClass = isLight
+                        ? "bg-red-100 text-red-800 font-bold border border-red-300"
+                        : "bg-red-500/25 text-red-300 font-bold border border-red-500/30";
+                    } else {
+                      highlightClass = isLight
+                        ? "bg-emerald-50 text-emerald-700 font-semibold"
+                        : "bg-emerald-500/10 text-emerald-300 font-semibold";
+                    }
+                  }
+                }
+
+                return (
+                  <div
+                    key={row?.id ? `borrow-row-${row.id}-${idx}` : `empty-row-${idx}`}
+                    className={cn(
+                      "flex border-b last:border-b-0 min-h-[30px] items-center transition-colors",
+                      isLight
+                        ? "border-slate-100 hover:bg-blue-50/40 text-slate-800"
+                        : "border-[#24334C] hover:bg-white/[0.02] text-white",
+                      row && !isReturned && isReservation && (
+                        isLight ? "bg-purple-50/30" : "bg-purple-500/[0.03]"
+                      ),
+                      row && !isReturned && !isReservation && isDueToReturn(row.dueDate) && (
+                        isLight ? "bg-red-50/30" : "bg-red-500/[0.04]"
+                      )
+                    )}
+                  >
+                    <div className={cn("w-[36%] px-3.5 py-1.5 border-r font-mono text-[11px]", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300")}>
+                      {row?.requestedAt ? formatBorrowDateTime(row.requestedAt) : ""}
+                    </div>
+                    <div className={cn("w-[26%] px-3.5 py-1.5 border-r font-mono text-[11px] flex items-center justify-center", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300", highlightClass)}>
+                      {dueReturnText}
+                    </div>
+                    <div className={cn("flex-1 px-3.5 py-1.5 font-semibold flex items-center justify-between gap-2", isLight ? "text-slate-900" : "text-white")}>
+                      <span className="line-clamp-2 break-words">{row?.resourceTitle || ""}</span>
+                      {isReservation && !isReturned && (
+                        <span className={cn(
+                          "rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase shrink-0",
+                          isLight ? "bg-purple-100 text-purple-700 border border-purple-300" : "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                        )}>
+                          {isNowAvailable ? "Available" : "Reserved"}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className={cn("w-[26%] px-3.5 py-1.5 border-r font-mono text-[11px]", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300")}>
-                    {row?.dueDate ? formatDueDate(row.dueDate) : ""}
-                  </div>
-                  <div className={cn("flex-1 px-3.5 py-1.5 font-semibold truncate flex items-center justify-between gap-2", isLight ? "text-slate-900" : "text-white")}>
-                    <span className="truncate">{row?.resourceTitle || ""}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+            </div>
+
+            {/* Visual Status Legend */}
+            <div className="flex items-center gap-4 mt-3 px-1 text-[11px] font-medium">
+              <div className="flex items-center gap-1.5">
+                <span className={cn("h-3 w-3 rounded", isLight ? "bg-emerald-200 border border-emerald-400" : "bg-emerald-500/30 border border-emerald-500/50")} />
+                <span className={isLight ? "text-slate-600" : "text-slate-300"}>Borrow (Active)</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={cn("h-3 w-3 rounded", isLight ? "bg-red-200 border border-red-400" : "bg-red-500/30 border border-red-500/50")} />
+                <span className={isLight ? "text-slate-600" : "text-slate-300"}>Due to Return</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={cn("h-3 w-3 rounded", isLight ? "bg-purple-200 border border-purple-400" : "bg-purple-500/30 border border-purple-500/50")} />
+                <span className={isLight ? "text-slate-600" : "text-slate-300"}>Reservation (Queued)</span>
+              </div>
             </div>
           </div>
         </div>

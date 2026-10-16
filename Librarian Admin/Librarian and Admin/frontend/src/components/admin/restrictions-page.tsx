@@ -20,6 +20,13 @@ import {
   Users,
   X,
   ChartColumnBig,
+  Download,
+  Upload,
+  Globe,
+  Smartphone,
+  ScanText,
+  QrCode,
+  PackageCheck,
 } from "lucide-react";
 
 import { AdminModal, AdminPageHeader, AdminSection, AdminStatCard, AdminTable } from "@/components/admin/shared";
@@ -29,21 +36,45 @@ import { useNotice } from "@/components/providers/notice-provider";
 import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
 
-export const LIBRARIAN_MODULES: Array<{
+export type PlatformType = "web" | "mobile";
+
+export interface PermissionModuleDef {
   key: LibrarianPermissionKey;
   label: string;
   shortLabel: string;
-  icon: typeof Home;
+  icon: any;
   path: string;
   description: string;
-}> = [
+  platform: PlatformType;
+}
+
+export const LIBRARIAN_WEB_MODULES: PermissionModuleDef[] = [
   {
     key: "records",
-    label: "Add & Manage Books",
-    shortLabel: "Add & Manage Books",
+    label: "Cataloging",
+    shortLabel: "Cataloging",
     icon: ClipboardList,
     path: "/librarian/records",
     description: "Cataloging, viewing records, adding books, and CSV batch import.",
+    platform: "web",
+  },
+  {
+    key: "export",
+    label: "Export Catalog",
+    shortLabel: "Export",
+    icon: Download,
+    path: "Catalog Export (CSV)",
+    description: "Export book records catalog to CSV and spreadsheet format.",
+    platform: "web",
+  },
+  {
+    key: "import",
+    label: "Import Books",
+    shortLabel: "Import",
+    icon: Upload,
+    path: "CSV Batch Import",
+    description: "Upload and batch import book records catalog via CSV.",
+    platform: "web",
   },
   {
     key: "transactions",
@@ -52,6 +83,7 @@ export const LIBRARIAN_MODULES: Array<{
     icon: Sparkles,
     path: "/librarian/transactions",
     description: "Borrow requests, circulation approvals, return processing, and reservations.",
+    platform: "web",
   },
   {
     key: "reminders",
@@ -60,6 +92,7 @@ export const LIBRARIAN_MODULES: Array<{
     icon: BellRing,
     path: "/librarian/reminders",
     description: "Overdue fines, student violations, warning notices, and return reminders.",
+    platform: "web",
   },
   {
     key: "reports",
@@ -68,6 +101,7 @@ export const LIBRARIAN_MODULES: Array<{
     icon: ChartColumnBig,
     path: "/librarian/reports",
     description: "Monthly circulation metrics, borrowing trends, and department analytics.",
+    platform: "web",
   },
   {
     key: "history",
@@ -76,6 +110,7 @@ export const LIBRARIAN_MODULES: Array<{
     icon: History,
     path: "/librarian/history",
     description: "System history logs, activity trails, and audit records.",
+    platform: "web",
   },
   {
     key: "settings",
@@ -84,10 +119,43 @@ export const LIBRARIAN_MODULES: Array<{
     icon: Settings,
     path: "/librarian/settings",
     description: "System configuration preferences and librarian account settings.",
+    platform: "web",
   },
 ];
 
-const DEFAULT_PERMISSIONS: LibrarianPermissions = {
+export const LIBRARIAN_MOBILE_MODULES: PermissionModuleDef[] = [
+  {
+    key: "mobileCatalog",
+    label: "Paper Catalog Scanner",
+    shortLabel: "Paper Scanner",
+    icon: ScanText,
+    path: "Mobile App / Paper OCR",
+    description: "Camera document OCR scanner to read printed or handwritten book details and register items into catalog.",
+    platform: "mobile",
+  },
+  {
+    key: "mobileStudentPass",
+    label: "Student Information & Return Desk",
+    shortLabel: "Student Information & Return",
+    icon: QrCode,
+    path: "Mobile App / Student Info & Return",
+    description: "Scanning student digital library cards, student information, book return check-ins, reservations queue, and student violations.",
+    platform: "mobile",
+  },
+  {
+    key: "mobilePickup",
+    label: "Pick-Up Verification",
+    shortLabel: "Pick-Up",
+    icon: PackageCheck,
+    path: "Mobile App / Pick-Up Desk",
+    description: "Verifying student circulation pickup receipt slips and executing handed-over book collection.",
+    platform: "mobile",
+  },
+];
+
+export const LIBRARIAN_MODULES = LIBRARIAN_WEB_MODULES;
+
+export const DEFAULT_PERMISSIONS: LibrarianPermissions = {
   home: true,
   records: true,
   transactions: true,
@@ -95,6 +163,16 @@ const DEFAULT_PERMISSIONS: LibrarianPermissions = {
   reports: true,
   history: true,
   settings: true,
+  export: true,
+  import: true,
+  mobileCatalog: true,
+  mobileStudentPass: true,
+  mobileReturns: true,
+  mobilePickup: true,
+  mobileReservations: true,
+  mobileViolations: true,
+  mobileManualEntry: true,
+  mobileGallery: true,
 };
 
 export function RestrictionsPage() {
@@ -102,6 +180,10 @@ export function RestrictionsPage() {
   const { refreshUser } = useSession();
   const { theme } = useTheme();
   const isLight = theme === "light";
+
+  // Active Platform View Toggle: "web" | "mobile"
+  const [activePlatform, setActivePlatform] = useState<PlatformType>("web");
+
   const [librarians, setLibrarians] = useState<LibrarianAccount[]>([]);
   const [localPermissions, setLocalPermissions] = useState<Record<string, LibrarianPermissions>>({});
   const [loading, setLoading] = useState(true);
@@ -109,6 +191,12 @@ export function RestrictionsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLibrarian, setSelectedLibrarian] = useState<LibrarianAccount | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalPlatform, setModalPlatform] = useState<PlatformType>("web");
+
+  // Current active modules based on platform toggle
+  const activeModules = useMemo(() => {
+    return activePlatform === "web" ? LIBRARIAN_WEB_MODULES : LIBRARIAN_MOBILE_MODULES;
+  }, [activePlatform]);
 
   // Load librarians from API
   const loadLibrarians = useCallback(async () => {
@@ -118,7 +206,14 @@ export function RestrictionsPage() {
       const data = await res.json();
       const accounts: LibrarianAccount[] = data.librarians || [];
       const initialMap: Record<string, LibrarianPermissions> = {};
+
       accounts.forEach((acc) => {
+        const studentDeskAllowed =
+          acc.permissions?.mobileStudentPass !== false &&
+          acc.permissions?.mobileReturns !== false &&
+          acc.permissions?.mobileReservations !== false &&
+          acc.permissions?.mobileViolations !== false;
+
         initialMap[acc.id] = {
           home: acc.permissions?.home !== false,
           records: acc.permissions?.records !== false,
@@ -127,6 +222,16 @@ export function RestrictionsPage() {
           reports: acc.permissions?.reports !== false,
           history: acc.permissions?.history !== false,
           settings: acc.permissions?.settings !== false,
+          export: acc.permissions?.export !== false,
+          import: acc.permissions?.import !== false,
+          mobileCatalog: acc.permissions?.mobileCatalog !== false,
+          mobileStudentPass: studentDeskAllowed,
+          mobileReturns: studentDeskAllowed,
+          mobileReservations: studentDeskAllowed,
+          mobileViolations: studentDeskAllowed,
+          mobilePickup: acc.permissions?.mobilePickup !== false,
+          mobileManualEntry: true,
+          mobileGallery: true,
         };
       });
 
@@ -153,34 +258,65 @@ export function RestrictionsPage() {
   const handleTogglePermission = (librarianId: string, key: LibrarianPermissionKey) => {
     setLocalPermissions((prev) => {
       const current = prev[librarianId] || { ...DEFAULT_PERMISSIONS };
+      const nextVal = !current[key];
+      const updated: LibrarianPermissions = {
+        ...current,
+        [key]: nextVal,
+      };
+      if (key === "mobileStudentPass") {
+        updated.mobileReturns = nextVal;
+        updated.mobileReservations = nextVal;
+        updated.mobileViolations = nextVal;
+      }
       return {
         ...prev,
-        [librarianId]: {
-          ...current,
-          [key]: !current[key],
-        },
+        [librarianId]: updated,
       };
     });
   };
 
-  // Bulk set permissions for a librarian
-  const handleSetAllPermissions = (librarianId: string, value: boolean) => {
-    setLocalPermissions((prev) => ({
-      ...prev,
-      [librarianId]: {
-        home: value,
-        records: value,
-        transactions: value,
-        reminders: value,
-        reports: value,
-        history: value,
-        settings: value,
-      },
-    }));
+  // Bulk set permissions for a librarian (platform specific or all)
+  const handleSetAllPermissions = (
+    librarianId: string,
+    value: boolean,
+    targetPlatform: PlatformType | "all" = "all"
+  ) => {
+    setLocalPermissions((prev) => {
+      const current = prev[librarianId] || { ...DEFAULT_PERMISSIONS };
+      const updated = { ...current };
+
+      if (targetPlatform === "web" || targetPlatform === "all") {
+        LIBRARIAN_WEB_MODULES.forEach((m) => {
+          updated[m.key] = value;
+        });
+      }
+
+      if (targetPlatform === "mobile" || targetPlatform === "all") {
+        LIBRARIAN_MOBILE_MODULES.forEach((m) => {
+          updated[m.key] = value;
+        });
+        updated.mobileReturns = value;
+        updated.mobileReservations = value;
+        updated.mobileViolations = value;
+        updated.mobileManualEntry = true;
+        updated.mobileGallery = true;
+      }
+
+      return {
+        ...prev,
+        [librarianId]: updated,
+      };
+    });
   };
 
   // Reset librarian permissions to saved state
   const handleResetPermissions = (librarian: LibrarianAccount) => {
+    const studentDeskAllowed =
+      librarian.permissions?.mobileStudentPass !== false &&
+      librarian.permissions?.mobileReturns !== false &&
+      librarian.permissions?.mobileReservations !== false &&
+      librarian.permissions?.mobileViolations !== false;
+
     setLocalPermissions((prev) => ({
       ...prev,
       [librarian.id]: {
@@ -191,6 +327,16 @@ export function RestrictionsPage() {
         reports: librarian.permissions?.reports !== false,
         history: librarian.permissions?.history !== false,
         settings: librarian.permissions?.settings !== false,
+        export: librarian.permissions?.export !== false,
+        import: librarian.permissions?.import !== false,
+        mobileCatalog: librarian.permissions?.mobileCatalog !== false,
+        mobileStudentPass: studentDeskAllowed,
+        mobileReturns: studentDeskAllowed,
+        mobileReservations: studentDeskAllowed,
+        mobileViolations: studentDeskAllowed,
+        mobilePickup: librarian.permissions?.mobilePickup !== false,
+        mobileManualEntry: true,
+        mobileGallery: true,
       },
     }));
   };
@@ -223,7 +369,8 @@ export function RestrictionsPage() {
         )
       );
 
-      const restrictedCount = Object.values(perms).filter((v) => !v).length;
+      const allModules = [...LIBRARIAN_WEB_MODULES, ...LIBRARIAN_MOBILE_MODULES];
+      const restrictedCount = allModules.filter((m) => perms[m.key] === false).length;
       notify(
         restrictedCount > 0
           ? `${librarian.name}: ${restrictedCount} function(s) restricted.`
@@ -254,7 +401,7 @@ export function RestrictionsPage() {
     });
   }, [librarians, searchQuery]);
 
-  // Statistics
+  // Statistics tailored to the selected platform
   const stats = useMemo(() => {
     const total = librarians.length;
     let fullyActive = 0;
@@ -263,7 +410,7 @@ export function RestrictionsPage() {
 
     librarians.forEach((acc) => {
       const perms = localPermissions[acc.id] || acc.permissions || DEFAULT_PERMISSIONS;
-      const restricted = LIBRARIAN_MODULES.filter((m) => perms[m.key] === false).length;
+      const restricted = activeModules.filter((m) => perms[m.key] === false).length;
       totalRestrictedFunctions += restricted;
       if (restricted === 0) {
         fullyActive += 1;
@@ -273,15 +420,16 @@ export function RestrictionsPage() {
     });
 
     return { total, fullyActive, restrictedAccounts, totalRestrictedFunctions };
-  }, [librarians, localPermissions]);
+  }, [librarians, localPermissions, activeModules]);
 
-  // Check if a librarian has unsaved changes
+  // Check if a librarian has unsaved changes across any platform
   const isDirty = (librarianId: string) => {
     const current = localPermissions[librarianId];
     const original = librarians.find((l) => l.id === librarianId)?.permissions;
     if (!current || !original) return false;
 
-    return LIBRARIAN_MODULES.some(
+    const allModules = [...LIBRARIAN_WEB_MODULES, ...LIBRARIAN_MOBILE_MODULES];
+    return allModules.some(
       (m) => (current[m.key] ?? true) !== (original[m.key] ?? true)
     );
   };
@@ -292,7 +440,7 @@ export function RestrictionsPage() {
       <AdminPageHeader
         eyebrow="SYSTEM GOVERNANCE / ACCESS CONTROL"
         title="Librarian Function Restrictions"
-        description="Configure feature and page access per librarian account. If a function is unchecked, that function and page will completely disappear from the librarian's navigation and interface."
+        description="Configure feature and module access per librarian account across Web and Mobile platforms. If a function is unchecked, that function is completely hidden and locked for the librarian."
         actions={
           <div className="flex items-center gap-3">
             <button
@@ -315,23 +463,27 @@ export function RestrictionsPage() {
         }
       />
 
-      {/* Overview Stats */}
+      {/* Overview Stats (Reflects Active Platform) */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <AdminStatCard label="Total Librarian Accounts" value={stats.total} tone="default" />
-        <AdminStatCard label="Full Access Accounts" value={stats.fullyActive} tone="success" />
         <AdminStatCard
-          label="Restricted Accounts"
+          label={activePlatform === "web" ? "Full Access (Web)" : "Full Access (Mobile)"}
+          value={stats.fullyActive}
+          tone="success"
+        />
+        <AdminStatCard
+          label={activePlatform === "web" ? "Restricted Accounts (Web)" : "Restricted Accounts (Mobile)"}
           value={stats.restrictedAccounts}
           tone={stats.restrictedAccounts > 0 ? "warning" : "default"}
         />
         <AdminStatCard
-          label="Active Restrictions"
+          label={activePlatform === "web" ? "Active Web Restrictions" : "Active Mobile Restrictions"}
           value={stats.totalRestrictedFunctions}
           tone={stats.totalRestrictedFunctions > 0 ? "danger" : "default"}
         />
       </div>
 
-      {/* Guidance Banner */}
+      {/* Guidance Banner (Dynamic Context for Web vs Mobile) */}
       <div
         className={cn(
           "flex items-start gap-4 rounded-2xl p-5 shadow-sm transition-all",
@@ -348,15 +500,45 @@ export function RestrictionsPage() {
               : "bg-[#FCD400]/20 text-[#FCD400]"
           )}
         >
-          <ShieldCheck className="h-5 w-5" />
+          {activePlatform === "web" ? (
+            <Globe className="h-5 w-5" />
+          ) : (
+            <Smartphone className="h-5 w-5" />
+          )}
         </div>
         <div className="text-sm">
-          <p className={cn("font-bold", isLight ? "text-amber-900" : "text-[#FCD400]")}>
-            How Restrictions Work
-          </p>
+          <div className="flex items-center gap-2">
+            <p className={cn("font-bold", isLight ? "text-amber-900" : "text-[#FCD400]")}>
+              How {activePlatform === "web" ? "Web System" : "Librarian Mobile"} Restrictions Work
+            </p>
+            <span
+              className={cn(
+                "rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider",
+                activePlatform === "web"
+                  ? isLight
+                    ? "bg-[#0274BB]/15 text-[#0274BB]"
+                    : "bg-[#0274BB]/30 text-sky-300"
+                  : isLight
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-emerald-500/20 text-emerald-300"
+              )}
+            >
+              {activePlatform === "web" ? "Web System Mode" : "Librarian Mobile Mode"}
+            </span>
+          </div>
+
           <p className={cn("mt-1", isLight ? "text-slate-600" : "text-slate-300")}>
-            Checking a box <span className={cn("font-semibold", isLight ? "text-emerald-700" : "text-emerald-400")}>grants access</span> to that function.
-            Unchecking a box <span className={cn("font-semibold", isLight ? "text-amber-700" : "text-amber-400")}>hides and restricts</span> the function: the navigation link disappears from the librarian&apos;s sidebar, its dashboard quick action cards disappear, and direct URL navigation is blocked.
+            {activePlatform === "web" ? (
+              <>
+                Checking a box <span className={cn("font-semibold", isLight ? "text-emerald-700" : "text-emerald-400")}>grants access</span> to that function.
+                Unchecking a box <span className={cn("font-semibold", isLight ? "text-amber-700" : "text-amber-400")}>hides and restricts</span> the function: the navigation link disappears from the librarian&apos;s sidebar, its dashboard quick action cards disappear, and direct URL navigation is blocked.
+              </>
+            ) : (
+              <>
+                Checking a box <span className={cn("font-semibold", isLight ? "text-emerald-700" : "text-emerald-400")}>enables mobile tool access</span>.
+                Unchecking a box <span className={cn("font-semibold", isLight ? "text-amber-700" : "text-amber-400")}>locks and restricts</span> that feature in the Librarian Mobile App: camera OCR book cataloging, student information & returns desk (including reservation queues and student violations), or physical pick-up verification will be disabled for that librarian.
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -364,26 +546,108 @@ export function RestrictionsPage() {
       {/* Main Restrictions Management Section */}
       <AdminSection
         title="Librarian Accounts & Permissions"
-        description="Toggle checkboxes to show or hide functions for each librarian."
+        description={`Toggle checkboxes to grant or restrict ${activePlatform === "web" ? "web portal" : "mobile app"} functions for each librarian.`}
         action={
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* PLATFORM SWITCHER TOGGLE: Web vs Mobile */}
+            <div
+              className={cn(
+                "flex items-center rounded-xl p-1 shadow-xs transition-colors",
+                isLight ? "bg-slate-100 border border-slate-200" : "bg-[#0F1D29]/90 border border-white/10"
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => setActivePlatform("web")}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all duration-150 active:scale-95",
+                  activePlatform === "web"
+                    ? isLight
+                      ? "bg-[#0274BB] !text-white shadow-xs"
+                      : "bg-[#FCD400] text-slate-950 shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:text-slate-900"
+                      : "text-slate-400 hover:text-white"
+                )}
+                style={activePlatform === "web" && isLight ? { color: "#ffffff" } : undefined}
+              >
+                <Globe className={cn("h-3.5 w-3.5", activePlatform === "web" && isLight && "!text-white stroke-white")} />
+                <span className={cn(activePlatform === "web" && isLight && "!text-white")} style={activePlatform === "web" && isLight ? { color: "#ffffff" } : undefined}>
+                  Web Portal
+                </span>
+                <span
+                  className={cn(
+                    "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold",
+                    activePlatform === "web"
+                      ? isLight
+                        ? "bg-white/25 !text-white"
+                        : "bg-black/15 text-slate-950"
+                      : isLight
+                        ? "bg-slate-200 text-slate-600"
+                        : "bg-white/10 text-slate-400"
+                  )}
+                  style={activePlatform === "web" && isLight ? { color: "#ffffff" } : undefined}
+                >
+                  {LIBRARIAN_WEB_MODULES.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActivePlatform("mobile")}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all duration-150 active:scale-95",
+                  activePlatform === "mobile"
+                    ? isLight
+                      ? "bg-[#0274BB] !text-white shadow-xs"
+                      : "bg-[#FCD400] text-slate-950 shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:text-slate-900"
+                      : "text-slate-400 hover:text-white"
+                )}
+                style={activePlatform === "mobile" && isLight ? { color: "#ffffff" } : undefined}
+              >
+                <Smartphone className={cn("h-3.5 w-3.5", activePlatform === "mobile" && isLight && "!text-white stroke-white")} />
+                <span className={cn(activePlatform === "mobile" && isLight && "!text-white")} style={activePlatform === "mobile" && isLight ? { color: "#ffffff" } : undefined}>
+                  Librarian Mobile
+                </span>
+                <span
+                  className={cn(
+                    "ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-extrabold",
+                    activePlatform === "mobile"
+                      ? isLight
+                        ? "bg-white/25 !text-white"
+                        : "bg-black/15 text-slate-950"
+                      : isLight
+                        ? "bg-slate-200 text-slate-600"
+                        : "bg-white/10 text-slate-400"
+                  )}
+                  style={activePlatform === "mobile" && isLight ? { color: "#ffffff" } : undefined}
+                >
+                  {LIBRARIAN_MOBILE_MODULES.length}
+                </span>
+              </button>
+            </div>
+
             {/* Search Input */}
-            <div className="relative w-full sm:w-80">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search librarian by name, ID, or email..."
+                placeholder="Search librarian by name, ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={cn(
-                  "w-full rounded-xl py-2 pl-9 pr-8 text-sm outline-none transition-all",
+                  "w-full rounded-xl !py-2 !pl-11 !pr-9 text-sm outline-none transition-all",
                   isLight
                     ? "border border-slate-200 bg-white text-slate-800 placeholder-slate-400 shadow-xs focus:border-[#0274BB] focus:ring-1 focus:ring-[#0274BB]/30"
                     : "border border-white/10 bg-[#0F1D29]/80 text-slate-100 placeholder-slate-400 focus:border-[#FCD400]/60 focus:ring-1 focus:ring-[#FCD400]/40"
                 )}
+                style={{ paddingLeft: "2.75rem", paddingRight: "2.25rem" }}
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery("")}
                   className={cn(
                     "absolute right-2.5 top-1/2 -translate-y-1/2 transition-colors",
@@ -400,7 +664,9 @@ export function RestrictionsPage() {
         {loading ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-slate-400">
             <RefreshCw className={cn("h-8 w-8 animate-spin", isLight ? "text-[#0274BB]" : "text-[#FCD400]")} />
-            <p className={cn("text-sm font-medium", isLight ? "text-slate-600" : "text-slate-400")}>Loading librarian accounts...</p>
+            <p className={cn("text-sm font-medium", isLight ? "text-slate-600" : "text-slate-400")}>
+              Loading librarian accounts...
+            </p>
           </div>
         ) : filteredLibrarians.length === 0 ? (
           <div
@@ -426,17 +692,19 @@ export function RestrictionsPage() {
             <AdminTable>
               <table className={cn("min-w-full divide-y text-left text-sm", isLight ? "divide-slate-200" : "divide-white/10")}>
                 <thead>
-                  <tr className={cn(
-                    "text-xs font-semibold uppercase tracking-wider",
-                    isLight
-                      ? "border-b border-slate-200 bg-slate-50 text-slate-700"
-                      : "bg-[#152E47]/50 text-slate-300"
-                  )}>
+                  <tr
+                    className={cn(
+                      "text-xs font-semibold uppercase tracking-wider",
+                      isLight
+                        ? "border-b border-slate-200 bg-slate-50 text-slate-700"
+                        : "bg-[#152E47]/50 text-slate-300"
+                    )}
+                  >
                     <th className="px-5 py-4 min-w-[220px]">Librarian Account</th>
-                    {LIBRARIAN_MODULES.map((mod) => {
+                    {activeModules.map((mod) => {
                       const Icon = mod.icon;
                       return (
-                        <th key={mod.key} className="px-2 py-4 text-center min-w-[120px]" title={mod.description}>
+                        <th key={mod.key} className="px-2 py-4 text-center min-w-[115px]" title={mod.description}>
                           <div className="flex flex-col items-center gap-1.5">
                             <Icon className={cn("h-4 w-4", isLight ? "text-[#0274BB]" : "text-[#FCD400]")} />
                             <span className="text-[10px] font-bold uppercase tracking-wider text-center leading-tight">
@@ -455,23 +723,26 @@ export function RestrictionsPage() {
                     const perms = localPermissions[librarian.id] || DEFAULT_PERMISSIONS;
                     const dirty = isDirty(librarian.id);
                     const isSaving = savingId === librarian.id;
-                    const activeCount = LIBRARIAN_MODULES.filter((m) => perms[m.key] !== false).length;
-                    const totalCount = LIBRARIAN_MODULES.length;
+                    const activeCount = activeModules.filter((m) => perms[m.key] !== false).length;
+                    const totalCount = activeModules.length;
                     const isFullAccess = activeCount === totalCount;
+                    const isSelectedRow = dirty || selectedLibrarian?.id === librarian.id;
 
                     return (
                       <tr
                         key={librarian.id}
                         className={cn(
-                          "transition-colors",
+                          "transition-all duration-150",
+                          isSelectedRow && (isLight ? "row-selected-dirty" : "row-selected-dirty-dark"),
                           isLight
-                            ? dirty
-                              ? "bg-amber-50/60 hover:bg-amber-50"
-                              : "hover:bg-slate-50/80"
-                            : dirty
-                              ? "bg-[#FCD400]/5 hover:bg-slate-800/30"
+                            ? isSelectedRow
+                              ? "bg-white"
+                              : "bg-white hover:bg-slate-50/80"
+                            : isSelectedRow
+                              ? "bg-slate-800/40"
                               : "hover:bg-slate-800/30"
                         )}
+                        style={isSelectedRow && isLight ? { outline: "2px solid #000000", outlineOffset: "-2px", backgroundColor: "#ffffff" } : undefined}
                       >
                         {/* Account Info */}
                         <td className="px-5 py-4">
@@ -517,8 +788,8 @@ export function RestrictionsPage() {
                           </div>
                         </td>
 
-                        {/* Checkbox columns for all 7 functions */}
-                        {LIBRARIAN_MODULES.map((mod) => {
+                        {/* Checkbox columns for the active platform */}
+                        {activeModules.map((mod) => {
                           const checked = perms[mod.key] ?? true;
                           return (
                             <td key={mod.key} className="px-3 py-4 text-center">
@@ -610,6 +881,7 @@ export function RestrictionsPage() {
                               type="button"
                               onClick={() => {
                                 setSelectedLibrarian(librarian);
+                                setModalPlatform(activePlatform);
                                 setModalOpen(true);
                               }}
                               className={cn(
@@ -650,20 +922,23 @@ export function RestrictionsPage() {
                                 "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all shadow-sm",
                                 dirty
                                   ? isLight
-                                    ? "border border-[#0274BB] bg-[#0274BB] text-white hover:bg-[#02609c] active:scale-95 shadow-sm"
+                                    ? "btn-save-active border border-[#0274BB] bg-[#0274BB] !text-white hover:bg-[#02609c] active:scale-95 shadow-sm"
                                     : "border border-[#FCD400] bg-[#FCD400] text-slate-950 hover:bg-[#ffe14d] active:scale-95 shadow-[0_0_15px_rgba(252,212,0,0.3)]"
                                   : isLight
                                     ? "border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed opacity-60"
                                     : "border border-white/10 bg-white/5 text-slate-500 cursor-not-allowed opacity-50"
                               )}
+                              style={dirty && isLight ? { color: "#ffffff" } : undefined}
                               title={dirty ? "Save Permissions" : "All changes saved"}
                             >
                               {isSaving ? (
-                                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                <RefreshCw className={cn("h-3.5 w-3.5 animate-spin", dirty && isLight && "!text-white stroke-white")} />
                               ) : (
-                                <Save className="h-3.5 w-3.5" />
+                                <Save className={cn("h-3.5 w-3.5", dirty && isLight && "!text-white stroke-white")} />
                               )}
-                              <span>{isSaving ? "Saving..." : dirty ? "Save" : "Saved"}</span>
+                              <span className={cn(dirty && isLight && "!text-white")} style={dirty && isLight ? { color: "#ffffff" } : undefined}>
+                                {isSaving ? "Saving..." : dirty ? "Save" : "Saved"}
+                              </span>
                             </button>
                           </div>
                         </td>
@@ -677,19 +952,19 @@ export function RestrictionsPage() {
         )}
       </AdminSection>
 
-      {/* Detailed Configuration Modal */}
+      {/* Detailed Configuration Modal (Supports Web & Mobile Inspection) */}
       {selectedLibrarian && (
         <AdminModal
           open={modalOpen}
           onClose={() => setModalOpen(false)}
           title={`Configure Permissions: ${selectedLibrarian.name}`}
-          description={`Fine-tune individual permissions and function visibility for ${selectedLibrarian.name}.`}
+          description={`Fine-tune individual permissions and function visibility across Web Portal and Mobile App for ${selectedLibrarian.name}.`}
         >
           <div className="space-y-6">
             {/* Account Card */}
             <div
               className={cn(
-                "flex items-center justify-between rounded-xl border p-4",
+                "flex flex-wrap items-center justify-between gap-3 rounded-xl border p-4",
                 isLight ? "border-slate-200 bg-slate-50" : "border-white/10 bg-[#0F1D29]"
               )}
             >
@@ -711,10 +986,11 @@ export function RestrictionsPage() {
                   </p>
                 </div>
               </div>
+
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleSetAllPermissions(selectedLibrarian.id, true)}
+                  onClick={() => handleSetAllPermissions(selectedLibrarian.id, true, modalPlatform)}
                   className={cn(
                     "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
                     isLight
@@ -722,11 +998,11 @@ export function RestrictionsPage() {
                       : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
                   )}
                 >
-                  Allow All
+                  Allow All ({modalPlatform === "web" ? "Web" : "Mobile"})
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSetAllPermissions(selectedLibrarian.id, false)}
+                  onClick={() => handleSetAllPermissions(selectedLibrarian.id, false, modalPlatform)}
                   className={cn(
                     "rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors",
                     isLight
@@ -734,14 +1010,59 @@ export function RestrictionsPage() {
                       : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
                   )}
                 >
-                  Restrict All
+                  Restrict All ({modalPlatform === "web" ? "Web" : "Mobile"})
                 </button>
               </div>
             </div>
 
-            {/* Modules List with Checkboxes */}
-            <div className="space-y-3">
-              {LIBRARIAN_MODULES.map((mod) => {
+            {/* Modal Platform Switcher */}
+            <div className="flex items-center gap-2 border-b border-slate-200 pb-3 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setModalPlatform("web")}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all",
+                  modalPlatform === "web"
+                    ? isLight
+                      ? "bg-[#0274BB] !text-white shadow-xs"
+                      : "bg-[#FCD400] text-slate-950 shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100"
+                      : "text-slate-400 hover:bg-white/5"
+                )}
+                style={modalPlatform === "web" && isLight ? { color: "#ffffff" } : undefined}
+              >
+                <Globe className={cn("h-4 w-4", modalPlatform === "web" && isLight && "!text-white stroke-white")} />
+                <span style={modalPlatform === "web" && isLight ? { color: "#ffffff" } : undefined}>
+                  Web System Functions ({LIBRARIAN_WEB_MODULES.length})
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setModalPlatform("mobile")}
+                className={cn(
+                  "flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all",
+                  modalPlatform === "mobile"
+                    ? isLight
+                      ? "bg-[#0274BB] !text-white shadow-xs"
+                      : "bg-[#FCD400] text-slate-950 shadow-xs"
+                    : isLight
+                      ? "text-slate-600 hover:bg-slate-100"
+                      : "text-slate-400 hover:bg-white/5"
+                )}
+                style={modalPlatform === "mobile" && isLight ? { color: "#ffffff" } : undefined}
+              >
+                <Smartphone className={cn("h-4 w-4", modalPlatform === "mobile" && isLight && "!text-white stroke-white")} />
+                <span style={modalPlatform === "mobile" && isLight ? { color: "#ffffff" } : undefined}>
+                  Librarian Mobile Functions ({LIBRARIAN_MOBILE_MODULES.length})
+                </span>
+              </button>
+            </div>
+
+            {/* Modules List with Checkboxes for Modal Platform */}
+            <div className="max-h-[50vh] space-y-3 overflow-y-auto pr-1">
+              {(modalPlatform === "web" ? LIBRARIAN_WEB_MODULES : LIBRARIAN_MOBILE_MODULES).map((mod) => {
                 const Icon = mod.icon;
                 const perms = localPermissions[selectedLibrarian.id] || DEFAULT_PERMISSIONS;
                 const checked = perms[mod.key] ?? true;
@@ -846,14 +1167,17 @@ export function RestrictionsPage() {
                 }}
                 disabled={savingId === selectedLibrarian.id}
                 className={cn(
-                  "flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-bold shadow-lg transition-all active:scale-95",
+                  "btn-save-active flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-bold shadow-lg transition-all active:scale-95",
                   isLight
-                    ? "bg-[#0274BB] text-white hover:bg-[#02609c]"
+                    ? "bg-[#0274BB] !text-white hover:bg-[#02609c]"
                     : "bg-[#FCD400] text-slate-950 hover:bg-[#ffe14d]"
                 )}
+                style={isLight ? { color: "#ffffff" } : undefined}
               >
-                <Save className="h-4 w-4" />
-                <span>Save Permissions</span>
+                <Save className={cn("h-4 w-4", isLight && "!text-white stroke-white")} />
+                <span className={cn(isLight && "!text-white")} style={isLight ? { color: "#ffffff" } : undefined}>
+                  Save Permissions
+                </span>
               </button>
             </div>
           </div>

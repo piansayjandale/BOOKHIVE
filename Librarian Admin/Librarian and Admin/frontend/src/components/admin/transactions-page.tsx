@@ -19,20 +19,22 @@ import { useTheme } from "@/components/providers/theme-provider";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminTransactionsPayload } from "@/lib/admin/types";
 import type { TransactionRecord, TransactionStatus } from "@/lib/types";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, formatCourseShortcut, isDueToReturn, isDateOverdue } from "@/lib/utils";
 import { StudentLibraryCardModal } from "@/components/modals/student-library-card-modal";
+import { BookDetailModal, type BookDetailPayload } from "@/components/ui/book-detail-modal";
 
 /* ── Constants ───────────────────────────────────────────────────────────── */
 
 type TransactionTab = "borrow" | "returns" | "reservations" | "history";
 
 const STATUS_STYLE: Record<string, string> = {
-  Pending:  "bg-amber-500/15 text-amber-300 border-amber-500/30",
-  Approved: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  Borrow:   "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  Borrowed: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  Declined: "bg-red-500/15 text-red-300 border-red-500/30",
-  Returned: "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  Pending:     "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  Approved:    "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Borrow:      "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Borrowed:    "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  Reservation: "bg-purple-500/15 text-purple-300 border-purple-500/30",
+  Declined:    "bg-red-500/15 text-red-300 border-red-500/30",
+  Returned:    "bg-sky-500/15 text-sky-300 border-sky-500/30",
 };
 
 const TABS: Array<{ value: TransactionTab; label: string }> = [
@@ -44,22 +46,49 @@ const TABS: Array<{ value: TransactionTab; label: string }> = [
 
 /* ── Sub-components ──────────────────────────────────────────────────────── */
 
-function StatusBadge({ status, isLight }: { status: string; isLight?: boolean }) {
+function StatusBadge({
+  status,
+  isLight,
+  dueDate,
+}: {
+  status: string;
+  isLight?: boolean;
+  dueDate?: string | null;
+}) {
+  const isDue = Boolean(dueDate && isDueToReturn(dueDate));
+  const isOverdue = Boolean(dueDate && isDateOverdue(dueDate));
+
+  if (isDue && (status === "Approved" || status === "Borrow" || status === "Borrowed")) {
+    return (
+      <span
+        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs sm:text-[13px] font-bold tracking-wide ${
+          isLight
+            ? "border-red-500/30 bg-red-500/15 text-red-700"
+            : "border-red-500/30 bg-red-500/15 text-red-300"
+        }`}
+      >
+        <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse" />
+        {isOverdue ? "Borrowed (Overdue)" : "Borrowed (Due to Return)"}
+      </span>
+    );
+  }
+
   const lightStyles: Record<string, string> = {
-    Pending:  "bg-amber-50 text-amber-700 border-amber-200",
-    Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Borrow:   "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Borrowed: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    Declined: "bg-red-50 text-red-700 border-red-200",
-    Returned: "bg-sky-50 text-sky-700 border-sky-200",
+    Pending:     "bg-amber-50 text-amber-700 border-amber-200",
+    Approved:    "bg-emerald-50 text-emerald-700 border-emerald-200",
+    Borrow:      "bg-emerald-50 text-emerald-700 border-emerald-200",
+    Borrowed:    "bg-emerald-50 text-emerald-700 border-emerald-200",
+    Reservation: "bg-purple-50 text-purple-700 border-purple-200",
+    Declined:    "bg-red-50 text-red-700 border-red-200",
+    Returned:    "bg-sky-50 text-sky-700 border-sky-200",
   };
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs sm:text-[13px] font-bold tracking-wide ${
         isLight
-          ? lightStyles[status] ?? "text-slate-600 border-slate-200 bg-slate-100"
-          : STATUS_STYLE[status] ?? "text-slate-400 border-white/10 bg-white/5"
+          ? lightStyles[status] ?? "text-slate-700 border-slate-300 bg-slate-100"
+          : STATUS_STYLE[status] ?? "text-slate-300 border-white/10 bg-white/5"
       }`}
     >
       {status}
@@ -83,6 +112,61 @@ export function TransactionsPage() {
     course?: string;
     qrCode?: string;
   } | null>(null);
+
+  const [selectedBookForModal, setSelectedBookForModal] = useState<BookDetailPayload | null>(null);
+
+  const handleOpenBookModal = async (txn: TransactionRecord) => {
+    const initialPayload: BookDetailPayload = {
+      id: (txn as any).bookId || txn.id,
+      title: txn.resourceTitle || "Book",
+      author: (txn as any).author || "Library Catalog",
+      isbn: txn.isbn || "",
+      department: (txn as any).department || "Circulation",
+      availability: txn.status === "Approved" ? "Unavailable" : "Available",
+      copies: 1,
+    };
+    setSelectedBookForModal(initialPayload);
+
+    try {
+      const searchTerm = txn.isbn || txn.resourceTitle;
+      if (searchTerm) {
+        const res = await fetch(`/api/records?search=${encodeURIComponent(searchTerm)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const books = Array.isArray(data.books) ? data.books : [];
+          const clean = (s?: string) => (s ? String(s).replace(/[-\s]/g, "").toLowerCase().trim() : "");
+          const found = books.find((b: any) => 
+            (txn.isbn && b.isbn && clean(b.isbn) === clean(txn.isbn)) ||
+            (b.title && b.title.toLowerCase().trim() === txn.resourceTitle?.toLowerCase().trim())
+          ) || books[0];
+
+          if (found) {
+            setSelectedBookForModal({
+              id: found.id || initialPayload.id,
+              title: found.title || initialPayload.title,
+              author: found.author || initialPayload.author,
+              isbn: found.isbn || initialPayload.isbn,
+              department: found.department || initialPayload.department,
+              shelfLocation: found.shelfLocation || found.shelf,
+              callNumber: found.callNumber || found.shelfLocation,
+              genres: found.genres,
+              category: found.category,
+              availability: found.availability || initialPayload.availability,
+              publicationDate: found.publishedDate || found.publicationDate,
+              publishedDate: found.publishedDate,
+              volume: found.volume,
+              edition: found.edition,
+              summary: found.summary,
+              copies: found.copies || 1,
+              accessionNumber: found.accessionNumber,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch full book details for modal:", err);
+    }
+  };
 
   async function loadTransactions() {
     try {
@@ -154,6 +238,14 @@ export function TransactionsPage() {
   useEffect(() => { void loadTransactions(); }, []);
 
   async function updateStatus(id: string, status: TransactionStatus) {
+    if (status === "Approved" || status === "Declined") {
+      const confirmMessage = status === "Approved"
+        ? "Are you sure to approve this?"
+        : "Are you sure to decline this?";
+      if (typeof window !== "undefined" && !window.confirm(confirmMessage)) {
+        return;
+      }
+    }
     try {
       await requestJson(`/api/admin/transactions/${id}`, {
         method: "PATCH",
@@ -323,7 +415,7 @@ export function TransactionsPage() {
           ? "border-slate-200 bg-white shadow-xs"
           : "border-white/8 bg-[#0F1D29]/80 backdrop-blur"
       )}>
-        <div className="overflow-auto h-full">
+        <div className="overflow-auto min-h-[560px]">
           <table className="min-w-full text-sm">
             <thead>
               <tr className={cn(
@@ -332,15 +424,23 @@ export function TransactionsPage() {
                   ? "border-slate-200 bg-slate-50"
                   : "border-white/8 bg-[#152E47]/60"
               )}>
-                {["Student", "Resource", "Type", "Status", "Requested", "Actions"].map((h) => (
+                {[
+                  { label: "Student", minW: "min-w-[200px]" },
+                  { label: "Resource", minW: "min-w-[240px]" },
+                  { label: "Type", minW: "min-w-[95px]" },
+                  { label: "Status", minW: "min-w-[120px]" },
+                  { label: "Requested", minW: "min-w-[140px]" },
+                  { label: "Actions", minW: "min-w-[110px]" },
+                ].map((col) => (
                   <th
-                    key={h}
+                    key={col.label}
                     className={cn(
-                      "px-5 py-3.5 text-left text-[11px] font-bold tracking-[0.15em] uppercase whitespace-nowrap",
-                      isLight ? "text-slate-600" : "text-slate-400"
+                      "px-5 py-4 text-left text-xs sm:text-[13px] font-extrabold tracking-[0.14em] uppercase whitespace-nowrap",
+                      col.minW,
+                      isLight ? "text-slate-700" : "text-slate-300"
                     )}
                   >
-                    {h}
+                    {col.label}
                   </th>
                 ))}
               </tr>
@@ -356,7 +456,7 @@ export function TransactionsPage() {
                       : "border-white/5 hover:bg-white/[0.03]"
                   )}
                 >
-                  <td className="px-5 py-3.5 max-w-[200px]">
+                  <td className="px-5 py-3.5 align-middle min-w-[200px]">
                     <button
                       type="button"
                       onClick={() =>
@@ -364,63 +464,101 @@ export function TransactionsPage() {
                           name: item.studentName,
                           studentId: item.studentId,
                           department: (item as any).department,
-                          course: (item as any).course || (item as any).department || "General Program",
+                          course: (item as any).course || (item as any).department || "BSIT",
                           qrCode: (item as any).qrCode || `e1a1-${item.studentId || "default"}`,
                         })
                       }
                       className={cn(
-                        "group text-left block w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 focus:outline-none cursor-pointer",
+                        "table-stack-btn group text-left flex !flex flex-col !flex-col items-start !items-start justify-start w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 focus:outline-none cursor-pointer",
                         isLight
-                          ? "hover:bg-sky-50 hover:border hover:border-sky-200 focus:ring-1 focus:ring-[#0274BB]"
+                          ? "hover:bg-blue-50/80 focus:ring-1 focus:ring-[#0274BB]"
                           : "hover:bg-[#FCD400]/10 hover:border hover:border-[#FCD400]/30 focus:ring-1 focus:ring-[#FCD400]"
                       )}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", textAlign: "left" }}
                       title={`Click to view Library Card for ${item.studentName}`}
                     >
                       <div className={cn(
-                        "font-semibold leading-snug line-clamp-1 transition-colors flex items-center gap-1",
+                        "text-[15px] sm:text-base font-bold leading-snug transition-colors flex items-center gap-1.5 w-full text-left",
                         isLight
                           ? "text-slate-900 group-hover:text-[#0274BB]"
                           : "text-white group-hover:text-[#FCD400]"
                       )}>
-                        <span>{item.studentName}</span>
+                        <span className="whitespace-nowrap font-bold text-left">{item.studentName || "Student"}</span>
                         <span className={cn(
-                          "text-[9px] opacity-0 group-hover:opacity-100 transition-opacity font-bold",
+                          "text-[11px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity font-bold",
                           isLight ? "text-[#0274BB]" : "text-[#FCD400]"
                         )}>
                           ↗
                         </span>
                       </div>
-                      <div className={cn(
-                        "text-xs mt-0.5 font-mono",
-                        isLight ? "text-slate-500 group-hover:text-slate-700" : "text-slate-400 group-hover:text-slate-200"
-                      )}>
-                        {item.studentId}
+                      <div className="flex items-center gap-2 mt-1 w-full text-left">
+                        <span className={cn(
+                          "text-xs sm:text-sm font-semibold font-mono tracking-tight shrink-0",
+                          isLight ? "text-slate-600 group-hover:text-slate-800" : "text-slate-300 group-hover:text-white"
+                        )}>
+                          {item.studentId}
+                        </span>
+                        {((item as any).department || (item as any).course) ? (
+                          <span className={cn(
+                            "inline-flex items-center rounded-md px-2 py-0.5 text-[11px] sm:text-xs font-black tracking-wide uppercase shrink-0 shadow-2xs",
+                            isLight
+                              ? "bg-blue-50 text-[#0274BB] border border-blue-200/90"
+                              : "bg-white/10 text-[#FCD400] border border-white/10"
+                          )}>
+                            {formatCourseShortcut((item as any).department || (item as any).course)}
+                          </span>
+                        ) : null}
                       </div>
                     </button>
                   </td>
-                  <td className="px-5 py-3.5 max-w-[260px]">
-                    <div className={cn("font-semibold leading-snug line-clamp-1", isLight ? "text-slate-900" : "text-white")}>
-                      {item.resourceTitle}
-                    </div>
-                    {item.isbn && (
-                      <div className={cn("text-xs mt-0.5 font-mono", isLight ? "text-slate-500" : "text-slate-500")}>
-                        {item.isbn}
+                  <td className="px-5 py-3.5 align-middle min-w-[240px]">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenBookModal(item)}
+                      className={cn(
+                        "table-stack-btn group text-left flex !flex flex-col !flex-col items-start !items-start justify-start w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 focus:outline-none cursor-pointer",
+                        isLight
+                          ? "hover:bg-blue-50/80 focus:ring-1 focus:ring-[#0274BB]"
+                          : "hover:bg-[#FCD400]/10 hover:border hover:border-[#FCD400]/30 focus:ring-1 focus:ring-[#FCD400]"
+                      )}
+                      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", textAlign: "left" }}
+                      title={`Click to view Book Details for ${item.resourceTitle}`}
+                    >
+                      <div className={cn(
+                        "text-[15px] sm:text-base font-bold leading-snug transition-colors flex items-center gap-1.5 w-full text-left",
+                        isLight ? "text-slate-900 group-hover:text-[#0274BB]" : "text-white group-hover:text-[#FCD400]"
+                      )}>
+                        <span className="font-bold text-left">{item.resourceTitle}</span>
+                        <span className={cn(
+                          "text-[11px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity font-bold",
+                          isLight ? "text-[#0274BB]" : "text-[#FCD400]"
+                        )}>
+                          ↗
+                        </span>
                       </div>
-                    )}
+                      {item.isbn && (
+                        <div className={cn(
+                          "text-xs sm:text-sm mt-1 font-mono font-medium transition-colors w-full text-left",
+                          isLight ? "text-slate-600 font-semibold group-hover:text-slate-800" : "text-slate-400 group-hover:text-slate-200"
+                        )}>
+                          {item.isbn}
+                        </div>
+                      )}
+                    </button>
                   </td>
                   <td className={cn(
-                    "px-5 py-3.5 text-xs font-semibold whitespace-nowrap",
+                    "px-5 py-4 text-sm font-bold whitespace-nowrap",
                     isLight ? "text-[#0274BB]" : "text-[#FCD400]"
                   )}>
                     {item.type}
                   </td>
-                  <td className="px-5 py-3.5">
-                    <StatusBadge status={item.status} isLight={isLight} />
+                  <td className="px-5 py-4 whitespace-nowrap">
+                    <StatusBadge status={item.status} isLight={isLight} dueDate={(item as any).dueDate} />
                   </td>
-                  <td className={cn("px-5 py-3.5 text-xs whitespace-nowrap", isLight ? "text-slate-600" : "text-slate-400")}>
+                  <td className={cn("px-5 py-4 text-sm font-semibold whitespace-nowrap", isLight ? "text-slate-800" : "text-slate-200")}>
                     {formatDateTime(item.requestedAt)}
                   </td>
-                  <td className="px-5 py-3.5">
+                  <td className="px-5 py-4 whitespace-nowrap">
                     <div className="flex gap-2">
                       <button
                         suppressHydrationWarning
@@ -428,13 +566,13 @@ export function TransactionsPage() {
                         onClick={() => void updateStatus(item.id, "Approved")}
                         disabled={!payload?.allowAdminControl}
                         className={cn(
-                          "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-30 disabled:pointer-events-none",
+                          "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs sm:text-sm font-bold transition disabled:opacity-30 disabled:pointer-events-none cursor-pointer",
                           isLight
                             ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 hover:border-emerald-400"
                             : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-500/50"
                         )}
                       >
-                        <Check className="h-3.5 w-3.5" />
+                        <Check className="h-4 w-4 stroke-[2.5]" />
                         Approve
                       </button>
                       <button
@@ -443,13 +581,13 @@ export function TransactionsPage() {
                         onClick={() => void updateStatus(item.id, "Declined")}
                         disabled={!payload?.allowAdminControl}
                         className={cn(
-                          "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-30 disabled:pointer-events-none",
+                          "inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-1.5 text-xs sm:text-sm font-bold transition disabled:opacity-30 disabled:pointer-events-none cursor-pointer",
                           isLight
                             ? "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-400"
                             : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/50"
                         )}
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <X className="h-4 w-4 stroke-[2.5]" />
                         Decline
                       </button>
                     </div>
@@ -485,6 +623,13 @@ export function TransactionsPage() {
         onClose={() => setSelectedStudentForCard(null)}
         student={selectedStudentForCard}
         transactions={combinedHistory}
+      />
+
+      {/* ── Book Detail Modal ─────────────────────────────────────────── */}
+      <BookDetailModal
+        open={selectedBookForModal !== null}
+        book={selectedBookForModal}
+        onClose={() => setSelectedBookForModal(null)}
       />
     </div>
   );

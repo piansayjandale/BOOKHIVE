@@ -4,6 +4,7 @@ type BookAddedCallback = (book: any) => void;
 type BorrowRequestCallback = (borrowData: any) => void;
 type TransactionDecidedCallback = (txData: any) => void;
 type SocketCallback = (data: any) => void;
+type SettingsUpdatedCallback = (settings: any) => void;
 
 class SocketService {
   private socket: any = null;
@@ -13,6 +14,8 @@ class SocketService {
   private returnListeners: Set<SocketCallback> = new Set();
   private catalogListeners: Set<SocketCallback> = new Set();
   private announcementListeners: Set<SocketCallback> = new Set();
+  private announcementDeletedListeners: Set<SocketCallback> = new Set();
+  private settingsListeners: Set<SettingsUpdatedCallback> = new Set();
   private activeRooms: Set<string> = new Set();
   private isConnected: boolean = false;
   private reconnectTimer: any = null;
@@ -86,6 +89,11 @@ class SocketService {
           this.notifyTransactionDecided(data);
         });
 
+        this.socket.on("transaction:picked-up", (data: any) => {
+          console.log("[SocketService] Received transaction:picked-up event:", data);
+          this.notifyTransactionDecided({ ...data, isPickedUp: true });
+        });
+
         this.socket.on("borrow:decided", (data: any) => {
           console.log("[SocketService] Received borrow:decided event:", data);
           if (String(data?.status || "").toLowerCase() === "returned") {
@@ -102,6 +110,11 @@ class SocketService {
           this.notifyTransactionDecided(data);
         });
 
+        this.socket.on("transaction:due", (data: any) => {
+          console.log("[SocketService] Received transaction:due event:", data);
+          this.notifyTransactionDecided(data);
+        });
+
         this.socket.on("loan:status-changed", (data: any) => {
           console.log("[SocketService] Received loan:status-changed event:", data);
           if (String(data?.status || "").toLowerCase() === "returned") {
@@ -113,6 +126,33 @@ class SocketService {
         this.socket.on("announcement:published", (data: any) => {
           console.log("[SocketService] Received announcement:published event:", data?.title);
           this.notifyAnnouncementPublished(data);
+        });
+
+        this.socket.on("announcement:deleted", (data: any) => {
+          console.log("[SocketService] Received announcement:deleted event:", data?.id);
+          this.notifyAnnouncementDeleted(data);
+        });
+
+        this.socket.on("announcement:removed", (data: any) => {
+          this.notifyAnnouncementDeleted(data);
+        });
+
+        this.socket.on("announcements:updated", (data: any) => {
+          if (data?.action === "deleted") {
+            this.notifyAnnouncementDeleted(data);
+          } else {
+            this.notifyAnnouncementPublished(data);
+          }
+        });
+
+        this.socket.on("settings:updated", (data: any) => {
+          console.log("[SocketService] Received settings:updated event:", data);
+          this.notifySettingsUpdated(data);
+        });
+
+        this.socket.on("system:settings", (data: any) => {
+          console.log("[SocketService] Received system:settings event:", data);
+          this.notifySettingsUpdated(data);
         });
 
         this.socket.on("disconnect", () => {
@@ -189,6 +229,8 @@ class SocketService {
             } else if (
               eventName === "transaction:decided" ||
               eventName === "transaction:updated" ||
+              eventName === "transaction:due" ||
+              eventName === "transaction:picked-up" ||
               eventName === "borrow:decided" ||
               eventName === "student:notification" ||
               eventName === "loan:status-changed"
@@ -196,6 +238,16 @@ class SocketService {
               this.notifyTransactionDecided(eventData);
             } else if (eventName === "announcement:published") {
               this.notifyAnnouncementPublished(eventData);
+            } else if (eventName === "announcement:deleted" || eventName === "announcement:removed") {
+              this.notifyAnnouncementDeleted(eventData);
+            } else if (eventName === "announcements:updated") {
+              if (eventData?.action === "deleted") {
+                this.notifyAnnouncementDeleted(eventData);
+              } else {
+                this.notifyAnnouncementPublished(eventData);
+              }
+            } else if (eventName === "settings:updated" || eventName === "system:settings") {
+              this.notifySettingsUpdated(eventData);
             }
           }
         } catch (e) {
@@ -409,6 +461,41 @@ class SocketService {
     });
   }
 
+  public subscribeToAnnouncementDeleted(callback: SocketCallback) {
+    this.announcementDeletedListeners.add(callback);
+    return () => {
+      this.announcementDeletedListeners.delete(callback);
+    };
+  }
+
+  public notifyAnnouncementDeleted(data: any) {
+    this.announcementDeletedListeners.forEach((cb) => {
+      try {
+        cb(data);
+      } catch (e) {
+        console.warn("[SocketService] Delete listener error:", e);
+      }
+    });
+  }
+
+  public subscribeToSettings(callback: SettingsUpdatedCallback) {
+    this.settingsListeners.add(callback);
+    return () => {
+      this.settingsListeners.delete(callback);
+    };
+  }
+
+  public notifySettingsUpdated(data: any) {
+    const raw = data?.settings || data;
+    this.settingsListeners.forEach((cb) => {
+      try {
+        cb(raw);
+      } catch (e) {
+        console.warn("[SocketService] Settings listener error:", e);
+      }
+    });
+  }
+
   public emitBorrowRequest(borrowData: any) {
     this.emitEvent("borrow:request", borrowData);
   }
@@ -424,6 +511,12 @@ class SocketService {
   public emitBookReturned(returnData: any) {
     this.emitEvent("book:returned", returnData);
     this.emitEvent("transaction:returned", returnData);
+  }
+
+  public emitTransactionPickedUp(pickupData: any) {
+    this.emitEvent("transaction:picked-up", pickupData);
+    this.emitEvent("transaction:updated", { ...pickupData, status: "Approved", isPickedUp: true });
+    this.emitEvent("borrow:decided", { ...pickupData, status: "Approved", isPickedUp: true });
   }
 
   public emitSearchQuery(searchQuery: string, extraData: any = {}) {

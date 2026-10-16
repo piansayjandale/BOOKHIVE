@@ -49,7 +49,8 @@ async function migrate() {
     await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS comment TEXT");
     await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS available_at TIMESTAMPTZ");
     await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ");
-    console.log("✓ Verified columns: transactions (student_id_image, comment, available_at, expires_at)");
+    await client.query("ALTER TABLE transactions ADD COLUMN IF NOT EXISTS picked_up_at TIMESTAMPTZ");
+    console.log("✓ Verified columns: transactions (student_id_image, comment, available_at, expires_at, picked_up_at)");
 
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS qr_code UUID UNIQUE DEFAULT gen_random_uuid()");
@@ -77,6 +78,81 @@ async function migrate() {
     `);
     await client.query("CREATE INDEX IF NOT EXISTS idx_violations_student_id ON violations(student_id)");
     console.log("✓ Verified table: violations");
+
+    await client.query(`
+      CREATE OR REPLACE FUNCTION update_book_availability_trigger()
+      RETURNS TRIGGER AS $$
+      DECLARE
+        target_isbn TEXT;
+        target_title TEXT;
+      BEGIN
+        IF (TG_OP = 'DELETE') THEN
+          target_isbn := OLD.isbn;
+          target_title := OLD.resource_title;
+        ELSE
+          target_isbn := NEW.isbn;
+          target_title := NEW.resource_title;
+        END IF;
+
+        IF target_isbn IS NOT NULL OR target_title IS NOT NULL THEN
+          UPDATE books b
+          SET availability = CASE
+            WHEN GREATEST(0, COALESCE(b.copies, 1) 
+              - (SELECT COUNT(*) FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Borrow' AND t.status IN ('Approved', 'Pending'))
+              - (SELECT COUNT(*) FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()))
+            ) > 0 THEN 'Available'
+            WHEN (SELECT COUNT(*) FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW())) > 0 THEN 'Reserved'
+            ELSE 'Unavailable'
+          END,
+          updated_at = NOW()
+          WHERE (target_isbn IS NOT NULL AND target_isbn != '' AND target_isbn != 'N/A' AND b.isbn = target_isbn)
+             OR (target_title IS NOT NULL AND LOWER(b.title) = LOWER(target_title));
+        END IF;
+
+        RETURN NULL;
+      END;
+      $$ LANGUAGE plpgsql;
+
+      DROP TRIGGER IF EXISTS trg_update_book_availability ON transactions;
+      CREATE TRIGGER trg_update_book_availability
+      AFTER INSERT OR UPDATE OR DELETE ON transactions
+      FOR EACH ROW
+      EXECUTE FUNCTION update_book_availability_trigger();
+    `);
+    console.log("✓ Verified trigger: trg_update_book_availability (Aligned with Borrow & Reservation holds)");
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS digitized_books (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        title TEXT NOT NULL,
+        author TEXT NOT NULL DEFAULT 'Unknown Author',
+        isbn TEXT,
+        genre TEXT DEFAULT 'General',
+        category TEXT DEFAULT 'General',
+        department TEXT DEFAULT 'Circulation',
+        shelf_location TEXT,
+        accession_number TEXT,
+        copies INTEGER NOT NULL DEFAULT 1,
+        edition TEXT DEFAULT '1st Edition',
+        volume TEXT DEFAULT 'Vol. 1',
+        publisher TEXT,
+        publication_date DATE DEFAULT NOW()::date,
+        year TEXT,
+        pages INTEGER DEFAULT 1,
+        summary TEXT,
+        doc_type TEXT DEFAULT 'Catalog Intake Slip',
+        ocr_engine TEXT DEFAULT 'Tesseract Neural OCR',
+        confidence NUMERIC DEFAULT 95.0,
+        raw_text TEXT,
+        scanned_by TEXT DEFAULT 'Librarian Mobile App',
+        status TEXT NOT NULL DEFAULT 'Pending Review',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_digitized_books_status ON digitized_books(status);
+      CREATE INDEX IF NOT EXISTS idx_digitized_books_created_at ON digitized_books(created_at DESC);
+    `);
+    console.log("✓ Verified table: digitized_books (Librarian mobile intake & scanner queue)");
 
     console.log("\n==================================================");
     console.log(" All migrations completed successfully!");

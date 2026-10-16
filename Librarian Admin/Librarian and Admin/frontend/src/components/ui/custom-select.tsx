@@ -66,22 +66,23 @@ export function CustomSelect({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
+        style={isLight ? { border: "1px solid #cbd5e1", backgroundColor: "#ffffff" } : undefined}
         className={cn(
-          buttonClassName || "modal-input",
-          "flex items-center justify-between text-left cursor-pointer transition select-none w-full",
-          !buttonClassName && (isLight
-            ? "border-slate-300 bg-white text-black hover:border-black focus:border-black"
-            : "border-white/10 bg-white/5 text-white hover:border-white/20 focus:border-[#FCD400]")
+          "custom-select-trigger flex items-center justify-between text-left cursor-pointer transition select-none w-full",
+          isLight
+            ? "border border-slate-300 bg-white text-slate-800 hover:border-slate-400 focus:border-[#0274BB]"
+            : "border-white/10 bg-white/5 text-white hover:border-white/20 focus:border-[#FCD400]",
+          buttonClassName || "modal-input"
         )}
       >
-        <span className={cn("truncate font-medium", value ? (isLight && !buttonClassName ? "text-black" : "text-inherit") : "text-slate-500")}>
+        <span className={cn("truncate font-medium", value ? (isLight ? "text-slate-800" : "text-inherit") : "text-slate-500")}>
           {value || placeholder}
         </span>
         <ChevronDown
           className={cn(
             "h-4 w-4 shrink-0 transition-transform duration-200 ml-2",
-            isLight ? "text-slate-700" : "text-slate-400",
-            open && (isLight ? "rotate-180 text-black" : "rotate-180 text-[#FCD400]")
+            isLight ? "text-slate-500 stroke-[2]" : "text-slate-400",
+            open && (isLight ? "rotate-180 text-slate-800" : "rotate-180 text-[#FCD400]")
           )}
         />
       </button>
@@ -89,13 +90,13 @@ export function CustomSelect({
       {open && (
         <div
           className={cn(
-            "absolute top-full right-0 z-50 mt-1.5 w-full min-w-[200px] max-h-60 overflow-y-auto rounded-xl p-1.5 shadow-2xl backdrop-blur-md",
+            "absolute top-full right-0 z-50 mt-1.5 w-full min-w-[200px] max-h-60 overflow-y-auto rounded-xl p-1.5 shadow-xl backdrop-blur-md",
             isLight
-              ? "border border-slate-200 bg-white text-black shadow-slate-400/30"
+              ? "border border-slate-300 bg-white text-slate-900 shadow-slate-300/40"
               : "border border-[#2E3F5C] bg-[#0E1A26] text-white shadow-black/90",
             menuClassName
           )}
-          style={{ transformOrigin: "top" }}
+          style={{ transformOrigin: "top", ...(isLight ? { border: "1px solid #cbd5e1", backgroundColor: "#ffffff" } : {}) }}
         >
           {options.map((opt) => {
             const isSelected = value === opt;

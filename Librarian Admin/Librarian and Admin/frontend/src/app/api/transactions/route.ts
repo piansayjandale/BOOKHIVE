@@ -68,7 +68,25 @@ async function queryDbTransactions(
       t.decided_by AS "decidedBy",
       t.decided_at AS "decidedAt",
       t.student_id_image AS "studentIdImage",
-      t.comment
+      t.comment,
+      t.available_at AS "availableAt",
+      t.expires_at AS "expiresAt",
+      t.picked_up_at AS "pickedUpAt",
+      CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
+      CASE
+        WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN (
+          SELECT COUNT(*)::int + 1
+          FROM transactions t_q
+          WHERE t_q.type = 'Reservation'
+            AND t_q.status = 'Pending'
+            AND (
+              (t.isbn IS NOT NULL AND t_q.isbn = t.isbn)
+              OR (t.resource_title IS NOT NULL AND t_q.resource_title = t.resource_title)
+            )
+            AND t_q.requested_at < t.requested_at
+        )
+        ELSE NULL
+      END as "queuePosition"
     FROM transactions t
     LEFT JOIN users u ON t.user_id = u.id
     LEFT JOIN LATERAL (

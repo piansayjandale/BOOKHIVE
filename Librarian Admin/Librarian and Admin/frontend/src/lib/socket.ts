@@ -13,6 +13,7 @@ class DashboardSocketService {
   private telemetryListeners: Set<SocketCallback> = new Set();
   private catalogListeners: Set<SocketCallback> = new Set();
   private userMutationListeners: Set<SocketCallback> = new Set();
+  private announcementListeners: Set<SocketCallback> = new Set();
   private connectionListeners: Set<(connected: boolean) => void> = new Set();
 
   private activeRooms: Set<string> = new Set();
@@ -80,16 +81,7 @@ class DashboardSocketService {
       const ws = new WebSocket(`${wsUrl}/socket.io/?EIO=4&transport=websocket`);
 
       ws.onopen = () => {
-        console.log("[DashboardSocket] Native WebSocket transport connected");
-        // Send Engine.IO connect to default namespace '/'
-        try {
-          ws.send("40");
-        } catch (err) {
-          console.warn("[DashboardSocket] Failed to send handshake:", err);
-        }
-        this.setConnected(true);
-        this.reconnectDelay = 1000;
-        this.rejoinRooms();
+        console.log("[DashboardSocket] Native WebSocket transport opened, awaiting Engine.IO handshake");
       };
 
       ws.onmessage = (event) => {
@@ -98,14 +90,29 @@ class DashboardSocketService {
 
           // Engine.IO Heartbeat PING ('2') -> reply with PONG ('3')
           if (str === "2") {
-            ws.send("3");
+            try {
+              ws.send("3");
+            } catch {}
             return;
           }
 
-          // Engine.IO Handshake response packet
+          // Engine.IO Handshake open packet ('0' prefix with sid)
           if (str.startsWith("0")) {
             // Send namespace connect packet '40'
-            ws.send("40");
+            try {
+              ws.send("40");
+            } catch (err) {
+              console.warn("[DashboardSocket] Failed to send namespace connect:", err);
+            }
+            return;
+          }
+
+          // Socket.IO Namespace Connected ACK ('40' prefix)
+          if (str.startsWith("40")) {
+            console.log("[DashboardSocket] Socket.IO namespace connected, joining active rooms");
+            this.setConnected(true);
+            this.reconnectDelay = 1000;
+            this.rejoinRooms();
             return;
           }
 
@@ -199,12 +206,19 @@ class DashboardSocketService {
     socket.on("RESERVATION_CANCELLED", handleCancelledRequest);
     socket.on("transaction:updated", handleTransactionUpdated);
     socket.on("transaction:decided", handleTransactionDecided);
+    socket.on("transaction:picked-up", (data: any) => this.routeIncomingEvent("transaction:picked-up", data));
+    socket.on("TRANSACTION_PICKED_UP", (data: any) => this.routeIncomingEvent("transaction:picked-up", data));
     socket.on("transaction:returned", handleBookReturned);
     socket.on("book:returned", handleBookReturned);
     socket.on("telemetry:updated", handleTelemetryUpdated);
     socket.on("catalog:updated", handleCatalogUpdated);
     socket.on("user:mutated", handleUserMutated);
     socket.on("search:query", handleSearchQuery);
+
+    socket.on("announcement:deleted", (data: any) => this.routeIncomingEvent("announcement:deleted", data));
+    socket.on("announcement:removed", (data: any) => this.routeIncomingEvent("announcement:deleted", data));
+    socket.on("announcements:updated", (data: any) => this.routeIncomingEvent("announcements:updated", data));
+    socket.on("announcement:published", (data: any) => this.routeIncomingEvent("announcement:published", data));
 
     socket.on("book:added", (data: any) => {
       this.routeIncomingEvent("book:added", data);
@@ -233,7 +247,6 @@ class DashboardSocketService {
       });
       const payload = { ...eventData, status: "Returned", eventName: "book:returned" };
       this.returnListeners.forEach((cb) => cb(payload));
-      this.borrowListeners.forEach((cb) => cb(payload));
       this.notificationListeners.forEach((cb) => cb(payload));
       return;
     }
@@ -261,14 +274,13 @@ class DashboardSocketService {
         level: "warning",
       });
       this.cancelListeners.forEach((cb) => cb(eventData));
-      this.borrowListeners.forEach((cb) => cb(eventData));
       this.notificationListeners.forEach((cb) => cb({ ...eventData, eventName, isCancelled: true }));
     } else if (eventName === "notification:new") {
       this.notificationListeners.forEach((cb) => cb({ ...eventData, eventName }));
-      this.borrowListeners.forEach((cb) => cb(eventData));
+    } else if (eventName === "transaction:picked-up") {
+      this.notificationListeners.forEach((cb) => cb({ ...eventData, eventName, isPickedUp: true }));
     } else if (eventName === "transaction:decided" || eventName === "transaction:updated") {
       this.notificationListeners.forEach((cb) => cb({ ...eventData, eventName }));
-      this.borrowListeners.forEach((cb) => cb(eventData));
       if (String(eventData?.status || "").toLowerCase() === "declined") {
         this.cancelListeners.forEach((cb) => cb(eventData));
       }
@@ -279,6 +291,13 @@ class DashboardSocketService {
       this.catalogListeners.forEach((cb) => cb(eventData));
     } else if (eventName === "user:mutated") {
       this.userMutationListeners.forEach((cb) => cb(eventData));
+    } else if (
+      eventName === "announcement:deleted" ||
+      eventName === "announcement:removed" ||
+      eventName === "announcements:updated" ||
+      eventName === "announcement:published"
+    ) {
+      this.announcementListeners.forEach((cb) => cb({ ...eventData, eventName }));
     } else if (eventName === "telemetry:updated" || eventName === "search:query") {
       this.telemetryListeners.forEach((cb) => cb(eventData));
     }
@@ -331,6 +350,13 @@ class DashboardSocketService {
     this.userMutationListeners.add(cb);
     return () => {
       this.userMutationListeners.delete(cb);
+    };
+  }
+
+  public subscribeToAnnouncements(cb: SocketCallback) {
+    this.announcementListeners.add(cb);
+    return () => {
+      this.announcementListeners.delete(cb);
     };
   }
 
@@ -388,6 +414,11 @@ class DashboardSocketService {
   public publishBookReturned(returnData: any) {
     this.emitEvent("book:returned", returnData);
     this.emitEvent("transaction:returned", returnData);
+  }
+
+  public publishBookPickedUp(pickupData: any) {
+    this.emitEvent("transaction:picked-up", pickupData);
+    this.emitEvent("transaction:updated", pickupData);
   }
 
   public emitSearchQuery(searchData: any) {

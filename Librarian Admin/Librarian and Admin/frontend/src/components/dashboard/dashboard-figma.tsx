@@ -29,6 +29,7 @@ import {
   ExternalLink,
   CheckCircle2,
   AlertTriangle,
+  Filter,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGrid, XAxis, YAxis, Cell, LabelList } from "recharts";
@@ -100,6 +101,15 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   const allowReminders = !user?.permissions || user.permissions.reminders !== false;
   const allowHistory = !user?.permissions || user.permissions.history !== false;
 
+  const isLibrarianRole =
+    variant === "librarian" ||
+    variant === "technical" ||
+    variant === "circulation" ||
+    ["Librarian", "Technical Librarian", "Circulation Librarian", "TECHNICAL_LIBRARIAN", "CIRCULATION_LIBRARIAN"].includes(
+      user?.role ?? ""
+    );
+  const isAdmin = !isLibrarianRole && (variant === "admin" || ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"].includes(user?.role ?? ""));
+
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
   const [summary, setSummary] = useState({
@@ -121,6 +131,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   });
 
   const [searching, setSearching] = useState(false);
+  const [isPrefixFilter, setIsPrefixFilter] = useState(true);
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -139,6 +150,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   const [actionLoading, setActionLoading] = useState(false);
   const [noticeFeedback, setNoticeFeedback] = useState<string | null>(null);
   const [dashboardGenres, setDashboardGenres] = useState<string[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   // Fetch dynamic system genres from database catalog
   useEffect(() => {
@@ -212,16 +228,41 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
         return;
       }
       const data = await res.json();
-      if (data.announcements) {
+      if (data && Array.isArray(data.announcements)) {
         setAnnouncementsList(data.announcements);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.warn("[DashboardFigma] Announcement stats fetch notice:", err?.message || err);
     }
   }, []);
 
   useEffect(() => {
     void loadAnnouncementStats();
+
+    const unsubscribe = dashboardSocket.subscribeToAnnouncements((data) => {
+      const isDelete =
+        data?.eventName === "announcement:deleted" ||
+        data?.eventName === "announcement:removed" ||
+        data?.action === "deleted" ||
+        data?.action === "removed";
+
+      if (isDelete && data?.id) {
+        setAnnouncementsList((prev) => prev.filter((a) => a.id !== data.id && String(a.id) !== String(data.id)));
+      }
+      void loadAnnouncementStats();
+    });
+
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      void loadAnnouncementStats();
+    }, 12000);
+
+    return () => {
+      unsubscribe();
+      clearInterval(interval);
+    };
   }, [loadAnnouncementStats]);
 
   const annStats = useMemo(() => {
@@ -409,7 +450,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     router.push(
       `${basePath}/ai-prompt-search?query=${encodeURIComponent(searchQuery)}&department=${encodeURIComponent(
         selectedCategory,
-      )}`,
+      )}&filter=${isPrefixFilter ? "1" : "0"}`,
     );
   }
 
@@ -479,7 +520,6 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     <>
       {/* Active Campus Announcements Live Banner for Librarians and Admins */}
       {(() => {
-        const isAdmin = variant === "admin" || (user?.role && ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"].includes(user.role));
         const activeAnnouncements = announcementsList.filter((a) => a.published);
 
         // If not an admin and there are no active notices, don't show an empty banner
@@ -520,26 +560,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setShowAnnouncementModal(true)}
-                    className={cn(
-                      "text-xs font-bold flex items-center gap-1.5 cursor-pointer px-3 py-1.5 rounded-xl border transition shadow-sm",
-                      isLight
-                        ? "bg-[#FFF300] text-[#0274BB] border-[#ebd000] hover:bg-[#ebd000]"
-                        : "bg-[#FCD400] text-[#0F1D29] border-[#FCD400] hover:bg-[#e0bc00]"
-                    )}
-                    title="Post a new announcement immediately"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Post Notice</span>
-                  </button>
-
-                  <button
-                    type="button"
                     onClick={() => router.push(announcementsHref)}
                     className={cn(
-                      "text-xs font-bold flex items-center gap-1 cursor-pointer px-3 py-1.5 rounded-xl border transition",
+                      "text-xs font-bold flex items-center gap-1 cursor-pointer px-3 py-1.5 rounded-xl border transition shadow-sm",
                       isLight
-                        ? "bg-white text-[#0274BB] border-[#0274BB]/25 hover:bg-slate-50 shadow-sm"
+                        ? "bg-white text-[#0274BB] border-[#0274BB]/25 hover:bg-slate-50"
                         : "text-[#FCD400] hover:underline bg-white/5 hover:bg-white/10 border-white/10"
                     )}
                   >
@@ -607,14 +632,15 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 isLight ? "border-slate-300 bg-white/70" : "border-white/15 bg-white/5"
               )}>
                 <span className={cn("text-xs", isLight ? "text-slate-600" : "text-slate-300")}>
-                  No campus announcements are currently active. Click &quot;Post Notice&quot; to notify students and staff.
+                  No campus announcements are currently active. Use the Announcements Board to create a notice.
                 </span>
                 <button
                   type="button"
-                  onClick={() => setShowAnnouncementModal(true)}
-                  className={cn("text-xs font-bold hover:underline", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}
+                  onClick={() => router.push(announcementsHref)}
+                  className={cn("text-xs font-bold hover:underline flex items-center gap-1", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}
                 >
-                  + Post First Announcement
+                  <span>Go to Announcements Board</span>
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             ) : null}
@@ -634,10 +660,80 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
             : "bg-[#14293E] shadow-xl"
         )}
       >
-        {/* Section Label */}
-        <div className={cn("flex items-center gap-2 mb-4", isLight ? "text-[#0274BB]" : "text-[#FFD600]")}>
-          <Sparkles className="h-4 w-4 fill-current" />
-          <span className="text-xs font-bold tracking-widest uppercase">ASK BOOKHIVE</span>
+        {/* Top Bar: Section Label & Filter Toggle (Matching Student and AI Search pages) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div className="flex items-center gap-2">
+            {isPrefixFilter ? (
+              <div className={cn("flex items-center gap-2", isLight ? "text-[#0274BB]" : "text-[#FFD600]")}>
+                <Filter className="h-4 w-4" />
+                <span className="text-xs font-bold tracking-widest uppercase">
+                  CATALOG PREFIX FILTER
+                </span>
+              </div>
+            ) : (
+              <div className={cn("flex items-center gap-2", isLight ? "text-purple-600" : "text-[#FFD600]")}>
+                <Sparkles className="h-4 w-4 fill-current animate-pulse" />
+                <span className="text-xs font-bold tracking-widest uppercase">
+                  ASK BOOKHIVE (AI PROMPT)
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* FILTER TOGGLE (Exact design inspired by Student app) */}
+          <button
+            type="button"
+            onClick={() => setIsPrefixFilter((prev) => !prev)}
+            className={cn(
+              "flex items-center justify-between gap-3.5 px-4 py-1.5 rounded-full border transition-all duration-200 select-none cursor-pointer shadow-sm",
+              isPrefixFilter
+                ? isLight
+                  ? "bg-blue-50/90 border-[#0274BB] text-[#0274BB]"
+                  : "bg-amber-400/15 border-[#FFD600] text-[#FFD600]"
+                : isLight
+                  ? "bg-purple-50/90 border-purple-300 text-purple-700"
+                  : "bg-slate-800/80 border-slate-600 text-slate-300"
+            )}
+            title={
+              isPrefixFilter
+                ? "Filter mode is ON (searches strictly by title prefix). Click to switch to AI Prompt mode."
+                : "Filter mode is OFF (AI prompts work). Click to switch to Prefix Filter mode."
+            }
+          >
+            <div className="flex items-center gap-2">
+              {isPrefixFilter ? (
+                <Filter className={cn("h-3.5 w-3.5", isLight ? "text-[#0274BB]" : "text-[#FFD600]")} />
+              ) : (
+                <Sparkles className={cn("h-3.5 w-3.5", isLight ? "text-purple-600" : "text-slate-400")} />
+              )}
+              <span className="text-[11px] font-extrabold tracking-wider uppercase">
+                {isPrefixFilter ? "FILTER: ON" : "FILTER: OFF"}
+              </span>
+            </div>
+
+            {/* Toggle switch track + thumb */}
+            <div
+              className={cn(
+                "w-8 h-4 rounded-full transition-colors duration-200 relative p-0.5 flex items-center",
+                isPrefixFilter
+                  ? isLight
+                    ? "bg-[#0274BB]"
+                    : "bg-[#FFD600]"
+                  : "bg-slate-300 dark:bg-slate-700"
+              )}
+            >
+              <div
+                className={cn(
+                  "w-3 h-3 rounded-full transition-transform duration-200 shadow-sm",
+                  isPrefixFilter
+                    ? isLight
+                      ? "translate-x-4 bg-white"
+                      : "translate-x-4 bg-[#0A1624]"
+                    : "translate-x-0 bg-white"
+                )}
+              />
+            </div>
+          </button>
         </div>
 
         {/* Main Heading */}
@@ -652,7 +748,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
             <input
               type="text"
               suppressHydrationWarning
-              placeholder="Search by Title, Author, ISBN, or ask a question..."
+              placeholder={
+                isPrefixFilter
+                  ? "Search by Title, Author, ISBN, or catalog keywords..."
+                  : "Search by Title, Author, ISBN, or ask a question..."
+              }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={cn("flex-1 bg-transparent text-[15px] outline-none", isLight ? "text-[#0274BB] placeholder:text-slate-400 font-medium" : "text-white placeholder-slate-500")}
@@ -660,12 +760,24 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
 
             <div className="flex items-center gap-2">
               <label
-                className={cn("cursor-pointer p-2 transition rounded-full", isLight ? "text-slate-500 hover:text-[#0274BB] hover:bg-slate-100" : "text-slate-400 hover:text-white hover:bg-white/5")}
-                title="Upload Attachment"
+                className={cn(
+                  "p-2 transition rounded-full",
+                  !isPrefixFilter
+                    ? isLight
+                      ? "cursor-pointer text-slate-500 hover:text-[#0274BB] hover:bg-slate-100"
+                      : "cursor-pointer text-slate-400 hover:text-white hover:bg-white/5"
+                    : "cursor-not-allowed opacity-25 text-slate-400"
+                )}
+                title={
+                  !isPrefixFilter
+                    ? "Upload Supporting Attachment (PDF, DOCX, PPT, Image)"
+                    : "Turn FILTER: OFF to attach supporting documents for AI analysis"
+                }
               >
                 <Paperclip className="h-5 w-5" />
                 <input
                   type="file"
+                  disabled={isPrefixFilter}
                   className="hidden"
                   accept=".pdf,.doc,.docx,.ppt,.pptx,image/*"
                   multiple
@@ -678,15 +790,42 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 suppressHydrationWarning
                 disabled={searching}
                 className={cn(
-                  "rounded-full px-6 py-2.5 text-sm font-bold tracking-wide transition hover:scale-105 active:scale-95 disabled:opacity-70 disabled:hover:scale-100",
+                  "rounded-full px-6 py-2.5 text-sm font-bold tracking-wide transition hover:scale-105 active:scale-95 disabled:opacity-70 disabled:hover:scale-100 flex items-center gap-2",
                   isLight
                     ? "bg-[#FFF300] text-[#0274BB] border border-[#ebd000] hover:bg-[#ebd000] shadow-sm"
                     : "bg-[#FFD600] text-[#0A1624] hover:bg-[#FCD400]/90"
                 )}
               >
-                {searching ? "ANALYZING..." : "ANALYZE"}
+                {searching ? (
+                  isPrefixFilter ? "FILTERING..." : "ANALYZING..."
+                ) : isPrefixFilter ? (
+                  <>
+                    <SearchIcon className="h-4 w-4" />
+                    SEARCH
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    ANALYZE
+                  </>
+                )}
               </button>
             </div>
+          </div>
+
+          {/* Mode helper hint */}
+          <div className="mt-2 text-xs flex items-center gap-2 px-2">
+            {isPrefixFilter ? (
+              <span className={cn("inline-flex items-center gap-1.5 font-medium", isLight ? "text-sky-600" : "text-sky-300")}>
+                <CheckCircle2 className="h-3.5 w-3.5" />
+                Filter Mode is ON: Searches books strictly by title prefix & keywords. AI prompts bypassed.
+              </span>
+            ) : (
+              <span className={cn("inline-flex items-center gap-1.5 font-medium", isLight ? "text-amber-600" : "text-amber-300")}>
+                <Sparkles className="h-3.5 w-3.5" />
+                AI Prompt Mode is ON: Ask natural language questions or attach documents to match books conceptually.
+              </span>
+            )}
           </div>
         </form>
         {uploadedFiles.length > 0 && (
@@ -1037,32 +1176,36 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 </div>
               </div>
 
-              <div className="h-[280px] w-full flex flex-row items-center justify-between gap-3">
+              <div className="h-[280px] w-full flex flex-row items-center justify-between gap-3 min-w-0">
                 {/* Left: Donut Chart with Centered Info matching Picture 1 */}
-                <div className="relative h-full w-[170px] shrink-0 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={totalStudents === 0 ? [{ value: 1 }] : formattedDepartments}
-                        dataKey={totalStudents === 0 ? "value" : "count"}
-                        nameKey="code"
-                        innerRadius={54}
-                        outerRadius={80}
-                        paddingAngle={totalStudents === 0 ? 0 : 3}
-                        stroke={isLight ? "#FFFFFF" : "#0F1D29"}
-                        strokeWidth={2}
-                        isAnimationActive={true}
-                      >
-                        {totalStudents === 0 ? (
-                          <Cell fill={isLight ? "#E2E8F0" : "#182A3C"} stroke={isLight ? "#CBD5E1" : "#22394F"} strokeWidth={2} />
-                        ) : (
-                          formattedDepartments.map((entry: DepartmentData) => (
-                            <Cell key={`cell-${entry.code}`} fill={entry.color} />
-                          ))
-                        )}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
+                <div className="relative h-full w-[170px] min-w-[170px] shrink-0 flex items-center justify-center">
+                  {isMounted ? (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 170, height: 280 }}>
+                      <PieChart>
+                        <Pie
+                          data={totalStudents === 0 ? [{ value: 1 }] : formattedDepartments}
+                          dataKey={totalStudents === 0 ? "value" : "count"}
+                          nameKey="code"
+                          innerRadius={54}
+                          outerRadius={80}
+                          paddingAngle={totalStudents === 0 ? 0 : 3}
+                          stroke={isLight ? "#FFFFFF" : "#0F1D29"}
+                          strokeWidth={2}
+                          isAnimationActive={true}
+                        >
+                          {totalStudents === 0 ? (
+                            <Cell fill={isLight ? "#E2E8F0" : "#182A3C"} stroke={isLight ? "#CBD5E1" : "#22394F"} strokeWidth={2} />
+                          ) : (
+                            formattedDepartments.map((entry: DepartmentData) => (
+                              <Cell key={`cell-${entry.code}`} fill={entry.color} />
+                            ))
+                          )}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full w-full" />
+                  )}
 
                   {/* Center Text inside the Donut */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-1">
@@ -1160,9 +1303,10 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 </div>
               </div>
 
-              <div className="h-[250px] w-full">
+              <div className="h-[250px] w-full min-w-0">
                 {bookViewMode === "columns" ? (
-                  <ResponsiveContainer width="100%" height="100%">
+                  isMounted ? (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0} initialDimension={{ width: 500, height: 250 }}>
                     <BarChart
                       data={displayTopBooks}
                       margin={{ top: 26, right: 15, left: -22, bottom: 20 }}
@@ -1284,6 +1428,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       />
                     </BarChart>
                   </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full w-full" />
+                  )
                 ) : (
                   /* Ranked List View */
                   <div className="flex flex-col gap-2 overflow-y-auto max-h-full pr-1">
@@ -1352,14 +1499,15 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
             transition={{ duration: 0.5, delay: 0.6 }}
           >
             <h2 className={cn("mb-4 text-[10px] font-bold tracking-[0.15em]", isLight ? "text-[#0274BB]" : "text-slate-400")}>COMMAND_SHORTCUTS</h2>
-            <div className={variant === "admin" ? "grid grid-cols-4 gap-4" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4"}>
+            <div className={variant === "admin" ? "grid grid-cols-2 sm:grid-cols-4 gap-4" : "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4"}>
               {variant === "admin" ? (
                 <>
                   <button
+                    type="button"
                     suppressHydrationWarning
                     onClick={() => setShowAddBookModal(true)}
                     className={cn(
-                      "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                      "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
                         ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                         : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1367,7 +1515,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   >
                     <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                     <div className={cn(
-                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                       isLight
                         ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                         : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1375,9 +1523,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       <Plus className={cn("h-6 w-6", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                     </div>
                     <span className={cn(
-                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300",
+                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300 text-center font-extrabold",
                       isLight
-                        ? "font-extrabold text-[#0274BB]"
+                        ? "text-[#0274BB]"
                         : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                     )}>
                       ADD_BOOK
@@ -1385,10 +1533,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   </button>
 
                   <button
+                    type="button"
                     suppressHydrationWarning
                     onClick={() => router.push("/admin/catalog")}
                     className={cn(
-                      "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                      "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
                         ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                         : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1396,7 +1545,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   >
                     <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                     <div className={cn(
-                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                       isLight
                         ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                         : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1404,9 +1553,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       <ClipboardList className={cn("h-6 w-6", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                     </div>
                     <span className={cn(
-                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300",
+                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300 text-center font-extrabold",
                       isLight
-                        ? "font-extrabold text-[#0274BB]"
+                        ? "text-[#0274BB]"
                         : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                     )}>
                       VIEW_CATALOG
@@ -1414,10 +1563,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   </button>
 
                   <button
+                    type="button"
                     suppressHydrationWarning
                     onClick={() => router.push("/admin/analytics")}
                     className={cn(
-                      "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                      "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
                         ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                         : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1425,7 +1575,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   >
                     <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                     <div className={cn(
-                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                       isLight
                         ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                         : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1433,9 +1583,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       <Sparkles className={cn("h-6 w-6", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                     </div>
                     <span className={cn(
-                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300",
+                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300 text-center font-extrabold",
                       isLight
-                        ? "font-extrabold text-[#0274BB]"
+                        ? "text-[#0274BB]"
                         : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                     )}>
                       ANALYTICS
@@ -1443,10 +1593,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   </button>
 
                   <button
+                    type="button"
                     suppressHydrationWarning
-                    onClick={() => setShowAnnouncementModal(true)}
+                    onClick={() => router.push("/admin/announcements")}
                     className={cn(
-                      "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                      "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
                         ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                         : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1454,7 +1605,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   >
                     <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                     <div className={cn(
-                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                      "z-10 flex h-14 w-14 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                       isLight
                         ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                         : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1462,9 +1613,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       <Megaphone className={cn("h-6 w-6", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                     </div>
                     <span className={cn(
-                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300",
+                      "z-10 text-[10px] tracking-[0.2em] transition-colors duration-300 text-center font-extrabold",
                       isLight
-                        ? "font-extrabold text-[#0274BB]"
+                        ? "text-[#0274BB]"
                         : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                     )}>
                       ANNOUNCEMENTS
@@ -1476,10 +1627,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   {/* ADD_BOOK */}
                   {allowRecords && (
                     <button
+                      type="button"
                       suppressHydrationWarning
                       onClick={() => setShowAddBookModal(true)}
                       className={cn(
-                        "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                        "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
                           ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                           : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1487,7 +1639,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                       <div className={cn(
-                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                         isLight
                           ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                           : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1510,9 +1662,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         </svg>
                       </div>
                       <span className={cn(
-                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300",
+                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300 text-center font-extrabold",
                         isLight
-                          ? "font-extrabold text-[#0274BB]"
+                          ? "text-[#0274BB]"
                           : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                       )}>
                         ADD_BOOK
@@ -1523,10 +1675,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   {/* VIEW_RECORDS */}
                   {allowRecords && (
                     <button
+                      type="button"
                       suppressHydrationWarning
                       onClick={() => router.push("/librarian/records")}
                       className={cn(
-                        "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                        "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
                           ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                           : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1534,7 +1687,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                       <div className={cn(
-                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                         isLight
                           ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                           : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1542,9 +1695,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         <ClipboardList className={cn("h-5 w-5", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                       </div>
                       <span className={cn(
-                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300",
+                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300 text-center font-extrabold",
                         isLight
-                          ? "font-extrabold text-[#0274BB]"
+                          ? "text-[#0274BB]"
                           : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                       )}>
                         VIEW_RECORDS
@@ -1555,10 +1708,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   {/* CIRCULATION */}
                   {allowTransactions && (
                     <button
+                      type="button"
                       suppressHydrationWarning
                       onClick={() => router.push("/librarian/transactions")}
                       className={cn(
-                        "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                        "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
                           ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                           : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1566,7 +1720,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                       <div className={cn(
-                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                         isLight
                           ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                           : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1574,9 +1728,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         <Sparkles className={cn("h-5 w-5", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                       </div>
                       <span className={cn(
-                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300",
+                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300 text-center font-extrabold",
                         isLight
-                          ? "font-extrabold text-[#0274BB]"
+                          ? "text-[#0274BB]"
                           : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                       )}>
                         CIRCULATION
@@ -1587,10 +1741,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   {/* BATCH_IMPORT */}
                   {allowRecords && (
                     <button
+                      type="button"
                       suppressHydrationWarning
                       onClick={() => router.push("/librarian/records?action=import")}
                       className={cn(
-                        "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                        "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
                           ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                           : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1598,7 +1753,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                       <div className={cn(
-                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                         isLight
                           ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                           : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1606,9 +1761,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         <FileUp className={cn("h-5 w-5", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                       </div>
                       <span className={cn(
-                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300",
+                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300 text-center font-extrabold",
                         isLight
-                          ? "font-extrabold text-[#0274BB]"
+                          ? "text-[#0274BB]"
                           : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                       )}>
                         BATCH_IMPORT
@@ -1619,10 +1774,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   {/* REMINDERS */}
                   {allowReminders && (
                     <button
+                      type="button"
                       suppressHydrationWarning
                       onClick={() => router.push("/librarian/reminders")}
                       className={cn(
-                        "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                        "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
                           ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                           : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1630,7 +1786,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                       <div className={cn(
-                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                         isLight
                           ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                           : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1638,9 +1794,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         <BellRing className={cn("h-5 w-5", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                       </div>
                       <span className={cn(
-                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300",
+                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300 text-center font-extrabold",
                         isLight
-                          ? "font-extrabold text-[#0274BB]"
+                          ? "text-[#0274BB]"
                           : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                       )}>
                         REMINDERS
@@ -1651,10 +1807,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   {/* HISTORY */}
                   {allowHistory && (
                     <button
+                      type="button"
                       suppressHydrationWarning
                       onClick={() => router.push("/librarian/history")}
                       className={cn(
-                        "group relative flex aspect-square flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1",
+                        "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
                           ? "border-slate-200/90 bg-white shadow-sm hover:border-[#0274BB]/40 hover:shadow-md"
                           : "border-white/10 bg-gradient-to-b from-[#152E47]/80 to-[#0F1D29]/80 shadow-lg backdrop-blur-md hover:border-[#FCD400]/50 hover:shadow-[0_8px_30px_rgba(252,212,0,0.2)]"
@@ -1662,7 +1819,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       <div className="absolute inset-0 bg-gradient-to-b from-[#FCD400]/0 to-[#FCD400]/10 opacity-0 transition-opacity duration-300 group-hover:opacity-100"></div>
                       <div className={cn(
-                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110",
+                        "z-10 flex h-12 w-12 items-center justify-center rounded-2xl transition-all duration-300 group-hover:scale-110 shrink-0",
                         isLight
                           ? "bg-blue-50/80 text-[#0274BB] group-hover:bg-[#FFF300] group-hover:text-[#0274BB]"
                           : "bg-white/5 text-slate-400 shadow-inner group-hover:bg-[#FCD400]/20 group-hover:text-[#FCD400]"
@@ -1670,9 +1827,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         <HistoryIcon className={cn("h-5 w-5", isLight ? "text-[#0274BB]" : "text-slate-400 group-hover:text-[#FCD400]")} />
                       </div>
                       <span className={cn(
-                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300",
+                        "z-10 text-[9px] tracking-[0.15em] transition-colors duration-300 text-center font-extrabold",
                         isLight
-                          ? "font-extrabold text-[#0274BB]"
+                          ? "text-[#0274BB]"
                           : "font-bold text-slate-400 group-hover:text-[#FCD400]"
                       )}>
                         HISTORY
@@ -1894,7 +2051,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                           router.push(`${targetPath}?department=${encodeURIComponent(sec.name)}`);
                         }
                       }}
-                      title={`View ${sec.name} books in Add & Manage Books`}
+                      title={`View ${sec.name} books in Cataloging`}
                       className={cn(
                         "group flex flex-col gap-1 p-3 rounded-xl transition-all cursor-pointer select-none active:scale-[0.99]",
                         isLight
@@ -2059,7 +2216,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
       {/* ── Add Book Modal ─────────────────────────────────── */}
       {showAddBookModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowAddBookModal(false)} />
+          <div className="absolute inset-0 modal-backdrop bg-slate-950/60 backdrop-blur-md" onClick={() => setShowAddBookModal(false)} />
           <div className={cn("relative z-10 w-full max-w-lg rounded-2xl shadow-2xl", isLight ? "border border-slate-200 bg-white shadow-xl" : "border border-white/12 bg-[#0F1D29] shadow-black/60")}>
             {/* Header */}
             <div className={cn("flex items-center justify-between px-6 py-4", isLight ? "border-b border-slate-100" : "border-b border-white/8")}>
@@ -2246,9 +2403,9 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
       )}
 
       {/* ── Compose Announcement Modal ────────────────────── */}
-      {showAnnouncementModal && (
+      {isAdmin && showAnnouncementModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowAnnouncementModal(false)} />
+          <div className="absolute inset-0 modal-backdrop bg-slate-950/60 backdrop-blur-md" onClick={() => setShowAnnouncementModal(false)} />
           <div className={cn("relative z-10 w-full max-w-lg rounded-2xl shadow-2xl", isLight ? "border border-slate-200 bg-white shadow-xl" : "border border-white/12 bg-[#0F1D29] shadow-black/60")}>
             {/* Header */}
             <div className={cn("flex items-center justify-between px-6 py-4", isLight ? "border-b border-slate-100" : "border-b border-white/8")}>
@@ -2429,7 +2586,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
       {selectedNotice && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div
-            className="absolute inset-0 bg-black/75 backdrop-blur-sm"
+            className="absolute inset-0 modal-backdrop bg-slate-950/60 backdrop-blur-md"
             onClick={() => setSelectedNotice(null)}
           />
           <div
@@ -2545,7 +2702,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 isLight ? "border-slate-100 bg-slate-50" : "border-white/8 bg-[#0B1724]"
               )}
             >
-              {variant === "admin" || (user?.role && ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"].includes(user.role)) ? (
+              {isAdmin ? (
                 <>
                   <div className="flex items-center gap-2">
                     <button

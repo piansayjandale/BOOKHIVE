@@ -307,7 +307,7 @@ export function LibrarianSettingsModule() {
               {[
                 "Manage records and update catalog metadata",
                 "Process borrowing, returns, and reservations",
-                "Publish announcements for students and staff",
+                "View system announcements and campus notices",
                 "Review reports and audit history in real time",
               ].map((item) => (
                 <div key={item} className="rounded-xl border border-white/8 bg-white/5 p-4 hover:bg-white/[0.07] transition-all">

@@ -20,9 +20,10 @@ import {
 } from "lucide-react";
 
 import type { TransactionRecord, TransactionStatus } from "@/lib/types";
-import { cn, formatDate } from "@/lib/utils";
+import { cn, formatDate, formatCourseShortcut } from "@/lib/utils";
 import { useTheme } from "@/components/providers/theme-provider";
 import { StudentViolationModal } from "@/components/modals/student-violation-modal";
+import { BookDetailModal, type BookDetailPayload } from "@/components/ui/book-detail-modal";
 
 type TabId = "violators" | "due" | "dueToday";
 type SortKey = "studentName" | "resourceTitle" | "dueDate" | "requestedAt";
@@ -90,6 +91,61 @@ export function RemindersModule() {
     course?: string;
     currentTransaction?: TransactionRecord;
   } | null>(null);
+
+  const [selectedBookForModal, setSelectedBookForModal] = useState<BookDetailPayload | null>(null);
+
+  const handleOpenBookModal = async (txn: TransactionRecord) => {
+    const initialPayload: BookDetailPayload = {
+      id: (txn as any).bookId || txn.id,
+      title: txn.resourceTitle || "Book",
+      author: (txn as any).author || "Library Catalog",
+      isbn: txn.isbn || "",
+      department: (txn as any).department || "Circulation",
+      availability: txn.status === "Approved" ? "Unavailable" : "Available",
+      copies: 1,
+    };
+    setSelectedBookForModal(initialPayload);
+
+    try {
+      const searchTerm = txn.isbn || txn.resourceTitle;
+      if (searchTerm) {
+        const res = await fetch(`/api/records?search=${encodeURIComponent(searchTerm)}`);
+        if (res.ok) {
+          const data = await res.json();
+          const books = Array.isArray(data.books) ? data.books : [];
+          const clean = (s?: string) => (s ? String(s).replace(/[-\s]/g, "").toLowerCase().trim() : "");
+          const found = books.find((b: any) => 
+            (txn.isbn && b.isbn && clean(b.isbn) === clean(txn.isbn)) ||
+            (b.title && b.title.toLowerCase().trim() === txn.resourceTitle?.toLowerCase().trim())
+          ) || books[0];
+
+          if (found) {
+            setSelectedBookForModal({
+              id: found.id || initialPayload.id,
+              title: found.title || initialPayload.title,
+              author: found.author || initialPayload.author,
+              isbn: found.isbn || initialPayload.isbn,
+              department: found.department || initialPayload.department,
+              shelfLocation: found.shelfLocation || found.shelf,
+              callNumber: found.callNumber || found.shelfLocation,
+              genres: found.genres,
+              category: found.category,
+              availability: found.availability || initialPayload.availability,
+              publicationDate: found.publishedDate || found.publicationDate,
+              publishedDate: found.publishedDate,
+              volume: found.volume,
+              edition: found.edition,
+              summary: found.summary,
+              copies: found.copies || 1,
+              accessionNumber: found.accessionNumber,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to fetch full book details for modal:", err);
+    }
+  };
 
   const deferredSearch = useDeferredValue(search);
 
@@ -383,10 +439,10 @@ export function RemindersModule() {
                 return (
                   <tr
                     key={txn.id}
-                    className={cn("border-b transition-colors", isLight ? "border-slate-100 hover:bg-slate-50/80" : "border-white/5 hover:bg-white/[0.02]")}
+                    className={cn("border-b transition-colors align-middle", isLight ? "border-slate-100 hover:bg-slate-50/80" : "border-white/5 hover:bg-white/[0.02]")}
                   >
                     {/* Student */}
-                    <td className="px-5 py-3.5 max-w-[200px]">
+                    <td className="px-5 py-3.5 align-middle min-w-[200px]">
                       <button
                         type="button"
                         onClick={() =>
@@ -394,36 +450,67 @@ export function RemindersModule() {
                             name: txn.studentName,
                             studentId: txn.studentId,
                             department: txn.department,
-                            course: (txn as any).course || txn.department || "Circulation",
+                            course: (txn as any).course || txn.department || "BSIT",
                             currentTransaction: txn,
                           })
                         }
-                        className="group text-left block w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 hover:bg-rose-500/10 hover:border hover:border-rose-500/30 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                        className={cn(
+                          "table-stack-btn group text-left flex !flex flex-col !flex-col items-start !items-start justify-start w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 hover:bg-rose-500/10 hover:border hover:border-rose-500/30 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                        )}
+                        style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", textAlign: "left" }}
                         title={`Click to view Violation Record for ${txn.studentName}`}
                       >
-                        <div className={cn("font-semibold leading-snug line-clamp-1 transition-colors flex items-center gap-1", isLight ? "text-[#0274BB] group-hover:text-rose-600" : "text-white group-hover:text-rose-300")}>
-                          <span>{txn.studentName}</span>
-                          <span className="text-[9px] text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
+                        <div className={cn("font-bold text-sm leading-snug transition-colors flex items-center gap-1.5 w-full text-left", isLight ? "text-[#0274BB] group-hover:text-rose-600" : "text-white group-hover:text-rose-300")}>
+                          <span className="whitespace-nowrap font-bold text-left">{txn.studentName || "Student"}</span>
+                          <span className="text-[9px] shrink-0 text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity font-bold">
                             ↗
                           </span>
                         </div>
-                        <div className={cn("text-xs mt-0.5 font-mono", isLight ? "text-slate-500 group-hover:text-slate-700" : "text-slate-400 group-hover:text-slate-200")}>
-                          {txn.studentId}
-                        </div>
-                        <div className={cn("text-[10px] mt-0.5 line-clamp-1", isLight ? "text-slate-500" : "text-slate-500")}>
-                          {txn.department}
+                        <div className="flex items-center gap-2 mt-1 w-full text-left">
+                          <span className={cn("text-xs font-mono font-semibold shrink-0", isLight ? "text-slate-500 group-hover:text-slate-700" : "text-slate-400 group-hover:text-slate-200")}>
+                            {txn.studentId}
+                          </span>
+                          {(txn.department || (txn as any).course) ? (
+                            <span className={cn(
+                              "inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase shrink-0",
+                              isLight ? "bg-slate-100 text-slate-700 border border-slate-200" : "bg-white/10 text-[#FCD400] border border-white/10"
+                            )}>
+                              {formatCourseShortcut(txn.department || (txn as any).course)}
+                            </span>
+                          ) : null}
                         </div>
                       </button>
                     </td>
 
                     {/* Resource / Book */}
-                    <td className="px-5 py-3.5 max-w-[260px]">
-                      <div className={cn("font-semibold leading-snug line-clamp-1", isLight ? "text-[#0274BB]" : "text-white")}>
-                        {txn.resourceTitle}
-                      </div>
-                      <div className={cn("text-xs mt-0.5 font-mono", isLight ? "text-slate-500" : "text-slate-500")}>
-                        ISBN: {txn.isbn}
-                      </div>
+                    <td className="px-5 py-3.5 align-middle min-w-[240px]">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenBookModal(txn)}
+                        className={cn(
+                          "table-stack-btn group text-left flex !flex flex-col !flex-col items-start !items-start justify-start w-full rounded-lg p-1.5 -m-1.5 transition-all duration-200 focus:outline-none cursor-pointer",
+                          isLight
+                            ? "hover:bg-blue-50/80 focus:ring-1 focus:ring-[#0274BB]"
+                            : "hover:bg-[#FCD400]/10 hover:border hover:border-[#FCD400]/30 focus:ring-1 focus:ring-[#FCD400]"
+                        )}
+                        style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", textAlign: "left" }}
+                        title={`Click to view Book Details for ${txn.resourceTitle}`}
+                      >
+                        <div className={cn(
+                          "font-bold text-sm leading-snug transition-colors flex items-center gap-1.5 w-full text-left",
+                          isLight ? "text-slate-900 group-hover:text-[#0274BB] group-hover:underline" : "text-white group-hover:text-[#FCD400]"
+                        )}>
+                          <span className="font-bold text-left">{txn.resourceTitle}</span>
+                          <span className={cn("text-[11px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity font-bold", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                            ↗
+                          </span>
+                        </div>
+                        {txn.isbn && (
+                          <div className={cn("text-xs mt-1 font-mono transition-colors w-full text-left", isLight ? "text-slate-500 font-semibold group-hover:text-slate-800" : "text-slate-400 group-hover:text-slate-200")}>
+                            {txn.isbn}
+                          </div>
+                        )}
+                      </button>
                     </td>
 
                     {/* Checkout Date */}
@@ -522,6 +609,13 @@ export function RemindersModule() {
         onClose={() => setSelectedStudentForViolation(null)}
         student={selectedStudentForViolation}
         transactions={transactions}
+      />
+
+      {/* ── Interactive Book Detail Modal ────────────────────────────── */}
+      <BookDetailModal
+        open={selectedBookForModal !== null}
+        book={selectedBookForModal}
+        onClose={() => setSelectedBookForModal(null)}
       />
     </div>
   );

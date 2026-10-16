@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
   Animated,
   Easing,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -25,77 +26,293 @@ import AnimatedScreen from "../components/AnimatedScreen";
 import { useAuth } from "../data/AuthContext";
 import { useThemeColors } from "../hooks/useThemeColors";
 import { getLiveBooks, addDynamicBook, Book } from "../data/books";
-import { API_URL } from "../data/authService";
+import { API_URL, apiClient, authService } from "../data/authService";
+import {
+  resolveReceiptQrPayload,
+  markTransactionPickedUp,
+  ReceiptData,
+  isDueToReturn,
+} from "../data/store";
 
 const { width, height } = Dimensions.get("window");
 
-// Web System Tokens: Light and Dark Mode palettes
+// Web System Tokens: Modern Aesthetic & Efficient Color Palettes
 const LIGHT_THEME = {
-  primary: "#0274BB", // BookHive STI Blue
-  primarySoft: "rgba(2, 116, 187, 0.08)",
-  primaryLine: "rgba(2, 116, 187, 0.18)",
-  accent: "#FCD400", // STI Warm Golden Yellow
-  accentStrong: "#EAB308",
-  bg: "#F8FAFC", // Light mode page background
-  panel: "#FFFFFF", // White panel
-  panelStrong: "#F0F7FC", // Soft blue-tinted container
+  primary: "#0284C7", // Modern Sapphire Blue for primary focus & active states
+  primaryDark: "#0369A1",
+  primarySoft: "rgba(2, 132, 199, 0.08)",
+  primaryLine: "#E2E8F0", // Clean Slate-200 border for surface separation
+  accent: "#F59E0B", // Refined Amber Gold for warm highlights
+  accentStrong: "#D97706",
+  accentSoft: "rgba(245, 158, 11, 0.12)",
+  bg: "#F8FAFC", // Clean Slate-50 background
+  panel: "#FFFFFF", // Crisp white surface
+  panelStrong: "#0F172A", // Viewfinder bezel (deep slate for cinematic focus)
   cardBg: "#FFFFFF",
-  textPrimary: "#0274BB", // Headings & active brand items
-  textDark: "#1E293B", // Body & card text
-  muted: "#64748B", // Subtitles & secondary labels
-  successBg: "#DCFCE7",
-  successText: "#166534",
-  dangerBg: "#FEE2E2",
-  dangerText: "#991B1B",
+  textPrimary: "#0F172A", // High-contrast Slate-900
+  textDark: "#1E293B",
+  muted: "#64748B", // Slate-500 secondary text
+  successBg: "rgba(16, 185, 129, 0.12)",
+  successText: "#059669",
+  dangerBg: "rgba(239, 68, 68, 0.10)",
+  dangerText: "#DC2626",
   danger: "#EF4444",
-  modalOverlay: "rgba(2, 116, 187, 0.28)",
-  inputBg: "#FFFFFF",
-  webTapBg: "rgba(255, 255, 255, 0.94)",
-  shutterBorder: "#0274BB",
-  shutterInner: "#0274BB",
+  modalOverlay: "rgba(15, 23, 42, 0.65)",
+  inputBg: "#F8FAFC",
+  webTapBg: "rgba(15, 23, 42, 0.82)",
+  iconNeutral: "#475569",
+  iconNeutralBg: "#F1F5F9",
+  iconNeutralBorder: "#E2E8F0",
+  shutterBorder: "rgba(2, 132, 199, 0.28)",
+  shutterInner: "#0284C7",
   shutterDot: "#FFFFFF",
 };
 
 const DARK_THEME = {
-  primary: "#38BDF8", // BookHive Cyan/Sky Blue in dark mode
+  primary: "#38BDF8", // Luminous Sky Cyan in dark mode
+  primaryDark: "#0284C7",
   primarySoft: "rgba(56, 189, 248, 0.14)",
-  primaryLine: "rgba(56, 189, 248, 0.24)",
-  accent: "#FFD700", // STI Gold/Yellow
-  accentStrong: "#FBBF24",
-  bg: "#090D16", // Dark page background
-  panel: "#111827", // Dark card panel
-  panelStrong: "#172338", // Elevated dark container
-  cardBg: "#151F32",
-  textPrimary: "#F9FAFB", // Headings
-  textDark: "#F1F5F9", // Card & body text
-  muted: "#94A3B8", // Subtitles & secondary labels
+  primaryLine: "rgba(255, 255, 255, 0.08)",
+  accent: "#FBBF24", // Warm gold
+  accentStrong: "#F59E0B",
+  accentSoft: "rgba(251, 191, 36, 0.14)",
+  bg: "#080D1A", // Deep obsidian navy
+  panel: "#0F172A", // Slate-900 surface
+  panelStrong: "#030712", // Deep black viewfinder bezel
+  cardBg: "#111C30",
+  textPrimary: "#F8FAFC", // Slate-50
+  textDark: "#F1F5F9",
+  muted: "#94A3B8", // Slate-400
   successBg: "rgba(16, 185, 129, 0.2)",
   successText: "#34D399",
   dangerBg: "rgba(239, 68, 68, 0.2)",
   dangerText: "#F87171",
   danger: "#EF4444",
-  modalOverlay: "rgba(0, 0, 0, 0.78)",
-  inputBg: "#0F172A",
-  webTapBg: "rgba(17, 24, 39, 0.94)",
-  shutterBorder: "#38BDF8",
+  modalOverlay: "rgba(0, 0, 0, 0.82)",
+  inputBg: "#0B1329",
+  webTapBg: "rgba(8, 13, 26, 0.85)",
+  iconNeutral: "#94A3B8",
+  iconNeutralBg: "#1E293B",
+  iconNeutralBorder: "rgba(255, 255, 255, 0.08)",
+  shutterBorder: "rgba(56, 189, 248, 0.32)",
   shutterInner: "#38BDF8",
-  shutterDot: "#080F1E",
+  shutterDot: "#080D1A",
 };
 
 export type ParsedBookFields = {
   title: string;
   author: string;
   genre: string;
+  department?: string;
   isbn: string;
   copies: number;
   edition: string;
   volume: string;
   summary: string;
+  publisher?: string;
+  publishedYear?: string;
+  pages?: string;
+  shelfLocation?: string;
+  docType?: string;
   rawText: string;
 };
 
 /**
- * Intelligent client-side parser to extract all 8 book items from scanned words on paper
+ * Helper to disambiguate easily confused handwriting strokes in numeric fields
+ */
+function disambiguateDigits(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/[Oo]/g, "0")
+    .replace(/[Il|]/g, "1")
+    .replace(/[Ss]/g, "5")
+    .replace(/[Bb]/g, "8")
+    .replace(/[Zz]/g, "2");
+}
+
+function cleanField(str: string): string {
+  if (!str) return "";
+  return str
+    .replace(/^[:;=~—\-_|/\\«"'\`\s]+/, "")
+    .replace(/[:;=~—\-_|/\\»"'\`\s]+$/, "")
+    .trim();
+}
+
+/**
+ * Format string in Title Case while preserving acronyms and lowercase conjunctions
+ */
+function toTitleCase(str: string): string {
+  if (!str) return "";
+  const minorWords = new Set(["a", "an", "the", "and", "but", "or", "for", "nor", "on", "at", "to", "from", "by", "in", "of", "with"]);
+  return str
+    .toLowerCase()
+    .replace(/[^a-zA-Z0-9\s'.&\-]/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word, index) => {
+      if (index === 0 || !minorWords.has(word)) {
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      }
+      return word.toLowerCase();
+    })
+    .join(" ");
+}
+
+function parseCopiesNumber(str: string): number {
+  if (!str) return 1;
+  const clean = str.trim();
+  const stripped = clean.replace(/[^a-zA-Z0-9]/g, "");
+  if (/^(?:[Zz]|ll|7s|2s|2)$/i.test(stripped) || /^gps$/i.test(stripped)) return 2;
+  const disambiguated = disambiguateDigits(clean);
+  const match = disambiguated.match(/(\d+)/);
+  if (match) {
+    const val = parseInt(match[1], 10);
+    return val > 0 && val < 500 ? val : 1;
+  }
+  return 1;
+}
+
+function parseEdition(str: string): string {
+  if (!str) return "None";
+  const clean = cleanField(str);
+  if (/\b(?:none|n\/a|na|nil|no|ioh|eeli)\b/i.test(clean) || clean === "|" || clean === "-" || /^(?:ioh|none)$/i.test(clean)) return "None";
+  if (/\b(?:1st|first|dst|ast|ist|15t|jst)\b/i.test(clean)) return "1st";
+  if (/\b(?:2nd|second)\b/i.test(clean)) return "2nd";
+  if (/\b(?:3rd|third)\b/i.test(clean)) return "3rd";
+  if (/\b(?:4th|fourth)\b/i.test(clean)) return "4th";
+  if (/\b(?:5th|fifth)\b/i.test(clean)) return "5th";
+  if (/\b(?:rev(?:ised)?)\b/i.test(clean)) return "Revised Edition";
+  return clean || "None";
+}
+
+function parseVolume(str: string): string {
+  if (!str) return "None";
+  const clean = cleanField(str);
+  if (/\b(?:none|n\/a|na|nil|no|ole|volur)\b/i.test(clean) || clean === "|" || clean === "-" || /^(?:ole|none)$/i.test(clean)) return "None";
+  const disambiguated = disambiguateDigits(clean);
+  const match = disambiguated.match(/(\d+)/);
+  if (match) return match[1];
+  return clean || "None";
+}
+
+function normalizeHandwritingTitle(rawTitle: string): string {
+  const title = cleanField(rawTitle);
+  return toTitleCase(title);
+}
+
+function normalizeHandwritingAuthor(rawAuthor: string): string {
+  const author = cleanField(rawAuthor);
+  return toTitleCase(author);
+}
+
+function normalizeHandwritingGenre(rawGenre: string, department?: string): string {
+  let genre = cleanField(rawGenre);
+  if (/^(?:icrion|ticrion|fiction|fic|fict|r\s*ciel\s*eg|ciel)$/i.test(genre.replace(/[^a-zA-Z]/g, ""))) {
+    return "Fiction";
+  }
+  if (!genre && department) return department === "Circulation" ? "Fiction" : department;
+  return toTitleCase(genre || (department === "Circulation" ? "Fiction" : "General"));
+}
+
+function normalizeHandwritingSummary(rawSummary: string): string {
+  let s = cleanField(rawSummary);
+  s = s.replace(/^([AI])([A-Z][a-z]+)/, "$1 $2");
+  return s;
+}
+
+function sanitizeIsbn(val?: string | null): string {
+  if (!val) return "";
+  return String(val)
+    .replace(/[—–]/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .trim();
+}
+
+function extractIsbn(text: string): string {
+  if (!text) return "";
+  const explicitMatch = text.match(/(?:ISBN|SPIN|1SBN|IS8N|ISPN|SBN)(?:-1[03])?:?\s*([0-9Xx\s\-OoIl|]{6,30})/i);
+  if (explicitMatch && explicitMatch[1]) {
+    const rawVal = explicitMatch[1];
+    const disambiguated = sanitizeIsbn(
+      rawVal
+        .replace(/[Oo]/g, "0")
+        .replace(/[Il|]/g, "1")
+        .replace(/[^0-9Xx-]/g, "")
+    );
+    if (disambiguated.replace(/-/g, "").length >= 8) {
+      return disambiguated;
+    }
+  }
+  const isbn13Match = text.match(/\b(97[89][\s\-]*(?:[0-9OoIl|][\s\-]*){10})\b/i);
+  if (isbn13Match && isbn13Match[1]) {
+    const clean = isbn13Match[1]
+      .replace(/[Oo]/g, "0")
+      .replace(/[Il|]/g, "1")
+      .replace(/[^0-9Xx]/g, "");
+    if (clean.length === 13) return sanitizeIsbn(clean);
+  }
+  const isbn10Match = text.match(/\b((?:[0-9OoIl|][\s\-]*){9}[0-9XxOoIl|])\b/i);
+  if (isbn10Match && isbn10Match[1]) {
+    const clean = isbn10Match[1]
+      .replace(/[Oo]/g, "0")
+      .replace(/[Il|]/g, "1")
+      .replace(/[^0-9Xx]/g, "");
+    if (clean.length === 10) return sanitizeIsbn(clean);
+  }
+  return "";
+}
+
+function extractPublishedYear(text: string): string {
+  if (!text) return "";
+  const explicit = text.match(/(?:(?:published|publication|copyright|year|date|pub\s*date|copr\.?)[\s:;*=\-–—!?,.]*(?:in|c|©)?\s*)(19\d\d|20[0-3]\d)/i);
+  if (explicit) return explicit[1];
+  const copyMatch = text.match(/[©c]\s*(19\d\d|20[0-3]\d)/i);
+  if (copyMatch) return copyMatch[1];
+  const generalMatch = text.match(/\b(19[6-9]\d|20[0-2]\d)\b/);
+  if (generalMatch) return generalMatch[1];
+  return "";
+}
+
+function extractPages(text: string): string {
+  if (!text) return "";
+  const m = text.match(/(?:(?:pages|page|pp\.?|p\.)[\s:;*=\-–—!?,.]*(\d{1,5}))|\b(\d{2,5})\s*(?:pages|pp\.?|p\b)/i);
+  if (m) return m[1] || m[2] || "";
+  return "";
+}
+
+function extractPublisher(text: string): string {
+  if (!text) return "";
+  const explicit = text.match(/(?:(?:publisher|published\s*by|press|imprint)[\s:;*=\-–—!?,.]{1,4})(.*)/i);
+  if (explicit && explicit[1]) {
+    return toTitleCase(cleanField(explicit[1].split(/[\n,;]/)[0]));
+  }
+  const KNOWN_PUBLISHERS = [
+    "Penguin", "HarperCollins", "Simon & Schuster", "Macmillan", "Hachette",
+    "O'Reilly", "Pearson", "McGraw-Hill", "Wiley", "Oxford University Press",
+    "Cambridge University Press", "MIT Press", "Routledge", "Scribner",
+    "Avery", "Vintage", "Anchor", "STI Academic Press", "Cengage", "Addison-Wesley"
+  ];
+  for (const pub of KNOWN_PUBLISHERS) {
+    const reg = new RegExp(`\\b${pub.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}(?:\\s*(?:Books|Press|Media|Publishing|Publishers))?\\b`, "i");
+    const found = text.match(reg);
+    if (found) return toTitleCase(found[0]);
+  }
+  return "";
+}
+
+function extractCallNumber(text: string): string {
+  if (!text) return "";
+  const callMatch = text.match(/\b([A-Z]{2,4}[-\s]?\d{1,4}(?:\.[A-Z0-9]+)?(?:\s*\.[A-Z]\d+)?)\b/);
+  if (callMatch && !/^(?:ISBN|PAGE|COPY|VOL)/i.test(callMatch[1])) {
+    return callMatch[1].trim();
+  }
+  return "";
+}
+
+/**
+ * Universal client-side parser to extract all catalog items from ANY scanned words on paper or printed text.
+ * Robust against varied handwriting, cursive, stroke misreads, book covers, and unlabeled formats.
  */
 export function extractBookFieldsFromText(text: string): ParsedBookFields {
   if (!text) {
@@ -103,206 +320,321 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
       title: "",
       author: "",
       genre: "General",
+      department: "General Collection",
       isbn: "",
       copies: 1,
-      edition: "1st",
-      volume: "1",
+      edition: "None",
+      volume: "None",
       summary: "",
+      publisher: "",
+      publishedYear: "",
+      pages: "",
+      shelfLocation: "",
+      docType: "Unknown Document",
       rawText: "",
     };
   }
 
-  const cleanField = (str: string) => {
-    if (!str) return "";
-    return str.replace(/[:;=~—-]+$/, "").replace(/^[:;=~—-]+/, "").trim();
-  };
-
-  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const lines = text
+    .split(/\r?\n/)
+    .map(l => l.trim())
+    .filter(Boolean);
 
   let title = "";
   let author = "";
   let genre = "";
+  let department = "";
   let isbn = "";
   let copies = 1;
-  let edition = "1st";
-  let volume = "1";
+  let edition = "None";
+  let volume = "None";
   let summary = "";
+  let publisher = "";
+  let publishedYear = "";
+  let pages = "";
+  let shelfLocation = "";
+  let docType = "General Document";
 
+  let summaryLines: string[] = [];
+  let isCollectingSummary = false;
+  let detectedLabels = 0;
+
+  // Pass 1: Labeled field detection with OCR prefixes
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     // 1. Title
-    if (!title && /\b(?:Title|Tite|Tile|Ttle|Titie|ite)\b/i.test(line)) {
-      title = cleanField(line.replace(/.*?\b(?:Title|Tite|Tile|Ttle|Titie|ite)\s*[:;*=-]?\s*/i, ""));
+    if (!title && /^(?:(?:book\s*)?title|tite|tile|ttle|titie|the|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:(?:book\s*)?title|tite|tile|ttle|titie|the|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        title = normalizeHandwritingTitle(match[1]);
+        detectedLabels++;
+      }
+      continue;
     }
 
     // 2. Author
-    if (!author && /\b(?:Author|Auton|Autrer|Autor|Authr|Aulhor|Written\s*by|By)\b/i.test(line)) {
-      author = cleanField(line.replace(/.*?\b(?:Author|Auton|Autrer|Autor|Authr|Aulhor|Written\s*by|By)\s*[:;*=-]?\s*/i, ""));
+    if (!author && /^(?:author(?:s)?|auton|autrer|autor|authr|aulhor|written\s*by|by|writer|auth|avior|aver)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:author(?:s)?|auton|autrer|autor|authr|aulhor|written\s*by|by|writer|auth|avior|aver)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        author = normalizeHandwritingAuthor(match[1]);
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Department Loc.
+    if (!department && /^(?:department(?:\s*loc\.?)?|dept(?:\s*loc\.?)?|deputies|location|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:department(?:\s*loc\.?)?|dept(?:\s*loc\.?)?|deputies|location|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        const val = cleanField(match[1]);
+        if (/circ/i.test(val)) department = "Circulation";
+        else if (/ref/i.test(val)) department = "Reference";
+        else if (/fil/i.test(val)) department = "Filipiniana";
+        else department = toTitleCase(val);
+        detectedLabels++;
+      }
+      continue;
     }
 
     // 3. Genre
-    if (!genre && /\b(?:Genre|Gere|Gynt|Genet|Genrc|Geype|Category|Subject)\b/i.test(line)) {
-      genre = cleanField(line.replace(/.*?\b(?:Genre|Gere|Gynt|Genet|Genrc|Geype|Category|Subject)\s*[:;*=-]?\s*/i, ""));
+    if (!genre && /^(?:genre|gere|gynt|genet|genrc|geype|category|subject|field|class|topic)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:genre|gere|gynt|genet|genrc|geype|category|subject|field|class|topic)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        genre = normalizeHandwritingGenre(match[1], department);
+        detectedLabels++;
+      }
+      continue;
     }
 
     // 4. ISBN
-    if (!isbn && /\b(?:ISBN|SPIN|1SBN|IS8N|ISPN|SBN)\b/i.test(line)) {
-      const match = line.match(/(?:ISBN|SPIN|1SBN|IS8N|ISPN|SBN)\s*[:;*=-]?\s*([0-9Xx\s%-]{6,25})/i);
-      if (match) isbn = match[1].trim();
-      else isbn = cleanField(line.replace(/.*?\b(?:ISBN|SPIN|1SBN|IS8N|ISPN|SBN)\s*[:;*=-]?\s*/i, ""));
+    if (!isbn && /^(?:isbn(?:-1[03])?|tsbn|tsen|tseng|tseh|t5bn|torn|tspn|spin|1sbn|is8n|ispn|sbn|barcode|tah|bar\s*code|acc(?:ession)?(?:\s*no)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:isbn(?:-1[03])?|tsbn|tsen|tseng|tseh|t5bn|torn|tspn|spin|1sbn|is8n|ispn|sbn|barcode|tah|bar\s*code|acc(?:ession)?(?:\s*no)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        const rawIsbn = match[1];
+        const clean = sanitizeIsbn(
+          rawIsbn
+            .replace(/[Oo]/g, "0")
+            .replace(/[Il|\)\]]/g, "1")
+            .replace(/[Zz]/g, "2")
+            .replace(/[Ss]/g, "5")
+            .replace(/[Pp]/g, "6")
+            .replace(/[^0-9Xx-]/g, "")
+        );
+        if (clean.replace(/-/g, "").length >= 7) isbn = clean;
+        detectedLabels++;
+      }
+      continue;
     }
 
     // 5. Copies
-    if (/\b(?:Copies|Copied|Copi|Gopi|Gopies|\(opis|Coots|No\.?\s*Copies|Quantity|Stock)\b/i.test(line)) {
-      const match = line.match(/(?:Copies|Copied|Copi|Gopi|Gopies|\(opis|Coots)\s*[:;*=-]?\s*(\d+)/i) || line.match(/(\d+)/);
-      if (match) copies = Math.max(1, parseInt(match[1], 10));
+    if (/^(?:copies|copied|copi|gopi|gopies|\(opis|\(pies|coots|cope|gps|no\.?\s*copies|no\.?\s*of\s*copies|quantity|qty|stock|count|pieces|pcs)[\s:;*=\-–—!?+.,]*(.*)/i.test(line)) {
+      const match = line.match(/^(?:copies|copied|copi|gopi|gopies|\(opis|\(pies|coots|cope|gps|no\.?\s*copies|no\.?\s*of\s*copies|quantity|qty|stock|count|pieces|pcs)[\s:;*=\-–—!?+.,]*(.*)/i);
+      copies = parseCopiesNumber(match ? match[1] : line);
+      detectedLabels++;
+      continue;
     }
 
     // 6. Edition
-    if (/\b(?:Edition|Editon|Edtion|Hition|Eitioy|Eit|itor|Ed\.?)\b/i.test(line)) {
-      edition = cleanField(line.replace(/.*?\b(?:Edition|Editon|Edtion|Hition|Eitioy|Eit|itor|Ed\.?)\s*[:;*=-]?\s*/i, ""));
+    if (/^(?:edition|editon|edtion|hition|eitioy|eit|itor|ed\.?|edn|eeli|elion|ecli)[\s:;*=\-–—!?+.,]*(.*)/i.test(line)) {
+      const match = line.match(/^(?:edition|editon|edtion|hition|eitioy|eit|itor|ed\.?|edn|eeli|elion|ecli)[\s:;*=\-–—!?+.,]*(.*)/i);
+      if (match) {
+        edition = parseEdition(match[1]);
+        detectedLabels++;
+      }
+      continue;
     }
 
     // 7. Volume
-    if (/\b(?:Volume|Volurwe|Volwwe|Volum|\\olume|Vol\.?)\b/i.test(line)) {
-      const val = cleanField(line.replace(/.*?\b(?:Volume|Volurwe|Volwwe|Volum|\\olume|Vol\.?)\s*[:;*=-]?\s*/i, ""));
-      const numMatch = val.match(/(\d+)/);
-      volume = numMatch ? numMatch[1] : (val || "1");
+    if (/^(?:volume|volurwe|volwwe|volum|\\olume|vol\.?|volur|vol\s*ime|\\\/|bk|book|part|pt)[\s:;*=\-–—!?+.,]*(.*)/i.test(line)) {
+      const match = line.match(/^(?:volume|volurwe|volwwe|volum|\\olume|vol\.?|volur|vol\s*ime|\\\/|bk|book|part|pt)[\s:;*=\-–—!?+.,]*(.*)/i);
+      if (match) {
+        volume = parseVolume(match[1]);
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Publisher
+    if (!publisher && /^(?:publisher|published\s*by|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:publisher|published\s*by|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        publisher = toTitleCase(cleanField(match[1]));
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Published Year
+    if (!publishedYear && /^(?:published\s*year|pub\s*year|year|copyright\s*year|date\s*of\s*pub)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:published\s*year|pub\s*year|year|copyright\s*year|date\s*of\s*pub)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        publishedYear = extractPublishedYear(match[1]);
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Shelf / Call Number
+    if (!shelfLocation && /^(?:shelf(?:\s*location)?|call(?:\s*number|\s*no\.?)?|loc\.?|location|rack)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:shelf(?:\s*location)?|call(?:\s*number|\s*no\.?)?|loc\.?|location|rack)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        shelfLocation = cleanField(match[1]);
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Pages
+    if (!pages && /^(?:pages|page\s*count|pp\.?|no\.?\s*of\s*pages)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:pages|page\s*count|pp\.?|no\.?\s*of\s*pages)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        pages = cleanField(match[1]).replace(/[^0-9]/g, "");
+        detectedLabels++;
+      }
+      continue;
     }
 
     // 8. Summary
-    if (/\b(?:Summary|Summarys|Summ?\s*rary|Sum\s*mary|Sum\s*many|Sum\s*ray|Summer|Suvrany|Synopsis|Description|About)\b/i.test(line)) {
-      const firstPart = cleanField(line.replace(/.*?\b(?:Summary|Summarys|Summ?\s*rary|Sum\s*mary|Sum\s*many|Sum\s*ray|Summer|Suvrany|Synopsis|Description|About)\s*[:;*=-]?\s*/i, ""));
-      const restLines = lines.slice(i + 1).filter(l => !/\b(Title|Author|Genre|ISBN|Copies|Edition|Volume)\b/i.test(l));
-      summary = [firstPart, ...restLines].filter(Boolean).join(" ");
+    if (!summary && /^(?:summary(?:s)?|summ?\s*rary|sum\s*mary|sum\s*many|sum\s*ray|summer|suvrany|synopsis|description|desc|abstract|overview|plot|about|lommar|notes?)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:summary(?:s)?|summ?\s*rary|sum\s*mary|sum\s*many|sum\s*ray|summer|suvrany|synopsis|description|desc|abstract|overview|plot|about|lommar|notes?)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        const cleanedPart = cleanField(match[1]);
+        if (cleanedPart) summaryLines.push(cleanedPart);
+        isCollectingSummary = true;
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    if (isCollectingSummary) {
+      summaryLines.push(line);
     }
   }
 
-  // Positional fallback if some lines didn't have explicit labels
-  if (lines.length >= 7) {
-    if (!title && lines[0]) title = lines[0].replace(/.*?:/, "").trim();
-    if (!author && lines[1]) author = lines[1].replace(/.*?:/, "").trim();
-    if (!genre && lines[2]) genre = lines[2].replace(/.*?:/, "").trim();
-    if (!isbn && lines[3]) {
-      const isbMatch = lines[3].match(/([0-9Xx\s-]{6,25})/);
-      if (isbMatch) isbn = isbMatch[1].trim();
+  // Multi-line summary continuation
+  if (summaryLines.length > 0) {
+    summary = normalizeHandwritingSummary(summaryLines.join(" "));
+  }
+
+  // Global details extraction from full text if not found yet
+  if (!isbn) isbn = extractIsbn(text);
+  if (!publishedYear) publishedYear = extractPublishedYear(text);
+  if (!pages) pages = extractPages(text);
+  if (!publisher) publisher = extractPublisher(text);
+  if (!shelfLocation) shelfLocation = extractCallNumber(text);
+
+  // Document Type Classification
+  if (detectedLabels >= 3) {
+    docType = "Handwritten Intake Slip";
+  } else if (/copyright\s*©|all\s*rights\s*reserved|cataloging-in-publication|printed\s*in/i.test(text)) {
+    docType = "Printed Title / Copyright Page";
+  } else if (/\b(?:new\s*york\s*times|bestseller|a\s*novel|international\s*bestseller)\b/i.test(text) || (!title && lines.length <= 6)) {
+    docType = "Printed Book Cover";
+  } else if (/\b(?:call\s*no|accession|dewey|cutter)\b/i.test(text)) {
+    docType = "Library Catalog Slip";
+  } else {
+    docType = "General Scanned Document";
+  }
+
+  // Pass 2: Unlabeled / printed text fallback
+  if (!title || !author) {
+    const MARKETING_NOISE = /^(?:#?1\s*new\s*york\s*times\s*bestseller|new\s*york\s*times\s*bestseller|international\s*bestseller|national\s*bestseller|the\s*runaway\s*bestseller|a\s*novel|a\s*memoir|major\s*motion\s*picture|winner\s*of|pulitzer\s*prize|foreword\s*by|introduction\s*by|with\s*a\s*new\s*afterword)$/i;
+    const isLabel = (l: string) => /^(?:title|author|genre|isbn|copies|edition|volume|summary|publisher|year|pages|shelf)[\s:;*=\-–—!?,.]/i.test(l);
+    const isCallNumber = (l: string) => /^[A-Z]{1,4}\s*\d{1,4}(?:\.[A-Z0-9]+)?(?:\s+[A-Z0-9.]+)*$/i.test(l.trim());
+    const isPublisherLine = (l: string) => {
+      if (publisher && l.toLowerCase().includes(publisher.toLowerCase())) return true;
+      return /\b(?:press|publishing|publishers|books|house|media|imprint)\b/i.test(l);
+    };
+    const isPureDigitsOrMetrics = (l: string) => /^\d+[\s\w.]*$/i.test(l.trim()) || /\b\d{1,4}\s*(?:pages|pp|p\.?)\b/i.test(l) || /^\d{4}$/.test(l.trim());
+    const isSubtitle = (l: string) => {
+      const words = l.trim().split(/\s+/);
+      if (words.length >= 5) return true;
+      return /^(?:an?\s|the\s|how\s|why\s|guide|handbook|manual|principles|introduction|stories|essays)/i.test(l) && words.length > 3;
+    };
+
+    const candidates = lines.filter(l => {
+      if (isLabel(l)) return false;
+      if (isCallNumber(l)) return false;
+      if (MARKETING_NOISE.test(l.trim())) return false;
+      if (isbn && l.includes(isbn)) return false;
+      if (/^isbn/i.test(l)) return false;
+      if (isPureDigitsOrMetrics(l)) return false;
+      if (isPublisherLine(l)) return false;
+      return true;
+    });
+
+    if (!title && candidates.length > 0) {
+      const nonAuthorLines = candidates.filter(l => !/^(?:by|written\s*by)\s+/i.test(l) && !isSubtitle(l));
+      if (nonAuthorLines.length > 0) {
+        title = toTitleCase(cleanField(nonAuthorLines[0]));
+      } else {
+        title = toTitleCase(cleanField(candidates[0]));
+      }
+    }
+
+    if (!author && candidates.length > 0) {
+      const byLine = candidates.find(l => /^(?:by|written\s*by)\s+/i.test(l));
+      if (byLine) {
+        author = toTitleCase(cleanField(byLine.replace(/^(?:by|written\s*by)\s+/i, "")));
+      } else {
+        const titleClean = (title || "").toLowerCase();
+        const authorCandidate = candidates.find(c => {
+          const cClean = cleanField(c).toLowerCase();
+          if (cClean === titleClean) return false;
+          if (isSubtitle(c)) return false;
+          const words = c.trim().split(/\s+/);
+          return words.length >= 1 && words.length <= 4;
+        });
+        if (authorCandidate) {
+          author = toTitleCase(cleanField(authorCandidate));
+        } else if (candidates.length > 1) {
+          author = toTitleCase(cleanField(candidates[1]));
+        }
+      }
+    }
+
+    const subtitleLine = candidates.find(c => isSubtitle(c));
+    if (subtitleLine && (!summary || summary.length > 60)) {
+      summary = cleanField(subtitleLine);
     }
   }
 
-  // Handwriting autocorrection & cleanup
-  if (title) {
-    title = title
-      .replace(/\bBich\b/gi, "Brich")
-      .replace(/\bBrch\b/gi, "Brich")
-      .replace(/\bBch\b/gi, "Brich")
-      .replace(/\bCoysion\b/gi, "Capston")
-      .replace(/\bCoyosion\b/gi, "Capston")
-      .replace(/\bCoypsion\b/gi, "Capston")
-      .replace(/\bCopdter\b/gi, "Capston")
-      .replace(/\bCapdlon\b/gi, "Capston")
-      .replace(/\bCayoston\b/gi, "Capston")
-      .replace(/\bCopsion\b/gi, "Capston")
-      .replace(/\bJourn\b/gi, "Journey")
-      .replace(/\bJourne\b/gi, "Journey")
-      .replace(/[,;\|]+(?=\s|$)/g, "")
-      .replace(/[,;\|]+$/, "")
-      .trim();
-  }
-
-  if (author) {
-    author = author
-      .replace(/\bYona\b/gi, "Yana")
-      .replace(/\bNona\b/gi, "Yana")
-      .replace(/\bBch\b/gi, "Brich")
-      .replace(/\bBh\b/gi, "Brich")
-      .replace(/\s+fr\b/gi, "")
-      .replace(/<.*$/, "")
-      .replace(/\s*\|\s*$/, "")
-      .replace(/[^a-zA-Z\s.-]/g, "")
-      .replace(/[,;]+$/, "")
-      .trim();
-  }
-
-  if (genre) {
-    genre = genre
-      .replace(/\bLHe\b/gi, "Life")
-      .replace(/\bLHE\b/gi, "Life")
-      .replace(/\bLite\b/gi, "Life")
-      .replace(/\bSlory\b/gi, "Story")
-      .replace(/\bSony\b/gi, "Story")
-      .replace(/[~—\-–]+.*$/, "")
-      .replace(/[,;]+$/, "")
-      .trim();
-  }
-
-  if (isbn) {
-    isbn = isbn.replace(/[^0-9Xx-]/g, "").trim();
-    if (isbn.includes("953-424") || isbn.includes("9233-424") || isbn.includes("923-494") || isbn.includes("933-424") || isbn.includes("424-16")) {
-      isbn = "933-1428-103";
+  if (!genre) {
+    if (department && department !== "Circulation") {
+      genre = department;
+    } else if (/\b(?:fiction|story|novel|tale|romance|mystery|thriller)\b/i.test(text)) {
+      genre = "Fiction";
+    } else if (/\b(?:algorithm|programming|software|computer|python|java|javascript|data|science)\b/i.test(text)) {
+      genre = "Computer Science";
+    } else if (/\b(?:history|war|century|civilization|historical)\b/i.test(text)) {
+      genre = "History";
+    } else if (/\b(?:business|finance|management|economy|marketing)\b/i.test(text)) {
+      genre = "Business & Economics";
+    } else {
+      genre = "General Collection";
     }
   }
 
-  if (edition) {
-    if (/\bdst\b|\b1st\b|\bAst\b|\bwe\b|\bdy\b|\bgat\b|\bor\b|\bde\b/i.test(edition)) edition = "1st";
-  }
-
-  if (volume) {
-    const num = volume.match(/\d+/);
-    volume = (num && num[0] !== "4") ? num[0] : "1";
-  }
-
-  if (copies > 10 || isNaN(copies)) {
-    copies = 1;
-  }
-
-  if (summary) {
-    summary = summary
-      .replace(/\b(?:LA|K|[A-Z])\s+Life\b/gi, "A Life")
-      .replace(/\bLite:?\b/gi, "Life")
-      .replace(/\bLHE\b/gi, "Life")
-      .replace(/\bSlory\b/gi, "Story")
-      .replace(/\bSony\b/gi, "Story")
-      .replace(/\bSian\b/gi, "Story")
-      .replace(/\bSit\s+Wg\b/gi, "Story about")
-      .replace(/\balent\b/gi, "about")
-      .replace(/\babet\b/gi, "about")
-      .replace(/\baft\b/gi, "about")
-      .replace(/\babs\b/gi, "about")
-      .replace(/\balex\b/gi, "about")
-      .replace(/\bhe\b/gi, "the")
-      .replace(/\bdhe\b/gi, "the")
-      .replace(/\bte\b/gi, "the")
-      .replace(/\bthe\s+Co\s+Capstone\b/gi, "the Capstone")
-      .replace(/\bthe\s+Co\b/gi, "the Capstone")
-      .replace(/\bCo\s+Capstone\b/gi, "Capstone")
-      .replace(/\bCopctone\b/gi, "Capstone")
-      .replace(/\bCopitont\b/gi, "Capstone")
-      .replace(/\bCopstont\b/gi, "Capstone")
-      .replace(/\bLopstont\b/gi, "Capstone")
-      .replace(/\bExpelieenct\b/gi, "Experience")
-      .replace(/\bExpelieense:?\b/gi, "Experience")
-      .replace(/\bExpelieenste:?\b/gi, "Experience")
-      .replace(/\bExpelieens:?\b/gi, "Experience")
-      .replace(/\bEXpeteense:?\b/gi, "Experience")
-      .replace(/Life:\s*/gi, "Life ")
-      .replace(/[—~=_\-–—]+/g, "")
-      .replace(/[:;,\.]+(?=\s|$)/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (!summary.startsWith("A Life")) summary = "A " + summary.replace(/^[^A-Za-z]+/, "");
-    if (!summary.endsWith(".")) summary += ".";
+  if (!department) {
+    department = genre === "Fiction" ? "Circulation" : (genre || "General Collection");
   }
 
   return {
     title: title || "Untitled Scanned Book",
     author: author || "Unknown Author",
-    genre: genre || "General",
-    isbn: isbn || "",
+    genre,
+    department,
+    isbn: sanitizeIsbn(isbn),
     copies: copies || 1,
     edition: edition || "1st",
     volume: volume || "1",
-    summary: summary || "",
+    summary: summary || (text.length > 120 ? cleanField(text.slice(0, 220)) + "..." : ""),
+    publisher: publisher || "",
+    publishedYear: publishedYear || "",
+    pages: pages || "",
+    shelfLocation: shelfLocation || "Catalog Shelf (Pending Placement)",
+    docType,
     rawText: text,
   };
 }
@@ -310,13 +642,43 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
 export default function LibrarianScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser } = useAuth();
   const { isDarkMode, toggleTheme } = useThemeColors();
   const theme = isDarkMode ? DARK_THEME : LIGHT_THEME;
   const styles = useMemo(() => getStyles(theme, isDarkMode), [isDarkMode]);
 
+  // Librarian Mobile Restrictions
+  const perms = (user as any)?.permissions || {};
+  const canCatalog = perms.mobileCatalog !== false;
+  // Combined Student Information & Return module covers student card info, returns, reservations, and violations
+  const canStudentPass =
+    perms.mobileStudentPass !== false &&
+    perms.mobileReturns !== false &&
+    perms.mobileReservations !== false &&
+    perms.mobileViolations !== false;
+  const canReturns = canStudentPass;
+  const canReservations = canStudentPass;
+  const canViolations = canStudentPass;
+  const canPickup = perms.mobilePickup !== false;
+  // Manual keypad entry & gallery picking are unrestricted standard tools
+  const canManualEntry = true;
+  const canGallery = true;
+  const allScanningRestricted = !canCatalog && !canStudentPass;
+
   // Primary mode is "Catalog" for scanning words on paper
-  const [activeMode, setActiveMode] = useState<"Catalog" | "Transaction">("Catalog");
+  const [activeMode, setActiveMode] = useState<"Catalog" | "Transaction">(() => {
+    if (!canCatalog && canStudentPass) return "Transaction";
+    return "Catalog";
+  });
+
+  // Automatically adjust active mode if selected mode is restricted
+  useEffect(() => {
+    if (!canCatalog && activeMode === "Catalog" && canStudentPass) {
+      setActiveMode("Transaction");
+    } else if (!canStudentPass && activeMode === "Transaction" && canCatalog) {
+      setActiveMode("Catalog");
+    }
+  }, [canCatalog, canStudentPass, activeMode]);
 
   // Camera settings
   const [permission, requestPermission] = useCameraPermissions();
@@ -348,6 +710,13 @@ export default function LibrarianScreen() {
     rawText: "",
   });
 
+  // Recognition engine & confidence metrics
+  const [ocrEngine, setOcrEngine] = useState<string>("ocr");
+  const [ocrConfidence, setOcrConfidence] = useState<number>(92);
+
+  // Captured / uploaded picture preview for 1-second scan display
+  const [previewPhotoUri, setPreviewPhotoUri] = useState<string | null>(null);
+
   // Edit Mode toggle inside the modal
   const [isEditingFields, setIsEditingFields] = useState(false);
   const [showRawText, setShowRawText] = useState(false);
@@ -357,6 +726,10 @@ export default function LibrarianScreen() {
   const [matchedCatalogList, setMatchedCatalogList] = useState<Book[]>([]);
   const [scannedBook, setScannedBook] = useState<Book | null>(null);
   const [bookModalVisible, setBookModalVisible] = useState(false);
+  const [receiptModalVisible, setReceiptModalVisible] = useState(false);
+  const [scannedReceipt, setScannedReceipt] = useState<ReceiptData | null>(null);
+  const [isPickingUp, setIsPickingUp] = useState(false);
+  const [pickupSuccess, setPickupSuccess] = useState(false);
 
   // Manual input drawer
   const [showManualInput, setShowManualInput] = useState(false);
@@ -376,13 +749,13 @@ export default function LibrarianScreen() {
         Animated.sequence([
           Animated.timing(laserAnim, {
             toValue: 1,
-            duration: 1600,
+            duration: 500,
             easing: Easing.inOut(Easing.quad),
             useNativeDriver: true,
           }),
           Animated.timing(laserAnim, {
             toValue: 0,
-            duration: 1600,
+            duration: 500,
             easing: Easing.inOut(Easing.quad),
             useNativeDriver: true,
           }),
@@ -400,15 +773,120 @@ export default function LibrarianScreen() {
       setScanned(false);
       setProcessing(false);
       setProcessingStep("");
+
+      // Fetch fresh librarian permissions in background
+      authService.fetchLibrarianPermissions?.().then((fresh) => {
+        if (fresh && updateUser) {
+          updateUser({ permissions: fresh });
+        }
+      }).catch(() => {});
+
       return () => {
         setIsCameraActive(false);
         setIsCameraReady(false);
       };
-    }, [])
+    }, [updateUser])
   );
+
+  const isReceiptPayload = (raw: string): boolean => {
+    if (!raw) return false;
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("RCP-") || /RCP-[A-Z0-9]+-\d+/i.test(trimmed)) return true;
+    try {
+      if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+        const obj = JSON.parse(trimmed);
+        if (
+          obj.type === "BOOKHIVE_CIRCULATION_RECEIPT" ||
+          obj.type === "PICKUP_PASS" ||
+          obj.receiptNumber ||
+          obj.token?.startsWith("BH-RCPT") ||
+          (obj.studentId && (obj.bookTitle || obj.title || obj.isbn))
+        ) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  };
+
+  const handleReceiptScanned = async (rawQr: string) => {
+    triggerShutterFlash();
+    setProcessing(true);
+    setProcessingStep("Resolving circulation receipt & borrow details...");
+    setPickupSuccess(false);
+
+    try {
+      const resolved = await resolveReceiptQrPayload(rawQr);
+      setScannedReceipt(resolved);
+      setReceiptModalVisible(true);
+    } catch (err: any) {
+      console.warn("handleReceiptScanned error:", err?.message);
+      Alert.alert(
+        "Verification Notice",
+        "Could not verify this circulation QR code. Please make sure the QR code is from an official BookHive loan receipt.",
+        [{ text: "OK", onPress: () => setScanned(false) }]
+      );
+    } finally {
+      setProcessing(false);
+      setProcessingStep("");
+    }
+  };
+
+  const handleConfirmPickup = async () => {
+    if (!scannedReceipt) return;
+    setIsPickingUp(true);
+
+    try {
+      const targetId = scannedReceipt.transactionId || scannedReceipt.receiptNumber;
+      const success = await markTransactionPickedUp(targetId, scannedReceipt);
+
+      if (success) {
+        const formattedDate = new Date().toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+
+        setScannedReceipt((prev) =>
+          prev
+            ? {
+                ...prev,
+                status: "Approved",
+                isPickedUp: true,
+                pickupDate: formattedDate,
+              }
+            : null
+        );
+        setPickupSuccess(true);
+
+        const msg = `"${scannedReceipt.bookTitle}" has been marked as PICKED UP by ${scannedReceipt.studentName || "the student"}. Due return deadline is ${scannedReceipt.returnDate}.`;
+        if (Platform.OS === "web" && typeof window !== "undefined") {
+          window.alert(msg);
+        } else {
+          Alert.alert("Pick-up Confirmed", msg);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert("Pick-up Notice", err?.message || "Could not complete pickup transaction.");
+    } finally {
+      setIsPickingUp(false);
+    }
+  };
+
+  const handleCloseReceiptModal = () => {
+    setReceiptModalVisible(false);
+    setScannedReceipt(null);
+    setPickupSuccess(false);
+    setScanned(false);
+  };
 
   const cleanScannedPayload = (data: string): string => {
     let payload = (data || "").trim();
+    if (isReceiptPayload(payload)) {
+      return payload;
+    }
     if (payload.startsWith("http://") || payload.startsWith("https://")) {
       try {
         const parsedUrl = new URL(payload);
@@ -437,12 +915,38 @@ export default function LibrarianScreen() {
   };
 
   /**
-   * Barcode detection fallback (if paper has an ISBN barcode or if in Transaction mode)
+   * Barcode detection fallback (if paper has an ISBN barcode, Student ID, or Receipt QR)
    */
-  const handleBarCodeScanned = ({ data }: { data: string }) => {
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
     if (scanned || processing) return;
+
+    if (allScanningRestricted) {
+      setScanned(true);
+      Alert.alert("Access Restricted", "Scanning functionalities have been restricted for your librarian account by the administrator.");
+      return;
+    }
+
     setScanned(true);
+
+    if (isReceiptPayload(data)) {
+      if (!canPickup) {
+        Alert.alert("Feature Restricted", "Pick-up verification has been restricted for your account by the administrator.");
+        return;
+      }
+      await handleReceiptScanned(data);
+      return;
+    }
+
     const cleaned = cleanScannedPayload(data);
+    if (isReceiptPayload(cleaned)) {
+      if (!canPickup) {
+        Alert.alert("Feature Restricted", "Pick-up verification has been restricted for your account by the administrator.");
+        return;
+      }
+      await handleReceiptScanned(cleaned);
+      return;
+    }
+
     processScanResult(cleaned);
   };
 
@@ -469,6 +973,14 @@ export default function LibrarianScreen() {
    * Unmounts in-app CameraView first so the Android camera sensor is completely released for the native camera.
    */
   const handleLaunchNativeCamera = async () => {
+    if (!canCatalog) {
+      Alert.alert(
+        "Feature Restricted",
+        "Document cataloging scanner has been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
+
     try {
       setProcessing(true);
       setProcessingStep("Opening high-definition camera...");
@@ -492,7 +1004,7 @@ export default function LibrarianScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
         allowsEditing: false,
-        quality: 0.8,
+        quality: 0.9,
         base64: true,
       });
 
@@ -501,17 +1013,18 @@ export default function LibrarianScreen() {
 
       if (!result.canceled && result.assets && result.assets[0]) {
         triggerShutterFlash();
+        const photoUri = result.assets[0].uri;
         let base64 = result.assets[0].base64;
-        if (!base64 && result.assets[0].uri) {
+        if (!base64 && photoUri) {
           try {
-            base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+            base64 = await FileSystem.readAsStringAsync(photoUri, {
               encoding: FileSystem.EncodingType.Base64,
             });
           } catch (e) {}
         }
 
         if (base64) {
-          await processPaperImageOcr(base64);
+          await processPaperImageOcr(base64, photoUri);
           return;
         }
       }
@@ -535,6 +1048,22 @@ export default function LibrarianScreen() {
   const handleShutterCapture = async () => {
     if (processing) return;
 
+    if (activeMode === "Catalog" && !canCatalog) {
+      Alert.alert(
+        "Feature Restricted",
+        "Paper document scanning has been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
+
+    if (activeMode === "Transaction" && !canStudentPass) {
+      Alert.alert(
+        "Feature Restricted",
+        "Student Pass scanning has been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
+
     // Button depress animation
     Animated.sequence([
       Animated.timing(shutterScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
@@ -555,6 +1084,7 @@ export default function LibrarianScreen() {
       setScanned(true);
 
       let capturedBase64: string | null = null;
+      let capturedUri: string | null = null;
 
       // 1. Try viewfinder camera capture if camera reference is active
       if (cameraRef.current && Platform.OS !== "web" && isCameraActive) {
@@ -565,12 +1095,13 @@ export default function LibrarianScreen() {
 
         try {
           const photo = await cameraRef.current.takePictureAsync({
-            quality: 0.7,
-            skipProcessing: true,
+            quality: 0.9,
+            skipProcessing: false,
             shutterSound: false,
           });
 
           if (photo?.uri) {
+            capturedUri = photo.uri;
             try {
               capturedBase64 = await FileSystem.readAsStringAsync(photo.uri, {
                 encoding: FileSystem.EncodingType.Base64,
@@ -582,6 +1113,7 @@ export default function LibrarianScreen() {
             }
           } else if (photo?.base64) {
             capturedBase64 = photo.base64;
+            capturedUri = photo.base64.startsWith("data:") ? photo.base64 : `data:image/jpeg;base64,${photo.base64}`;
           }
         } catch (camErr: any) {
           // Viewfinder capture could not grab buffer on this hardware HAL - will fallback to native camera
@@ -601,7 +1133,7 @@ export default function LibrarianScreen() {
           const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ["images"],
             allowsEditing: false,
-            quality: 0.8,
+            quality: 0.9,
             base64: true,
           });
 
@@ -609,10 +1141,11 @@ export default function LibrarianScreen() {
 
           if (!result.canceled && result.assets && result.assets[0]) {
             triggerShutterFlash();
+            capturedUri = result.assets[0].uri;
             let base64 = result.assets[0].base64;
-            if (!base64 && result.assets[0].uri) {
+            if (!base64 && capturedUri) {
               try {
-                base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+                base64 = await FileSystem.readAsStringAsync(capturedUri, {
                   encoding: FileSystem.EncodingType.Base64,
                 });
               } catch (e) {}
@@ -624,7 +1157,7 @@ export default function LibrarianScreen() {
 
       // 3. If we obtained base64, send to OCR
       if (capturedBase64) {
-        await processPaperImageOcr(capturedBase64);
+        await processPaperImageOcr(capturedBase64, capturedUri);
         return;
       }
 
@@ -649,6 +1182,14 @@ export default function LibrarianScreen() {
    * Pick an image of the paper or document from device gallery
    */
   const handlePickPaperPhoto = async () => {
+    if (!canGallery) {
+      Alert.alert(
+        "Feature Restricted",
+        "Photo gallery upload has been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
+
     try {
       setProcessing(true);
       setProcessingStep("Selecting document from gallery...");
@@ -664,23 +1205,24 @@ export default function LibrarianScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsEditing: false,
-        quality: 0.8,
+        quality: 0.9,
         base64: true,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
         triggerShutterFlash();
+        const photoUri = result.assets[0].uri;
         let base64 = result.assets[0].base64;
-        if (!base64 && result.assets[0].uri) {
+        if (!base64 && photoUri) {
           try {
-            base64 = await FileSystem.readAsStringAsync(result.assets[0].uri, {
+            base64 = await FileSystem.readAsStringAsync(photoUri, {
               encoding: FileSystem.EncodingType.Base64,
             });
           } catch (e) {}
         }
 
         if (base64) {
-          await processPaperImageOcr(base64);
+          await processPaperImageOcr(base64, photoUri);
           return;
         }
       }
@@ -696,22 +1238,52 @@ export default function LibrarianScreen() {
   };
 
   /**
-   * Process paper image via Backend Tesseract OCR with database catalog matching & 8-field extraction
+   * Process paper image via Backend Tesseract OCR with database catalog matching & 8-field extraction.
+   * Displays the captured/uploaded photo in the viewfinder and scans it with animated laser line for at least 1 second.
    */
-  const processPaperImageOcr = async (base64Data: string) => {
+  const processPaperImageOcr = async (base64Data: string, previewUri?: string | null) => {
+    // Display captured or uploaded picture directly inside viewfinder
+    const previewToDisplay = previewUri || (base64Data ? (base64Data.startsWith("data:") ? base64Data : `data:image/jpeg;base64,${base64Data}`) : null);
+    if (previewToDisplay) {
+      setPreviewPhotoUri(previewToDisplay);
+    }
+
     setProcessing(true);
-    setProcessingStep("Scanning words on paper & converting to text...");
+    setProcessingStep("Scanning picture...");
+
+    // User requirement: Scan the picture for 1 second that has been taken / uploaded
+    const minScanTimer = new Promise(resolve => setTimeout(resolve, 1000));
 
     try {
       const url = `${API_URL}/api/student/ocr/scan-paper`;
-      const response = await axios.post(
+      const ocrPromise = axios.post(
         url,
         { image: base64Data },
         { timeout: 35000 }
       );
 
+      const [response] = await Promise.all([ocrPromise, minScanTimer]);
+
       if (response.data && response.data.success) {
-        const { scannedText, parsedBook, matchedBooks, exactMatch } = response.data;
+        if (response.data.isQrCode && response.data.qrData) {
+          setPreviewPhotoUri(null);
+          setProcessing(false);
+          setProcessingStep("");
+          if (isReceiptPayload(response.data.qrData)) {
+            await handleReceiptScanned(response.data.qrData);
+            return;
+          } else {
+            router.push({
+              pathname: "/scanned-card",
+              params: { qr: cleanScannedPayload(response.data.qrData) },
+            });
+            return;
+          }
+        }
+
+        const { scannedText, parsedBook, matchedBooks, exactMatch, engine, confidence } = response.data;
+        if (engine) setOcrEngine(engine);
+        if (confidence) setOcrConfidence(confidence);
         const textOutput = scannedText || "";
         setScannedPaperText(textOutput);
 
@@ -721,11 +1293,17 @@ export default function LibrarianScreen() {
           title: parsedBook?.title || clientParsed.title,
           author: parsedBook?.author || clientParsed.author,
           genre: parsedBook?.genre || clientParsed.genre,
-          isbn: parsedBook?.isbn || clientParsed.isbn,
+          department: parsedBook?.department || clientParsed.department,
+          isbn: sanitizeIsbn(parsedBook?.isbn || clientParsed.isbn),
           copies: parsedBook?.copies || clientParsed.copies,
           edition: parsedBook?.edition || clientParsed.edition,
           volume: parsedBook?.volume || clientParsed.volume,
           summary: parsedBook?.summary || clientParsed.summary,
+          publisher: parsedBook?.publisher || clientParsed.publisher,
+          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear,
+          pages: parsedBook?.pages || clientParsed.pages,
+          shelfLocation: parsedBook?.shelfLocation || clientParsed.shelfLocation,
+          docType: parsedBook?.docType || clientParsed.docType,
           rawText: textOutput,
         };
 
@@ -740,22 +1318,27 @@ export default function LibrarianScreen() {
             edition: resolvedParsed.edition || top.edition,
             volume: resolvedParsed.volume || top.volume,
             copies: resolvedParsed.copies || top.copies,
+            shelfLocation: resolvedParsed.shelfLocation || top.shelfLocation || top.shelf,
+            year: resolvedParsed.publishedYear || top.year,
+            pages: resolvedParsed.pages ? parseInt(resolvedParsed.pages, 10) : top.pages,
           });
         } else {
-          // Construct preview book with all 8 extracted fields
+          // Construct preview book with all extracted fields
           const fallbackBook: Book = {
-            isbn: resolvedParsed.isbn || `PAPER-${Date.now().toString().slice(-6)}`,
+            isbn: sanitizeIsbn(resolvedParsed.isbn) || `PAPER-${Date.now().toString().slice(-6)}`,
             title: resolvedParsed.title,
             author: resolvedParsed.author,
-            department: resolvedParsed.genre,
+            department: resolvedParsed.department || resolvedParsed.genre,
             genre: resolvedParsed.genre,
             edition: resolvedParsed.edition,
             volume: resolvedParsed.volume,
             copies: resolvedParsed.copies,
             availableCopies: resolvedParsed.copies,
-            shelf_location: "Catalog Shelf (Pending Placement)",
-            shelf: "Catalog Shelf",
-            description: resolvedParsed.summary || `Extracted from paper document.`,
+            year: resolvedParsed.publishedYear,
+            pages: resolvedParsed.pages ? parseInt(resolvedParsed.pages, 10) : undefined,
+            shelf_location: resolvedParsed.shelfLocation || "Catalog Shelf (Pending Placement)",
+            shelf: resolvedParsed.shelfLocation || "Catalog Shelf",
+            description: resolvedParsed.summary || `Extracted from document.`,
             summary: resolvedParsed.summary,
             available: true,
           };
@@ -784,6 +1367,7 @@ export default function LibrarianScreen() {
         );
       }
     } finally {
+      setPreviewPhotoUri(null);
       setProcessing(false);
       setProcessingStep("");
     }
@@ -816,7 +1400,7 @@ export default function LibrarianScreen() {
       });
     } else {
       const fallbackBook: Book = {
-        isbn: parsed.isbn || `PAPER-${Date.now().toString().slice(-6)}`,
+        isbn: sanitizeIsbn(parsed.isbn) || `PAPER-${Date.now().toString().slice(-6)}`,
         title: parsed.title,
         author: parsed.author,
         department: parsed.genre,
@@ -848,11 +1432,38 @@ export default function LibrarianScreen() {
       return;
     }
 
+    if (isReceiptPayload(clean)) {
+      if (!canPickup) {
+        Alert.alert(
+          "Feature Restricted",
+          "Pick-up verification and circulation receipt processing has been restricted for your librarian account by the administrator."
+        );
+        return;
+      }
+      await handleReceiptScanned(clean);
+      return;
+    }
+
     if (activeMode === "Transaction") {
+      if (!canStudentPass) {
+        Alert.alert(
+          "Feature Restricted",
+          "Student Information & Return scanning has been restricted for your librarian account by the administrator."
+        );
+        return;
+      }
       router.push({
         pathname: "/scanned-card",
         params: { qr: clean },
       });
+      return;
+    }
+
+    if (!canCatalog) {
+      Alert.alert(
+        "Feature Restricted",
+        "Cataloging scanner has been restricted for your librarian account by the administrator."
+      );
       return;
     }
 
@@ -869,7 +1480,9 @@ export default function LibrarianScreen() {
       );
 
       if (response.data && response.data.success) {
-        const { scannedText, parsedBook, matchedBooks, exactMatch } = response.data;
+        const { scannedText, parsedBook, matchedBooks, exactMatch, engine, confidence } = response.data;
+        if (engine) setOcrEngine(engine);
+        if (confidence) setOcrConfidence(confidence);
         const textOutput = scannedText || clean;
         setScannedPaperText(textOutput);
 
@@ -878,7 +1491,7 @@ export default function LibrarianScreen() {
           title: parsedBook?.title || clientParsed.title,
           author: parsedBook?.author || clientParsed.author,
           genre: parsedBook?.genre || clientParsed.genre,
-          isbn: parsedBook?.isbn || clientParsed.isbn,
+          isbn: sanitizeIsbn(parsedBook?.isbn || clientParsed.isbn),
           copies: parsedBook?.copies || clientParsed.copies,
           edition: parsedBook?.edition || clientParsed.edition,
           volume: parsedBook?.volume || clientParsed.volume,
@@ -918,9 +1531,17 @@ export default function LibrarianScreen() {
   };
 
   /**
-   * Save / Add the scanned book to the library catalog
+   * Save / Add the scanned book to the library digitized intake queue for final cataloging check
    */
   const handleSaveToCatalog = async () => {
+    if (!canCatalog) {
+      Alert.alert(
+        "Feature Restricted",
+        "Adding new books to the catalog has been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
+
     if (!parsedFields.title) {
       Alert.alert("Missing Title", "Please provide a book title before saving.");
       return;
@@ -928,36 +1549,69 @@ export default function LibrarianScreen() {
 
     setIsSaving(true);
     try {
-      const newBookData = {
-        isbn: parsedFields.isbn || `SCAN-${Date.now().toString().slice(-6)}`,
+      const digitizedBookData = {
+        isbn: sanitizeIsbn(parsedFields.isbn) || `SCAN-${Date.now().toString().slice(-6)}`,
         title: parsedFields.title,
         author: parsedFields.author || "Unknown Author",
         genre: parsedFields.genre || "General",
         category: parsedFields.genre || "General",
-        department: parsedFields.genre || "General Collection",
+        department: parsedFields.department || parsedFields.genre || "Circulation",
         copies: parsedFields.copies || 1,
-        edition: parsedFields.edition || "1st",
-        volume: parsedFields.volume || "1",
+        edition: parsedFields.edition || "1st Edition",
+        volume: parsedFields.volume || "Vol. 1",
         summary: parsedFields.summary,
         description: parsedFields.summary,
-        shelfLocation: "Circulation-SH-SCAN",
-        shelf: "Circulation-SH-SCAN",
+        publisher: parsedFields.publisher || "",
+        year: parsedFields.publishedYear || new Date().getFullYear().toString(),
+        publicationDate: parsedFields.publishedYear ? `${parsedFields.publishedYear}-01-01` : undefined,
+        pages: parsedFields.pages || "1",
+        shelfLocation: parsedFields.shelfLocation || "",
+        docType: parsedFields.docType || "Catalog Intake Slip",
+        ocrEngine: ocrEngine || "Tesseract Neural OCR",
+        confidence: ocrConfidence || 95.0,
+        rawText: scannedPaperText || parsedFields.rawText || "",
+        scannedBy: "Librarian Mobile App (Scanner)",
+        status: "Pending Review",
         availability: "Available",
       };
 
-      // Add to local live catalog feed immediately
-      addDynamicBook(newBookData);
+      // Add to local live catalog feed immediately for mobile responsiveness
+      addDynamicBook(digitizedBookData);
 
-      // Attempt to post to backend admin books API if token exists
+      // Post to backend Digitized Books intake queue
+      const authHeaders: Record<string, string> = {
+        "Content-Type": "application/json",
+      };
+      if (user?.token) {
+        authHeaders.Authorization = `Bearer ${user.token}`;
+      }
+
+      let syncSuccess = false;
       try {
-        await axios.post(`${API_URL}/api/admin/books`, newBookData, { timeout: 8000 });
+        await apiClient.post("/api/digitized-books", digitizedBookData, { headers: authHeaders, timeout: 8000 });
+        syncSuccess = true;
       } catch (err: any) {
-        console.warn("Backend add book sync deferred or offline:", err?.message);
+        try {
+          await axios.post(`${API_URL}/api/digitized-books`, digitizedBookData, { headers: authHeaders, timeout: 8000 });
+          syncSuccess = true;
+        } catch (err2: any) {
+          try {
+            await axios.post(`${API_URL}/api/student/digitized-books`, digitizedBookData, { headers: authHeaders, timeout: 8000 });
+            syncSuccess = true;
+          } catch (err3: any) {
+            try {
+              await axios.post(`${API_URL}/api/admin/digitized-books`, digitizedBookData, { headers: authHeaders, timeout: 8000 });
+              syncSuccess = true;
+            } catch (err4: any) {
+              console.warn("Backend digitized book sync deferred or offline:", err4?.message || err?.message);
+            }
+          }
+        }
       }
 
       Alert.alert(
-        "✓ Added to Catalog",
-        `"${parsedFields.title}" has been successfully registered in the BookHive Library Catalog!`,
+        "✓ Sent to Digitized Queue",
+        `"${parsedFields.title}" has been successfully submitted to the Digitized tab for final cataloging review before officially adding it to the system!`,
         [
           {
             text: "Done",
@@ -969,7 +1623,7 @@ export default function LibrarianScreen() {
         ]
       );
     } catch (err: any) {
-      Alert.alert("Save Error", err?.message || "Failed to save book to catalog.");
+      Alert.alert("Save Error", err?.message || "Failed to submit book to digitized queue.");
     } finally {
       setIsSaving(false);
     }
@@ -1027,57 +1681,63 @@ export default function LibrarianScreen() {
         ]}
       />
 
-      {/* TOP HEADER: Sleek Modern Web System Bar */}
+      {/* TOP HEADER: Modern Workstation Navigation Bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
         <View style={styles.brandTitleRow}>
+          <Ionicons
+            name="book"
+            size={20}
+            color={theme.primary}
+            style={{ marginRight: 6 }}
+          />
           <Text style={styles.brandTitleText}>BOOKHIVE</Text>
           <View style={styles.librarianBadgePill}>
+            <View style={styles.activeDot} />
             <Text style={styles.librarianBadgeText}>Librarian</Text>
-          </View>
-          <View style={styles.primaryModeBadge}>
-            <Text style={styles.primaryModeBadgeText}>
-              {activeMode === "Catalog" ? "Catalog Scanner" : "Student Pass"}
-            </Text>
           </View>
         </View>
 
         <View style={styles.topBarIcons}>
           <TouchableOpacity
-            style={styles.iconHit}
+            style={[styles.iconHit, torchOn && styles.iconHitActiveTorch]}
             onPress={() => setTorchOn(prev => !prev)}
             accessibilityLabel="Toggle Torch"
+            activeOpacity={0.7}
           >
             <Ionicons
               name={torchOn ? "flash" : "flash-outline"}
               size={18}
-              color={torchOn ? theme.accentStrong : theme.primary}
+              color={torchOn ? "#F59E0B" : theme.iconNeutral}
             />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconHit, { marginLeft: 5 }]}
+            style={styles.iconHit}
             onPress={() => setFacing(prev => (prev === "back" ? "front" : "back"))}
             accessibilityLabel="Switch Camera"
+            activeOpacity={0.7}
           >
-            <Ionicons name="camera-reverse-outline" size={19} color={theme.primary} />
+            <Ionicons name="camera-reverse-outline" size={19} color={theme.iconNeutral} />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconHit, { marginLeft: 5 }]}
+            style={styles.iconHit}
             onPress={toggleTheme}
             accessibilityLabel="Toggle Theme"
+            activeOpacity={0.7}
           >
             <Ionicons
-              name={isDarkMode ? "sunny-outline" : "moon-outline"}
+              name={isDarkMode ? "sunny" : "moon-outline"}
               size={18}
-              color={isDarkMode ? theme.accent : theme.primary}
+              color={isDarkMode ? "#FBBF24" : theme.iconNeutral}
             />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconHit, { marginLeft: 6 }]}
+            style={[styles.iconHit, styles.logoutHit]}
             onPress={handleLogout}
             accessibilityLabel="Log out"
+            activeOpacity={0.7}
           >
             <Ionicons name="log-out-outline" size={19} color={theme.danger} />
           </TouchableOpacity>
@@ -1097,17 +1757,76 @@ export default function LibrarianScreen() {
               facing={facing}
               enableTorch={torchOn}
               mode="picture"
-              barcodeScannerSettings={
-                activeMode === "Transaction"
-                  ? { barcodeTypes: ["qr", "ean13", "ean8", "code128", "code39", "upc_a", "upc_e"] }
-                  : undefined
-              }
-              onBarcodeScanned={activeMode === "Transaction" && !scanned ? handleBarCodeScanned : undefined}
+              barcodeScannerSettings={{
+                barcodeTypes: ["qr", "ean13", "ean8", "code128", "code39", "upc_a", "upc_e"],
+              }}
+              onBarcodeScanned={!scanned && !processing ? handleBarCodeScanned : undefined}
               onCameraReady={() => setIsCameraReady(true)}
             />
           ) : (
             <View style={[StyleSheet.absoluteFill, { backgroundColor: "#060A12", justifyContent: "center", alignItems: "center" }]}>
               {processing && <ActivityIndicator size="large" color={theme.accentStrong} />}
+            </View>
+          )}
+
+          {/* Captured / Uploaded Picture Preview during 1-second scan */}
+          {previewPhotoUri && (
+            <Image
+              source={{ uri: previewPhotoUri }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+            />
+          )}
+
+          {/* ALL SCANNING RESTRICTED BANNER */}
+          {allScanningRestricted && (
+            <View
+              style={[
+                StyleSheet.absoluteFill,
+                {
+                  backgroundColor: isDarkMode ? "rgba(8, 13, 26, 0.96)" : "rgba(248, 250, 252, 0.97)",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  padding: 24,
+                  zIndex: 25,
+                },
+              ]}
+            >
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 32,
+                  backgroundColor: isDarkMode ? "rgba(239, 68, 68, 0.15)" : "#FEE2E2",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  marginBottom: 14,
+                }}
+              >
+                <Ionicons name="lock-closed" size={32} color={theme.danger} />
+              </View>
+              <Text
+                style={{
+                  fontSize: 17,
+                  fontWeight: "bold",
+                  color: theme.textPrimary,
+                  textAlign: "center",
+                  marginBottom: 8,
+                }}
+              >
+                Scanner Functions Restricted
+              </Text>
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: theme.muted,
+                  textAlign: "center",
+                  lineHeight: 19,
+                  maxWidth: 290,
+                }}
+              >
+                Paper Cataloging and Student Pass QR scanning have been restricted for your librarian account by the administrator.
+              </Text>
             </View>
           )}
 
@@ -1117,12 +1836,16 @@ export default function LibrarianScreen() {
             <View style={styles.reticleBadgeBox}>
               <MaterialCommunityIcons
                 name={activeMode === "Catalog" ? "text-box-search-outline" : "qrcode-scan"}
-                size={13}
+                size={14}
                 color={theme.primary}
-                style={{ marginRight: 4 }}
+                style={{ marginRight: 6 }}
               />
               <Text style={styles.reticleBadgeText}>
-                {activeMode === "Catalog" ? "PAPER & CATALOG SCANNER" : "STUDENT ID SCANNER"}
+                {previewPhotoUri
+                  ? "SCANNING PICTURE..."
+                  : activeMode === "Catalog"
+                  ? "PAPER & CATALOG SCANNER"
+                  : "STUDENT ID & RECEIPT SCANNER"}
               </Text>
             </View>
 
@@ -1133,7 +1856,7 @@ export default function LibrarianScreen() {
             <View style={[styles.cornerBracket, styles.bracketBottomRight]} />
 
             {/* Animated Laser Scanning Line (Sweeps up/down when scanning words) */}
-            {activeMode === "Catalog" && processing && (
+            {(activeMode === "Catalog" || previewPhotoUri) && processing && (
               <Animated.View
                 style={[
                   styles.animatedLaserLine,
@@ -1147,15 +1870,23 @@ export default function LibrarianScreen() {
 
           {/* HINT PILL BELOW RETICLE */}
           <View style={styles.reticleGuidePill} pointerEvents="none">
+            <Ionicons
+              name={activeMode === "Catalog" ? "document-text-outline" : "qr-code-outline"}
+              size={13}
+              color={theme.primary}
+              style={{ marginRight: 6 }}
+            />
             <Text style={styles.reticleGuideText}>
-              {activeMode === "Catalog"
-                ? "Align printed or handwritten book details inside frame"
-                : "Align Student ID QR code inside frame"}
+              {previewPhotoUri
+                ? "Scanning picture for 1 second..."
+                : (activeMode === "Catalog"
+                    ? "Align printed or handwritten book details inside frame"
+                    : "Align Student ID or Receipt QR code inside frame")}
             </Text>
           </View>
 
-          {/* IN-FLIGHT WORD SCANNING HUD OVERLAY */}
-          {processing && (
+          {/* IN-FLIGHT WORD SCANNING HUD OVERLAY (Only shown when not displaying photo preview) */}
+          {processing && !previewPhotoUri && (
             <View style={styles.processingOverlay}>
               <View style={styles.hudCard}>
                 <ActivityIndicator size="large" color={theme.accentStrong} />
@@ -1204,6 +1935,64 @@ export default function LibrarianScreen() {
                 {activeMode === "Catalog" ? "Simulate Scanning Words on Paper:" : "Simulate Student QR Pass:"}
               </Text>
               <View style={styles.webChipsRow}>
+                {/* 1. Official Receipt QR Code from Jan Dale Piansay (Ready for Pickup) */}
+                <TouchableOpacity
+                  style={[styles.webChip, { backgroundColor: isDarkMode ? "rgba(2, 132, 199, 0.15)" : "#F0F9FF", borderColor: "#0284C7" }]}
+                  onPress={() =>
+                    processScanResult(
+                      JSON.stringify({
+                        receiptNumber: "RCP-PROVED-5200",
+                        type: "BOOKHIVE_CIRCULATION_RECEIPT",
+                        title: "Modlitwa o deszcz",
+                        bookTitle: "Modlitwa o deszcz",
+                        author: "Wojciech Jagielski",
+                        isbn: "9788374143318",
+                        category: "Nonfiction",
+                        shelf: "CIR-20B.8",
+                        studentName: "Jan Dale Piansay",
+                        studentId: "23-1653-705",
+                        department: "CICT",
+                        borrowDate: "2026-10-14 10:37 PM",
+                        pickupDate: "Ready for Pickup",
+                        returnDate: "2026-10-21",
+                        status: "Approved",
+                        isPickedUp: false,
+                        token: "BH-RCPT-tx-decided-5200-approved",
+                        verifiedBy: "BookHive Circulation Desk"
+                      })
+                    )
+                  }
+                >
+                  <Text style={[styles.webChipText, { color: "#0284C7", fontWeight: "800" }]}>🧾 "Modlitwa o deszcz" (Ready for Pickup)</Text>
+                </TouchableOpacity>
+
+                {/* 2. Official Receipt QR Code simulation from User's Receipt Image */}
+                <TouchableOpacity
+                  style={[styles.webChip, { backgroundColor: isDarkMode ? "rgba(16, 185, 129, 0.15)" : "#ECFDF5", borderColor: "#10B981" }]}
+                  onPress={() =>
+                    processScanResult(
+                      JSON.stringify({
+                        receiptNumber: "RCP-PROVED-2130",
+                        type: "BOOKHIVE_CIRCULATION_RECEIPT",
+                        title: "The Struggle",
+                        isbn: "222-1234-162",
+                        studentName: "Hi",
+                        studentId: "23-1234-567",
+                        department: "CHTM",
+                        borrowDate: "2026-10-13 12:13 am",
+                        pickupDate: "Ready for Pickup",
+                        returnDate: "2026-10-20",
+                        status: "Approved",
+                        isPickedUp: false,
+                        token: "BH-RCPT-tx-decided-b8816339-e413-4716-9013-e5140befd994-approved-AIR0RT",
+                        verifiedBy: "BookHive Circulation Desk"
+                      })
+                    )
+                  }
+                >
+                  <Text style={[styles.webChipText, { color: "#10B981", fontWeight: "800" }]}>🧾 "The Struggle" (RCP-PROVED-2130)</Text>
+                </TouchableOpacity>
+
                 {activeMode === "Catalog" ? (
                   <>
                     <TouchableOpacity
@@ -1248,8 +2037,8 @@ export default function LibrarianScreen() {
             style={styles.drawerInput}
             placeholder={
               activeMode === "Catalog"
-                ? "Type words from paper: Title: ... Author: ... Genre: ... ISBN: ..."
-                : "Enter Student ID (e.g. 23-1111-111)"
+                ? "Type words from paper, ISBN, or Receipt (e.g. RCP-PROVED-2130)..."
+                : "Enter Student ID or Receipt Slip (e.g. RCP-PROVED-2130)"
             }
             placeholderTextColor={theme.muted}
             value={manualCode}
@@ -1272,7 +2061,7 @@ export default function LibrarianScreen() {
       )}
 
       {/* ========================================================================= */}
-      {/* FLOATING MODE SWITCHER: Modern Floating Pill above the Shutter Bar */}
+      {/* FLOATING MODE SWITCHER: Modern Segmented Capsule */}
       {/* ========================================================================= */}
       <View style={styles.modeSwitcherContainer}>
         <View style={styles.floatingModePill}>
@@ -1281,26 +2070,35 @@ export default function LibrarianScreen() {
             style={[
               styles.modeSegmentBtn,
               activeMode === "Catalog" && styles.modeSegmentBtnActive,
+              !canCatalog && { opacity: 0.6 },
             ]}
             onPress={() => {
+              if (!canCatalog) {
+                Alert.alert(
+                  "Feature Restricted",
+                  "Document & Paper Cataloging scanner has been restricted for your librarian account by the administrator."
+                );
+                return;
+              }
               setActiveMode("Catalog");
               setScanned(false);
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <MaterialCommunityIcons
-              name="book-open-page-variant-outline"
+              name={canCatalog ? "book-open-page-variant" : "lock"}
               size={15}
-              color={activeMode === "Catalog" ? theme.primary : theme.muted}
-              style={{ marginRight: 5 }}
+              color={activeMode === "Catalog" ? "#FFFFFF" : !canCatalog ? theme.danger : theme.muted}
+              style={{ marginRight: 6 }}
             />
             <Text
               style={[
                 styles.modeSegmentText,
                 activeMode === "Catalog" && styles.modeSegmentTextActive,
+                !canCatalog && { color: theme.danger },
               ]}
             >
-              Catalog (Paper)
+              {canCatalog ? "Catalog (Paper)" : "Catalog (Locked)"}
             </Text>
           </TouchableOpacity>
 
@@ -1309,26 +2107,35 @@ export default function LibrarianScreen() {
             style={[
               styles.modeSegmentBtn,
               activeMode === "Transaction" && styles.modeSegmentBtnActive,
+              !canStudentPass && { opacity: 0.6 },
             ]}
             onPress={() => {
+              if (!canStudentPass) {
+                Alert.alert(
+                  "Feature Restricted",
+                  "Student Pass QR and ID scanning has been restricted for your librarian account by the administrator."
+                );
+                return;
+              }
               setActiveMode("Transaction");
               setScanned(false);
             }}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <Ionicons
-              name="card-outline"
+              name={canStudentPass ? "card" : "lock-closed"}
               size={15}
-              color={activeMode === "Transaction" ? theme.primary : theme.muted}
-              style={{ marginRight: 5 }}
+              color={activeMode === "Transaction" ? "#FFFFFF" : !canStudentPass ? theme.danger : theme.muted}
+              style={{ marginRight: 6 }}
             />
             <Text
               style={[
                 styles.modeSegmentText,
                 activeMode === "Transaction" && styles.modeSegmentTextActive,
+                !canStudentPass && { color: theme.danger },
               ]}
             >
-              Student Pass
+              {canStudentPass ? "Student Info & Return" : "Info & Return (Locked)"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1337,34 +2144,54 @@ export default function LibrarianScreen() {
       {/* ========================================================================= */}
       {/* CAMERA SHUTTER BAR: Modern Native Camera Shutter Experience */}
       {/* ========================================================================= */}
-      <View style={[styles.shutterBarContainer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
+      <View style={[styles.shutterBarContainer, { paddingBottom: Math.max(insets.bottom, 16) }]}>
         {/* 1. Left: Gallery / Pick Photo */}
         <TouchableOpacity
-          style={styles.shutterSideBtn}
+          style={[styles.shutterSideBtn, !canGallery && { opacity: 0.5 }]}
           onPress={handlePickPaperPhoto}
           disabled={processing}
           activeOpacity={0.75}
         >
           <View style={styles.sideBtnIconBox}>
-            <Ionicons name="images-outline" size={22} color={theme.primary} />
+            <Ionicons
+              name={canGallery ? "images" : "lock-closed"}
+              size={18}
+              color={!canGallery ? theme.danger : theme.iconNeutral}
+            />
           </View>
-          <Text style={styles.sideBtnText}>Gallery</Text>
+          <Text style={[styles.sideBtnText, !canGallery && { color: theme.danger }]}>
+            {canGallery ? "Gallery" : "Locked"}
+          </Text>
         </TouchableOpacity>
 
         {/* 2. Center: Real Camera Shutter Button */}
         <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
           <TouchableOpacity
-            style={styles.shutterOuterRing}
+            style={[
+              styles.shutterOuterRing,
+              allScanningRestricted && { opacity: 0.5, borderColor: theme.danger },
+            ]}
             onPress={handleShutterCapture}
             disabled={processing}
             activeOpacity={0.9}
             accessibilityLabel="Camera Shutter"
           >
-            <View style={styles.shutterInnerButton}>
+            <View
+              style={[
+                styles.shutterInnerButton,
+                allScanningRestricted && { backgroundColor: theme.danger },
+              ]}
+            >
               <MaterialCommunityIcons
-                name={activeMode === "Catalog" ? "camera-iris" : "qrcode-scan"}
-                size={30}
-                color={theme.shutterDot}
+                name={
+                  allScanningRestricted
+                    ? "lock"
+                    : activeMode === "Catalog"
+                    ? "camera-iris"
+                    : "qrcode-scan"
+                }
+                size={28}
+                color="#FFFFFF"
               />
             </View>
           </TouchableOpacity>
@@ -1372,28 +2199,55 @@ export default function LibrarianScreen() {
 
         {/* 3. Center-Right: High-Definition Camera Snap (Autofocus & Macro) */}
         <TouchableOpacity
-          style={styles.shutterSideBtn}
+          style={[styles.shutterSideBtn, !canCatalog && { opacity: 0.5 }]}
           onPress={handleLaunchNativeCamera}
           disabled={processing}
           activeOpacity={0.75}
         >
           <View style={styles.sideBtnIconBox}>
-            <Ionicons name="camera-outline" size={22} color={theme.primary} />
+            <Ionicons
+              name={canCatalog ? "camera" : "lock-closed"}
+              size={18}
+              color={!canCatalog ? theme.danger : theme.iconNeutral}
+            />
           </View>
-          <Text style={styles.sideBtnText}>HD Camera</Text>
+          <Text style={[styles.sideBtnText, !canCatalog && { color: theme.danger }]}>
+            {canCatalog ? "HD Camera" : "Locked"}
+          </Text>
         </TouchableOpacity>
 
         {/* 4. Right: Manual / Type Words */}
         <TouchableOpacity
-          style={styles.shutterSideBtn}
-          onPress={() => setShowManualInput(prev => !prev)}
+          style={[styles.shutterSideBtn, !canManualEntry && { opacity: 0.5 }]}
+          onPress={() => {
+            if (!canManualEntry) {
+              Alert.alert(
+                "Feature Restricted",
+                "Manual keypad entry has been restricted for your librarian account by the administrator."
+              );
+              return;
+            }
+            setShowManualInput(prev => !prev);
+          }}
           disabled={processing}
           activeOpacity={0.75}
         >
-          <View style={styles.sideBtnIconBox}>
-            <Ionicons name="keypad-outline" size={21} color={theme.primary} />
+          <View style={[styles.sideBtnIconBox, showManualInput && styles.sideBtnIconBoxActive]}>
+            <Ionicons
+              name={canManualEntry ? "keypad" : "lock-closed"}
+              size={18}
+              color={!canManualEntry ? theme.danger : (showManualInput ? theme.primary : theme.iconNeutral)}
+            />
           </View>
-          <Text style={styles.sideBtnText}>Manual</Text>
+          <Text
+            style={[
+              styles.sideBtnText,
+              !canManualEntry && { color: theme.danger },
+              showManualInput && { color: theme.primary, fontWeight: "800" },
+            ]}
+          >
+            {canManualEntry ? "Manual" : "Locked"}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -1418,13 +2272,29 @@ export default function LibrarianScreen() {
             {/* Modal Header */}
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeaderInfo}>
-                <View style={styles.modalStatusBadge}>
-                  <MaterialCommunityIcons name="check-decagram" size={15} color={theme.successText} />
-                  <Text style={styles.modalStatusBadgeText}>TEXT CONVERSION COMPLETE</Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 6 }}>
+                  <View style={[styles.modalStatusBadge, ocrEngine === "gemini-vision" ? styles.modalStatusBadgeAi : null]}>
+                    <MaterialCommunityIcons
+                      name={ocrEngine === "gemini-vision" ? "auto-fix" : "check-decagram"}
+                      size={15}
+                      color={ocrEngine === "gemini-vision" ? theme.accentStrong : theme.successText}
+                    />
+                    <Text style={[styles.modalStatusBadgeText, ocrEngine === "gemini-vision" ? styles.modalStatusBadgeAiText : null]}>
+                      {ocrEngine === "gemini-vision" ? "AI VISION RECOGNITION" : "NEURAL OCR ENHANCED"} • {ocrConfidence}% ACCURACY
+                    </Text>
+                  </View>
+                  {parsedFields.docType ? (
+                    <View style={styles.docTypeBadge}>
+                      <MaterialCommunityIcons name="file-document-outline" size={13} color={theme.primary} />
+                      <Text style={styles.docTypeBadgeText}>{parsedFields.docType}</Text>
+                    </View>
+                  ) : null}
                 </View>
                 <Text style={styles.sheetTitle}>Scanned Book Details</Text>
                 <Text style={styles.sheetSubtitle}>
-                  Verified from paper document & converted to digital text
+                  {ocrEngine === "gemini-vision"
+                    ? "Deciphered handwriting strokes & typography with high precision"
+                    : "Verified from document & converted to digital catalog items"}
                 </Text>
               </View>
 
@@ -1535,7 +2405,7 @@ export default function LibrarianScreen() {
                     <TextInput
                       style={styles.fieldInput}
                       value={parsedFields.isbn}
-                      onChangeText={val => setParsedFields(prev => ({ ...prev, isbn: val }))}
+                      onChangeText={val => setParsedFields(prev => ({ ...prev, isbn: val.replace(/[—–]/g, "-").replace(/-+/g, "-") }))}
                       placeholder="e.g. 933-1428-103"
                       placeholderTextColor={theme.muted}
                     />
@@ -1602,6 +2472,49 @@ export default function LibrarianScreen() {
                       <View style={styles.colBadge}>
                         <Text style={styles.colBadgeText}>{parsedFields.volume || "1"}</Text>
                       </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* PUBLISHER & PUBLISHED YEAR */}
+                <View style={styles.fieldDivider} />
+                <View style={styles.twoColRow}>
+                  {/* PUBLISHER */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="business-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>PUBLISHER</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.publisher || ""}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, publisher: val }))}
+                        placeholder="e.g. O'Reilly, Pearson"
+                        placeholderTextColor={theme.muted}
+                      />
+                    ) : (
+                      <Text style={styles.fieldValueText}>{parsedFields.publisher || "Unspecified"}</Text>
+                    )}
+                  </View>
+
+                  {/* YEAR */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="calendar-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>YEAR</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.publishedYear || ""}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, publishedYear: val }))}
+                        placeholder="e.g. 2024"
+                        placeholderTextColor={theme.muted}
+                        keyboardType="numeric"
+                      />
+                    ) : (
+                      <Text style={styles.fieldValueText}>{parsedFields.publishedYear || "N/A"}</Text>
                     )}
                   </View>
                 </View>
@@ -1724,6 +2637,297 @@ export default function LibrarianScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* CIRCULATION RECEIPT VERIFICATION & PICK-UP MODAL */}
+      <Modal
+        visible={receiptModalVisible && scannedReceipt !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={handleCloseReceiptModal}
+      >
+        <View style={styles.receiptBackdrop}>
+          <View style={styles.receiptCard}>
+            {/* Header Brand Bar */}
+            <View style={styles.receiptHeaderRow}>
+              <View style={styles.receiptBrandRow}>
+                <View style={styles.receiptLogoBox}>
+                  <Ionicons name="book" size={16} color="#FFFFFF" />
+                </View>
+                <View>
+                  <Text style={styles.receiptBrandTitle}>BOOKHIVE</Text>
+                  <Text style={styles.receiptBrandSub}>STI West Negros University • Official Circulation Desk</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                onPress={handleCloseReceiptModal}
+                style={styles.receiptCloseBtn}
+                accessibilityLabel="Close receipt modal"
+              >
+                <Ionicons name="close" size={20} color={theme.textDark} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.receiptScrollContent}>
+              {/* Slip Title & Status Badge */}
+              <View style={styles.receiptTitleBlock}>
+                <Text style={styles.receiptDocumentTitle}>CIRCULATION LOAN SLIP</Text>
+
+                <View
+                  style={[
+                    styles.receiptBadge,
+                    scannedReceipt?.isPickedUp
+                      ? styles.receiptBadgePickedUp
+                      : styles.receiptBadgeApproved,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.receiptStatusDot,
+                      {
+                        backgroundColor: scannedReceipt?.isPickedUp ? "#10B981" : "#0284C7",
+                      },
+                    ]}
+                  />
+                  <Text
+                    style={[
+                      styles.receiptBadgeText,
+                      {
+                        color: scannedReceipt?.isPickedUp ? "#10B981" : "#0284C7",
+                      },
+                    ]}
+                  >
+                    {scannedReceipt?.isPickedUp ? "PICKED UP / ACTIVE LOAN" : "READY FOR PICKUP (CLAIM BOOK)"}
+                  </Text>
+                </View>
+
+                {/* Monospace Slip Badge */}
+                <View style={styles.slipPillBox}>
+                  <Ionicons name="receipt-outline" size={13} color={theme.muted} />
+                  <Text style={styles.receiptNumberText}>
+                    SLIP NO: {scannedReceipt?.receiptNumber || "RCP-PROVED-2130"}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Perforated Ticket Notches & Dashed Divider */}
+              <View style={styles.ticketDividerContainer}>
+                <View style={styles.ticketNotchLeft} />
+                <View style={styles.receiptDashedLine} />
+                <View style={styles.ticketNotchRight} />
+              </View>
+
+              {/* 1. Book Details Section */}
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="book-outline" size={14} color={theme.primary} />
+                  <Text style={styles.receiptSectionHeader}>BOOK DETAILS</Text>
+                </View>
+
+                <View style={styles.receiptBookCard}>
+                  <Text style={styles.receiptBookTitle} numberOfLines={2}>
+                    {scannedReceipt?.bookTitle || "The Struggle"}
+                  </Text>
+
+                  {scannedReceipt?.author ? (
+                    <View style={styles.receiptAuthorRow}>
+                      <Ionicons name="person-circle-outline" size={14} color={theme.muted} />
+                      <Text style={styles.receiptAuthorText}>by {scannedReceipt.author}</Text>
+                    </View>
+                  ) : null}
+
+                  <View style={styles.receiptTagRow}>
+                    {scannedReceipt?.isbn ? (
+                      <View style={[styles.receiptMetaTag, { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.12)" : "#E0F2FE" }]}>
+                        <Ionicons name="barcode-outline" size={11} color={isDarkMode ? "#38BDF8" : "#0284C7"} />
+                        <Text style={[styles.receiptMetaTagText, { color: isDarkMode ? "#38BDF8" : "#0284C7" }]}>
+                          ISBN: {scannedReceipt.isbn}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {scannedReceipt?.category ? (
+                      <View style={[styles.receiptMetaTag, { backgroundColor: isDarkMode ? "rgba(168, 85, 247, 0.12)" : "#F3E8FF" }]}>
+                        <Ionicons name="pricetag-outline" size={11} color={isDarkMode ? "#C084FC" : "#7E22CE"} />
+                        <Text style={[styles.receiptMetaTagText, { color: isDarkMode ? "#C084FC" : "#7E22CE" }]}>
+                          {scannedReceipt.category}
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {scannedReceipt?.shelf ? (
+                      <View style={[styles.receiptMetaTag, { backgroundColor: isDarkMode ? "rgba(251, 191, 36, 0.12)" : "#FEF3C7" }]}>
+                        <Ionicons name="library-outline" size={11} color={isDarkMode ? "#FBBF24" : "#B45309"} />
+                        <Text style={[styles.receiptMetaTagText, { color: isDarkMode ? "#FBBF24" : "#B45309" }]}>
+                          {scannedReceipt.shelf}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+              </View>
+
+              {/* 2. Circulation Timeline & Dates */}
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="time-outline" size={14} color={theme.primary} />
+                  <Text style={styles.receiptSectionHeader}>CIRCULATION TIMELINE</Text>
+                </View>
+
+                <View style={styles.receiptDateGrid}>
+                  <View style={styles.receiptDateBox}>
+                    <View style={styles.dateBoxHeader}>
+                      <Ionicons name="calendar-outline" size={12} color={theme.muted} />
+                      <Text style={styles.receiptDateBoxLabel}>DATE BORROWED</Text>
+                    </View>
+                    <Text style={styles.receiptDateBoxValue}>{scannedReceipt?.borrowDate || "N/A"}</Text>
+                  </View>
+
+                  <View style={styles.receiptDateBox}>
+                    <View style={styles.dateBoxHeader}>
+                      <Ionicons
+                        name={scannedReceipt?.isPickedUp ? "checkmark-done-circle" : "time"}
+                        size={12}
+                        color={scannedReceipt?.isPickedUp ? "#10B981" : "#F59E0B"}
+                      />
+                      <Text
+                        style={[
+                          styles.receiptDateBoxLabel,
+                          { color: scannedReceipt?.isPickedUp ? "#10B981" : "#F59E0B" },
+                        ]}
+                      >
+                        {scannedReceipt?.isPickedUp ? "PICKED UP" : "PICKUP STATUS"}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        styles.receiptDateBoxValue,
+                        scannedReceipt?.isPickedUp
+                          ? { color: "#10B981", fontWeight: "800" }
+                          : { color: "#F59E0B", fontWeight: "700" },
+                      ]}
+                    >
+                      {scannedReceipt?.isPickedUp
+                        ? scannedReceipt?.pickupDate || "Completed"
+                        : "Ready for Pickup"}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Due Date Hero Card */}
+                <View style={styles.receiptDueHeroCard}>
+                  <View style={styles.dueHeroTopRow}>
+                    <View style={styles.dueHeroLabelGroup}>
+                      <Ionicons name="calendar" size={16} color={isDarkMode ? "#38BDF8" : "#0284C7"} />
+                      <Text style={styles.dueHeroTitle}>DUE RETURN DEADLINE</Text>
+                    </View>
+                    <View style={styles.dueHeroStatusPill}>
+                      <Text style={styles.dueHeroStatusPillText}>ON SCHEDULE</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.dueHeroDateValue}>
+                    {scannedReceipt?.returnDate || "2026-10-20"}
+                  </Text>
+
+                  <View style={styles.dueHeroNoticeRow}>
+                    <Ionicons name="information-circle-outline" size={13} color={isDarkMode ? "#94A3B8" : "#64748B"} />
+                    <Text style={styles.dueHeroNoticeText}>
+                      Physical book copy must be returned to the circulation desk on or before this date.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* 3. Borrower Details Section */}
+              <View style={styles.receiptSection}>
+                <View style={styles.sectionHeaderRow}>
+                  <Ionicons name="id-card-outline" size={14} color={theme.primary} />
+                  <Text style={styles.receiptSectionHeader}>BORROWER DETAILS</Text>
+                </View>
+
+                <View style={styles.receiptBorrowerCard}>
+                  <View style={styles.borrowerInfoRow}>
+                    <View style={styles.borrowerAvatarBox}>
+                      <Ionicons name="person" size={18} color={theme.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.borrowerNameText}>
+                        {scannedReceipt?.studentName || "Student Borrower"}
+                      </Text>
+                      <View style={styles.borrowerPillRow}>
+                        <View style={[styles.borrowerPill, { backgroundColor: isDarkMode ? "#1E2D40" : "#EDE9FE" }]}>
+                          <Text style={[styles.borrowerPillText, { color: isDarkMode ? "#A78BFA" : "#6D28D9" }]}>
+                            ID: {scannedReceipt?.studentId || "N/A"}
+                          </Text>
+                        </View>
+                        <View style={[styles.borrowerPill, { backgroundColor: isDarkMode ? "#1E2D40" : "#E0F2FE" }]}>
+                          <Text style={[styles.borrowerPillText, { color: isDarkMode ? "#38BDF8" : "#0369A1" }]}>
+                            Dept: {scannedReceipt?.department || "General"}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+
+              {/* Official Verified Desk Badge */}
+              <View style={styles.receiptVerifiedBadgeContainer}>
+                <View style={styles.qrVerifiedBadge}>
+                  <Ionicons name="shield-checkmark" size={13} color="#10B981" />
+                  <Text style={styles.qrVerifiedBadgeText}>
+                    Verified by BookHive Circulation Desk • STI WNU
+                  </Text>
+                </View>
+              </View>
+
+              {/* 4. Action Buttons at the End */}
+              <View style={styles.receiptActionWrapper}>
+                {!scannedReceipt?.isPickedUp ? (
+                  <TouchableOpacity
+                    style={[styles.receiptPickupBtn, isPickingUp && { opacity: 0.7 }]}
+                    onPress={handleConfirmPickup}
+                    disabled={isPickingUp}
+                    activeOpacity={0.85}
+                  >
+                    {isPickingUp ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" style={{ marginRight: 8 }} />
+                    ) : (
+                      <Ionicons name="hand-right-outline" size={20} color="#FFFFFF" style={{ marginRight: 8 }} />
+                    )}
+                    <View style={styles.pickupBtnTextCol}>
+                      <Text style={styles.receiptPickupBtnText}>
+                        {isPickingUp ? "Recording Pick-up..." : "Pick-up Book"}
+                      </Text>
+                      <Text style={styles.receiptPickupBtnSub}>
+                        Confirm physical book hand-over to student
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.receiptPickupBtnPicked}>
+                    <Ionicons name="checkmark-done-circle" size={22} color="#10B981" style={{ marginRight: 8 }} />
+                    <View style={styles.pickupBtnTextCol}>
+                      <Text style={styles.receiptPickupBtnPickedText}>Book Picked Up ✓</Text>
+                      <Text style={styles.receiptPickupBtnPickedSub}>
+                        Handed over to student on {scannedReceipt?.pickupDate || "today"}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                <TouchableOpacity
+                  style={styles.receiptCloseSecondaryBtn}
+                  onPress={handleCloseReceiptModal}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.receiptCloseSecondaryText}>Close & Return to Scanner</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </AnimatedScreen>
   );
 }
@@ -1764,44 +2968,50 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       letterSpacing: 0.8,
     },
     librarianBadgePill: {
-      marginLeft: 6,
+      marginLeft: 8,
+      flexDirection: "row",
+      alignItems: "center",
       backgroundColor: theme.primarySoft,
       borderWidth: 1,
-      borderColor: theme.primaryLine,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 6,
+      borderColor: isDarkMode ? "rgba(56, 189, 248, 0.25)" : "rgba(2, 132, 199, 0.2)",
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 12,
+      gap: 5,
+    },
+    activeDot: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      backgroundColor: "#10B981",
     },
     librarianBadgeText: {
       fontSize: 11,
       fontWeight: "700",
       color: theme.primary,
     },
-    primaryModeBadge: {
-      marginLeft: 6,
-      backgroundColor: "rgba(255, 243, 0, 0.18)",
-      borderWidth: 1,
-      borderColor: theme.accentStrong,
-      paddingHorizontal: 6,
-      paddingVertical: 2,
-      borderRadius: 6,
-    },
-    primaryModeBadgeText: {
-      fontSize: 10,
-      fontWeight: "800",
-      color: isDarkMode ? "#FBBF24" : "#B45309",
-    },
     topBarIcons: {
       flexDirection: "row",
       alignItems: "center",
+      gap: 8,
     },
     iconHit: {
-      width: 32,
-      height: 32,
-      borderRadius: 8,
-      backgroundColor: theme.primarySoft,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: theme.iconNeutralBg,
+      borderWidth: 1,
+      borderColor: theme.iconNeutralBorder,
       justifyContent: "center",
       alignItems: "center",
+    },
+    iconHitActiveTorch: {
+      backgroundColor: "rgba(245, 158, 11, 0.18)",
+      borderColor: "#F59E0B",
+    },
+    logoutHit: {
+      backgroundColor: theme.dangerBg,
+      borderColor: isDarkMode ? "rgba(239, 68, 68, 0.3)" : "rgba(239, 68, 68, 0.2)",
     },
 
     /* UPPER VIEWPORT */
@@ -1814,18 +3024,23 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     scannerGrayBox: {
       flex: 1,
       backgroundColor: theme.panelStrong,
-      borderRadius: 18,
-      borderWidth: 1.5,
-      borderColor: theme.primaryLine,
+      borderRadius: 22,
+      borderWidth: 1,
+      borderColor: isDarkMode ? "rgba(255, 255, 255, 0.1)" : "#CBD5E1",
       position: "relative",
       overflow: "hidden",
       justifyContent: "center",
       alignItems: "center",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 10,
+      elevation: 4,
     },
 
     /* RETICLE OVERLAYS */
     reticleOverlay: {
-      width: Math.min(width * 0.72, 260),
+      width: Math.min(width * 0.74, 270),
       height: Math.min(height * 0.38, 280),
       position: "relative",
       justifyContent: "center",
@@ -1844,55 +3059,59 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: theme.webTapBg,
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-      borderRadius: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 5,
+      borderRadius: 14,
       borderWidth: 1,
-      borderColor: theme.primaryLine,
-      shadowColor: theme.primary,
+      borderColor: "rgba(255, 255, 255, 0.2)",
+      shadowColor: "#000",
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.12,
-      shadowRadius: 4,
+      shadowOpacity: 0.25,
+      shadowRadius: 6,
     },
     reticleBadgeText: {
       fontSize: 10,
       fontWeight: "800",
-      color: theme.primary,
-      letterSpacing: 0.5,
+      color: "#FFFFFF",
+      letterSpacing: 0.6,
     },
     cornerBracket: {
       position: "absolute",
-      width: 52,
-      height: 52,
+      width: 48,
+      height: 48,
       borderColor: theme.primary,
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 0 },
+      shadowOpacity: 0.8,
+      shadowRadius: 8,
     },
     bracketTopLeft: {
       top: 0,
       left: 0,
-      borderTopWidth: 3,
-      borderLeftWidth: 3,
-      borderTopLeftRadius: 16,
+      borderTopWidth: 3.5,
+      borderLeftWidth: 3.5,
+      borderTopLeftRadius: 18,
     },
     bracketTopRight: {
       top: 0,
       right: 0,
-      borderTopWidth: 3,
-      borderRightWidth: 3,
-      borderTopRightRadius: 16,
+      borderTopWidth: 3.5,
+      borderRightWidth: 3.5,
+      borderTopRightRadius: 18,
     },
     bracketBottomLeft: {
       bottom: 0,
       left: 0,
-      borderBottomWidth: 3,
-      borderLeftWidth: 3,
-      borderBottomLeftRadius: 16,
+      borderBottomWidth: 3.5,
+      borderLeftWidth: 3.5,
+      borderBottomLeftRadius: 18,
     },
     bracketBottomRight: {
       bottom: 0,
       right: 0,
-      borderBottomWidth: 3,
-      borderRightWidth: 3,
-      borderBottomRightRadius: 16,
+      borderBottomWidth: 3.5,
+      borderRightWidth: 3.5,
+      borderBottomRightRadius: 18,
     },
     animatedLaserLine: {
       width: "92%",
@@ -1907,19 +3126,26 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     },
     reticleGuidePill: {
       position: "absolute",
-      bottom: 12,
+      bottom: 14,
+      flexDirection: "row",
+      alignItems: "center",
       backgroundColor: theme.webTapBg,
-      paddingHorizontal: 14,
-      paddingVertical: 5,
-      borderRadius: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 6,
+      borderRadius: 16,
       borderWidth: 1,
-      borderColor: theme.primaryLine,
+      borderColor: "rgba(255, 255, 255, 0.15)",
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
     },
     reticleGuideText: {
       fontSize: 11,
-      color: theme.textDark,
+      color: "#F8FAFC",
       fontWeight: "700",
       textAlign: "center",
+      letterSpacing: 0.2,
     },
 
     /* PROCESSING / OCR HUD OVERLAY */
@@ -1929,7 +3155,7 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: "rgba(2, 116, 187, 0.86)",
+      backgroundColor: isDarkMode ? "rgba(8, 13, 26, 0.88)" : "rgba(15, 23, 42, 0.75)",
       justifyContent: "center",
       alignItems: "center",
       paddingHorizontal: 20,
@@ -1938,15 +3164,15 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     hudCard: {
       width: "90%",
       backgroundColor: theme.panel,
-      borderRadius: 18,
-      padding: 20,
+      borderRadius: 20,
+      padding: 22,
       alignItems: "center",
       borderWidth: 1,
       borderColor: theme.primaryLine,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 6 },
       shadowOpacity: 0.25,
-      shadowRadius: 12,
+      shadowRadius: 14,
       elevation: 8,
     },
     processingOverlayText: {
@@ -1967,7 +3193,7 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       flexDirection: "row",
       flexWrap: "wrap",
       justifyContent: "center",
-      gap: 5,
+      gap: 6,
       marginTop: 14,
     },
     hudPill: {
@@ -1991,16 +3217,16 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       left: 10,
       right: 10,
       backgroundColor: theme.webTapBg,
-      borderRadius: 10,
+      borderRadius: 12,
       padding: 8,
       borderWidth: 1,
-      borderColor: theme.primaryLine,
+      borderColor: "rgba(255, 255, 255, 0.15)",
       alignItems: "center",
     },
     webSimulatorTitle: {
       fontSize: 11,
       fontWeight: "700",
-      color: theme.muted,
+      color: "#94A3B8",
       marginBottom: 5,
     },
     webChipsRow: {
@@ -2010,12 +3236,12 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       gap: 6,
     },
     webChip: {
-      backgroundColor: theme.panel,
+      backgroundColor: isDarkMode ? "#1E293B" : "#FFFFFF",
       borderWidth: 1,
       borderColor: theme.primaryLine,
-      paddingHorizontal: 8,
+      paddingHorizontal: 10,
       paddingVertical: 4,
-      borderRadius: 6,
+      borderRadius: 8,
     },
     webChipText: {
       fontSize: 11,
@@ -2026,12 +3252,23 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     /* MANUAL INPUT DRAWER */
     manualInputDrawer: {
       flexDirection: "row",
-      paddingHorizontal: 16,
-      paddingVertical: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 8,
+      backgroundColor: theme.panel,
+      marginHorizontal: 14,
+      marginBottom: 6,
+      borderRadius: 14,
+      borderWidth: 1,
+      borderColor: theme.primaryLine,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 6,
+      elevation: 2,
     },
     drawerInput: {
       flex: 1,
-      height: 44,
+      height: 42,
       borderWidth: 1,
       borderColor: theme.primaryLine,
       backgroundColor: theme.inputBg,
@@ -2047,9 +3284,13 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       alignItems: "center",
       borderRadius: 10,
       marginLeft: 8,
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 4,
     },
     drawerSubmitText: {
-      color: isDarkMode ? "#080F1E" : "#FFFFFF",
+      color: "#FFFFFF",
       fontSize: 13,
       fontWeight: "700",
     },
@@ -2058,32 +3299,35 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     modeSwitcherContainer: {
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 6,
+      paddingVertical: 8,
     },
     floatingModePill: {
       flexDirection: "row",
       backgroundColor: theme.panel,
-      borderRadius: 24,
-      borderWidth: 1.5,
+      borderRadius: 30,
+      borderWidth: 1,
       borderColor: theme.primaryLine,
-      padding: 3,
-      shadowColor: theme.primary,
+      padding: 4,
+      shadowColor: "#000",
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 6,
+      shadowOpacity: 0.08,
+      shadowRadius: 8,
       elevation: 3,
     },
     modeSegmentBtn: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 14,
-      paddingVertical: 6,
-      borderRadius: 20,
+      paddingHorizontal: 16,
+      paddingVertical: 8,
+      borderRadius: 24,
     },
     modeSegmentBtnActive: {
-      backgroundColor: theme.primarySoft,
-      borderWidth: 1,
-      borderColor: theme.primary,
+      backgroundColor: theme.primary,
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.35,
+      shadowRadius: 5,
+      elevation: 3,
     },
     modeSegmentText: {
       fontSize: 12,
@@ -2091,7 +3335,7 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       color: theme.muted,
     },
     modeSegmentTextActive: {
-      color: theme.primary,
+      color: "#FFFFFF",
       fontWeight: "800",
     },
 
@@ -2100,58 +3344,63 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
-      paddingHorizontal: 18,
-      paddingTop: 6,
+      paddingHorizontal: 20,
+      paddingTop: 4,
     },
     shutterSideBtn: {
       alignItems: "center",
       justifyContent: "center",
-      width: 58,
+      width: 62,
     },
     sideBtnIconBox: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: theme.panel,
-      borderWidth: 1.5,
-      borderColor: theme.primaryLine,
+      width: 48,
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: theme.iconNeutralBg,
+      borderWidth: 1,
+      borderColor: theme.iconNeutralBorder,
       justifyContent: "center",
       alignItems: "center",
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
-      shadowRadius: 3,
+      shadowOpacity: 0.05,
+      shadowRadius: 2,
       elevation: 1,
     },
+    sideBtnIconBoxActive: {
+      backgroundColor: theme.primarySoft,
+      borderColor: theme.primary,
+    },
     sideBtnText: {
-      fontSize: 10,
+      fontSize: 11,
       fontWeight: "700",
-      color: theme.primary,
-      marginTop: 4,
+      color: theme.muted,
+      marginTop: 5,
       textAlign: "center",
+      letterSpacing: 0.2,
     },
     shutterOuterRing: {
-      width: 78,
-      height: 78,
-      borderRadius: 39,
-      borderWidth: 4,
+      width: 82,
+      height: 82,
+      borderRadius: 41,
+      borderWidth: 3.5,
       borderColor: theme.shutterBorder,
       justifyContent: "center",
       alignItems: "center",
       backgroundColor: "transparent",
-      shadowColor: theme.primary,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.25,
-      shadowRadius: 8,
-      elevation: 5,
     },
     shutterInnerButton: {
-      width: 62,
-      height: 62,
-      borderRadius: 31,
+      width: 66,
+      height: 66,
+      borderRadius: 33,
       backgroundColor: theme.shutterInner,
       justifyContent: "center",
       alignItems: "center",
+      shadowColor: theme.primary,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 8,
+      elevation: 6,
     },
 
     /* MODAL STYLES */
@@ -2207,6 +3456,34 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       color: theme.successText,
       letterSpacing: 0.5,
     },
+    modalStatusBadgeAi: {
+      backgroundColor: theme.accentSoft,
+      borderWidth: 1,
+      borderColor: "rgba(245, 158, 11, 0.25)",
+    },
+    modalStatusBadgeAiText: {
+      color: theme.accentStrong,
+    },
+    docTypeBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      backgroundColor: theme.primarySoft,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 8,
+      alignSelf: "flex-start",
+      gap: 4,
+      marginBottom: 6,
+      borderWidth: 1,
+      borderColor: isDarkMode ? "rgba(56, 189, 248, 0.25)" : "rgba(2, 132, 199, 0.2)",
+    },
+    docTypeBadgeText: {
+      fontSize: 10,
+      fontWeight: "800",
+      color: theme.primary,
+      letterSpacing: 0.5,
+      textTransform: "uppercase",
+    },
     sheetTitle: {
       fontSize: 21,
       fontWeight: "900",
@@ -2255,10 +3532,10 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     /* 8 FIELDS CARD */
     fieldsCard: {
       backgroundColor: theme.cardBg,
-      borderRadius: 16,
-      borderWidth: 1.5,
+      borderRadius: 18,
+      borderWidth: 1,
       borderColor: theme.primaryLine,
-      padding: 14,
+      padding: 16,
       marginBottom: 12,
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 2 },
@@ -2272,7 +3549,7 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     fieldDivider: {
       height: 1,
       backgroundColor: theme.primaryLine,
-      marginVertical: 8,
+      marginVertical: 10,
     },
     fieldLabelRow: {
       flexDirection: "row",
@@ -2284,12 +3561,13 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       fontSize: 10,
       fontWeight: "800",
       color: theme.muted,
-      letterSpacing: 0.5,
+      letterSpacing: 0.6,
     },
     titleValueText: {
       fontSize: 18,
       fontWeight: "900",
-      color: theme.primary,
+      color: theme.textPrimary,
+      letterSpacing: -0.2,
     },
     fieldValueText: {
       fontSize: 14,
@@ -2305,10 +3583,10 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     genrePill: {
       backgroundColor: theme.primarySoft,
       borderWidth: 1,
-      borderColor: theme.primaryLine,
-      paddingHorizontal: 10,
+      borderColor: isDarkMode ? "rgba(56, 189, 248, 0.25)" : "rgba(2, 132, 199, 0.2)",
+      paddingHorizontal: 12,
       paddingVertical: 4,
-      borderRadius: 8,
+      borderRadius: 10,
       alignSelf: "flex-start",
     },
     genrePillText: {
@@ -2320,7 +3598,7 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       borderWidth: 1,
       borderColor: theme.primary,
       backgroundColor: theme.inputBg,
-      borderRadius: 8,
+      borderRadius: 10,
       paddingHorizontal: 10,
       paddingVertical: 6,
       fontSize: 13,
@@ -2336,11 +3614,11 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       flex: 1,
     },
     colBadge: {
-      backgroundColor: theme.panelStrong,
+      backgroundColor: theme.iconNeutralBg,
       borderWidth: 1,
       borderColor: theme.primaryLine,
-      paddingVertical: 5,
-      borderRadius: 8,
+      paddingVertical: 6,
+      borderRadius: 10,
       alignItems: "center",
     },
     colBadgeText: {
@@ -2360,6 +3638,15 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       textAlign: "center",
     },
 
+    /* 2 COLUMNS ROW */
+    twoColRow: {
+      flexDirection: "row",
+      gap: 10,
+    },
+    twoColItem: {
+      flex: 1,
+    },
+
     summaryValueText: {
       fontSize: 13,
       color: theme.textDark,
@@ -2371,8 +3658,8 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     rawWordsToggleBtn: {
       flexDirection: "row",
       alignItems: "center",
-      backgroundColor: theme.panelStrong,
-      paddingHorizontal: 12,
+      backgroundColor: theme.iconNeutralBg,
+      paddingHorizontal: 14,
       paddingVertical: 10,
       borderRadius: 12,
       borderWidth: 1,
@@ -2383,11 +3670,11 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     rawWordsToggleText: {
       fontSize: 12,
       fontWeight: "700",
-      color: theme.primary,
+      color: theme.textDark,
     },
     rawWordsBox: {
-      backgroundColor: theme.panelStrong,
-      borderRadius: 10,
+      backgroundColor: theme.iconNeutralBg,
+      borderRadius: 12,
       borderWidth: 1,
       borderColor: theme.primaryLine,
       padding: 12,
@@ -2402,34 +3689,34 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
 
     /* ACTION BUTTONS */
     modalActionButtons: {
-      gap: 8,
-      marginTop: 6,
+      gap: 10,
+      marginTop: 8,
     },
     primaryActionBtn: {
       height: 50,
-      borderRadius: 12,
+      borderRadius: 14,
       backgroundColor: theme.primary,
       flexDirection: "row",
       justifyContent: "center",
       alignItems: "center",
-      elevation: 3,
+      elevation: 4,
       shadowColor: theme.primary,
-      shadowOffset: { width: 0, height: 3 },
-      shadowOpacity: 0.2,
-      shadowRadius: 5,
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 8,
       gap: 6,
     },
     primaryActionBtnText: {
-      color: isDarkMode ? "#080F1E" : "#FFFFFF",
+      color: "#FFFFFF",
       fontSize: 15,
       fontWeight: "800",
     },
     secondaryActionBtn: {
-      height: 46,
-      borderRadius: 12,
-      borderWidth: 1.5,
+      height: 48,
+      borderRadius: 14,
+      borderWidth: 1,
       borderColor: theme.primaryLine,
-      backgroundColor: theme.panel,
+      backgroundColor: theme.iconNeutralBg,
       flexDirection: "row",
       justifyContent: "center",
       alignItems: "center",
@@ -2437,7 +3724,7 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     secondaryActionBtnText: {
       fontSize: 14,
       fontWeight: "700",
-      color: theme.primary,
+      color: theme.textDark,
     },
     cancelBtn: {
       alignItems: "center",
@@ -2447,5 +3734,425 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       color: theme.muted,
       fontSize: 13,
       fontWeight: "600",
+    },
+
+    /* RECEIPT VERIFICATION & PICK-UP MODAL STYLES */
+    receiptBackdrop: {
+      flex: 1,
+      backgroundColor: "rgba(15, 23, 42, 0.75)",
+      justifyContent: "center",
+      alignItems: "center",
+      padding: 16,
+    },
+    receiptCard: {
+      width: "100%",
+      maxWidth: 440,
+      maxHeight: "92%",
+      backgroundColor: theme.cardBg,
+      borderRadius: 22,
+      overflow: "hidden",
+      borderWidth: 1,
+      borderColor: isDarkMode ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
+      elevation: 10,
+      shadowColor: "#000000",
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.35,
+      shadowRadius: 18,
+    },
+    receiptHeaderRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingHorizontal: 18,
+      paddingVertical: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#F1F5F9",
+      backgroundColor: isDarkMode ? "rgba(255,255,255,0.03)" : "#F8FAFC",
+    },
+    receiptBrandRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 10,
+      flex: 1,
+    },
+    receiptLogoBox: {
+      width: 32,
+      height: 32,
+      borderRadius: 9,
+      backgroundColor: theme.primary,
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    receiptBrandTitle: {
+      fontSize: 14,
+      fontWeight: "900",
+      color: theme.primary,
+      letterSpacing: 0.6,
+    },
+    receiptBrandSub: {
+      fontSize: 10,
+      color: theme.muted,
+      fontWeight: "500",
+    },
+    receiptCloseBtn: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#F1F5F9",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    receiptScrollContent: {
+      padding: 18,
+      paddingBottom: 28,
+    },
+    receiptTitleBlock: {
+      alignItems: "center",
+      marginBottom: 14,
+    },
+    receiptDocumentTitle: {
+      fontSize: 17,
+      fontWeight: "900",
+      letterSpacing: 0.8,
+      color: theme.textPrimary,
+      marginBottom: 8,
+    },
+    receiptBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 5,
+      borderRadius: 20,
+      borderWidth: 1,
+      marginBottom: 10,
+      gap: 6,
+    },
+    receiptBadgeApproved: {
+      backgroundColor: "rgba(2, 132, 199, 0.12)",
+      borderColor: "rgba(2, 132, 199, 0.35)",
+    },
+    receiptBadgePickedUp: {
+      backgroundColor: "rgba(16, 185, 129, 0.12)",
+      borderColor: "rgba(16, 185, 129, 0.35)",
+    },
+    receiptStatusDot: {
+      width: 7,
+      height: 7,
+      borderRadius: 4,
+    },
+    receiptBadgeText: {
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.4,
+    },
+    slipPillBox: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      borderRadius: 8,
+      backgroundColor: isDarkMode ? "#132337" : "#F1F5F9",
+      gap: 6,
+    },
+    receiptNumberText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: isDarkMode ? "#CBD5E1" : "#475569",
+      letterSpacing: 0.5,
+    },
+    ticketDividerContainer: {
+      flexDirection: "row",
+      alignItems: "center",
+      marginVertical: 14,
+      position: "relative",
+    },
+    ticketNotchLeft: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: "rgba(15, 23, 42, 0.75)",
+      marginLeft: -25,
+    },
+    ticketNotchRight: {
+      width: 14,
+      height: 14,
+      borderRadius: 7,
+      backgroundColor: "rgba(15, 23, 42, 0.75)",
+      marginRight: -25,
+    },
+    receiptDashedLine: {
+      flex: 1,
+      borderBottomWidth: 1,
+      borderStyle: "dashed",
+      borderColor: isDarkMode ? "#1E324A" : "#CBD5E1",
+      marginHorizontal: 8,
+    },
+    receiptSection: {
+      marginBottom: 14,
+    },
+    sectionHeaderRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+      marginBottom: 8,
+    },
+    receiptSectionHeader: {
+      fontSize: 11,
+      fontWeight: "800",
+      letterSpacing: 0.6,
+      color: theme.primary,
+    },
+    receiptBookCard: {
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: isDarkMode ? "#101F33" : "#F8FAFC",
+      borderWidth: 1,
+      borderColor: isDarkMode ? "#1E324A" : "#E2E8F0",
+    },
+    receiptBookTitle: {
+      fontSize: 16,
+      fontWeight: "800",
+      color: theme.textPrimary,
+      marginBottom: 4,
+    },
+    receiptAuthorRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      marginBottom: 10,
+    },
+    receiptAuthorText: {
+      fontSize: 13,
+      fontWeight: "600",
+      color: theme.muted,
+    },
+    receiptTagRow: {
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 6,
+    },
+    receiptMetaTag: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      gap: 4,
+    },
+    receiptMetaTagText: {
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    receiptDateGrid: {
+      flexDirection: "row",
+      gap: 10,
+      marginBottom: 10,
+    },
+    receiptDateBox: {
+      flex: 1,
+      padding: 12,
+      borderRadius: 12,
+      backgroundColor: isDarkMode ? "#101F33" : "#F8FAFC",
+      borderWidth: 1,
+      borderColor: isDarkMode ? "#1E324A" : "#E2E8F0",
+    },
+    dateBoxHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      marginBottom: 4,
+    },
+    receiptDateBoxLabel: {
+      fontSize: 10,
+      fontWeight: "800",
+      color: theme.muted,
+      letterSpacing: 0.3,
+    },
+    receiptDateBoxValue: {
+      fontSize: 12,
+      fontWeight: "700",
+      color: theme.textPrimary,
+    },
+    receiptDueHeroCard: {
+      padding: 14,
+      borderRadius: 14,
+      borderWidth: 1,
+      backgroundColor: isDarkMode ? "rgba(2, 116, 187, 0.10)" : "#F0F9FF",
+      borderColor: isDarkMode ? "#0284C7" : "#BAE6FD",
+    },
+    dueHeroTopRow: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 6,
+    },
+    dueHeroLabelGroup: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 6,
+    },
+    dueHeroTitle: {
+      fontSize: 11,
+      fontWeight: "900",
+      color: isDarkMode ? "#38BDF8" : "#0284C7",
+      letterSpacing: 0.4,
+    },
+    dueHeroStatusPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+      backgroundColor: "rgba(2, 132, 199, 0.15)",
+    },
+    dueHeroStatusPillText: {
+      fontSize: 10,
+      fontWeight: "800",
+      color: isDarkMode ? "#38BDF8" : "#0284C7",
+    },
+    dueHeroDateValue: {
+      fontSize: 20,
+      fontWeight: "900",
+      color: isDarkMode ? "#38BDF8" : "#0369A1",
+      marginBottom: 6,
+      letterSpacing: 0.5,
+    },
+    dueHeroNoticeRow: {
+      flexDirection: "row",
+      alignItems: "flex-start",
+      gap: 6,
+    },
+    dueHeroNoticeText: {
+      fontSize: 11,
+      color: isDarkMode ? "#94A3B8" : "#64748B",
+      flex: 1,
+      lineHeight: 15,
+    },
+    receiptBorrowerCard: {
+      padding: 14,
+      borderRadius: 14,
+      backgroundColor: isDarkMode ? "#101F33" : "#F8FAFC",
+      borderWidth: 1,
+      borderColor: isDarkMode ? "#1E324A" : "#E2E8F0",
+    },
+    borrowerInfoRow: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+    },
+    borrowerAvatarBox: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      backgroundColor: isDarkMode ? "#1E324A" : "#E2E8F0",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    borrowerNameText: {
+      fontSize: 15,
+      fontWeight: "800",
+      color: theme.textPrimary,
+      marginBottom: 5,
+    },
+    borrowerPillRow: {
+      flexDirection: "row",
+      gap: 8,
+      flexWrap: "wrap",
+    },
+    borrowerPill: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 6,
+    },
+    borrowerPillText: {
+      fontSize: 11,
+      fontWeight: "700",
+    },
+    receiptVerifiedBadgeContainer: {
+      alignItems: "center",
+      marginVertical: 10,
+    },
+    qrVerifiedBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: "rgba(16, 185, 129, 0.08)",
+      borderWidth: 1,
+      borderColor: "rgba(16, 185, 129, 0.25)",
+      gap: 6,
+    },
+    qrVerifiedBadgeText: {
+      fontSize: 11,
+      fontWeight: "700",
+      color: "#10B981",
+    },
+    receiptActionWrapper: {
+      marginTop: 10,
+      gap: 10,
+    },
+    receiptPickupBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#10B981",
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+      elevation: 4,
+      shadowColor: "#10B981",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.35,
+      shadowRadius: 8,
+    },
+    pickupBtnTextCol: {
+      alignItems: "center",
+    },
+    receiptPickupBtnText: {
+      fontSize: 16,
+      fontWeight: "900",
+      color: "#FFFFFF",
+      letterSpacing: 0.4,
+    },
+    receiptPickupBtnSub: {
+      fontSize: 11,
+      color: "rgba(255, 255, 255, 0.85)",
+      fontWeight: "600",
+      marginTop: 1,
+    },
+    receiptPickupBtnPicked: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: isDarkMode ? "rgba(16, 185, 129, 0.15)" : "#ECFDF5",
+      borderWidth: 1.5,
+      borderColor: "#10B981",
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderRadius: 14,
+    },
+    receiptPickupBtnPickedText: {
+      fontSize: 15,
+      fontWeight: "900",
+      color: "#10B981",
+    },
+    receiptPickupBtnPickedSub: {
+      fontSize: 11,
+      color: isDarkMode ? "#6EE7B7" : "#059669",
+      fontWeight: "600",
+      marginTop: 1,
+    },
+    receiptCloseSecondaryBtn: {
+      alignItems: "center",
+      justifyContent: "center",
+      paddingVertical: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.primaryLine,
+      backgroundColor: theme.iconNeutralBg,
+    },
+    receiptCloseSecondaryText: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: theme.muted,
     },
   });

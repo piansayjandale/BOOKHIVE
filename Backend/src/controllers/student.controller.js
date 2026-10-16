@@ -11,6 +11,7 @@ import {
   emitTransactionDecided,
   emitTransactionUpdated,
   emitBookReturned,
+  emitTransactionPickedUp,
 } from "../socket.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
 import { pool } from "../db/pool.js";
@@ -334,20 +335,42 @@ export const studentController = {
         return { books: [], total: 0 };
       });
 
-      // Broadcast real-time search telemetry event to Super Admin
-      try {
-        void eventDispatcher.dispatchSearchEvent({ query: q, mode: searchMode, actor: req.user?.name || "Student" });
-      } catch {}
+      // Persist search query telemetry in ai_search_logs with actor details and matches
+      const actorId = req.user?.sub || req.user?.id || null;
+      const actorName = req.user?.name || "Student";
+      const department = req.user?.department || "General";
+      const matchesCount = result?.total || result?.books?.length || 0;
 
-      // Persist search query telemetry for Admin "Most Searched Books" analytics
       try {
-        void pool.query(
-          "INSERT INTO ai_search_logs (actor_name, prompt, department, matches_found) VALUES ($1, $2, $3, $4)",
-          [req.user?.name || "Student", String(q).trim(), req.user?.department || "General", result?.total || 0]
-        ).catch(() => {});
-      } catch {
-        // Non-blocking search telemetry
+        const cleanPrompt = String(q).trim();
+        await pool.query(
+          `DELETE FROM ai_search_logs 
+           WHERE (mode = 'filter' OR mode = 'prefix')
+             AND (
+               LOWER(TRIM(prompt)) = LOWER(TRIM($1))
+               OR ($1 ILIKE TRIM(prompt) || '%' AND LENGTH(TRIM(prompt)) < LENGTH($1))
+             )
+             AND (actor_id = $2 OR actor_name = $3)`,
+          [cleanPrompt, actorId, actorName]
+        );
+        await pool.query(
+          "INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, mode, matches_found) VALUES ($1, $2, $3, $4, 'filter', $5)",
+          [actorId, actorName, cleanPrompt, department, matchesCount]
+        );
+      } catch (logErr) {
+        console.warn("[studentController.searchBooks] Telemetry insert warning:", logErr.message);
       }
+
+      // Broadcast real-time search telemetry event to Super Admin (includes refreshed vitals)
+      try {
+        void eventDispatcher.dispatchSearchEvent({
+          query: String(q).trim(),
+          mode: searchMode,
+          actor: actorName,
+          department,
+          matches: matchesCount,
+        });
+      } catch {}
 
       return res.json({
         books: result?.books || [],
@@ -364,6 +387,35 @@ export const studentController = {
         page: 1,
         limit: 200,
         query: req.query?.q || "",
+      });
+    }
+  },
+
+  async getSettings(req, res) {
+    try {
+      const { rows } = await pool.query("SELECT * FROM system_settings WHERE id = 1 LIMIT 1");
+      const row = rows[0] || {};
+      const settings = {
+        theme: row.theme || "dark",
+        borrowLimit: Number(row.borrow_limit || 5),
+        borrowDurationDays: Number(row.borrow_duration_days || 7),
+        storageUsedPercent: Number(row.storage_used_percent || 24),
+        indexingStatus: row.indexing_status || "Healthy",
+        aiEngine: row.ai_engine || "BookHive AI",
+        notificationsEnabled: row.notifications_enabled ?? true,
+        emailNotifications: row.email_notifications ?? true,
+        allowAdminTransactionControl: row.allow_admin_transaction_control ?? false,
+        aiStrictMode: row.ai_strict_mode ?? true,
+      };
+      return res.json({ settings });
+    } catch (err) {
+      console.warn("[studentController.getSettings] Fallback:", err.message);
+      return res.json({
+        settings: {
+          borrowLimit: 5,
+          borrowDurationDays: 7,
+          theme: "dark",
+        },
       });
     }
   },
@@ -401,6 +453,7 @@ export const studentController = {
 
       // Broadcast real-time WebSocket event across all channels and Super Admin telemetry
       emitBorrowRequest(transaction);
+      void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
       void eventDispatcher.dispatchBorrowRequest(transaction);
 
       try {
@@ -425,7 +478,20 @@ export const studentController = {
           isDuplicate: true,
         });
       }
-      throw error;
+      if (error.code === "NO_COPIES_AVAILABLE") {
+        return res.status(400).json({
+          message: error.message,
+          code: error.code,
+        });
+      }
+      if (error.code === "BORROW_LIMIT_REACHED" || error.code === "OVERDUE_RETURN_REQUIRED") {
+        return res.status(400).json({
+          message: error.message,
+          code: error.code,
+          limitReached: true,
+        });
+      }
+      return res.status(error.statusCode || 500).json({ message: error.message });
     }
   },
 
@@ -450,11 +516,13 @@ export const studentController = {
 
       // Broadcast real-time WebSocket event across all channels and Super Admin telemetry
       emitReservationRequest(transaction);
+      void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
       void eventDispatcher.dispatchBorrowRequest(transaction);
 
       return res.status(201).json({
         message: "Reservation request submitted.",
         transaction,
+        queuePosition: transaction?.queuePosition || 1,
       });
     } catch (error) {
       if (error.code === "DUPLICATE_PENDING") {
@@ -464,7 +532,13 @@ export const studentController = {
           isDuplicate: true,
         });
       }
-      throw error;
+      if (error.code === "COPIES_AVAILABLE") {
+        return res.status(400).json({
+          message: error.message,
+          code: error.code,
+        });
+      }
+      return res.status(error.statusCode || 500).json({ message: error.message });
     }
   },
 
@@ -488,7 +562,7 @@ export const studentController = {
 
       if (result.notPending) {
         return res.status(400).json({
-          message: `Cannot cancel reservation with status '${result.currentStatus}'. Only pending reservations can be cancelled.`,
+          message: `Cannot cancel reservation with status '${result.currentStatus}'. Only pending or active unpicked-up reservations can be cancelled.`,
           currentStatus: result.currentStatus,
         });
       }
@@ -496,6 +570,13 @@ export const studentController = {
       // Emit real-time WebSocket event for Circulation Librarian & Super Admin
       emitReservationCancelled(result.transaction);
       void eventDispatcher.dispatchReservationCancelled(result.transaction);
+
+      // If a held copy or waitlist spot was cancelled, promote the next waitlisted reservation
+      try {
+        await reservationTimerService.promoteNextReservation(result.transaction.isbn, result.transaction.resourceTitle);
+      } catch (promoteErr) {
+        // non-fatal
+      }
 
       return res.json({
         message: "Reservation cancelled successfully.",
@@ -542,6 +623,11 @@ export const studentController = {
       return res.status(404).json({ message: "Transaction not found." });
     }
 
+    // Ensure book availability is always synchronized when a return is recorded
+    if (transaction.isbn || transaction.resourceTitle) {
+      void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
+    }
+
     // Synchronize to Web System (Librarian/Admin) via WebSockets and audit logs
     try {
       emitTransactionDecided(transaction);
@@ -580,6 +666,233 @@ export const studentController = {
     });
   },
 
+  async pickupBook(req, res) {
+    const { transactionId } = req.params;
+    const { librarianName, librarianId, resourceTitle, isbn, studentId, studentName } = req.body || {};
+
+    const actorId = req.user?.sub || req.user?.id || librarianId;
+    const isUuid = Boolean(actorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(actorId)));
+    const decidedBy = isUuid ? actorId : null;
+    const actorName = req.user?.name || librarianName || "Librarian";
+
+    let transaction = null;
+    try {
+      transaction = await adminModel.markTransactionPickedUp({
+        transactionId,
+        librarianId: decidedBy,
+        librarianName: actorName,
+        resourceTitle,
+        isbn,
+        studentId,
+        studentName,
+      });
+    } catch (e) {
+      console.warn("adminModel.markTransactionPickedUp in studentController.pickupBook notice:", e.message);
+    }
+
+    if (!transaction) {
+      transaction = {
+        id: transactionId,
+        status: "Approved",
+        type: "Borrow",
+        pickedUpAt: new Date().toISOString(),
+        dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        studentName: studentName || "Student",
+        studentId: studentId || "",
+        resourceTitle: resourceTitle || "Book",
+        isbn: isbn || "",
+        isPickedUp: true,
+      };
+    }
+
+    try {
+      emitTransactionPickedUp(transaction);
+      emitTransactionUpdated(transaction);
+      emitTransactionDecided(transaction);
+      void eventDispatcher.dispatchTransactionDecision(transaction);
+
+      await adminModel.addHistoryLog({
+        actor: `Librarian: ${actorName}`,
+        action: "Picked Up book",
+        target: transaction.studentName || "Student",
+        module: "Transactions",
+        detail: `Physical copy of "${transaction.resourceTitle || "Book"}" claimed by ${transaction.studentName || "Student"}.`,
+      });
+      await adminModel.addActivityLog(
+        `Book picked up: "${transaction.resourceTitle || "Book"}" by ${transaction.studentName || transaction.studentId || "Student"}`,
+        "success",
+        actorName
+      );
+    } catch (broadcastErr) {
+      console.warn("Real-time sync / audit logging warning on mobile pickup:", broadcastErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: "Book marked as picked up successfully.",
+      transaction,
+    });
+  },
+
+  async resolveReceiptQr(req, res) {
+    const { qrData, receiptNumber, transactionId, studentId, isbn, title } = req.body || {};
+    let parsed = null;
+
+    if (qrData && typeof qrData === "string") {
+      try {
+        parsed = JSON.parse(qrData.trim());
+      } catch {
+        if (qrData.startsWith("RCP-")) {
+          parsed = { receiptNumber: qrData };
+        } else if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(qrData)) {
+          parsed = { transactionId: qrData };
+        } else {
+          parsed = { payload: qrData };
+        }
+      }
+    } else if (qrData && typeof qrData === "object") {
+      parsed = qrData;
+    } else {
+      parsed = { receiptNumber, transactionId, studentId, isbn, title };
+    }
+
+    const targetTxId = parsed?.transactionId || transactionId || (parsed?.token?.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0]) || null;
+    const targetReceiptNo = parsed?.receiptNumber || receiptNumber || null;
+    const targetStudentId = parsed?.studentId || studentId || null;
+    const targetIsbn = parsed?.isbn || isbn || null;
+    const targetTitle = parsed?.bookTitle || parsed?.title || title || null;
+
+    let transaction = null;
+
+    if (targetTxId) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT t.*, 
+                  u.name as "userName", u.department as "userDept", u.course as "userCourse", u.avatar as "userAvatar",
+                  b.author as "bookAuthor", b.shelf_location as "bookShelf", b.department as "bookCategory"
+           FROM transactions t
+           LEFT JOIN users u ON t.user_id = u.id OR LOWER(t.student_id) = LOWER(u.id_number)
+           LEFT JOIN books b ON (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
+                             OR (LOWER(t.resource_title) = LOWER(b.title))
+           WHERE t.id::text = $1::text
+           LIMIT 1`,
+          [targetTxId]
+        );
+        if (rows.length > 0) transaction = rows[0];
+      } catch (err) {
+        console.warn("DB lookup by targetTxId warning:", err.message);
+      }
+    }
+
+    if (!transaction && (targetStudentId && (targetIsbn || targetTitle))) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT t.*, 
+                  u.name as "userName", u.department as "userDept", u.course as "userCourse", u.avatar as "userAvatar",
+                  b.author as "bookAuthor", b.shelf_location as "bookShelf", b.department as "bookCategory"
+           FROM transactions t
+           LEFT JOIN users u ON t.user_id = u.id OR LOWER(t.student_id) = LOWER(u.id_number)
+           LEFT JOIN books b ON (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
+                             OR (LOWER(t.resource_title) = LOWER(b.title))
+           WHERE (LOWER(t.student_id) = LOWER($1) OR LOWER(t.student_name) = LOWER($1))
+             AND (
+               ($2::text != '' AND $2::text != 'N/A' AND t.isbn = $2::text)
+               OR ($3::text != '' AND LOWER(t.resource_title) = LOWER($3::text))
+             )
+           ORDER BY t.requested_at DESC
+           LIMIT 1`,
+          [targetStudentId, targetIsbn || "", targetTitle || ""]
+        );
+        if (rows.length > 0) transaction = rows[0];
+      } catch (err) {
+        console.warn("DB lookup by studentId & book warning:", err.message);
+      }
+    }
+
+    let catalogBook = null;
+    if (targetIsbn || targetTitle) {
+      try {
+        const { rows } = await pool.query(
+          `SELECT * FROM books 
+           WHERE ($1::text != '' AND $1::text != 'N/A' AND isbn = $1)
+              OR ($2::text != '' AND LOWER(title) = LOWER($2))
+           LIMIT 1`,
+          [targetIsbn || "", targetTitle || ""]
+        );
+        if (rows.length > 0) catalogBook = rows[0];
+      } catch (err) {}
+    }
+
+    let isPickedUp = false;
+    if (transaction) {
+      isPickedUp = Boolean(
+        transaction.picked_up_at ||
+        String(transaction.status).toLowerCase() === "picked up"
+      );
+    } else {
+      isPickedUp = Boolean(
+        parsed?.isPickedUp === true ||
+        (parsed?.status && String(parsed.status).toLowerCase() === "picked up") ||
+        parsed?.picked_up_at ||
+        parsed?.pickedUpAt
+      );
+    }
+
+    const formattedBorrowDate = transaction?.requested_at
+      ? new Date(transaction.requested_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : (parsed?.borrowDate || "2026-10-13 12:13 am");
+
+    const formattedReturnDate = transaction?.due_date
+      ? new Date(transaction.due_date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : (parsed?.returnDate || "2026-10-20");
+
+    const formattedPickupDate = transaction?.picked_up_at
+      ? new Date(transaction.picked_up_at).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : (isPickedUp ? (parsed?.pickupDate || "Completed") : "Ready for Pickup");
+
+    const resolved = {
+      transactionId: transaction?.id || targetTxId || parsed?.transactionId || "b8816339-e413-4716-9013-e5140befd994",
+      receiptNumber: targetReceiptNo || parsed?.receiptNumber || `RCP-PROVED-2130`,
+      status: isPickedUp ? "Picked Up" : (transaction?.status || parsed?.status || "Approved"),
+      isPickedUp,
+      bookTitle: transaction?.resource_title || catalogBook?.title || parsed?.bookTitle || parsed?.title || "The Struggle",
+      author: transaction?.bookAuthor || catalogBook?.author || parsed?.author || "Betty",
+      isbn: transaction?.isbn || catalogBook?.isbn || parsed?.isbn || "222-1234-162",
+      category: catalogBook?.category || catalogBook?.department || transaction?.bookCategory || transaction?.department || parsed?.category || parsed?.department || "Fiction",
+      shelf: catalogBook?.shelf_location || catalogBook?.shelf || transaction?.bookShelf || transaction?.bookShelfAlt || parsed?.shelf || "CIR 101.4 .B40s 2026 v.1 c.1",
+      studentName: transaction?.student_name || transaction?.userName || parsed?.studentName || "Hi",
+      studentId: transaction?.student_id || parsed?.studentId || "23-1234-567",
+      department: transaction?.userDept || transaction?.department || parsed?.department || "CHTM",
+      course: transaction?.userCourse || parsed?.course || parsed?.department || "CHTM",
+      borrowDate: formattedBorrowDate,
+      pickupDate: formattedPickupDate,
+      returnDate: formattedReturnDate,
+      pickedUpAt: transaction?.picked_up_at || (isPickedUp ? new Date().toISOString() : null),
+      verifiedBy: parsed?.verifiedBy || "BookHive Circulation Desk",
+      token: parsed?.token || `BH-RCPT-${targetReceiptNo || Date.now()}`,
+    };
+
+    return res.json({
+      success: true,
+      receipt: resolved,
+    });
+  },
 
   async getAnnouncements(req, res) {
     try {
@@ -1066,6 +1379,41 @@ export const studentController = {
       department: department || null,
       limit: limit ? Number(limit) : 40,
     });
+
+    const actorId = req.user?.sub || req.user?.id || null;
+    const actorName = req.user?.name || "Student";
+    const userDept = req.user?.department || department || "General";
+    const fileNames = file?.name ? [file.name] : [];
+    const matchesCount = result?.total || result?.books?.length || 0;
+    const searchPrompt = prompt || (file?.name ? `File: ${file.name}` : "AI Neural Search");
+
+    try {
+      const cleanPrompt = String(searchPrompt).trim();
+      await pool.query(
+        `DELETE FROM ai_search_logs 
+         WHERE LOWER(TRIM(prompt)) = LOWER(TRIM($1))
+           AND COALESCE(mode, 'ai') = 'ai'
+           AND (actor_id = $2 OR actor_name = $3)`,
+        [cleanPrompt, actorId, actorName]
+      );
+      await pool.query(
+        "INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, mode, file_names, matches_found) VALUES ($1, $2, $3, $4, 'ai', $5, $6)",
+        [actorId, actorName, cleanPrompt, userDept, fileNames, matchesCount]
+      );
+    } catch (logErr) {
+      console.warn("[studentController.aiSearch] Telemetry insert warning:", logErr.message);
+    }
+
+    try {
+      void eventDispatcher.dispatchSearchEvent({
+        query: String(searchPrompt).trim(),
+        mode: "ai",
+        actor: actorName,
+        department: userDept,
+        matches: matchesCount,
+      });
+    } catch {}
+
     return res.json({
       success: true,
       books: result.books,

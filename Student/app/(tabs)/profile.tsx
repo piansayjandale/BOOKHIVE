@@ -82,7 +82,7 @@ export default function ProfileScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const borrowedBooks = reservations.filter((book) => book.status === "Approved");
+  const borrowedBooks = reservations.filter((book) => book.status === "Approved" || book.status === "Picked Up" || book.status === "On Loan");
 
   // Dynamic overdue loans / violations calculation
   const violations = borrowedBooks
@@ -95,8 +95,8 @@ export default function ProfileScreen() {
       id: `viol-${b.id}`,
       bookTitle: b.title,
       violationType: "Overdue Book Return",
-      penaltyAmount: 20.0,
-      remarks: `Overdue loan beyond agreed due date (${b.date}). Standard fine applied.`,
+      penaltyAmount: 50.0,
+      remarks: `Overdue loan beyond agreed due date (${b.date}). Standard fine ₱50/day applied.`,
       status: "Active Penalty",
       date: b.date,
     }));
@@ -329,24 +329,39 @@ export default function ProfileScreen() {
             BOOKHIVE PROFILE
           </Text>
 
-          <TouchableOpacity
-            style={styles.notificationButtonRelative}
-            onPress={() => router.push("/notifications")}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="notifications-outline"
-              size={22}
-              color={isDarkMode ? theme.accentGold : theme.accentBlue}
-            />
-            {unreadCount > 0 && (
-              <View style={styles.badgeContainerRelative}>
-                <Text style={styles.badgeText}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <TouchableOpacity
+              style={styles.notificationButtonRelative}
+              onPress={() => router.push("/settings")}
+              activeOpacity={0.7}
+              accessibilityLabel="Settings"
+            >
+              <Ionicons
+                name="settings-outline"
+                size={22}
+                color={isDarkMode ? theme.accentGold : theme.accentBlue}
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.notificationButtonRelative}
+              onPress={() => router.push("/notifications")}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={22}
+                color={isDarkMode ? theme.accentGold : theme.accentBlue}
+              />
+              {unreadCount > 0 && (
+                <View style={styles.badgeContainerRelative}>
+                  <Text style={styles.badgeText}>
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
             {/* PROFILE CARD */}
@@ -501,7 +516,7 @@ export default function ProfileScreen() {
                 }
               ]}>
                 <Text style={[styles.statNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-                  {reservations.filter((book) => book.status === 'Approved').length}
+                  {reservations.filter((book) => book.status === 'Approved' || book.status === 'Picked Up' || book.status === 'On Loan').length}
                 </Text>
 
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
@@ -850,103 +865,6 @@ export default function ProfileScreen() {
                   </View>
                 </View>
               )}
-            </View>
-
-            {/* SETTINGS SECTION */}
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-                Settings
-              </Text>
-            </View>
-
-            <View style={[
-              styles.settingsCard,
-              {
-                backgroundColor: theme.cardBg,
-                borderColor: theme.cardBorder,
-                shadowColor: theme.shadowColor,
-                shadowOpacity: isDarkMode ? 0.3 : 0.05,
-              }
-            ]}>
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-                onPress={() => router.push('/settings')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="settings-outline"
-                  size={20}
-                  color={isDarkMode ? theme.accentGold : theme.accentBlue}
-                />
-
-                <Text style={[styles.settingText, { color: theme.textPrimary }]}>
-                  System Settings
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-                onPress={() => router.push('/terms-agreement')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="document-text-outline"
-                  size={20}
-                  color={isDarkMode ? theme.accentGold : theme.accentBlue}
-                />
-
-                <Text style={[styles.settingText, { color: theme.textPrimary }]}>
-                  Terms & Agreement
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-                onPress={() => router.push('/help')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="help-circle-outline"
-                  size={20}
-                  color={isDarkMode ? theme.accentGold : theme.accentBlue}
-                />
-
-                <Text style={[styles.settingText, { color: theme.textPrimary }]}>
-                  Help & Support
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, { borderBottomColor: theme.cardBorder }]}
-                onPress={() => router.push('/privacy-security')}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={20}
-                  color={isDarkMode ? theme.accentGold : theme.accentBlue}
-                />
-
-                <Text style={[styles.settingText, { color: theme.textPrimary }]}>
-                  Privacy & Security
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.settingItem, styles.logoutItem]}
-                onPress={handleLogout}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="log-out-outline"
-                  size={20}
-                  color="#EF4444"
-                />
-
-                <Text style={[styles.settingText, styles.logoutText]}>
-                  Sign Out
-                </Text>
-              </TouchableOpacity>
             </View>
       </ScrollView>
 

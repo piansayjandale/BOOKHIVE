@@ -30,14 +30,30 @@ export type TransactionStatus = "Pending" | "Approved" | "Declined" | "Returned"
 
 export type ActivityLevel = "info" | "success" | "warning";
 
-export type LibrarianPermissionKey =
+export type LibrarianWebPermissionKey =
   | "home"
   | "records"
   | "transactions"
   | "reminders"
   | "reports"
   | "history"
-  | "settings";
+  | "settings"
+  | "export"
+  | "import";
+
+export type LibrarianMobilePermissionKey =
+  | "mobileCatalog"
+  | "mobileStudentPass"
+  | "mobileReturns"
+  | "mobilePickup"
+  | "mobileReservations"
+  | "mobileViolations"
+  | "mobileManualEntry"
+  | "mobileGallery";
+
+export type LibrarianPermissionKey =
+  | LibrarianWebPermissionKey
+  | LibrarianMobilePermissionKey;
 
 export type LibrarianPermissions = Record<LibrarianPermissionKey, boolean>;
 
@@ -116,6 +132,15 @@ export interface TransactionRecord {
   dueDate?: string;
   department: Department;
   durationDays: number;
+  returnedAt?: string;
+  updatedAt?: string;
+  queuePosition?: number | string;
+  availableAt?: string | null;
+  expiresAt?: string | null;
+  available?: string | boolean | null;
+  pickedUpAt?: string | null;
+  isPickedUp?: boolean;
+  comment?: string;
 }
 
 export interface ActivityLog {
@@ -225,10 +250,15 @@ export interface SuperAdminVitals {
   studentsCount: number;
   activeBooksCount: number;
   archivedBooksCount: number;
+  shelfReadyBooksCount?: number;
   totalTransactions: number;
   pendingTransactions: number;
   activeBorrows: number;
+  totalBorrows?: number;
+  totalReturns?: number;
+  totalReservations?: number;
   totalAiSearches: number;
+  totalSearchResults?: number;
   totalAuditLogs: number;
 }
 

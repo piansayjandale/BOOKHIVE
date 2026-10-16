@@ -28,11 +28,14 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
-import { AdminModal, AdminPageHeader } from "@/components/admin/shared";
+import { AdminPageHeader } from "@/components/admin/shared";
 import { useTheme } from "@/components/providers/theme-provider";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminBookRecord, AdminBooksPayload } from "@/lib/admin/types";
 import { cn, formatDate } from "@/lib/utils";
+import { useSuperAdminVitals } from "@/lib/hooks/use-super-admin-vitals";
+import { AnimatedNumber } from "@/components/ui/animated-number";
+import { BookDetailModal } from "@/components/ui/book-detail-modal";
 
 const DEPARTMENTS = [
   { name: "All", label: "All Holdings", count: "48,074" },
@@ -129,6 +132,8 @@ export function CatalogPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
+  const { vitals, refresh: refreshVitals } = useSuperAdminVitals({ pollingIntervalMs: 3000 });
+
   const [payload, setPayload] = useState<AdminBooksPayload | null>(null);
   const [search, setSearch] = useState("");
   const [department, setDepartment] = useState("All");
@@ -139,13 +144,13 @@ export function CatalogPage() {
   const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
   const [selectedBook, setSelectedBook] = useState<AdminBookRecord | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [copiedModalCitation, setCopiedModalCitation] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const deferredSearch = useDeferredValue(search);
 
   const loadBooks = useCallback(async () => {
     setRefreshing(true);
+    void refreshVitals();
     try {
       const statusParam = status === "All" ? "Active" : status;
       const nextPayload = await requestJson<AdminBooksPayload>(
@@ -157,7 +162,7 @@ export function CatalogPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [deferredSearch, department, page, pageSize, status]);
+  }, [deferredSearch, department, page, pageSize, status, refreshVitals]);
 
   useEffect(() => {
     void loadBooks();
@@ -166,6 +171,28 @@ export function CatalogPage() {
   const booksList = payload?.books ?? [];
   const totalItems = payload?.total ?? 0;
   const totalPages = payload ? Math.max(1, Math.ceil(totalItems / pageSize)) : 1;
+
+  const [pageInput, setPageInput] = useState(String(page));
+
+  useEffect(() => {
+    setPageInput(String(page));
+  }, [page]);
+
+  const handlePageCommit = useCallback((val: string) => {
+    const trimmed = val.trim();
+    if (!trimmed) {
+      setPageInput(String(page));
+      return;
+    }
+    const num = parseInt(trimmed, 10);
+    if (!isNaN(num)) {
+      const targetPage = Math.max(1, Math.min(totalPages, num));
+      setPage(targetPage);
+      setPageInput(String(targetPage));
+    } else {
+      setPageInput(String(page));
+    }
+  }, [page, totalPages]);
 
   // Extract unique categories for filter dropdown
   const categories = useMemo(() => {
@@ -187,14 +214,6 @@ export function CatalogPage() {
     void navigator.clipboard.writeText(citationText);
     setCopiedId(book.id);
     setTimeout(() => setCopiedId(null), 2000);
-  }
-
-  function handleCopyModalCitation() {
-    if (!selectedBook) return;
-    const citationText = selectedBook.apaCitation || `${selectedBook.author} (${selectedBook.publishedDate ? selectedBook.publishedDate.slice(0, 4) : "n.d."}). ${selectedBook.title}. BookHive Institutional Catalog.`;
-    void navigator.clipboard.writeText(citationText);
-    setCopiedModalCitation(true);
-    setTimeout(() => setCopiedModalCitation(false), 2000);
   }
 
   const isFiltering = search.trim() !== "" || department !== "All" || status !== "All" || category !== "All";
@@ -321,7 +340,9 @@ export function CatalogPage() {
               <BookOpen className="h-4 w-4" />
             </div>
           </div>
-          <p className={cn("mt-2 font-mono text-3xl font-black", isLight ? "text-slate-900" : "text-white")}>48,074</p>
+          <p className={cn("mt-2 font-mono text-3xl font-black", isLight ? "text-slate-900" : "text-white")}>
+            <AnimatedNumber value={vitals?.activeBooksCount ?? payload?.total ?? 48075} />
+          </p>
           <p className={cn("mt-1 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>Institutional catalog records in DB</p>
         </motion.div>
 
@@ -347,8 +368,14 @@ export function CatalogPage() {
               <CheckCircle2 className="h-4 w-4" />
             </div>
           </div>
-          <p className={cn("mt-2 font-mono text-3xl font-black", isLight ? "text-slate-900" : "text-white")}>46,602</p>
-          <p className={cn("mt-1 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>96.9% open-stack availability</p>
+          <p className={cn("mt-2 font-mono text-3xl font-black", isLight ? "text-slate-900" : "text-white")}>
+            <AnimatedNumber value={vitals?.shelfReadyBooksCount ?? 48071} />
+          </p>
+          <p className={cn("mt-1 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
+            {vitals?.activeBooksCount && vitals?.shelfReadyBooksCount
+              ? `${((vitals.shelfReadyBooksCount / vitals.activeBooksCount) * 100).toFixed(1)}% open-stack availability`
+              : "99.9% open-stack availability"}
+          </p>
         </motion.div>
 
         {/* Active Circulation */}
@@ -370,8 +397,10 @@ export function CatalogPage() {
               <Bookmark className="h-4 w-4" />
             </div>
           </div>
-          <p className={cn("mt-2 font-mono text-3xl font-black", isLight ? "text-slate-900" : "text-white")}>1,472</p>
-          <p className={cn("mt-1 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>Loans, reservations & reserves</p>
+          <p className={cn("mt-2 font-mono text-3xl font-black", isLight ? "text-slate-900" : "text-white")}>
+            <AnimatedNumber value={vitals?.totalTransactions ?? 0} />
+          </p>
+          <p className={cn("mt-1 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>Borrow, Return, & Reservation</p>
         </motion.div>
 
         {/* Academic Sections */}
@@ -459,7 +488,7 @@ export function CatalogPage() {
                           : "bg-white/10 text-slate-400"
                     )}
                   >
-                    {dept.count}
+                    {dept.name === "All" && vitals?.activeBooksCount ? vitals.activeBooksCount.toLocaleString() : dept.count}
                   </span>
                 </button>
               );
@@ -897,21 +926,6 @@ export function CatalogPage() {
             <button
               type="button"
               disabled={page <= 1}
-              onClick={() => setPage(1)}
-              className={cn(
-                "rounded-lg border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer",
-                isLight
-                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-[#0274BB] shadow-xs"
-                  : "border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
-              )}
-              title="First Page"
-            >
-              First
-            </button>
-
-            <button
-              type="button"
-              disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               className={cn(
                 "inline-flex items-center gap-1 rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer",
@@ -923,8 +937,59 @@ export function CatalogPage() {
               <ChevronLeft className="h-3.5 w-3.5" /> Prev
             </button>
 
-            <span className={cn("px-2 font-bold font-mono", isLight ? "text-slate-900" : "text-white")}>
-              Page {page} of {totalPages}
+            {/* Page Number Box (Shows current page only, can be cleared/edited) */}
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={pageInput}
+              onFocus={(e) => e.target.select()}
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, "");
+                setPageInput(val);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  handlePageCommit(pageInput);
+                  (e.target as HTMLInputElement).blur();
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  const nextP = Math.min(totalPages, page + 1);
+                  setPage(nextP);
+                  setPageInput(String(nextP));
+                } else if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  const prevP = Math.max(1, page - 1);
+                  setPage(prevP);
+                  setPageInput(String(prevP));
+                }
+              }}
+              onBlur={() => handlePageCommit(pageInput)}
+              style={{
+                width: "52px",
+                minWidth: "52px",
+                maxWidth: "52px",
+                height: "32px",
+                padding: "0 4px",
+              }}
+              className={cn(
+                "h-8 w-[52px] min-w-[52px] max-w-[52px] shrink-0 rounded-lg border text-center font-mono text-xs font-bold shadow-xs transition outline-none cursor-pointer focus:cursor-text",
+                isLight
+                  ? "border-slate-200 bg-white !text-slate-900 focus:border-[#0274BB] focus:ring-2 focus:ring-[#0274BB]/20"
+                  : "border-white/10 bg-[#0F1D29] text-white focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/20"
+              )}
+              title={`Page ${page} of ${totalPages} - Click to type a page and press Enter`}
+              aria-label="Current page number"
+            />
+
+            {/* /totalPages (Outside the box) */}
+            <span
+              className={cn(
+                "font-mono text-xs font-bold select-none px-0.5",
+                isLight ? "text-slate-600" : "text-slate-400"
+              )}
+            >
+              /{totalPages}
             </span>
 
             <button
@@ -940,174 +1005,25 @@ export function CatalogPage() {
             >
               Next <ChevronRight className="h-3.5 w-3.5" />
             </button>
-
-            <button
-              type="button"
-              disabled={page >= totalPages}
-              onClick={() => setPage(totalPages)}
-              className={cn(
-                "rounded-lg border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer",
-                isLight
-                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-[#0274BB] shadow-xs"
-                  : "border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
-              )}
-              title="Last Page"
-            >
-              Last
-            </button>
           </div>
         </div>
       </div>
 
       {/* ── Book Details Modal ─────────────────────────────────────── */}
-      {selectedBook && (
-        <AdminModal
-          open={!!selectedBook}
-          onClose={() => setSelectedBook(null)}
-          title="Catalog Resource Details"
-          description={`Metadata, shelf stacks, and citation details for ${selectedBook.title}`}
-        >
-          <div className={cn("space-y-5 text-sm", isLight ? "text-slate-700" : "text-slate-200")}>
-            {/* Modal Book Header */}
-            <div
-              className={cn(
-                "rounded-2xl border p-5 shadow-sm",
-                isLight
-                  ? "border-slate-200 bg-slate-50/70"
-                  : "border-white/10 bg-[#0B1726]/90 shadow-lg"
-              )}
-            >
-              <div className={cn("flex flex-wrap items-center justify-between gap-2 border-b pb-3", isLight ? "border-slate-200" : "border-white/5")}>
-                <div className="flex items-center gap-2">
-                  <DepartmentBadge department={selectedBook.department} isLight={isLight} />
-                  <AvailabilityBadge availability={selectedBook.availability} isLight={isLight} />
-                </div>
-                <span className={cn("font-mono text-xs", isLight ? "text-slate-500" : "text-slate-400")}>
-                  ID: {selectedBook.id ? selectedBook.id.slice(0, 12) : "REC-CATALOG"}
-                </span>
-              </div>
-
-              <h2 className={cn("mt-3 text-xl font-bold tracking-tight leading-snug", isLight ? "text-slate-900" : "text-white")}>
-                {selectedBook.title}
-              </h2>
-              <p className={cn("mt-1 text-sm", isLight ? "text-slate-600" : "text-slate-300")}>
-                Authored by <span className={cn("font-bold", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>{selectedBook.author}</span>
-                {selectedBook.publishedDate && (
-                  <span className="text-slate-400"> · Published {formatDate(selectedBook.publishedDate)}</span>
-                )}
-              </p>
-            </div>
-
-            {/* Specifications Grid */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>ISBN</span>
-                <p className={cn("font-mono font-bold mt-1 text-xs truncate select-all", isLight ? "text-amber-700" : "text-amber-300")} title={selectedBook.isbn}>
-                  {selectedBook.isbn}
-                </p>
-              </div>
-
-              <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>Call Number / Shelf</span>
-                <p className={cn("font-mono font-bold mt-1 text-xs truncate", isLight ? "text-slate-900" : "text-white")} title={selectedBook.shelfLocation}>
-                  {selectedBook.shelfLocation || "Stack Section"}
-                </p>
-              </div>
-
-              <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>Copies Available</span>
-                <p className={cn("font-black mt-1 text-sm", isLight ? "text-slate-900" : "text-white")}>
-                  {selectedBook.copies ?? 1} <span className={cn("text-xs font-normal", isLight ? "text-slate-500" : "text-slate-400")}>Physical Copies</span>
-                </p>
-              </div>
-
-              <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>Classification</span>
-                <p className={cn("font-semibold mt-1 text-xs", isLight ? "text-slate-900" : "text-white")}>
-                  {selectedBook.category || "General Academic"}
-                </p>
-              </div>
-
-              <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>Total Borrows</span>
-                <p className={cn("font-black mt-1 text-sm", isLight ? "text-slate-900" : "text-white")}>
-                  {selectedBook.borrowCount ?? 0} <span className={cn("text-xs font-normal", isLight ? "text-slate-500" : "text-slate-400")}>Times Loaned</span>
-                </p>
-              </div>
-
-              <div className={cn("rounded-xl border p-3", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>Department</span>
-                <p className={cn("font-semibold mt-1 text-xs", isLight ? "text-slate-900" : "text-white")}>
-                  {selectedBook.department}
-                </p>
-              </div>
-            </div>
-
-            {/* Summary / Abstract */}
-            {selectedBook.summary && (
-              <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-white shadow-xs" : "border-white/5 bg-[#0B1726]/60")}>
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>
-                  Summary & Academic Scope
-                </span>
-                <p className={cn("mt-1.5 text-xs leading-relaxed max-h-40 overflow-y-auto", isLight ? "text-slate-700" : "text-slate-300")}>
-                  {selectedBook.summary}
-                </p>
-              </div>
-            )}
-
-            {/* APA Academic Citation */}
-            <div className={cn("rounded-xl border p-4", isLight ? "border-slate-200 bg-slate-50/80" : "border-white/5 bg-[#0B1726]/90")}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={cn("text-[10px] uppercase tracking-wider font-bold", isLight ? "text-slate-500" : "text-slate-400")}>
-                  Formatted APA Academic Citation
-                </span>
-                <button
-                  type="button"
-                  onClick={handleCopyModalCitation}
-                  className={cn("flex items-center gap-1 text-xs font-bold hover:underline cursor-pointer", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}
-                >
-                  {copiedModalCitation ? (
-                    <>
-                      <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      <span className="text-emerald-600 font-semibold">Copied to Clipboard!</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="h-3.5 w-3.5" />
-                      <span>Copy Citation</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <p
-                className={cn(
-                  "text-xs font-mono p-3 rounded-lg border select-all leading-relaxed",
-                  isLight ? "bg-white text-slate-800 border-slate-200 shadow-inner" : "bg-[#08111B] text-slate-300 border-white/5"
-                )}
-              >
-                {selectedBook.apaCitation ||
-                  `${selectedBook.author} (${selectedBook.publishedDate ? selectedBook.publishedDate.slice(0, 4) : "n.d."}). ${selectedBook.title}. BookHive Institutional Catalog.`}
-              </p>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex items-center justify-end gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setSelectedBook(null)}
-                className={cn(
-                  "rounded-xl px-6 py-2.5 text-xs font-bold shadow-sm transition active:scale-95 cursor-pointer",
-                  isLight
-                    ? "bg-[#FFF300] text-[#0274BB] border border-[#FFF300] hover:brightness-105"
-                    : "bg-[#FCD400] text-[#0B1A2C] shadow-lg shadow-[#FCD400]/20 hover:brightness-110"
-                )}
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </AdminModal>
-      )}
+      <BookDetailModal
+        open={Boolean(selectedBook)}
+        book={
+          selectedBook
+            ? {
+                ...selectedBook,
+                callNumber: selectedBook.shelfLocation,
+                genres: selectedBook.genres || selectedBook.category,
+                publicationDate: selectedBook.publishedDate,
+              }
+            : null
+        }
+        onClose={() => setSelectedBook(null)}
+      />
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-import Constants from "expo-constants";
 import backendConfig from "./backendConfig.json";
 
 export type User = {
@@ -19,6 +18,7 @@ export type User = {
   avatar?: string;
   qrCode?: string;
   isNewUser?: boolean;
+  permissions?: Record<string, boolean>;
 };
 
 export type StoredAccount = {
@@ -166,6 +166,7 @@ export function normalizeUserSession(rawData: any): User | null {
   const yearLevel = base.yearLevel || base.year_level || "";
   const section = base.section || "";
   const isNewUser = base.isNewUser !== undefined ? Boolean(base.isNewUser) : (parsed.isNewUser !== undefined ? Boolean(parsed.isNewUser) : undefined);
+  const permissions = (base.permissions && typeof base.permissions === "object") ? base.permissions : ((parsed.permissions && typeof parsed.permissions === "object") ? parsed.permissions : undefined);
 
   return {
     id: String(id),
@@ -182,6 +183,7 @@ export function normalizeUserSession(rawData: any): User | null {
     avatar: avatar ? String(avatar) : undefined,
     qrCode: qrCode ? String(qrCode) : undefined,
     isNewUser: isNewUser !== undefined ? Boolean(isNewUser) : undefined,
+    permissions,
   };
 }
 
@@ -546,6 +548,28 @@ export const authService = {
         success: false,
       };
     }
+  },
+
+  fetchLibrarianPermissions: async (): Promise<Record<string, boolean> | null> => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await axios.get(`${API_URL}/api/admin/profile`, {
+        ...headers,
+        timeout: 8000,
+      });
+      if (res.data && res.data.permissions) {
+        const currentUserStr = await AsyncStorage.getItem(CURRENT_USER_KEY);
+        if (currentUserStr) {
+          const parsed = JSON.parse(currentUserStr);
+          parsed.permissions = res.data.permissions;
+          await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(parsed));
+        }
+        return res.data.permissions;
+      }
+    } catch {
+      // Offline or network unavailable
+    }
+    return null;
   },
 
   clearAllUsers: async () => {

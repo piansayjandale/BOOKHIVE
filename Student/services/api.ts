@@ -75,9 +75,8 @@ export const getLocalBackendUrl = (): string => {
   try {
     const hostUri =
       Constants.expoConfig?.hostUri ||
-      (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
-      (Constants as any).manifest?.debuggerHost ||
-      (Constants as any).experienceUrl;
+      (Constants as any).expoGoConfig?.debuggerHost ||
+      (Constants as any).expoGoConfig?.developer?.debuggerHost;
 
     if (hostUri && typeof hostUri === "string") {
       const cleanHost = hostUri.replace(/^[a-z]+:\/\//i, "");

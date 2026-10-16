@@ -119,6 +119,14 @@ export function BookManagementPage({ tabs }: { tabs?: ReactNode }) {
   }, []);
 
   async function updateTransactionStatus(id: string, status: string) {
+    if (status === "Approved" || status === "Declined") {
+      const confirmMessage = status === "Approved"
+        ? "Are you sure to approve this?"
+        : "Are you sure to decline this?";
+      if (typeof window !== "undefined" && !window.confirm(confirmMessage)) {
+        return;
+      }
+    }
     try {
       await requestJson(`/api/admin/transactions/${id}`, {
         method: "PATCH",

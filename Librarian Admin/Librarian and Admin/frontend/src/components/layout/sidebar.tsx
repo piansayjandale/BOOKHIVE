@@ -73,7 +73,7 @@ export function Sidebar({
     <>
       <div
         className={cn(
-          "fixed inset-0 z-30 bg-slate-950/60 backdrop-blur-sm transition-opacity duration-300 ease-out lg:hidden",
+          "fixed inset-0 z-30 modal-backdrop bg-slate-950/60 backdrop-blur-md transition-opacity duration-300 ease-out lg:hidden",
           isOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
         )}
         onClick={onClose}

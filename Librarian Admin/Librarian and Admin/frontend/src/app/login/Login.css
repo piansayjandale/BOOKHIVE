@@ -160,8 +160,8 @@
   border: none;
   border-bottom: 1.5px solid #cbd5e1;
   font-size: 16px;
-  color: #000000 !important;
-  caret-color: #000000 !important;
+  color: #000000;
+  caret-color: #000000;
   background: transparent;
   outline: none;
   transition: border-color 0.18s;
@@ -658,6 +658,10 @@ html[data-theme="light"] .remember,
 [data-theme="light"] .remember,
 html[data-theme="light"] .login-remember,
 [data-theme="light"] .login-remember,
+html[data-theme="light"] .login-checkbox-label,
+[data-theme="light"] .login-checkbox-label,
+html[data-theme="light"] .login-checkbox-label span,
+[data-theme="light"] .login-checkbox-label span,
 html[data-theme="light"] .forgot-password,
 [data-theme="light"] .forgot-password,
 html[data-theme="light"] .login-forgot,
@@ -676,9 +680,31 @@ html[data-theme="light"] .login-input,
   border-bottom: 1.5px solid #cbd5e1;
 }
 
+html[data-theme="light"] .input::placeholder,
+[data-theme="light"] .input::placeholder,
+html[data-theme="light"] .login-input::placeholder,
+[data-theme="light"] .login-input::placeholder {
+  color: rgba(0, 0, 0, 0.45) !important;
+}
+
+html[data-theme="light"] .input:-webkit-autofill,
+[data-theme="light"] .input:-webkit-autofill,
+html[data-theme="light"] .login-input:-webkit-autofill,
+[data-theme="light"] .login-input:-webkit-autofill {
+  -webkit-text-fill-color: #000000 !important;
+  caret-color: #000000 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
 html[data-theme="light"] .password-toggle,
 [data-theme="light"] .password-toggle {
   color: #000000 !important;
+}
+
+html[data-theme="light"] .password-toggle svg,
+[data-theme="light"] .password-toggle svg {
+  color: #000000 !important;
+  stroke: #000000 !important;
 }
 
 html[data-theme="light"] .card-theme-toggle-btn,
@@ -732,28 +758,29 @@ html[data-theme="dark"] .title,
 [data-theme="dark"] .title,
 html[data-theme="dark"] .login-title,
 [data-theme="dark"] .login-title {
-  color: #ffffff;
+  color: #ffffff !important;
 }
 
 html[data-theme="dark"] .subtitle,
 [data-theme="dark"] .subtitle,
 html[data-theme="dark"] .login-subtitle,
 [data-theme="dark"] .login-subtitle {
-  color: #94a3b8;
+  color: #ffffff !important;
 }
 
 html[data-theme="dark"] .label,
 [data-theme="dark"] .label,
 html[data-theme="dark"] .login-label,
 [data-theme="dark"] .login-label {
-  color: #94a3b8;
+  color: #ffffff !important;
 }
 
 html[data-theme="dark"] .input,
 [data-theme="dark"] .input,
 html[data-theme="dark"] .login-input,
 [data-theme="dark"] .login-input {
-  color: #ffffff;
+  color: #ffffff !important;
+  caret-color: #ffffff !important;
   border-bottom: 1.5px solid #2a3b50;
 }
 
@@ -768,23 +795,59 @@ html[data-theme="dark"] .input::placeholder,
 [data-theme="dark"] .input::placeholder,
 html[data-theme="dark"] .login-input::placeholder,
 [data-theme="dark"] .login-input::placeholder {
-  color: #64748b;
-  opacity: 0.6;
+  color: rgba(255, 255, 255, 0.5) !important;
+  opacity: 1;
+}
+
+html[data-theme="dark"] .input:-webkit-autofill,
+[data-theme="dark"] .input:-webkit-autofill,
+html[data-theme="dark"] .login-input:-webkit-autofill,
+[data-theme="dark"] .login-input:-webkit-autofill {
+  -webkit-text-fill-color: #ffffff !important;
+  caret-color: #ffffff !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+html[data-theme="dark"] .password-toggle,
+[data-theme="dark"] .password-toggle {
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .password-toggle svg,
+[data-theme="dark"] .password-toggle svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
 }
 
 html[data-theme="dark"] .remember,
-[data-theme="dark"] .remember {
-  color: #cbd5e1;
+[data-theme="dark"] .remember,
+html[data-theme="dark"] .login-remember,
+[data-theme="dark"] .login-remember,
+html[data-theme="dark"] .login-checkbox-label,
+[data-theme="dark"] .login-checkbox-label,
+html[data-theme="dark"] .login-checkbox-label span,
+[data-theme="dark"] .login-checkbox-label span {
+  color: #ffffff !important;
 }
 
 html[data-theme="dark"] .forgot-password,
-[data-theme="dark"] .forgot-password {
-  color: #94a3b8;
+[data-theme="dark"] .forgot-password,
+html[data-theme="dark"] .login-forgot,
+[data-theme="dark"] .login-forgot {
+  color: #ffffff !important;
 }
 
 html[data-theme="dark"] .forgot-password:hover,
-[data-theme="dark"] .forgot-password:hover {
-  color: #f7d000;
+[data-theme="dark"] .forgot-password:hover,
+html[data-theme="dark"] .login-forgot:hover,
+[data-theme="dark"] .login-forgot:hover {
+  color: #f7d000 !important;
+  text-decoration: underline;
+}
+
+html[data-theme="dark"] .bottom-link,
+[data-theme="dark"] .bottom-link {
+  color: #ffffff !important;
 }
 
 /* Forgot Modal Dark Mode */

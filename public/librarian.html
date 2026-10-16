@@ -1124,12 +1124,16 @@
       }
 
       const rowsHtml = txs.map(t => {
-        const statusBadge = t.status === 'Approved' ? 'badge-success' : (t.status === 'Pending' ? 'badge-pending' : (t.status === 'Returned' ? 'badge-info' : 'badge-danger'));
+        const isReservation = (t.type || '').toLowerCase() === 'reservation';
+        const statusBadge = isReservation && t.status === 'Pending' ? 'badge-info' : (t.status === 'Approved' ? 'badge-success' : (t.status === 'Pending' ? 'badge-pending' : (t.status === 'Returned' ? 'badge-info' : 'badge-danger')));
+        const statusLabel = isReservation && t.status === 'Pending' ? 'Waitlisted' : t.status;
         const dateStr = t.requested_at ? new Date(t.requested_at).toLocaleDateString() : 'Recent';
         const dueStr = t.due_date ? new Date(t.due_date).toLocaleDateString() : 'N/A';
 
         let actionBtns = '';
-        if (t.status === 'Pending') {
+        if (isReservation) {
+          actionBtns = '<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3);">Waitlisted in Queue</span>';
+        } else if (t.status === 'Pending') {
           actionBtns = `
             <button class="action-btn action-btn-green" onclick="decideTx('${t.id}', 'Approved')">Approve</button>
             <button class="action-btn action-btn-red" onclick="decideTx('${t.id}', 'Declined')">Decline</button>
@@ -1148,7 +1152,7 @@
             <td><code>${t.student_id || t.studentId || 'STI-2026'}</code></td>
             <td>${t.resource_title || t.resourceTitle || 'Resource'}</td>
             <td><span class="badge badge-info">${t.type || 'Borrow'}</span></td>
-            <td><span class="badge ${statusBadge}">${t.status}</span></td>
+            <td><span class="badge ${statusBadge}">${statusLabel}</span></td>
             <td>${dateStr}</td>
             <td>${dueStr}</td>
             <td><div style="display: flex; gap: 6px;">${actionBtns}</div></td>

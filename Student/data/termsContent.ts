@@ -1,4 +1,4 @@
-﻿export interface TermSection {
+export interface TermSection {
   id: string;
   title: string;
   icon: string;
@@ -46,7 +46,7 @@ export const TERMS_AND_AGREEMENT: TermSection[] = [
     icon: "alert-circle-outline",
     description: "Failure to return library books on time will result in disciplinary fines and restrictions.",
     rules: [
-      "A daily overdue fine (standard penalty rate of ₱20.00 per book/day) is automatically assessed for overdue loans beyond the due date.",
+      "A daily overdue fine (standard penalty rate of ₱50.00 per book/day) is automatically assessed for overdue loans beyond the due date.",
       "Accounts with unresolved overdue penalties will have borrowing, reservation, and clearance signing privileges placed on hold.",
       "Prolonged failure to return library materials will be referred to the Office of Student Affairs for formal disciplinary action.",
     ],

@@ -32,17 +32,45 @@ const MODULES = [
   "Announcements",
 ];
 
+function getTodayString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 export function AuditLogsPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
   const [moduleFilter, setModuleFilter] = useState("All");
   const [actorFilter, setActorFilter] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayString);
+  const [isAutoToday, setIsAutoToday] = useState(true);
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [isPending, startTransition] = useTransition();
+
+  // Automatically roll over to the next day when the date changes (e.g., past midnight or new day)
+  useEffect(() => {
+    const handleDayRollover = () => {
+      const today = getTodayString();
+      if (isAutoToday) {
+        setSelectedDate((current) => (current !== today ? today : current));
+      }
+    };
+
+    const interval = setInterval(handleDayRollover, 30000); // Check every 30 seconds
+    window.addEventListener("focus", handleDayRollover);
+    document.addEventListener("visibilitychange", handleDayRollover);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleDayRollover);
+      document.removeEventListener("visibilitychange", handleDayRollover);
+    };
+  }, [isAutoToday]);
 
   const loadLogs = useCallback(async () => {
     try {
@@ -51,8 +79,12 @@ export function AuditLogsPage() {
       if (search) params.set("search", search);
       if (moduleFilter !== "All") params.set("module", moduleFilter);
       if (actorFilter) params.set("actor", actorFilter);
-      if (fromDate) params.set("from", fromDate);
-      if (toDate) params.set("to", toDate);
+      if (selectedDate) {
+        const startOfDay = new Date(`${selectedDate}T00:00:00`);
+        const endOfDay = new Date(`${selectedDate}T23:59:59.999`);
+        params.set("from", startOfDay.toISOString());
+        params.set("to", endOfDay.toISOString());
+      }
       params.set("page", String(page));
       params.set("pageSize", "15");
 
@@ -66,7 +98,7 @@ export function AuditLogsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, moduleFilter, actorFilter, fromDate, toDate, page]);
+  }, [search, moduleFilter, actorFilter, selectedDate, page]);
 
   useEffect(() => {
     void loadLogs();
@@ -94,7 +126,7 @@ export function AuditLogsPage() {
 
       <AdminSection
         title="Administrative Mutation Trail"
-        description="Filter by actor, affected operational module, keyword, or date range."
+        description="Filter by actor, affected operational module, keyword, or specific date."
       >
         {/* Filters */}
         <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -141,29 +173,87 @@ export function AuditLogsPage() {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input
               type="date"
-              value={fromDate}
+              value={selectedDate}
               onChange={(e) => {
-                setFromDate(e.target.value);
+                const val = e.target.value;
+                setSelectedDate(val);
+                setIsAutoToday(val === getTodayString());
                 setPage(1);
               }}
-              className="glass-input w-full px-2 py-2 text-[11px] text-slate-300"
-              title="From Date"
+              className="glass-input w-full pl-9 pr-8 py-2 text-xs text-slate-200 cursor-pointer"
+              title="Filter by date (defaults to today and updates automatically each day)"
             />
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => {
-                setToDate(e.target.value);
-                setPage(1);
-              }}
-              className="glass-input w-full px-2 py-2 text-[11px] text-slate-300"
-              title="To Date"
-            />
+            {selectedDate && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate("");
+                  setIsAutoToday(false);
+                  setPage(1);
+                }}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition text-xs p-0.5"
+                title="Clear date filter"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Selected Day Active Filter Banner */}
+        {selectedDate && (
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3.5 py-2 text-xs text-sky-200">
+            <div className="flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-[#FCD400]" />
+              <span>
+                Showing logs for:{" "}
+                <strong className="text-white">
+                  {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", {
+                    weekday: "long",
+                    year: "numeric",
+                    month: "long",
+                    day: "numeric",
+                  })}
+                </strong>
+                {selectedDate === getTodayString() && (
+                  <span className="ml-2 inline-flex items-center rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300 border border-emerald-500/30">
+                    Today (Auto-advancing)
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedDate !== getTodayString() && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedDate(getTodayString());
+                    setIsAutoToday(true);
+                    setPage(1);
+                  }}
+                  className="rounded-lg bg-sky-500/20 px-2.5 py-1 text-[11px] font-bold text-sky-300 hover:bg-sky-500/30 hover:text-white transition"
+                >
+                  Jump to Today
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDate("");
+                  setIsAutoToday(false);
+                  setPage(1);
+                }}
+                className="text-[11px] font-bold text-[#FCD400] hover:text-white underline transition"
+              >
+                Clear (Show All Dates)
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Logs Table */}
         <AdminTable>

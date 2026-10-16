@@ -23,8 +23,14 @@ import {
 } from "expo-router";
 
 import {
+  Alert,
+} from "react-native";
+import {
   addReservation,
   addLibraryPoints,
+  getSystemSettings,
+  getActiveBorrowCount,
+  getOverdueBooks,
 } from "../data/store";
 import { useAuth } from "../data/AuthContext";
 
@@ -40,9 +46,14 @@ export default function RequestConfirmation() {
     (params.reservationDate as string) ||
     new Date().toISOString().split("T")[0];
 
+  const defaultReturnDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
+
   const returnDate =
-    (params.returnDate as string) ||
-    "Not set";
+    (params.returnDate as string && params.returnDate !== "Not set")
+      ? (params.returnDate as string)
+      : defaultReturnDate;
 
   const studentName =
     (params.studentName as string) ||
@@ -96,13 +107,37 @@ export default function RequestConfirmation() {
 
   const handleConfirm = async () => {
     if (isSubmitting) return;
+
+    if (isBorrow) {
+      const activeCount = getActiveBorrowCount(studentId);
+      const limit = getSystemSettings().borrowLimit || 5;
+      if (activeCount >= limit) {
+        Alert.alert(
+          "Borrow Limit Reached",
+          `You have already borrowed ${activeCount} books, reaching the maximum allowed limit of ${limit} books. Please return a borrowed book before borrowing another.`
+        );
+        return;
+      }
+
+      const overdueList = getOverdueBooks(studentId);
+      if (overdueList.length > 0) {
+        const titles = overdueList.map(b => `'${b.title}'`).slice(0, 2).join(', ');
+        Alert.alert(
+          "Overdue Return Required",
+          `You have ${overdueList.length} book(s) due or overdue for return (${titles}). Please return overdue books before borrowing new titles.`
+        );
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
       await addReservation(book);
       addLibraryPoints(isBorrow ? 50 : 30); // Award 50 pts for borrowing, 30 pts for reserving
       router.replace("/reservations");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Confirmation error:", err);
+      Alert.alert("Cannot Complete Request", err?.message || "Borrow limit reached or server unavailable.");
     } finally {
       setIsSubmitting(false);
     }
@@ -145,7 +180,9 @@ export default function RequestConfirmation() {
           </Text>
 
           <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-            You are about to {isBorrow ? 'borrow' : 'reserve'} this book.
+            {isBorrow
+              ? 'You are about to borrow this book.'
+              : 'All copies are currently unavailable. You are joining the 1st-come, 1st-served reservation queue for this book.'}
           </Text>
 
           <View style={[styles.bookBox, { backgroundColor: theme.background }]}>
@@ -176,7 +213,7 @@ export default function RequestConfirmation() {
           <View style={styles.infoBox}>
             <View style={styles.infoRow}>
               <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>
-                Reservation Date
+                {isBorrow ? "Borrow Date" : "Reservation Date"}
               </Text>
 
               <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
@@ -186,11 +223,11 @@ export default function RequestConfirmation() {
 
             <View style={styles.infoRow}>
               <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>
-                Return Date
+                {isBorrow ? "Due Date Return" : "Loan Duration"}
               </Text>
 
               <Text style={[styles.infoValue, { color: theme.textPrimary }]}>
-                {book.returnDate}
+                {isBorrow ? book.returnDate : "7 Days once claimed"}
               </Text>
             </View>
 
@@ -203,13 +240,32 @@ export default function RequestConfirmation() {
                 style={[
                   styles.infoValue,
                   {
-                    color: "#16A34A",
+                    color: isBorrow ? "#16A34A" : (isDarkMode ? theme.accentGold : "#D97706"),
                   },
                 ]}
               >
-                Ready for Approval
+                {isBorrow ? "Ready for Approval" : "1st-Come, 1st-Served Queue"}
               </Text>
             </View>
+
+            {!isBorrow && (
+              <View style={styles.infoRow}>
+                <Text style={[styles.infoLabel, { color: theme.textSecondary }]}>
+                  Queue Policy
+                </Text>
+
+                <Text
+                  style={[
+                    styles.infoValue,
+                    {
+                      color: isDarkMode ? theme.accentGold : theme.accentBlue,
+                    },
+                  ]}
+                >
+                  Queues after 1st borrow
+                </Text>
+              </View>
+            )}
           </View>
 
           <TouchableOpacity
@@ -232,7 +288,7 @@ export default function RequestConfirmation() {
                 />
 
                 <Text style={[styles.confirmText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]}>
-                  {isBorrow ? 'Confirm Borrow Request' : 'Confirm Reservation'}
+                  {isBorrow ? 'Confirm Borrow Request' : 'Confirm Reservation (Join Queue)'}
                 </Text>
               </>
             )}

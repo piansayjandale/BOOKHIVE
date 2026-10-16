@@ -181,6 +181,7 @@ export const eventDispatcher = {
       };
 
       broadcastTelemetryUpdate("search:query", payload);
+      await this.dispatchTelemetryRefresh();
     } catch (err) {
       console.warn("[EventDispatcher] dispatchSearchEvent warning:", err.message);
     }

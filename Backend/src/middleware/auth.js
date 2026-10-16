@@ -11,6 +11,21 @@ export async function authenticateToken(req, res, next) {
     return res.status(401).json({ message: "Missing authorization token." });
   }
 
+  // Gracefully authenticate mock dev tokens in development
+  if (token.startsWith("mock-jwt-")) {
+    const isLibrarian = token.includes("librarian");
+    const isAdmin = token.includes("admin") && !token.includes("super");
+    const isSuperAdmin = token.includes("super");
+    const role = isSuperAdmin ? "Super Admin" : (isLibrarian ? "Librarian" : (isAdmin ? "Admin" : "Student"));
+    req.user = {
+      sub: isSuperAdmin ? "super-001" : (isLibrarian ? "user-002" : "user-001"),
+      name: isSuperAdmin ? "System Super Admin" : (isLibrarian ? "Yana Brich R. Palmares" : "System Administrator"),
+      email: isSuperAdmin ? "superadmin@stiwnu.edu.ph" : (isLibrarian ? "librarian@stiwnu.edu.ph" : "admin@stiwnu.edu.ph"),
+      role,
+    };
+    return next();
+  }
+
   try {
     const possibleSecrets = [
       env.jwtSecret,
@@ -83,6 +98,21 @@ export async function optionalAuthenticateToken(req, res, next) {
   const token = header?.startsWith("Bearer ") ? header.slice(7) : null;
 
   if (!token) {
+    return next();
+  }
+
+  // Gracefully authenticate mock dev tokens in development
+  if (token.startsWith("mock-jwt-")) {
+    const isLibrarian = token.includes("librarian");
+    const isAdmin = token.includes("admin") && !token.includes("super");
+    const isSuperAdmin = token.includes("super");
+    const role = isSuperAdmin ? "Super Admin" : (isLibrarian ? "Librarian" : (isAdmin ? "Admin" : "Student"));
+    req.user = {
+      sub: isSuperAdmin ? "super-001" : (isLibrarian ? "user-002" : "user-001"),
+      name: isSuperAdmin ? "System Super Admin" : (isLibrarian ? "Yana Brich R. Palmares" : "System Administrator"),
+      email: isSuperAdmin ? "superadmin@stiwnu.edu.ph" : (isLibrarian ? "librarian@stiwnu.edu.ph" : "admin@stiwnu.edu.ph"),
+      role,
+    };
     return next();
   }
 

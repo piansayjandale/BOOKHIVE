@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,25 +15,48 @@ import AnimatedScreen from '../components/AnimatedScreen';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '../hooks/useThemeColors';
-import { fetchStudentCardAndViolations, ScannedStudentCardData } from '../data/store';
+import { fetchStudentCardAndViolations, ScannedStudentCardData, isDueToReturn } from '../data/store';
 import { API_URL, getAuthHeaders } from '../data/authService';
 import socketService from '../services/socketService';
 import axios from 'axios';
+import { useAuth } from '../data/AuthContext';
 
 export default function ScannedCardScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ qr?: string; studentId?: string }>();
   const insets = useSafeAreaInsets();
   const { isDarkMode, theme } = useThemeColors();
+  const { user } = useAuth();
+
+  // Mobile Permissions Restrictions
+  const perms = (user as any)?.permissions || {};
+  const canStudentDesk =
+    perms.mobileStudentPass !== false &&
+    perms.mobileReturns !== false &&
+    perms.mobileReservations !== false &&
+    perms.mobileViolations !== false;
+  const canReturns = canStudentDesk;
+  const canReservations = canStudentDesk;
+  const canViolations = canStudentDesk;
 
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<ScannedStudentCardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Tab navigation: 'return' | 'libraryCard' | 'reserved'
-  const [activeTab, setActiveTab] = useState<'return' | 'libraryCard' | 'reserved'>('return');
+  const [activeTab, setActiveTab] = useState<'return' | 'libraryCard' | 'reserved'>(() => {
+    if (!canReturns) return 'libraryCard';
+    return 'return';
+  });
   const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
   const [isReturning, setIsReturning] = useState(false);
+
+  // Automatically adjust activeTab if return is restricted
+  useEffect(() => {
+    if (!canReturns && activeTab === 'return') {
+      setActiveTab('libraryCard');
+    }
+  }, [canReturns, activeTab]);
 
   const qrPayload = params.qr || params.studentId || "";
 
@@ -85,9 +108,17 @@ export default function ScannedCardScreen() {
   const studentFullName = student?.fullName || student?.name || "Student";
   const studentCourseSection = student ? `${student.course || "General Program"}` : "";
 
-  // Filter books eligible for return
+  // Filter books eligible for return (excludes pending/approved reservations waiting for checkout and already returned books)
   const returnableBooks = libraryCard.filter(
-    (b) => b.status === "Approved" || b.status === "On Loan" || b.status === "Holding" || b.status === "Active" || b.status !== "Returned"
+    (b) =>
+      b.type !== 'Reservation' &&
+      b.action !== 'Reserve' &&
+      b.dueReturnDate !== 'Reservation' &&
+      b.status !== 'Pending' &&
+      b.status !== 'Declined' &&
+      b.status !== 'Returned' &&
+      b.status !== 'Completed' &&
+      (b.status === "Approved" || b.status === "On Loan" || b.status === "Holding" || b.status === "Active" || b.status === "Picked Up")
   );
 
   // Real-time bidirectional socket sync with Librarian Web System
@@ -106,20 +137,20 @@ export default function ScannedCardScreen() {
       // Update data immediately in local state
       setData((prev) => {
         if (!prev) return prev;
-        const exists = prev.libraryCard.some((item) => item.id === returnedId);
-        if (!exists && payload?.studentId && payload.studentId !== prev.student?.studentId && payload.studentId !== prev.student?.idNumber) {
+        const exists = prev.libraryCard.some((item) => String(item.id) === String(returnedId));
+        if (!exists && payload?.studentId && String(payload.studentId).toLowerCase() !== String(prev.student?.studentId || "").toLowerCase() && String(payload.studentId).toLowerCase() !== String(prev.student?.idNumber || "").toLowerCase()) {
           return prev;
         }
 
         const updatedCard = prev.libraryCard.map((item) =>
-          item.id === returnedId
-            ? { ...item, status: "Returned", dueReturnDate: "Today" }
+          String(item.id) === String(returnedId)
+            ? { ...item, status: "Returned", isPickedUp: false, highlightType: "none" as const }
             : item
         );
         return { ...prev, libraryCard: updatedCard };
       });
 
-      setSelectedBookIds((prev) => prev.filter((id) => id !== returnedId));
+      setSelectedBookIds((prev) => prev.filter((id) => String(id) !== String(returnedId)));
 
       // Refresh data in background from backend
       if (qrPayload) {
@@ -174,6 +205,15 @@ export default function ScannedCardScreen() {
   };
 
   const handleReturnBook = async (overrideId?: string) => {
+    if (!canReturns) {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert("Book return processing has been restricted for your librarian account by the administrator.");
+      } else {
+        Alert.alert("Feature Restricted", "Book return processing has been restricted for your librarian account by the administrator.");
+      }
+      return;
+    }
+
     let targetIds = overrideId
       ? [overrideId]
       : selectedBookIds.filter((id) => returnableBooks.some((b) => b.id === id));
@@ -260,8 +300,8 @@ export default function ScannedCardScreen() {
         setData((prev) => {
           if (!prev) return prev;
           const updatedCard = prev.libraryCard.map((item) =>
-            targetIds.includes(item.id)
-              ? { ...item, status: "Returned", dueReturnDate: "Today" }
+            targetIds.some((tid) => String(tid) === String(item.id))
+              ? { ...item, status: "Returned", isPickedUp: false, highlightType: "none" as const }
               : item
           );
           return { ...prev, libraryCard: updatedCard };
@@ -269,6 +309,15 @@ export default function ScannedCardScreen() {
 
         // Clear selection
         setSelectedBookIds([]);
+
+        // Refetch fresh data from backend
+        if (qrPayload) {
+          fetchStudentCardAndViolations(qrPayload).then((fresh) => {
+            if (fresh && fresh.student) {
+              setData(fresh);
+            }
+          }).catch(() => {});
+        }
 
         const successMessage =
           count === 1
@@ -312,17 +361,79 @@ export default function ScannedCardScreen() {
     );
   };
 
-  const TOTAL_CARD_ROWS = Math.max(14, libraryCard.length);
+  const approvedLibraryCard = useMemo(() => {
+    return libraryCard.filter(item => {
+      if (!item || item.status === 'Declined' || item.status === 'Cancelled') return false;
+      const isRes =
+        (item as any)?.type === "Reservation" ||
+        (item as any)?.action === "Reserve" ||
+        item?.status === "Reserved" ||
+        item?.status === "Reservation" ||
+        item?.dueReturnDate === "Reservation";
+      if (isRes) {
+        // Active reservations belong on the card in Violet
+        return item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Reserved' || item.status === 'Approved';
+      }
+      if (item.status === 'Pending' || item.status === 'Upcoming') return false;
+      return true;
+    });
+  }, [libraryCard]);
+
+  const TOTAL_CARD_ROWS = Math.max(14, approvedLibraryCard.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
-    const item = libraryCard[index];
+    const item = approvedLibraryCard[index];
     const isReturned = item?.status === "Returned" || item?.status === "Completed";
+    const isReservation =
+      (item as any)?.type === "Reservation" ||
+      (item as any)?.action === "Reserve" ||
+      item?.status === "Reserved" ||
+      item?.status === "Reservation" ||
+      item?.dueReturnDate === "Reservation";
+    const isNowAvailable = !!(
+      item &&
+      ((item as any).available === "true" ||
+        (item as any).available === "Available" ||
+        (item as any).available === true ||
+        !!(item as any).availableAt)
+    );
+
+    let dueReturnText = "";
+    let highlightType: "none" | "green" | "violet" | "red" = "none";
+
+    if (item) {
+      if (isReturned) {
+        dueReturnText = "Returned";
+        highlightType = "none";
+      } else if (isReservation) {
+        // Active reservations appear in VIOLET indicating reservation status
+        dueReturnText = "Reservation";
+        highlightType = "violet";
+      } else {
+        const rawDue = (item as any)?.dueDate || item?.dueReturnDate;
+        if (rawDue && rawDue !== "—" && rawDue !== "Returned" && rawDue !== "Reservation") {
+          dueReturnText = typeof rawDue === 'string' ? rawDue.split('T')[0] : new Date(rawDue).toISOString().split('T')[0];
+        } else {
+          dueReturnText = "7 days";
+        }
+        if (isDueToReturn((item as any)?.dueDate || rawDue || dueReturnText)) {
+          highlightType = "red";
+        } else {
+          highlightType = "green";
+        }
+      }
+    }
+
     return {
       id: item?.id || `empty-row-${index}`,
-      borrowDate: item?.borrowDate || "",
-      dueReturnDate: item?.dueReturnDate || "",
+      borrowDate: item?.borrowDate || (item as any)?.pickupDate || (item as any)?.dateReserved || "",
+      dueReturnDate: dueReturnText,
       bookTitle: item?.bookTitle || "",
       hasData: !!item,
       isReturned,
+      isReservation,
+      isNowAvailable,
+      highlightType,
+      rawItem: item,
     };
   });
 
@@ -463,8 +574,18 @@ export default function ScannedCardScreen() {
                     activeTab === 'return'
                       ? [styles.tabPillActive, !isDarkMode && { backgroundColor: theme.accentBlue }]
                       : [styles.tabPillInactive, !isDarkMode && { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }],
+                    !canReturns && { opacity: 0.6 },
                   ]}
-                  onPress={() => setActiveTab('return')}
+                  onPress={() => {
+                    if (!canReturns) {
+                      Alert.alert(
+                        "Feature Restricted",
+                        "Book return processing has been restricted for your librarian account by the administrator."
+                      );
+                      return;
+                    }
+                    setActiveTab('return');
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text
@@ -473,9 +594,10 @@ export default function ScannedCardScreen() {
                       activeTab === 'return'
                         ? [styles.tabPillTextActive, !isDarkMode && { color: '#FFFFFF' }]
                         : [styles.tabPillTextInactive, !isDarkMode && { color: theme.textSecondary }],
+                      !canReturns && { color: '#EF4444' },
                     ]}
                   >
-                    Return
+                    {canReturns ? "Return" : "Return 🔒"}
                   </Text>
                 </TouchableOpacity>
 
@@ -507,8 +629,18 @@ export default function ScannedCardScreen() {
                     activeTab === 'reserved'
                       ? [styles.tabPillActive, !isDarkMode && { backgroundColor: theme.accentBlue }]
                       : [styles.tabPillInactive, !isDarkMode && { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }],
+                    !canReservations && { opacity: 0.6 },
                   ]}
-                  onPress={() => setActiveTab('reserved')}
+                  onPress={() => {
+                    if (!canReservations) {
+                      Alert.alert(
+                        "Feature Restricted",
+                        "Reservation management has been restricted for your librarian account by the administrator."
+                      );
+                      return;
+                    }
+                    setActiveTab('reserved');
+                  }}
                   activeOpacity={0.8}
                 >
                   <Text
@@ -517,9 +649,10 @@ export default function ScannedCardScreen() {
                       activeTab === 'reserved'
                         ? [styles.tabPillTextActive, !isDarkMode && { color: '#FFFFFF' }]
                         : [styles.tabPillTextInactive, !isDarkMode && { color: theme.textSecondary }],
+                      !canReservations && { color: '#EF4444' },
                     ]}
                   >
-                    Reserved Books
+                    {canReservations ? "Reserved Books" : "Reserved 🔒"}
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -529,7 +662,17 @@ export default function ScannedCardScreen() {
               {/* ========================================================= */}
               {activeTab === 'return' && (
                 <View style={styles.tabContentContainer}>
-                  {returnableBooks.length === 0 ? (
+                  {!canReturns ? (
+                    <View style={[styles.emptyReturnCard, { backgroundColor: isDarkMode ? '#1F1417' : '#FEF2F2', borderColor: isDarkMode ? '#3F1B22' : '#FEE2E2', padding: 20 }]}>
+                      <Ionicons name="lock-closed" size={38} color="#EF4444" style={{ marginBottom: 10 }} />
+                      <Text style={[styles.emptyReturnTitle, { color: isDarkMode ? '#FCA5A5' : '#DC2626' }]}>
+                        Return Processing Restricted
+                      </Text>
+                      <Text style={[styles.emptyReturnSub, { color: theme.textSecondary }]}>
+                        Checking in books has been restricted for your librarian account by the administrator.
+                      </Text>
+                    </View>
+                  ) : returnableBooks.length === 0 ? (
                     <View style={[styles.emptyReturnCard, { backgroundColor: isDarkMode ? '#131E33' : '#F8FAFC', borderColor: isDarkMode ? '#24334C' : '#CBD5E1' }]}>
                       <Ionicons name="checkmark-circle-outline" size={40} color="#10B981" />
                       <Text style={[styles.emptyReturnTitle, { color: theme.textPrimary }]}>
@@ -596,20 +739,29 @@ export default function ScannedCardScreen() {
                               </View>
                               <View style={[
                                 styles.dueBadge,
-                                isSelected && { backgroundColor: theme.accentGold }
+                                isSelected
+                                  ? { backgroundColor: theme.accentGold }
+                                  : (item.status === "Picked Up" || (item as any).isPickedUp
+                                      ? { backgroundColor: isDarkMode ? "rgba(2, 116, 187, 0.25)" : "#DBEAFE", borderColor: "#0274BB", borderWidth: 1 }
+                                      : null)
                               ]}>
                                 <Text style={[
                                   styles.dueBadgeText,
-                                  isSelected && { color: '#080F1E', fontWeight: '800' }
+                                  isSelected
+                                    ? { color: '#080F1E', fontWeight: '800' }
+                                    : (item.status === "Picked Up" || (item as any).isPickedUp
+                                        ? { color: isDarkMode ? "#38BDF8" : "#0274BB", fontWeight: '800' }
+                                        : null)
                                 ]}>
-                                  {isSelected ? "SELECTED" : "DUE"}
+                                  {isSelected ? "SELECTED" : (item.status === "Picked Up" || (item as any).isPickedUp ? "PICKED UP" : "DUE")}
                                 </Text>
                               </View>
                             </View>
 
                             <View style={[styles.returnBookDatesCol, { paddingLeft: 30 }]}>
                               <Text style={[styles.returnBookDateText, { color: theme.textSecondary }]}>
-                                Date borrow: {formatDisplayDate(item.borrowDate)}
+                                {(item.status === "Picked Up" || (item as any).isPickedUp) ? "Picked up: " : "Date borrow: "}
+                                {formatDisplayDate(item.borrowDate)}
                               </Text>
                               <Text style={[styles.returnBookDateText, { color: theme.textSecondary }]}>
                                 Due Date: {formatDisplayDate(item.dueReturnDate)}
@@ -750,6 +902,15 @@ export default function ScannedCardScreen() {
                               borderBottomColor: isDarkMode ? '#273752' : '#E2E8F0',
                               borderBottomWidth: idx === cardTableRows.length - 1 ? 0 : 1,
                             },
+                            row.hasData && !row.isReturned && row.highlightType === 'violet' && {
+                              backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.08)' : 'rgba(233, 213, 255, 0.25)',
+                            },
+                            row.hasData && !row.isReturned && row.highlightType === 'green' && {
+                              backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.08)' : 'rgba(134, 239, 172, 0.25)',
+                            },
+                            row.hasData && !row.isReturned && row.highlightType === 'red' && {
+                              backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.10)' : 'rgba(254, 202, 202, 0.35)',
+                            },
                           ]}
                         >
                           <View style={[styles.colBorrowDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
@@ -762,17 +923,33 @@ export default function ScannedCardScreen() {
                             style={[
                               styles.colDueDate,
                               { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
-                              row.hasData && !row.isReturned && {
+                              row.hasData && !row.isReturned && row.highlightType === 'green' && {
                                 backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                              },
+                              row.hasData && !row.isReturned && row.highlightType === 'violet' && {
+                                backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.28)' : '#E9D5FF',
+                              },
+                              row.hasData && !row.isReturned && row.highlightType === 'red' && {
+                                backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.28)' : '#FCA5A5',
                               },
                             ]}
                           >
                             <Text
                               style={[
                                 styles.cellDataText,
-                                row.hasData && !row.isReturned
+                                row.hasData && !row.isReturned && row.highlightType === 'green'
                                   ? {
                                       color: isDarkMode ? '#86EFAC' : '#064E3B',
+                                      fontWeight: '700',
+                                    }
+                                  : row.hasData && !row.isReturned && row.highlightType === 'violet'
+                                  ? {
+                                      color: isDarkMode ? '#D8B4FE' : '#6B21A8',
+                                      fontWeight: '700',
+                                    }
+                                  : row.hasData && !row.isReturned && row.highlightType === 'red'
+                                  ? {
+                                      color: isDarkMode ? '#F87171' : '#991B1B',
                                       fontWeight: '700',
                                     }
                                   : {
@@ -793,6 +970,22 @@ export default function ScannedCardScreen() {
                         </View>
                       ))}
                     </View>
+
+                    {/* Visual Status Legend */}
+                    <View style={styles.legendContainer}>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendBox, { backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.35)' : '#86EFAC' }]} />
+                        <Text style={[styles.legendText, { color: theme.textSecondary }]}>Borrow (Active)</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendBox, { backgroundColor: '#F87171' }]} />
+                        <Text style={[styles.legendText, { color: theme.textSecondary }]}>Due to Return</Text>
+                      </View>
+                      <View style={styles.legendItem}>
+                        <View style={[styles.legendBox, { backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.35)' : '#E9D5FF' }]} />
+                        <Text style={[styles.legendText, { color: theme.textSecondary }]}>Reservation</Text>
+                      </View>
+                    </View>
                   </View>
 
                   {/* VIOLATION RECORD SECTION */}
@@ -804,7 +997,17 @@ export default function ScannedCardScreen() {
                       </Text>
                     </View>
 
-                    {violations.length === 0 ? (
+                    {!canViolations ? (
+                      <View style={[styles.clearViolationCard, { backgroundColor: isDarkMode ? '#111A2E' : '#FFFFFF', borderColor: isDarkMode ? '#1E293B' : '#E2E8F0', padding: 22 }]}>
+                        <Ionicons name="lock-closed" size={34} color={theme.textMuted} style={{ marginBottom: 8 }} />
+                        <Text style={[styles.clearStatusTitle, { color: isDarkMode ? '#FFFFFF' : '#0F172A' }]}>
+                          Violations View Restricted
+                        </Text>
+                        <Text style={[styles.clearStatusSubtitle, { color: theme.textSecondary }]}>
+                          Student disciplinary records and assessed penalty fees have been restricted for your librarian account by the administrator.
+                        </Text>
+                      </View>
+                    ) : violations.length === 0 ? (
                       <View style={[styles.clearViolationCard, { backgroundColor: isDarkMode ? '#111A2E' : '#FFFFFF', borderColor: isDarkMode ? '#1E293B' : '#E2E8F0' }]}>
                         <Ionicons name="checkmark-circle-outline" size={42} color="#10B981" />
                         <Text style={[styles.clearStatusTitle, { color: isDarkMode ? '#FFFFFF' : '#0F172A' }]}>
@@ -865,7 +1068,17 @@ export default function ScannedCardScreen() {
               {/* ========================================================= */}
               {activeTab === 'reserved' && (
                 <View style={styles.tabContentContainer}>
-                  {reservedBooks.length === 0 ? (
+                  {!canReservations ? (
+                    <View style={[styles.emptyReturnCard, { backgroundColor: isDarkMode ? '#1F1417' : '#FEF2F2', borderColor: isDarkMode ? '#3F1B22' : '#FEE2E2', padding: 22 }]}>
+                      <Ionicons name="lock-closed" size={38} color="#EF4444" style={{ marginBottom: 10 }} />
+                      <Text style={[styles.emptyReturnTitle, { color: isDarkMode ? '#FCA5A5' : '#DC2626' }]}>
+                        Reservations Restricted
+                      </Text>
+                      <Text style={[styles.emptyReturnSub, { color: theme.textSecondary }]}>
+                        Viewing and handling student book reservations has been restricted for your librarian account by the administrator.
+                      </Text>
+                    </View>
+                  ) : reservedBooks.length === 0 ? (
                     <View style={[styles.emptyReturnCard, { backgroundColor: isDarkMode ? '#131E33' : '#F8FAFC', borderColor: isDarkMode ? '#24334C' : '#CBD5E1' }]}>
                       <Ionicons name="bookmark-outline" size={40} color={theme.accentGold} />
                       <Text style={[styles.emptyReturnTitle, { color: theme.textPrimary }]}>
@@ -891,7 +1104,7 @@ export default function ScannedCardScreen() {
                           <Text style={[styles.returnBookTitle, { color: theme.textPrimary }]} numberOfLines={2}>
                             {item.bookTitle}
                           </Text>
-                          <View style={[styles.dueBadge, { backgroundColor: '#F59E0B' }]}>
+                          <View style={[styles.dueBadge, { backgroundColor: '#8B5CF6' }]}>
                             <Text style={styles.dueBadgeText}>{item.status.toUpperCase()}</Text>
                           </View>
                         </View>
@@ -1454,6 +1667,27 @@ const styles = StyleSheet.create({
   violationDate: {
     fontSize: 10,
     marginTop: 6,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 12,
+    paddingHorizontal: 4,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendBox: {
+    width: 12,
+    height: 12,
+    borderRadius: 3,
+  },
+  legendText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   footerNotice: {
     marginTop: 32,

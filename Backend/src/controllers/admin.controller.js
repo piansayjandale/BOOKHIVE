@@ -18,11 +18,11 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 
 import { env } from "../config/env.js";
+import { pool } from "../db/pool.js";
 import { adminModel } from "../models/admin.model.js";
 import { superAdminModel } from "../models/super-admin.model.js";
 import { studentModel } from "../models/student.model.js";
-import { pool } from "../db/pool.js";
-import { emitBookAdded, emitTransactionDecided, emitBookReturned, emitAnnouncementPublished, emitAnnouncementDeleted } from "../socket.js";
+import { emitBookAdded, emitBorrowRequest, emitTransactionDecided, emitBookReturned, emitTransactionPickedUp, emitAnnouncementPublished, emitAnnouncementDeleted, emitSettingsUpdated } from "../socket.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
 
@@ -89,22 +89,22 @@ const DEV_CREDENTIALS = {
     course: "Library Services",
   },
   "joseph.tan@stiwnu.edu.ph": {
-    id: "user-002",
-    name: "Yana Brich R. Palmares",
-    email: "librarian@stiwnu.edu.ph",
+    id: "user-lib-002",
+    name: "Joseph Tan",
+    email: "joseph.tan@stiwnu.edu.ph",
     role: "Librarian",
     password: "BookHiveLibrarian!2026",
-    idNumber: "LIB-2026-0001",
+    idNumber: "LIB-2026-002",
     department: "Library Services",
     course: "Library Services",
   },
   "lib-2026-002": {
-    id: "user-002",
-    name: "Yana Brich R. Palmares",
-    email: "librarian@stiwnu.edu.ph",
+    id: "user-lib-002",
+    name: "Joseph Tan",
+    email: "joseph.tan@stiwnu.edu.ph",
     role: "Librarian",
     password: "BookHiveLibrarian!2026",
-    idNumber: "LIB-2026-0001",
+    idNumber: "LIB-2026-002",
     department: "Library Services",
     course: "Library Services",
   },
@@ -182,7 +182,7 @@ export const adminController = {
         role: user.role,
         department: user.department,
         course: user.course,
-        permissions: user.permissions || {
+        permissions: {
           home: true,
           records: true,
           transactions: true,
@@ -190,6 +190,17 @@ export const adminController = {
           reports: true,
           history: true,
           settings: true,
+          export: true,
+          import: true,
+          mobileCatalog: true,
+          mobileStudentPass: true,
+          mobileReturns: true,
+          mobilePickup: true,
+          mobileReservations: true,
+          mobileViolations: true,
+          mobileManualEntry: true,
+          mobileGallery: true,
+          ...(user.permissions || {}),
         },
       },
     });
@@ -505,6 +516,63 @@ export const adminController = {
     }
   },
 
+  // --- Digitized Books Intake & Review Queue ---
+  async listDigitizedBooks(req, res) {
+    const search = String(req.query.search ?? "");
+    const department = String(req.query.department ?? "All");
+    const status = String(req.query.status ?? "All");
+
+    const books = await adminModel.listDigitizedBooks({ search, department, status });
+    return res.json({ books, total: books.length });
+  },
+
+  async addDigitizedBook(req, res) {
+    const book = await adminModel.addDigitizedBook(req.body);
+    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : "Librarian Mobile App";
+    const bookTitle = book?.title || req.body?.title || "Scanned Book";
+    await adminModel.addHistoryLog({
+      actor: actorLabel,
+      action: "Scanned book intake slip",
+      target: bookTitle,
+      module: "Records",
+      detail: `Digitized slip captured via Mobile Scanner (${book?.confidence ?? 95}% confidence) pending cataloging review.`,
+    });
+    await adminModel.addActivityLog(`Digitized slip scanned: ${bookTitle}`, "info", actorLabel);
+    return res.status(201).json({ book: book || { ...req.body, title: bookTitle }, message: "Queued for final cataloging review" });
+  },
+
+  async approveDigitizedBook(req, res) {
+    const { id } = req.params;
+    const result = await adminModel.approveDigitizedBook(id, req.body);
+    const officialBook = result?.officialBook || req.body;
+    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : "Library Staff";
+    const bookTitle = officialBook?.title || req.body?.title || "Cataloged Book";
+    await adminModel.addHistoryLog({
+      actor: actorLabel,
+      action: "Approved digitized catalog",
+      target: bookTitle,
+      module: "Records",
+      detail: `Verified mobile scan and officially cataloged at shelf ${officialBook?.shelfLocation || "Circulation"}.`,
+    });
+    await adminModel.addActivityLog(`Digitized book approved & cataloged: ${bookTitle}`, "success", actorLabel);
+    
+    // Broadcast real-time WebSocket event
+    if (officialBook) {
+      emitBookAdded(officialBook);
+      void eventDispatcher.dispatchCatalogMutation("added", officialBook);
+    }
+
+    return res.json({ book: officialBook, success: true, message: "Book officially cataloged." });
+  },
+
+  async deleteDigitizedBook(req, res) {
+    const { id } = req.params;
+    await adminModel.deleteDigitizedBook(id);
+    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : "Library Staff";
+    await adminModel.addActivityLog(`Digitized slip rejected: ID ${id}`, "warning", actorLabel);
+    return res.json({ ok: true, message: "Digitized slip removed from queue." });
+  },
+
   // --- Announcements ---
   async listAnnouncements(req, res) {
     const search = String(req.query.search ?? "");
@@ -583,11 +651,15 @@ export const adminController = {
     const { id } = req.params;
     const actorLabel = `${req.user.role} ${req.user.name}`;
     
-    const existingResult = await pool.query("SELECT title FROM announcements WHERE id = $1", [id]);
-    if (existingResult.rows.length === 0) {
-      return res.status(404).json({ message: "Announcement not found." });
+    let title = "Notice";
+    try {
+      const existingResult = await pool.query("SELECT title FROM announcements WHERE id = $1", [id]);
+      if (existingResult.rows.length > 0) {
+        title = existingResult.rows[0].title;
+      }
+    } catch (e) {
+      // In case pool query fails, continue to deleteAnnouncement
     }
-    const title = existingResult.rows[0].title;
     
     const deleted = await adminModel.deleteAnnouncement(id);
     if (!deleted) {
@@ -623,6 +695,13 @@ export const adminController = {
       detail: "Borrow limits and platform defaults were synchronized.",
     });
     await adminModel.addActivityLog("System preferences updated", "success", req.user.name);
+    try {
+      if (settings) {
+        emitSettingsUpdated(settings);
+      }
+    } catch (e) {
+      // safe fallback
+    }
     return res.json({ settings });
   },
 
@@ -684,23 +763,66 @@ export const adminController = {
 
   async decideTransaction(req, res) {
     const { transactionId } = req.params;
-    const { status, comment } = req.body;
-
-    if (!status || !['Approved', 'Declined', 'Returned'].includes(status)) {
-      return res.status(400).json({ message: 'Invalid status.' });
-    }
+    const { status, comment, type, dueDate, action, pickedUp, resourceTitle, isbn, studentId, studentName } = req.body;
 
     const actorId = req.user?.sub || req.user?.id;
     const isUuid = Boolean(actorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(actorId)));
     const decidedBy = isUuid ? actorId : null;
     const actorName = req.user?.name || "Librarian";
     const actorRole = req.user?.role || "Librarian";
+    const actorLabel = `${actorRole} ${actorName}`;
+
+    // Handle book pickup action by librarian
+    if (action === "pickup" || status === "Picked Up" || pickedUp === true) {
+      const transaction = await adminModel.markTransactionPickedUp({
+        transactionId,
+        librarianId: decidedBy,
+        librarianName: actorName,
+        resourceTitle,
+        isbn,
+        studentId,
+        studentName,
+      });
+
+      if (!transaction) {
+        return res.status(404).json({ message: 'Transaction not found.' });
+      }
+
+      // Broadcast real-time WebSocket event for Pickup
+      emitTransactionPickedUp(transaction);
+      void eventDispatcher.dispatchTransactionDecision(transaction);
+
+      await adminModel.addHistoryLog({
+        actor: actorLabel,
+        action: "Picked Up book",
+        target: transaction.studentName,
+        module: "Pickups",
+        detail: `'${transaction.resourceTitle}' marked as Picked Up by student. Due date: ${new Date(transaction.dueDate).toLocaleDateString()}.`,
+      });
+      await adminModel.addActivityLog(
+        `Book '${transaction.resourceTitle}' picked up by ${transaction.studentName || transaction.studentId}`,
+        "success",
+        actorName
+      );
+
+      return res.json({ transaction, ok: true });
+    }
+
+    if (!status || !['Approved', 'Declined', 'Returned'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status.' });
+    }
 
     const transaction = await adminModel.decideTransaction({
       transactionId,
       status,
       decidedBy,
       comment,
+      type,
+      dueDate,
+      resourceTitle,
+      isbn,
+      studentId,
+      studentName,
     });
 
     if (!transaction) {
@@ -714,7 +836,6 @@ export const adminController = {
     }
     void eventDispatcher.dispatchTransactionDecision(transaction);
 
-    const actorLabel = `${actorRole} ${actorName}`;
     await adminModel.addHistoryLog({
       actor: actorLabel,
       action: `${status} transaction`,
@@ -729,12 +850,12 @@ export const adminController = {
     );
 
     // Automated Return-to-Reservation Notification & 24h Timer:
-    // If a book is returned, promote the next waitlisted reservation and start their 24h timer
-    if (status === "Returned") {
+    // If a book is returned or a pending borrow is declined (freeing up a copy), promote the next waitlisted reservation
+    if (status === "Returned" || status === "Declined") {
       try {
         await reservationTimerService.promoteNextReservation(transaction.isbn, transaction.resourceTitle);
       } catch (notifyErr) {
-        console.warn("Automated reservation timer activation error on admin return:", notifyErr.message);
+        console.warn("Automated reservation timer activation error on admin return/decline:", notifyErr.message);
       }
     }
 
@@ -757,6 +878,9 @@ export const adminController = {
       "info",
       req.user.name
     );
+    void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
+    emitBorrowRequest(transaction);
+    void eventDispatcher.dispatchBorrowRequest(transaction);
     return res.status(201).json({ transaction });
   },
 
@@ -869,7 +993,7 @@ export const adminController = {
       phone: profile.phone ?? "",
       bio: profile.bio ?? "",
       avatar,
-      permissions: profile.permissions || {
+      permissions: {
         home: true,
         records: true,
         transactions: true,
@@ -877,6 +1001,17 @@ export const adminController = {
         reports: true,
         history: true,
         settings: true,
+        export: true,
+        import: true,
+        mobileCatalog: true,
+        mobileStudentPass: true,
+        mobileReturns: true,
+        mobilePickup: true,
+        mobileReservations: true,
+        mobileViolations: true,
+        mobileManualEntry: true,
+        mobileGallery: true,
+        ...(profile.permissions || {}),
       },
       lastActive: profile.lastActive,
     });
@@ -938,7 +1073,7 @@ export const adminController = {
   },
 
   async runPromptSearch(req, res) {
-    const { query, department, uploadedContext, fileNames } = req.body;
+    const { query, department, uploadedContext, fileNames, mode } = req.body;
     const actorId = req.user?.sub;
     const actorName = req.user?.name || "System";
     const result = await adminModel.runPromptSearch({
@@ -946,6 +1081,7 @@ export const adminController = {
       department,
       uploadedContext,
       fileNames,
+      mode,
       actorId,
       actorName,
     });
@@ -954,11 +1090,12 @@ export const adminController = {
 
   async deletePromptSearchLog(req, res) {
     const { id } = req.params;
+    const mode = req.query?.mode;
     if (id) {
       const logs = await adminModel.deleteSearchLog(id);
       return res.json({ success: true, logs });
     }
-    const logs = await adminModel.clearSearchLogs();
+    const logs = await adminModel.clearSearchLogs(mode);
     return res.json({ success: true, logs });
   },
 

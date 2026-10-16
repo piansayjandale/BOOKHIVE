@@ -74,7 +74,7 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
     basePath: "/technical",
     navItems: [
       { href: "/technical", label: "Home", icon: Home },
-      { href: "/technical/records", label: "Add & Manage Books", icon: ClipboardList },
+      { href: "/technical/records", label: "Cataloging", icon: ClipboardList },
       { href: "/circulation/transactions", label: "Transactions", icon: Sparkles },
       { href: "/circulation/reminders", label: "Violations & Reminders", icon: BellRing },
       { href: "/librarian/reports", label: "Reports", icon: ChartColumnBig },
@@ -90,7 +90,7 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
     basePath: "/circulation",
     navItems: [
       { href: "/circulation", label: "Home", icon: Home },
-      { href: "/circulation/records", label: "Add & Manage Books", icon: ClipboardList },
+      { href: "/circulation/records", label: "Cataloging", icon: ClipboardList },
       { href: "/circulation/transactions", label: "Transactions", icon: Sparkles },
       { href: "/circulation/reminders", label: "Violations & Reminders", icon: BellRing },
       { href: "/librarian/reports", label: "Reports", icon: ChartColumnBig },
@@ -106,7 +106,7 @@ export const dashboardVariantConfig: Record<DashboardVariant, DashboardVariantCo
     basePath: "/librarian",
     navItems: [
       { href: "/librarian", label: "Home", icon: Home },
-      { href: "/librarian/records", label: "Add & Manage Books", icon: ClipboardList },
+      { href: "/librarian/records", label: "Cataloging", icon: ClipboardList },
       { href: "/librarian/transactions", label: "Transactions", icon: Sparkles },
       { href: "/librarian/reminders", label: "Violations & Reminders", icon: BellRing },
       { href: "/librarian/reports", label: "Reports", icon: ChartColumnBig },

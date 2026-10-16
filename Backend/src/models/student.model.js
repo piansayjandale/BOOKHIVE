@@ -329,19 +329,20 @@ export const studentModel = {
           b.edition,
           b.copies,
           b.accession_number AS "accessionNumber",
-          COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status = 'Approved' THEN 1 END), 0)::int AS "borrowedCount",
-          COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN 1 END), 0)::int AS "reservedCount"
+          COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+          COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
+          COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
         FROM books b
         LEFT JOIN transactions t ON (
           (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
           OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
         )
-        WHERE b.archived_at IS NULL AND b.availability != 'Unavailable'
+        WHERE b.archived_at IS NULL
         GROUP BY b.id
         ORDER BY b.created_at DESC
         LIMIT $1 OFFSET $2
       `;
-      const countQuery = `SELECT COUNT(*) FROM books WHERE archived_at IS NULL AND availability != 'Unavailable'`;
+      const countQuery = `SELECT COUNT(*) FROM books WHERE archived_at IS NULL`;
       
       const [booksResult, countResult] = await Promise.all([
         pool.query(query, [limit, offset]),
@@ -351,12 +352,22 @@ export const studentModel = {
       const books = booksResult.rows.map(b => {
         const totalCopies = Math.max(1, Number(b.copies || 1));
         const borrowedCount = Number(b.borrowedCount || 0);
+        const heldCount = Number(b.heldCount || 0);
         const reservedCount = Number(b.reservedCount || 0);
-        const availableCopies = Math.max(0, totalCopies - borrowedCount - reservedCount);
+        const unavailableCopies = Math.min(totalCopies, borrowedCount);
+        const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+        const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
         const isAvailable = availableCopies > 0;
         const status = isAvailable ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
         return {
           ...b,
+          totalCopies,
+          copies: totalCopies,
+          borrowedCount,
+          unavailableCopies,
+          heldCount,
+          reservedCount,
+          reservedCopies,
           availableCopies,
           isAvailable,
           status,
@@ -434,30 +445,59 @@ export const studentModel = {
       const txQuery = `
         SELECT
           t.id,
-          t.student_name AS "borrowerName",
+          COALESCE(NULLIF(t.student_name, ''), u.name, 'Student Borrower') AS "borrowerName",
+          COALESCE(NULLIF(t.student_name, ''), u.name, 'Student Borrower') AS "studentName",
           t.student_id AS "studentId",
           t.user_id AS "userId",
-          t.requested_at AS "borrowDate",
+          COALESCE(t.requested_at, t.decided_at) AS "borrowDate",
+          t.requested_at AS "requestedAt",
+          t.decided_at AS "decidedAt",
           t.due_date AS "dueDate",
+          t.picked_up_at AS "pickedUpAt",
+          CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
           t.status,
           t.type
+        FROM transactions t
+        LEFT JOIN users u ON (t.user_id = u.id OR (t.student_id IS NOT NULL AND lower(t.student_id) = lower(u.id_number)))
+        WHERE (
+          (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = $1)
+          OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER($2))
+        )
+        AND t.status::text IN ('Approved', 'Picked Up', 'On Loan', 'Returned', 'Completed')
+        ORDER BY COALESCE(t.decided_at, t.requested_at) DESC
+        LIMIT 10
+      `;
+      const countQuery = `
+        SELECT
+          COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END)::int AS "borrowedCount",
+          COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "heldCount",
+          COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.available_at IS NULL OR t.expires_at <= NOW()) THEN 1 END)::int AS "waitlistCount",
+          COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "reservedCount"
         FROM transactions t
         WHERE (
           (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = $1)
           OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER($2))
         )
-        ORDER BY t.requested_at DESC
-        LIMIT 10
       `;
-      const txRes = await pool.query(txQuery, [targetIsbn, targetTitle]);
+      const [txRes, countRes] = await Promise.all([
+        pool.query(txQuery, [targetIsbn, targetTitle]).catch(() => ({ rows: [] })),
+        pool.query(countQuery, [targetIsbn, targetTitle]).catch(() => ({ rows: [] })),
+      ]);
+
       const ledger = txRes.rows || [];
+      const counts = countRes.rows[0] || {};
       const activeLoan = ledger.find(t => t.type === 'Borrow' && t.status === 'Approved') || null;
-      const borrowedCount = ledger.filter(t => t.type === 'Borrow' && t.status === 'Approved').length;
-      const reservedCount = ledger.filter(t => t.type === 'Reservation' && t.status === 'Pending').length;
+      const borrowedCount = Number(counts.borrowedCount || 0);
+      const heldCount = Number(counts.heldCount || 0);
+      const waitlistCount = Number(counts.waitlistCount || 0);
+      const reservedCount = Number(counts.reservedCount || 0);
+      const nextQueuePosition = waitlistCount + 1;
 
       if (!book) {
         const totalCopies = 1;
-        const availableCopies = Math.max(0, totalCopies - borrowedCount - reservedCount);
+        const unavailableCopies = Math.min(totalCopies, borrowedCount);
+        const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+        const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
         const isAvailable = availableCopies > 0;
         const status = isAvailable ? 'Available' : (reservedCount > 0 ? 'Reserved' : 'Unavailable');
         return {
@@ -465,9 +505,15 @@ export const studentModel = {
           title: targetTitle,
           author: extra.author || "Unknown Author",
           isbn: targetIsbn || "N/A",
+          totalCopies,
           copies: totalCopies,
           borrowedCount,
+          unavailableCopies,
+          heldCount,
+          waitlistCount,
           reservedCount,
+          reservedCopies,
+          nextQueuePosition,
           availableCopies,
           isAvailable,
           status,
@@ -478,14 +524,23 @@ export const studentModel = {
       }
 
       const totalCopies = Math.max(1, Number(book.copies || 1));
-      const availableCopies = Math.max(0, totalCopies - borrowedCount - reservedCount);
+      const unavailableCopies = Math.min(totalCopies, borrowedCount);
+      const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+      const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
       const isAvailable = availableCopies > 0;
       const status = isAvailable ? 'Available' : (reservedCount > 0 ? 'Reserved' : 'Unavailable');
 
       return {
         ...book,
+        totalCopies,
+        copies: totalCopies,
         borrowedCount,
+        unavailableCopies,
+        heldCount,
+        waitlistCount,
         reservedCount,
+        reservedCopies,
+        nextQueuePosition,
         availableCopies,
         isAvailable,
         status,
@@ -551,8 +606,9 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status = 'Approved' THEN 1 END), 0)::int AS "borrowedCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN 1 END), 0)::int AS "reservedCount"
+            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
           FROM books b
           LEFT JOIN transactions t ON (
             (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
@@ -578,12 +634,22 @@ export const studentModel = {
         const books = booksResult.rows.map(b => {
           const totalCopies = Math.max(1, Number(b.copies || 1));
           const borrowedCount = Number(b.borrowedCount || 0);
+          const heldCount = Number(b.heldCount || 0);
           const reservedCount = Number(b.reservedCount || 0);
-          const availableCopies = Math.max(0, totalCopies - borrowedCount - reservedCount);
+          const unavailableCopies = Math.min(totalCopies, borrowedCount);
+          const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+          const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
           const isAvailable = availableCopies > 0;
           const status = isAvailable ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
           return {
             ...b,
+            totalCopies,
+            copies: totalCopies,
+            borrowedCount,
+            unavailableCopies,
+            heldCount,
+            reservedCount,
+            reservedCopies,
             availableCopies,
             isAvailable,
             status,
@@ -699,8 +765,9 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status = 'Approved' THEN 1 END), 0)::int AS "borrowedCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN 1 END), 0)::int AS "reservedCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
             ${relevanceSql}
           FROM books b
           LEFT JOIN transactions t ON (
@@ -761,8 +828,9 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status = 'Approved' THEN 1 END), 0)::int AS "borrowedCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN 1 END), 0)::int AS "reservedCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
+            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
             (
               CASE WHEN LOWER(b.title) = LOWER($5) THEN 100
                    WHEN LOWER(b.title) LIKE LOWER($1) THEN 90
@@ -810,12 +878,22 @@ export const studentModel = {
       const books = booksResult.rows.map(b => {
         const totalCopies = Math.max(1, Number(b.copies || 1));
         const borrowedCount = Number(b.borrowedCount || 0);
+        const heldCount = Number(b.heldCount || 0);
         const reservedCount = Number(b.reservedCount || 0);
-        const availableCopies = Math.max(0, totalCopies - borrowedCount - reservedCount);
+        const unavailableCopies = Math.min(totalCopies, borrowedCount);
+        const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+        const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
         const isAvailable = availableCopies > 0;
         const status = isAvailable ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
         return {
           ...b,
+          totalCopies,
+          copies: totalCopies,
+          borrowedCount,
+          unavailableCopies,
+          heldCount,
+          reservedCount,
+          reservedCopies,
           availableCopies,
           isAvailable,
           status,
@@ -851,8 +929,17 @@ export const studentModel = {
           COALESCE(b.isbn, t.isbn) AS isbn,
           COALESCE(b.copies, 1)::int AS copies,
           CASE 
-            WHEN t.type = 'Reservation' AND t.status = 'Pending' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 'true'
-            WHEN t.type = 'Reservation' AND t.status = 'Pending' AND t.available_at IS NULL THEN 'false'
+            WHEN t.type = 'Reservation' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 'true'
+            WHEN t.type = 'Reservation' AND (
+              SELECT GREATEST(0, COALESCE(MAX(b_sub.copies), 1) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END))
+              FROM transactions sub_t
+              LEFT JOIN books b_sub ON (
+                (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b_sub.isbn = sub_t.isbn)
+                OR (sub_t.resource_title IS NOT NULL AND LOWER(b_sub.title) = LOWER(sub_t.resource_title))
+              )
+              WHERE (sub_t.isbn = t.isbn OR LOWER(sub_t.resource_title) = LOWER(t.resource_title))
+            ) > 0 THEN 'true'
+            WHEN t.type = 'Reservation' THEN 'false'
             ELSE COALESCE(b.availability, 'Available')
           END AS "available",
           t.type,
@@ -863,20 +950,22 @@ export const studentModel = {
           t.comment AS "comment",
           t.available_at AS "availableAt",
           t.expires_at AS "expiresAt",
+          t.picked_up_at AS "pickedUpAt",
+          CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
           CASE 
-            WHEN t.type = 'Reservation' AND t.status = 'Pending' AND t.expires_at IS NOT NULL 
+            WHEN (t.type = 'Reservation' OR (t.type = 'Borrow' AND t.status = 'Approved' AND t.picked_up_at IS NULL)) AND t.expires_at IS NOT NULL 
             THEN GREATEST(0, EXTRACT(EPOCH FROM (t.expires_at - NOW())))::int 
             ELSE NULL 
           END AS "claimDeadlineRemainingSeconds",
           CASE WHEN t.status = 'Approved' THEN t.decided_at ELSE NULL END AS "approvedAt",
           CASE WHEN t.status = 'Returned' THEN t.decided_at ELSE NULL END AS "returnedAt",
           CASE 
-            WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN (
+            WHEN t.type = 'Reservation' AND t.status IN ('Pending', 'Approved') THEN (
               SELECT COUNT(*)::int + 1
               FROM transactions sub
               WHERE (sub.isbn = t.isbn OR LOWER(sub.resource_title) = LOWER(t.resource_title))
                 AND sub.type = 'Reservation'
-                AND sub.status = 'Pending'
+                AND sub.status IN ('Pending', 'Approved')
                 AND sub.requested_at < t.requested_at
             )
             ELSE NULL
@@ -924,6 +1013,69 @@ export const studentModel = {
         dueDate = null,
         studentIdImage = null,
       } = payload;
+
+      const finalIsbn = isbn && String(isbn).trim() ? String(isbn).trim() : 'N/A';
+      const finalDept = department && String(department).trim() ? String(department).trim() : 'Circulation';
+      const finalTitle = resourceTitle && String(resourceTitle).trim() ? String(resourceTitle).trim() : 'Library Book';
+      let validDueDate = null;
+      if (dueDate && String(dueDate) !== 'Not set' && !isNaN(new Date(dueDate).getTime())) {
+        validDueDate = new Date(dueDate).toISOString();
+      } else {
+        validDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      // 0. Policy guard: check Super Admin borrow limit against current active student loans
+      try {
+        const sRes = await pool.query("SELECT borrow_limit, borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1");
+        const bLimit = Number(sRes.rows[0]?.borrow_limit || 5);
+
+        const countQuery = `
+          SELECT COUNT(*)::int AS "activeCount"
+          FROM transactions
+          WHERE (
+            user_id::text = $1
+            OR (student_id IS NOT NULL AND student_id != '' AND lower(student_id) = lower($2))
+          )
+          AND type = 'Borrow'
+          AND status::text NOT IN ('Returned', 'Declined', 'Cancelled', 'Rejected')
+        `;
+        const countRes = await pool.query(countQuery, [userId, studentId]);
+        const activeCount = Number(countRes.rows[0]?.activeCount || 0);
+
+        if (activeCount >= bLimit) {
+          const limitErr = new Error(`Borrow limit reached. You currently have ${activeCount} active book loans/requests (maximum allowed: ${bLimit}). Please return a book to the library before borrowing another.`);
+          limitErr.code = "BORROW_LIMIT_REACHED";
+          limitErr.statusCode = 400;
+          throw limitErr;
+        }
+
+        const overdueQuery = `
+          SELECT COUNT(*)::int AS "overdueCount"
+          FROM transactions
+          WHERE (
+            user_id::text = $1
+            OR (student_id IS NOT NULL AND student_id != '' AND lower(student_id) = lower($2))
+          )
+          AND type = 'Borrow'
+          AND status::text NOT IN ('Returned', 'Declined', 'Cancelled', 'Rejected')
+          AND due_date IS NOT NULL
+          AND due_date < NOW()
+        `;
+        const overdueRes = await pool.query(overdueQuery, [userId, studentId]);
+        const overdueCount = Number(overdueRes.rows[0]?.overdueCount || 0);
+
+        if (overdueCount > 0) {
+          const overdueErr = new Error(`Overdue return required. You have ${overdueCount} book loan(s) that are past their due date. Please return them to the library before borrowing additional books.`);
+          overdueErr.code = "OVERDUE_RETURN_REQUIRED";
+          overdueErr.statusCode = 400;
+          throw overdueErr;
+        }
+      } catch (limitCheckErr) {
+        if (limitCheckErr.code === "BORROW_LIMIT_REACHED" || limitCheckErr.code === "OVERDUE_RETURN_REQUIRED") {
+          throw limitCheckErr;
+        }
+        warnIfNotOffline("DB student:borrowBook limit check fallback:", limitCheckErr.message);
+      }
 
       // 1. Concurrency guard & idempotency check: verify no pending request exists for this student & book
       let existingReservationId = null;
@@ -995,15 +1147,48 @@ export const studentModel = {
               student_id_image AS "studentIdImage"
           `;
           const { rows } = await pool.query(updateQuery, [
-            dueDate,
+            validDueDate,
             studentIdImage,
             studentName,
             studentId,
-            department,
+            finalDept,
             existingReservationId,
           ]);
           row = rows[0];
         } else {
+          // Guard: verify book has available copies before allowing immediate borrow
+          try {
+            const availCheck = `
+              SELECT 
+                b.copies,
+                (SELECT COUNT(*)::int FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Borrow' AND t.status IN ('Approved', 'Pending')) AS "borrowedCount",
+                (SELECT COUNT(*)::int FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Reservation' AND t.status = 'Pending' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW())) AS "heldCount"
+              FROM books b
+              WHERE (b.isbn IS NOT NULL AND b.isbn != '' AND b.isbn != 'N/A' AND b.isbn = $1)
+                 OR (b.title IS NOT NULL AND LOWER(b.title) = LOWER($2))
+                 OR (b.id::text = $3)
+              LIMIT 1
+            `;
+            const availRes = await pool.query(availCheck, [isbn || '', resourceTitle || '', bookId || '']);
+            if (availRes.rows.length > 0) {
+              const bData = availRes.rows[0];
+              const totalCopies = Math.max(1, Number(bData.copies || 1));
+              const inUseCopies = Number(bData.borrowedCount || 0) + Number(bData.heldCount || 0);
+              const netAvailable = Math.max(0, totalCopies - inUseCopies);
+              if (netAvailable <= 0) {
+                const noCopiesErr = new Error(`All copies of "${resourceTitle || 'this book'}" are currently checked out. Please place a reservation instead to join the queue.`);
+                noCopiesErr.code = "NO_COPIES_AVAILABLE";
+                noCopiesErr.statusCode = 400;
+                throw noCopiesErr;
+              }
+            }
+          } catch (availErr) {
+            if (availErr.code === "NO_COPIES_AVAILABLE") {
+              throw availErr;
+            }
+            warnIfNotOffline("DB student:borrowBook avail check fallback:", availErr.message);
+          }
+
           const query = `
             INSERT INTO transactions (
               user_id,
@@ -1020,7 +1205,8 @@ export const studentModel = {
             )
             VALUES (
               (SELECT id FROM users WHERE id::text = $1 OR lower(id_number) = lower($3) OR lower(email) = lower($1) LIMIT 1),
-              $2, $3, $4, $5, $6,
+              COALESCE(NULLIF($2, ''), (SELECT name FROM users WHERE id::text = $1 OR lower(id_number) = lower($3) OR lower(email) = lower($1) LIMIT 1), 'Student Borrower'),
+              $3, $4, $5, $6,
               'Borrow', 'Pending',
               $7, NOW(), $8
             )
@@ -1043,10 +1229,10 @@ export const studentModel = {
             userId,
             studentName,
             studentId,
-            resourceTitle,
-            isbn,
-            department,
-            dueDate,
+            finalTitle,
+            finalIsbn,
+            finalDept,
+            validDueDate,
             studentIdImage,
           ]);
           row = rows[0];
@@ -1113,6 +1299,16 @@ export const studentModel = {
         studentIdImage = null,
       } = payload;
 
+      const finalIsbn = isbn && String(isbn).trim() ? String(isbn).trim() : 'N/A';
+      const finalDept = department && String(department).trim() ? String(department).trim() : 'Circulation';
+      const finalTitle = resourceTitle && String(resourceTitle).trim() ? String(resourceTitle).trim() : 'Library Book';
+      let validDueDate = null;
+      if (dueDate && String(dueDate) !== 'Not set' && !isNaN(new Date(dueDate).getTime())) {
+        validDueDate = new Date(dueDate).toISOString();
+      } else {
+        validDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
       // 1. Concurrency guard & idempotency check: verify no pending request exists for this student & book
       try {
         const checkSql = `
@@ -1148,30 +1344,54 @@ export const studentModel = {
 
       let row = null;
       try {
-        // Check if a copy of this book is currently free for immediate pickup
-        let isImmediatelyAvailable = false;
+        // 1. Guard: Verify that all copies are currently unavailable before permitting a reservation
         try {
           const availCheck = `
             SELECT 
               b.copies,
-              (SELECT COUNT(*)::int FROM transactions t WHERE (t.isbn = b.isbn OR lower(t.resource_title) = lower(b.title)) AND t.type = 'Borrow' AND t.status = 'Approved') AS "borrowedCount",
-              (SELECT COUNT(*)::int FROM transactions t WHERE (t.isbn = b.isbn OR lower(t.resource_title) = lower(b.title)) AND t.type = 'Reservation' AND t.status = 'Pending' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW())) AS "heldCount"
+              (SELECT COUNT(*)::int FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Borrow' AND t.status IN ('Approved', 'Pending')) AS "borrowedCount",
+              (SELECT COUNT(*)::int FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Reservation' AND t.status = 'Pending' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW())) AS "heldCount"
             FROM books b
-            WHERE (b.isbn IS NOT NULL AND b.isbn != '' AND b.isbn = $1)
+            WHERE (b.isbn IS NOT NULL AND b.isbn != '' AND b.isbn != 'N/A' AND b.isbn = $1)
                OR (b.title IS NOT NULL AND lower(b.title) = lower($2))
+               OR (b.id::text = $3)
             LIMIT 1
           `;
-          const availRes = await pool.query(availCheck, [isbn || '', resourceTitle || '']);
+          const availRes = await pool.query(availCheck, [isbn || '', resourceTitle || '', bookId || '']);
           if (availRes.rows.length > 0) {
             const bData = availRes.rows[0];
             const totalCopies = Math.max(1, Number(bData.copies || 1));
-            const netAvailable = totalCopies - (bData.borrowedCount || 0) - (bData.heldCount || 0);
+            const inUseCopies = Number(bData.borrowedCount || 0) + Number(bData.heldCount || 0);
+            const netAvailable = Math.max(0, totalCopies - inUseCopies);
             if (netAvailable > 0) {
-              isImmediatelyAvailable = true;
+              const availErr = new Error(`Copies of "${resourceTitle || 'this book'}" are currently available for immediate borrowing. Reservation is only permitted when all copies are checked out or unavailable.`);
+              availErr.code = "COPIES_AVAILABLE";
+              availErr.statusCode = 400;
+              throw availErr;
             }
           }
         } catch (availErr) {
-          // ignore
+          if (availErr.code === "COPIES_AVAILABLE") {
+            throw availErr;
+          }
+          warnIfNotOffline("DB student:reserveBook avail check fallback:", availErr.message);
+        }
+
+        // 2. Determine 1st-come 1st-served queue position
+        let queuePosition = 1;
+        try {
+          const queueCountRes = await pool.query(
+            `SELECT COUNT(*)::int AS count
+             FROM transactions
+             WHERE ((isbn IS NOT NULL AND isbn != '' AND isbn != 'N/A' AND isbn = $1)
+                    OR (resource_title IS NOT NULL AND LOWER(resource_title) = LOWER($2)))
+               AND type = 'Reservation'
+               AND status = 'Pending'`,
+            [isbn || '', resourceTitle || '']
+          );
+          queuePosition = Number(queueCountRes.rows[0]?.count || 0) + 1;
+        } catch (qErr) {
+          // fallback queue position 1
         }
 
         const query = `
@@ -1195,11 +1415,12 @@ export const studentModel = {
             $2, $3, $4, $5, $6,
             'Reservation', 'Pending',
             $7, NOW(), $8,
-            CASE WHEN $9::boolean THEN NOW() ELSE NULL END,
-            CASE WHEN $9::boolean THEN NOW() + INTERVAL '1 day' ELSE NULL END
+            NULL,
+            NULL
           )
           RETURNING
             id,
+            user_id AS "userId",
             student_name AS "studentName",
             student_id AS "studentId",
             resource_title AS "resourceTitle",
@@ -1218,14 +1439,16 @@ export const studentModel = {
           userId,
           studentName,
           studentId,
-          resourceTitle,
-          isbn,
-          department,
-          dueDate,
+          finalTitle,
+          finalIsbn,
+          finalDept,
+          validDueDate,
           studentIdImage,
-          isImmediatelyAvailable,
         ]);
         row = rows[0];
+        if (row) {
+          row.queuePosition = queuePosition;
+        }
       } catch (dbErr) {
         warnIfNotOffline("DB student:reserveBook DB query fallback:", dbErr.message);
       }
@@ -1244,6 +1467,7 @@ export const studentModel = {
           requestedAt: new Date().toISOString(),
           dueDate,
           studentIdImage,
+          queuePosition: 1,
         };
       }
 
@@ -1288,8 +1512,9 @@ export const studentModel = {
         };
       }
 
-      // 2. Validate that the target reservation is currently in 'Pending' status before permitting cancellation
-      if (tx.status !== "Pending") {
+      // 2. Validate that the target reservation is currently in 'Pending' or unpicked-up 'Approved' hold status before permitting cancellation
+      const isCancellable = tx.status === "Pending" || (tx.status === "Approved" && !tx.pickedUpAt);
+      if (!isCancellable) {
         return {
           notPending: true,
           currentStatus: tx.status,
@@ -1301,7 +1526,7 @@ export const studentModel = {
       try {
         const updateSql = `
           UPDATE transactions
-          SET status = 'Cancelled', decided_at = NOW()
+          SET status = 'Cancelled', decided_at = NOW(), expires_at = NULL
           WHERE id = $1
           RETURNING
             id,
@@ -1747,46 +1972,205 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
         return null;
       }
 
-      // 2. Fetch Borrow History / Library Card transactions
+      // 2. Fetch Borrow History / Library Card transactions & Approved Reservations
       let libraryCard = [];
       try {
         const txSql = `
           SELECT
             t.id,
-            t.resource_title AS "bookTitle",
+            COALESCE(b.title, t.resource_title) AS "bookTitle",
             t.isbn,
             t.type,
             t.status,
             t.requested_at AS "requestedAt",
             t.due_date AS "dueDate",
-            t.decided_at AS "decidedAt"
+            t.decided_at AS "decidedAt",
+            t.available_at AS "availableAt",
+            t.expires_at AS "expiresAt",
+            t.picked_up_at AS "pickedUpAt",
+            CASE 
+              WHEN t.type = 'Reservation' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 'true'
+              WHEN t.type = 'Reservation' AND (
+                SELECT GREATEST(0, COALESCE(MAX(b_sub.copies), 1) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END))
+                FROM transactions sub_t
+                LEFT JOIN books b_sub ON (
+                  (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b_sub.isbn = sub_t.isbn)
+                  OR (sub_t.resource_title IS NOT NULL AND LOWER(b_sub.title) = LOWER(sub_t.resource_title))
+                )
+                WHERE (sub_t.isbn = t.isbn OR LOWER(sub_t.resource_title) = LOWER(t.resource_title))
+              ) > 0 THEN 'true'
+              WHEN t.type = 'Reservation' THEN 'false'
+              ELSE COALESCE(b.availability, 'Available')
+            END AS "available",
+            CASE 
+              WHEN t.type = 'Reservation' AND t.status IN ('Pending', 'Approved') THEN (
+                SELECT COUNT(*)::int + 1
+                FROM transactions sub
+                WHERE (sub.isbn = t.isbn OR LOWER(sub.resource_title) = LOWER(t.resource_title))
+                  AND sub.type = 'Reservation'
+                  AND sub.status IN ('Pending', 'Approved')
+                  AND sub.requested_at < t.requested_at
+              )
+              ELSE NULL
+            END AS "queuePosition"
           FROM transactions t
+          LEFT JOIN LATERAL (
+            SELECT *
+            FROM books b
+            WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
+               OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))
+            ORDER BY (CASE WHEN t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn THEN 0 ELSE 1 END)
+            LIMIT 1
+          ) b ON true
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
-            AND (t.type::text = 'Borrow' OR t.type::text = 'Borrowing' OR t.type IS NULL)
+            AND (
+              (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed'))
+              OR (t.type::text = 'Reservation' AND t.status::text IN ('Pending', 'Approved', 'Waitlisted', 'Reserved'))
+            )
           ORDER BY t.requested_at DESC
         `;
         const { rows: txRows } = await pool.query(txSql, [String(student.id), String(student.idNumber)]);
-        libraryCard = txRows.map(tx => ({
-          id: tx.id,
-          bookTitle: tx.bookTitle || "Unknown Book",
-          borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
-          dueReturnDate: tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—",
-          status: tx.status,
-        }));
+        libraryCard = txRows.map(tx => {
+          const isReservation = tx.type === 'Reservation';
+          const isReturned = tx.status === 'Returned' || tx.status === 'Completed';
+          const isNowAvailable = isReservation && (
+            tx.available === 'true' ||
+            tx.available === true ||
+            (tx.availableAt && (!tx.expiresAt || new Date(tx.expiresAt) > new Date()))
+          );
+
+          let dueReturnDate = tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—";
+          let highlightType = 'none';
+
+          if (!isReturned) {
+            if (isReservation) {
+              dueReturnDate = 'Reservation';
+              highlightType = 'violet';
+            } else {
+              const isDue = tx.dueDate && (() => {
+                const d = new Date(tx.dueDate);
+                if (isNaN(d.getTime())) return false;
+                const now = new Date();
+                const dueDayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+                const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+                return dueDayStart <= todayStart;
+              })();
+              highlightType = isDue ? 'red' : 'green';
+            }
+          } else {
+            dueReturnDate = 'Returned';
+            highlightType = 'none';
+          }
+
+          let resolvedStatus = tx.status || "Approved";
+          if (isReturned) {
+            resolvedStatus = tx.status || "Returned";
+          } else if (isReservation) {
+            resolvedStatus = isNowAvailable ? 'Borrow' : 'Reservation';
+          } else if (tx.pickedUpAt) {
+            resolvedStatus = 'Picked Up';
+          }
+
+          return {
+            id: tx.id,
+            bookTitle: tx.bookTitle || "Unknown Book",
+            borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
+            dueReturnDate,
+            status: resolvedStatus,
+            type: tx.type,
+            action: isReservation ? 'Reserve' : 'Borrow',
+            available: tx.available,
+            queuePosition: tx.queuePosition,
+            availableAt: tx.availableAt,
+            expiresAt: tx.expiresAt,
+            pickedUpAt: tx.pickedUpAt,
+            isPickedUp: !isReturned && Boolean(tx.pickedUpAt),
+            highlightType,
+          };
+        });
       } catch (txErr) {
         warnIfNotOffline("DB getStudentCardAndViolations tx query error:", txErr.message);
       }
 
       if (libraryCard.length === 0 && typeof inMemoryTransactions !== 'undefined') {
         libraryCard = inMemoryTransactions
-          .filter(tx => (tx.userId === student.id || tx.studentId === student.idNumber) && tx.type === 'Borrow')
-          .map(tx => ({
-            id: tx.id,
-            bookTitle: tx.resourceTitle || tx.bookTitle || "Library Book",
-            borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
-            dueReturnDate: tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—",
-            status: tx.status || "Approved",
-          }));
+          .filter(tx => (tx.userId === student.id || tx.studentId === student.idNumber) && 
+            ((tx.type === 'Borrow' && (tx.status === 'Approved' || tx.status === 'Returned' || tx.status === 'Completed' || tx.status === 'Picked Up' || tx.status === 'On Loan')) || 
+             (tx.type === 'Reservation' && tx.status === 'Approved')))
+          .map(tx => {
+            const isReservation = tx.type === 'Reservation';
+            const isReturned = tx.status === 'Returned' || tx.status === 'Completed';
+            const isNowAvailable = isReservation && (tx.available === 'true' || tx.available === true || !!tx.availableAt);
+            let dueReturnDate = tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—";
+            let highlightType = 'none';
+
+            if (!isReturned) {
+              if (isReservation) {
+                dueReturnDate = 'Reservation';
+                highlightType = 'violet';
+              } else {
+                highlightType = 'green';
+              }
+            }
+
+            let resolvedStatus = tx.status || "Approved";
+            if (isReturned) {
+              resolvedStatus = tx.status || "Returned";
+            } else if (isReservation) {
+              resolvedStatus = isNowAvailable ? 'Borrow' : 'Reservation';
+            } else if (tx.pickedUpAt) {
+              resolvedStatus = 'Picked Up';
+            }
+
+            return {
+              id: tx.id,
+              bookTitle: tx.resourceTitle || tx.bookTitle || "Library Book",
+              borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
+              dueReturnDate,
+              status: resolvedStatus,
+              type: tx.type,
+              action: isReservation ? 'Reserve' : 'Borrow',
+              available: tx.available,
+              queuePosition: tx.queuePosition,
+              availableAt: tx.availableAt,
+              expiresAt: tx.expiresAt,
+              pickedUpAt: tx.pickedUpAt,
+              isPickedUp: !isReturned && Boolean(tx.pickedUpAt),
+              highlightType,
+            };
+          });
+      }
+
+      // Fetch all student reservations and pending requests for Tab 3
+      let reservedBooks = [];
+      try {
+        const resSql = `
+          SELECT
+            t.id,
+            t.resource_title AS "bookTitle",
+            t.requested_at AS "reserveDate",
+            t.status,
+            t.available_at AS "availableAt",
+            t.expires_at AS "expiresAt"
+          FROM transactions t
+          WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
+            AND (
+              t.type = 'Reservation'
+              OR (t.type = 'Borrow' AND t.status = 'Pending')
+            )
+            AND t.status IN ('Pending', 'Approved')
+          ORDER BY t.requested_at DESC
+        `;
+        const { rows: resRows } = await pool.query(resSql, [String(student.id), String(student.idNumber)]);
+        reservedBooks = resRows.map(r => ({
+          id: r.id,
+          bookTitle: r.bookTitle || "Reserved Book",
+          reserveDate: r.reserveDate ? new Date(r.reserveDate).toISOString().split('T')[0] : "—",
+          status: r.status,
+          available: !!r.availableAt,
+        }));
+      } catch (resErr) {
+        warnIfNotOffline("DB getStudentCardAndViolations reservedBooks query error:", resErr.message);
       }
 
       // 3. Fetch / Compute Violations
@@ -1836,14 +2220,14 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
         const { rows: overdueRows } = await pool.query(overdueSql, [String(student.id), String(student.idNumber)]);
         overdueRows.forEach(ov => {
           const days = Math.max(1, parseInt(ov.daysOverdue, 10) || 1);
-          const penalty = days * 10; // ₱10 per day overdue
+          const penalty = days * 50; // ₱50 per day overdue
           violations.push({
             id: `overdue-${ov.id}`,
             bookTitle: ov.bookTitle || "Overdue Book",
             violationType: "Overdue Book Return",
             penaltyAmount: penalty,
             status: "Active Penalty",
-            remarks: `Overdue by ${days} day(s). Standard fine ₱10/day applied.`,
+            remarks: `Overdue by ${days} day(s). Standard fine ₱50/day applied.`,
             date: ov.dueDate ? new Date(ov.dueDate).toISOString().split('T')[0] : "Overdue",
           });
         });
@@ -1866,6 +2250,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           qrCode: student.qrCode || `e1a1-${student.idNumber || "default"}`,
         },
         libraryCard,
+        reservedBooks,
         violations,
       };
     } catch (err) {

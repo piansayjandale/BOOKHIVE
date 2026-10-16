@@ -18,7 +18,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState, useEffect } from 'react';
 import * as ImagePicker from 'expo-image-picker';
-import { getStudentProfile } from '../data/store';
+import {
+  getStudentProfile,
+  getSystemSettings,
+  getActiveBorrowCount,
+  getOverdueBooks,
+  subscribe,
+  syncSystemSettingsWithBackend,
+  syncTransactionsWithBackend,
+} from '../data/store';
 
 
 export default function BorrowScreen() {
@@ -52,6 +60,36 @@ export default function BorrowScreen() {
   const [studentId, setStudentId] = useState(resolvedStudentId);
   const [department, setDepartment] = useState(resolvedDept);
 
+  // System settings (borrow limit and loan duration) and student active borrow tracking
+  const [systemSettings, setSystemSettings] = useState(() => getSystemSettings());
+  const [activeBorrowCount, setActiveBorrowCount] = useState(() =>
+    getActiveBorrowCount(studentId || resolvedStudentId)
+  );
+  const [overdueBooks, setOverdueBooks] = useState(() =>
+    getOverdueBooks(studentId || resolvedStudentId)
+  );
+
+  useEffect(() => {
+    void syncSystemSettingsWithBackend(true);
+    void syncTransactionsWithBackend(true);
+
+    const updateState = () => {
+      setSystemSettings(getSystemSettings());
+      setActiveBorrowCount(getActiveBorrowCount(studentId || resolvedStudentId));
+      setOverdueBooks(getOverdueBooks(studentId || resolvedStudentId));
+    };
+
+    updateState();
+    const unsub = subscribe(updateState);
+    return unsub;
+  }, [studentId, resolvedStudentId]);
+
+  const borrowLimit = systemSettings.borrowLimit ?? 5;
+  const borrowDurationDays = systemSettings.borrowDurationDays ?? 7;
+  // Limit reached applies when the student's active borrowed books count meets or exceeds the Super Admin limit
+  const isLimitReached = isBorrow && activeBorrowCount >= borrowLimit;
+  const hasOverdueLoans = isBorrow && overdueBooks.length > 0;
+
   useEffect(() => {
     if (user?.fullName && name !== user.fullName) {
       setName(user.fullName);
@@ -83,7 +121,7 @@ export default function BorrowScreen() {
     useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 📅 AUTO RETURN DATE
+  // 📅 AUTO RETURN DATE (Uses Super Admin loan duration)
   const computeReturnDate = (
     dateStr: string
   ) => {
@@ -95,9 +133,9 @@ export default function BorrowScreen() {
     const day = parseInt(match[3], 10);
 
     const date = new Date(year, month, day);
-    date.setDate(date.getDate() + 7);
+    date.setDate(date.getDate() + (borrowDurationDays || 7));
 
-    // If pick saturday or sunday the system will moved it to monday since the school is closed
+    // If pick saturday or sunday the system will move it to monday since the school is closed
     const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
     if (dayOfWeek === 0) {
       date.setDate(date.getDate() + 1); // Sunday -> Monday
@@ -110,6 +148,15 @@ export default function BorrowScreen() {
     const dd = String(date.getDate()).padStart(2, '0');
 
     return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const formatLoanPeriod = (days: number) => {
+    if (days === 7) return '1 week (7 days)';
+    if (days > 0 && days % 7 === 0) {
+      const weeks = days / 7;
+      return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} (${days} days)`;
+    }
+    return `${days} ${days === 1 ? 'day' : 'days'}`;
   };
 
   const handleBack = () => {
@@ -155,6 +202,23 @@ export default function BorrowScreen() {
   const handleSubmit = () => {
     if (isSubmitting) return;
 
+    if (isBorrow && isLimitReached) {
+      Alert.alert(
+        'Borrow Limit Reached',
+        `You have already borrowed ${activeBorrowCount} books, reaching the maximum allowed limit of ${borrowLimit} books. Please return a book to the library before borrowing another.`
+      );
+      return;
+    }
+
+    if (isBorrow && hasOverdueLoans) {
+      const titles = overdueBooks.map(b => `'${b.title}'`).slice(0, 2).join(', ');
+      Alert.alert(
+        'Overdue Return Required',
+        `You have ${overdueBooks.length} book(s) due or overdue for return (${titles}). Please return overdue books before borrowing another book.`
+      );
+      return;
+    }
+
     if (
       !name ||
       !studentId ||
@@ -177,7 +241,7 @@ export default function BorrowScreen() {
     if (!returnDate) {
       Alert.alert(
         'Error',
-        'Please enter a valid reservation date.'
+        'Please enter a valid borrow date.'
       );
 
       return;
@@ -235,11 +299,68 @@ export default function BorrowScreen() {
         <View style={{ width: 22 }} />
       </View>
 
-      <Text style={[styles.title, { color: theme.sectionTitle }]}>
+      <Text style={[styles.title, { color: theme.sectionTitle, marginBottom: isBorrow ? 20 : 8 }]}>
         {isBorrow
           ? 'Borrow Request'
           : 'Reservation Request'}
       </Text>
+
+      {!isBorrow && (
+        <View style={{
+          backgroundColor: isDarkMode ? "rgba(245, 158, 11, 0.12)" : "#FEF3C7",
+          borderColor: isDarkMode ? "rgba(245, 158, 11, 0.3)" : "#FDE68A",
+          borderWidth: 1,
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 18,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+        }}>
+          <Ionicons name="information-circle" size={22} color={isDarkMode ? theme.accentGold : "#D97706"} />
+          <Text style={{ flex: 1, fontSize: 12.5, color: isDarkMode ? theme.accentGold : "#92400E", lineHeight: 18, fontWeight: "600" }}>
+            All copies are currently unavailable. Reserve your spot in the 1st-come, 1st-served queue. When an active loan is returned, you will be notified to claim your copy.
+          </Text>
+        </View>
+      )}
+
+      {isBorrow && isLimitReached && (
+        <View style={{
+          backgroundColor: isDarkMode ? "rgba(239, 68, 68, 0.12)" : "#FEE2E2",
+          borderColor: isDarkMode ? "rgba(239, 68, 68, 0.35)" : "#FCA5A5",
+          borderWidth: 1,
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 18,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+        }}>
+          <Ionicons name="alert-circle" size={22} color={isDarkMode ? "#F87171" : "#DC2626"} />
+          <Text style={{ flex: 1, fontSize: 12.5, color: isDarkMode ? "#F87171" : "#991B1B", lineHeight: 18, fontWeight: "600" }}>
+            Borrow limit reached ({activeBorrowCount}/{borrowLimit} books). You cannot submit further borrow requests until you return your existing books to the library.
+          </Text>
+        </View>
+      )}
+
+      {isBorrow && !isLimitReached && hasOverdueLoans && (
+        <View style={{
+          backgroundColor: isDarkMode ? "rgba(245, 158, 11, 0.12)" : "#FEF3C7",
+          borderColor: isDarkMode ? "rgba(245, 158, 11, 0.35)" : "#FDE68A",
+          borderWidth: 1,
+          borderRadius: 12,
+          padding: 12,
+          marginBottom: 18,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 10,
+        }}>
+          <Ionicons name="warning" size={22} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+          <Text style={{ flex: 1, fontSize: 12.5, color: isDarkMode ? "#FBBF24" : "#92400E", lineHeight: 18, fontWeight: "600" }}>
+            Overdue return required ({overdueBooks.length} book{overdueBooks.length > 1 ? "s" : ""}). You must return your overdue book(s) to the library before borrowing another title.
+          </Text>
+        </View>
+      )}
 
       {/* BOOK INFO */}
       <View style={[
@@ -346,7 +467,7 @@ export default function BorrowScreen() {
 
       {/* DATE */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>
-        Reservation Date
+        {isBorrow ? 'Borrow Date' : 'Reservation Request Date'}
       </Text>
 
       <TextInput
@@ -361,7 +482,7 @@ export default function BorrowScreen() {
 
       {/* DEADLINE */}
       <Text style={[styles.label, { color: theme.textPrimary }]}>
-        Return Deadline (7 days)
+        {isBorrow ? 'Due Date Return' : `Estimated Loan Duration (${borrowDurationDays} Days once claimed)`}
       </Text>
 
       <View style={[styles.deadlineDisplay, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
@@ -371,57 +492,130 @@ export default function BorrowScreen() {
           color={isDarkMode ? theme.accentGold : theme.accentBlue}
         />
         <Text style={[styles.deadlineDisplayText, { color: theme.textPrimary }]}>
-          {computeReturnDate(reservationDate) || 'Enter a valid reservation date'}
+          {isBorrow
+            ? (computeReturnDate(reservationDate) || 'Enter a valid borrow date')
+            : `${borrowDurationDays} days from when copy is claimed`}
         </Text>
       </View>
 
       {/* POLICY */}
       <View style={[styles.policyCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder, borderWidth: 1 }]}>
         <Text style={[styles.policyTitle, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-          📚 Borrowing Policy
+          {isBorrow ? '📚 Borrowing Policy' : '📌 Reservation (Waitlist) Policy'}
         </Text>
 
-        <Text style={[styles.policyText, { color: theme.textSecondary }]}>
-          • Maximum borrowing period:
-          1 week (7 days)
-        </Text>
-
-        <Text style={[styles.policyText, { color: theme.textSecondary }]}>
-          • Maximum 5 books per
-          student
-        </Text>
-
-        <Text style={[styles.policyText, { color: theme.textSecondary }]}>
-          • Late returns:
-          ₱50.00/day fine
-        </Text>
-
-        <Text style={[styles.policyText, { color: theme.textSecondary }]}>
-          • Request will be
-          processed by the library
-          system
-        </Text>
+        {isBorrow ? (
+          <>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • Maximum borrowing period: {formatLoanPeriod(borrowDurationDays)}
+            </Text>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • Maximum {borrowLimit} books per student
+            </Text>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • Late returns: ₱50.00/day fine
+            </Text>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • Request will be processed by the library system
+            </Text>
+          </>
+        ) : (
+          <>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • 1st-come, 1st-served queue: reservations are prioritized in order of request.
+            </Text>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • When a currently borrowed copy is returned, the next student in the queue is promoted.
+            </Text>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • 24-hour claim window: once notified that a copy is ready, you have 24 hours to borrow it.
+            </Text>
+            <Text style={[styles.policyText, { color: theme.textSecondary }]}>
+              • No penalty for cancelling a reservation at any time.
+            </Text>
+          </>
+        )}
       </View>
+
+      {/* BORROW LIMIT REACHED BANNER */}
+      {isBorrow && isLimitReached && (
+        <View style={{
+          backgroundColor: isDarkMode ? "rgba(239, 68, 68, 0.14)" : "#FEF2F2",
+          borderColor: isDarkMode ? "rgba(239, 68, 68, 0.45)" : "#FCA5A5",
+          borderWidth: 1.2,
+          borderRadius: 14,
+          padding: 14,
+          marginTop: 18,
+          marginBottom: 4,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+        }}>
+          <Ionicons name="alert-circle" size={24} color={isDarkMode ? "#F87171" : "#DC2626"} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13.5, fontWeight: "800", color: isDarkMode ? "#F87171" : "#991B1B", marginBottom: 2 }}>
+              Borrow Limit Reached ({activeBorrowCount}/{borrowLimit})
+            </Text>
+            <Text style={{ fontSize: 12, color: isDarkMode ? "#FCA5A5" : "#B91C1C", lineHeight: 17 }}>
+              You currently have {activeBorrowCount} books borrowed, matching the set limit of {borrowLimit} books per student. Please return a book to borrow again.
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* OVERDUE RETURN REQUIRED BANNER */}
+      {isBorrow && !isLimitReached && hasOverdueLoans && (
+        <View style={{
+          backgroundColor: isDarkMode ? "rgba(245, 158, 11, 0.14)" : "#FEF3C7",
+          borderColor: isDarkMode ? "rgba(245, 158, 11, 0.45)" : "#FDE68A",
+          borderWidth: 1.2,
+          borderRadius: 14,
+          padding: 14,
+          marginTop: 18,
+          marginBottom: 4,
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+        }}>
+          <Ionicons name="warning" size={24} color={isDarkMode ? "#FBBF24" : "#D97706"} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13.5, fontWeight: "800", color: isDarkMode ? "#FBBF24" : "#B45309", marginBottom: 2 }}>
+              Overdue Return Required ({overdueBooks.length})
+            </Text>
+            <Text style={{ fontSize: 12, color: isDarkMode ? "#FDE68A" : "#92400E", lineHeight: 17 }}>
+              You have {overdueBooks.length} book(s) due or overdue for return. Please return your overdue books before submitting new borrow requests.
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* SUBMIT BUTTON */}
       <TouchableOpacity
         style={[
           styles.button,
           {
-            backgroundColor: theme.buttonPrimaryBg,
-            borderColor: isDarkMode ? theme.buttonPrimaryBorder : "rgba(2, 116, 187, 0.25)",
+            backgroundColor: isLimitReached
+              ? (isDarkMode ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2")
+              : (hasOverdueLoans
+                  ? (isDarkMode ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7")
+                  : theme.buttonPrimaryBg),
+            borderColor: isLimitReached
+              ? (isDarkMode ? "#EF4444" : "#F87171")
+              : (hasOverdueLoans
+                  ? (isDarkMode ? "#F59E0B" : "#FBBF24")
+                  : (isDarkMode ? theme.buttonPrimaryBorder : "rgba(2, 116, 187, 0.25)")),
             borderWidth: 1.5,
             minHeight: 56,
             borderRadius: 14,
             flexDirection: "row",
             justifyContent: "center",
             alignItems: "center",
-            elevation: 6,
+            elevation: (isLimitReached || hasOverdueLoans) ? 2 : 6,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.25,
+            shadowOpacity: (isLimitReached || hasOverdueLoans) ? 0.15 : 0.25,
             shadowRadius: 6,
-            marginTop: 22,
+            marginTop: (isLimitReached || hasOverdueLoans) ? 14 : 22,
             marginBottom: 10,
           },
           isSubmitting && { opacity: 0.6 }
@@ -431,26 +625,44 @@ export default function BorrowScreen() {
         activeOpacity={0.85}
       >
         {isSubmitting ? (
-          <ActivityIndicator size="small" color={theme.buttonPrimaryText} />
+          <ActivityIndicator size="small" color={isLimitReached ? (isDarkMode ? "#F87171" : "#DC2626") : (hasOverdueLoans ? (isDarkMode ? "#FBBF24" : "#D97706") : theme.buttonPrimaryText)} />
         ) : (
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center" }}>
             <Ionicons
-              name={isBorrow ? "paper-plane" : "bookmark"}
+              name={
+                isBorrow
+                  ? (isLimitReached ? "alert-circle" : (hasOverdueLoans ? "warning" : "paper-plane"))
+                  : "bookmark"
+              }
               size={19}
-              color={theme.buttonPrimaryText}
+              color={
+                isLimitReached
+                  ? (isDarkMode ? "#F87171" : "#DC2626")
+                  : (hasOverdueLoans
+                      ? (isDarkMode ? "#FBBF24" : "#D97706")
+                      : theme.buttonPrimaryText)
+              }
               style={{ marginRight: 8 }}
             />
             <Text
               style={{
-                color: theme.buttonPrimaryText,
+                color: isLimitReached
+                  ? (isDarkMode ? "#F87171" : "#DC2626")
+                  : (hasOverdueLoans
+                      ? (isDarkMode ? "#FBBF24" : "#D97706")
+                      : theme.buttonPrimaryText),
                 fontWeight: '900',
                 fontSize: 16,
                 letterSpacing: 0.4,
               }}
             >
               {isBorrow
-                ? 'Submit Borrow Request'
-                : 'Submit Reservation'}
+                ? (isLimitReached
+                    ? `Borrow Limit Reached (${activeBorrowCount}/${borrowLimit})`
+                    : (hasOverdueLoans
+                        ? `Overdue Return Required (${overdueBooks.length})`
+                        : 'Submit Borrow Request'))
+                : 'Reserve Book (Join Queue)'}
             </Text>
           </View>
         )}

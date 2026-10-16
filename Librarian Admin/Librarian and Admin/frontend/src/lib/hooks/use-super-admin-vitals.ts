@@ -32,10 +32,15 @@ const DEFAULT_VITALS: SuperAdminDashboardPayload["vitals"] = {
   studentsCount: 0,
   activeBooksCount: 0,
   archivedBooksCount: 0,
+  shelfReadyBooksCount: 0,
   totalTransactions: 0,
   pendingTransactions: 0,
   activeBorrows: 0,
+  totalBorrows: 0,
+  totalReturns: 0,
+  totalReservations: 0,
   totalAiSearches: 0,
+  totalSearchResults: 0,
   totalAuditLogs: 0,
 };
 
@@ -176,8 +181,9 @@ export function useSuperAdminVitals(options: UseSuperAdminVitalsOptions = {}): U
       if (payload && payload.vitals) {
         setData(payload);
         setLastUpdated(new Date());
-      } else if (payload && payload.event_type === "SEARCH_EXECUTED") {
-        // Optimistically increment AI search counter
+      } else if (payload && (payload.event_type === "SEARCH_EXECUTED" || payload.eventName === "search:query")) {
+        const matchesCount = Number(payload?.payload?.matches ?? 0);
+        // Optimistically increment AI search counter and search results count
         setData((prev) => {
           if (!prev || !prev.vitals) return prev;
           return {
@@ -185,9 +191,11 @@ export function useSuperAdminVitals(options: UseSuperAdminVitalsOptions = {}): U
             vitals: {
               ...prev.vitals,
               totalAiSearches: prev.vitals.totalAiSearches + 1,
+              totalSearchResults: (prev.vitals.totalSearchResults || 0) + matchesCount,
             },
           };
         });
+        triggerDebouncedFetch();
       } else {
         triggerDebouncedFetch();
       }
@@ -202,6 +210,10 @@ export function useSuperAdminVitals(options: UseSuperAdminVitalsOptions = {}): U
     });
 
     const unsubBorrow = dashboardSocket.subscribeToBorrowRequest(() => {
+      triggerDebouncedFetch();
+    });
+
+    const unsubReturn = dashboardSocket.subscribeToReturn(() => {
       triggerDebouncedFetch();
     });
 
@@ -220,6 +232,7 @@ export function useSuperAdminVitals(options: UseSuperAdminVitalsOptions = {}): U
       unsubUserMutation();
       unsubCatalog();
       unsubBorrow();
+      unsubReturn();
       unsubCancel();
       unsubNotification();
     };

@@ -12,8 +12,8 @@
     :root {
       --bg-overlay: rgba(18, 28, 44, 0.42);
       --card-bg: #ffffff;
-      --card-text: #0c1b3a;
-      --text-muted: #6b7280;
+      --card-text: #000000;
+      --text-muted: #1e293b;
       --input-border: #e5e7eb;
       --input-focus: #0072ce;
       --sti-yellow: #FFF200;
@@ -31,8 +31,8 @@
     [data-theme="dark"] {
       --bg-overlay: rgba(10, 15, 26, 0.65);
       --card-bg: #141f32;
-      --card-text: #f8fafc;
-      --text-muted: #94a3b8;
+      --card-text: #ffffff;
+      --text-muted: #ffffff;
       --input-border: #334155;
       --input-focus: #38bdf8;
       --sti-blue: #0284c7;
@@ -259,6 +259,12 @@
 
     .input-field:focus {
       border-bottom-color: var(--input-focus);
+    }
+
+    .input-field:-webkit-autofill {
+      -webkit-text-fill-color: var(--card-text) !important;
+      caret-color: var(--card-text) !important;
+      transition: background-color 5000s ease-in-out 0s;
     }
 
     .password-toggle {

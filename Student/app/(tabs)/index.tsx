@@ -1003,6 +1003,8 @@ export default function HomeScreen() {
           <TouchableOpacity
             style={styles.hamburgerBtn}
             onPress={() => router.push("/settings")}
+            activeOpacity={0.7}
+            accessibilityLabel="Open settings menu"
           >
             <Ionicons
               name="menu-outline"
@@ -1378,6 +1380,10 @@ export default function HomeScreen() {
                           rating: book.rating,
                           shelf: book.shelf,
                           available: book.available,
+                          status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
+                          availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+                          reservedCount: String(book.reservedCount || 0),
+                          borrowedCount: String(book.borrowedCount || 0),
                           isbn: book.isbn,
                           copies: book.copies,
                           volume: book.volume,
@@ -1603,6 +1609,10 @@ export default function HomeScreen() {
                             rating: book.rating,
                             shelf: book.shelf,
                             available: book.available,
+                            status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
+                            availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+                            reservedCount: String(book.reservedCount || 0),
+                            borrowedCount: String(book.borrowedCount || 0),
                             isbn: book.isbn,
                             copies: book.copies,
                             volume: book.volume,

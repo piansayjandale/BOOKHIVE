@@ -44,6 +44,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
+import { dashboardSocket } from "@/lib/socket";
 import type { AnnouncementRecord } from "@/lib/types";
 import { cn, formatDateTime } from "@/lib/utils";
 
@@ -51,7 +52,7 @@ const audienceOptions = ["All", "All Users", "Students", "Staff"] as const;
 const statusOptions = ["All", "Published", "Draft"] as const;
 const priorityOptions = ["Normal", "Important", "Urgent"] as const;
 
-export const DURATION_CHOICES = [
+const DURATION_CHOICES = [
   { value: 1, label: "1 Day", hint: "Expires in 24 hrs" },
   { value: 2, label: "2 Days", hint: "Expires in 48 hrs" },
   { value: 3, label: "3 Days", hint: "Expires in 72 hrs" },
@@ -252,6 +253,13 @@ export function AnnouncementsModule({
   const { theme } = useTheme();
   const isLight = theme === "light";
 
+  const isLibrarian =
+    variant === "librarian" ||
+    ["Librarian", "Technical Librarian", "Circulation Librarian", "TECHNICAL_LIBRARIAN", "CIRCULATION_LIBRARIAN"].includes(
+      user?.role ?? ""
+    );
+  const isAdmin = !isLibrarian && (variant === "admin" || ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"].includes(user?.role ?? ""));
+
   const [announcements, setAnnouncements] = useState<AnnouncementRecord[]>([]);
   const [search, setSearch] = useState("");
   const [audience, setAudience] = useState<(typeof audienceOptions)[number]>("All");
@@ -260,6 +268,7 @@ export function AnnouncementsModule({
   const [viewMode, setViewMode] = useState<"feed" | "table">("feed");
   const [composerTab, setComposerTab] = useState<"edit" | "preview">("edit");
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"none" | "composer" | "queue">("none");
 
   const [form, setForm] = useState(emptyAnnouncementForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -288,6 +297,26 @@ export function AnnouncementsModule({
 
   useEffect(() => {
     void loadAnnouncements();
+
+    const unsubscribe = dashboardSocket.subscribeToAnnouncements((data) => {
+      const isDelete =
+        data?.eventName === "announcement:deleted" ||
+        data?.eventName === "announcement:removed" ||
+        data?.action === "deleted" ||
+        data?.action === "removed";
+
+      if (isDelete) {
+        const delId = data?.id || data?.announcementId;
+        if (delId) {
+          setAnnouncements((prev) => prev.filter((a) => a.id !== delId && String(a.id) !== String(delId)));
+        }
+      }
+      void loadAnnouncements();
+    });
+
+    return () => {
+      unsubscribe();
+    };
   }, [loadAnnouncements]);
 
   function resetForm() {
@@ -332,6 +361,7 @@ export function AnnouncementsModule({
       });
 
       resetForm();
+      setActiveView("queue");
       await loadAnnouncements();
     } catch (err) {
       console.error("Failed to save announcement:", err);
@@ -351,7 +381,10 @@ export function AnnouncementsModule({
       durationDays: announcement.durationDays ?? 0,
     });
     setComposerTab("edit");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setActiveView("composer");
+    setTimeout(() => {
+      window.scrollTo({ top: 320, behavior: "smooth" });
+    }, 50);
   }
 
   async function toggleStatus(announcement: AnnouncementRecord) {
@@ -376,30 +409,38 @@ export function AnnouncementsModule({
   }
 
   async function deleteAnnouncement(id: string) {
+    // Immediately remove from local state so clicking Confirm feels instantaneous
+    setAnnouncements((prev) => prev.filter((a) => a.id !== id && String(a.id) !== String(id)));
+    setConfirmDeleteId(null);
+    if (editingId === id) {
+      resetForm();
+      setActiveView("none");
+    }
+
     try {
       await fetch(`/api/announcements/${id}`, {
         method: "DELETE",
       });
-      setConfirmDeleteId(null);
       await loadAnnouncements();
-      if (editingId === id) {
-        resetForm();
-      }
     } catch (err) {
       console.error("Failed to delete announcement:", err);
+      await loadAnnouncements();
     }
   }
 
   async function clearAllDisplayed() {
+    const toDelete = [...displayAnnouncements];
+    setAnnouncements((prev) => prev.filter((a) => !toDelete.some((d) => d.id === a.id || String(d.id) === String(a.id))));
     setConfirmDeleteId(null);
     try {
-      for (const item of displayAnnouncements) {
+      for (const item of toDelete) {
         await fetch(`/api/announcements/${item.id}`, { method: "DELETE" });
       }
       await loadAnnouncements();
       resetForm();
     } catch (err) {
       console.error("Failed to clear announcements:", err);
+      await loadAnnouncements();
     }
   }
 
@@ -441,28 +482,48 @@ export function AnnouncementsModule({
                 : "border-[#FCD400]/30 bg-[#FCD400]/10 text-[#FCD400]"
             )}>
               <Radio className={cn("h-3.5 w-3.5 animate-pulse", isLight ? "text-amber-600" : "text-[#FCD400]")} />
-              Live Campus Broadcast Center
+              {isAdmin ? "Live Campus Broadcast Center" : "Campus Notice Board • View Only"}
             </div>
             <h1 className={cn("text-2xl sm:text-3xl lg:text-4xl font-black tracking-tight", isLight ? "text-slate-800" : "text-white")}>
               Announcements & Notices
             </h1>
             <p className={cn("max-w-2xl text-xs sm:text-sm leading-relaxed", isLight ? "text-slate-600" : "text-slate-300")}>
-              Compose, schedule, and broadcast institutional updates, library schedules, and system maintenance alerts across student mobile apps and campus portals in real-time.
+              {isAdmin
+                ? "Compose, schedule, and broadcast institutional updates, library schedules, and system maintenance alerts across student mobile apps and campus portals in real-time."
+                : "Browse institutional updates, library schedules, and system maintenance alerts broadcasted across student mobile apps and campus portals."}
             </p>
           </div>
 
           <div className="flex items-center gap-2.5 self-start md:self-center">
-            <button
-              type="button"
-              onClick={() => {
-                resetForm();
-                window.scrollTo({ top: 300, behavior: "smooth" });
-              }}
-              className="flex items-center gap-2 rounded-2xl bg-[#FCD400] px-4 py-2.5 text-xs sm:text-sm font-black text-[#0B1A2C] shadow-lg shadow-[#FCD400]/20 hover:brightness-110 active:scale-95 transition cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>New Announcement</span>
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeView === "composer") {
+                    setActiveView("none");
+                  } else {
+                    resetForm();
+                    setActiveView("composer");
+                    setTimeout(() => {
+                      window.scrollTo({ top: 320, behavior: "smooth" });
+                    }, 50);
+                  }
+                }}
+                className="flex items-center gap-2 rounded-2xl bg-[#FCD400] px-4 py-2.5 text-xs sm:text-sm font-black text-[#0B1A2C] shadow-lg shadow-[#FCD400]/20 hover:brightness-110 active:scale-95 transition cursor-pointer"
+              >
+                {activeView === "composer" ? (
+                  <>
+                    <X className="h-4 w-4" />
+                    <span>Close Composer</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" />
+                    <span>New Announcement</span>
+                  </>
+                )}
+              </button>
+            )}
 
             <button
               type="button"
@@ -471,544 +532,790 @@ export function AnnouncementsModule({
               className={cn(
                 "flex h-10 w-10 items-center justify-center rounded-2xl border transition active:scale-95 cursor-pointer disabled:opacity-50",
                 isLight
-                  ? "border-slate-200 bg-slate-50 text-slate-700 hover:text-[#0274BB] hover:bg-slate-100"
+                  ? "border-slate-200 bg-white text-slate-700 hover:text-[#0274BB] hover:bg-slate-50 shadow-xs"
                   : "border-white/10 bg-[#122335]/80 text-slate-300 hover:text-white hover:bg-[#18324e]"
               )}
               title="Refresh announcements list"
             >
-              <RefreshCcw className={cn("h-4 w-4", refreshing ? (isLight ? "animate-spin text-[#0274BB]" : "animate-spin text-[#FCD400]") : "")} />
+              <RefreshCcw className={cn("h-4 w-4", refreshing ? (isLight ? "animate-spin !text-[#0274BB]" : "animate-spin text-[#FCD400]") : (isLight ? "!text-slate-700" : "text-slate-300"))} />
             </button>
           </div>
         </div>
 
         {/* ── Key Metrics Overview ──────────────────────────────────── */}
         <div className={cn("mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3 border-t pt-6", isLight ? "border-slate-100" : "border-white/10")}>
-          <div className={cn("rounded-2xl border p-4 transition-colors", isLight ? "border-slate-200/80 bg-slate-50/80 hover:bg-slate-100/60" : "border-white/5 bg-white/[0.02]")}>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeView === "queue" && status === "All" && priorityFilter === "All" && audience === "All" && !search) {
+                setActiveView("none");
+              } else {
+                setActiveView("queue");
+                setStatus("All");
+                setPriorityFilter("All");
+                setAudience("All");
+                setSearch("");
+                setTimeout(() => {
+                  window.scrollTo({ top: 320, behavior: "smooth" });
+                }, 50);
+              }
+            }}
+            className={cn(
+              "rounded-2xl border border-l-[5px] p-4 text-left transition-all cursor-pointer group active:scale-95 relative overflow-hidden",
+              isLight ? "border-l-[#0274BB]" : "border-l-[#38BDF8]",
+              activeView === "queue" && status === "All" && priorityFilter === "All" && audience === "All" && !search
+                ? isLight
+                  ? "border-sky-400 bg-sky-100/90 shadow-md shadow-sky-500/10 ring-2 ring-[#0274BB]/30"
+                  : "border-sky-400 bg-sky-500/15 shadow-md shadow-sky-500/10 ring-2 ring-sky-400/40"
+                : isLight
+                ? "border-sky-200/90 bg-gradient-to-br from-sky-50 via-sky-50/70 to-blue-50/50 hover:from-sky-100/80 hover:to-blue-100/60 hover:border-sky-300 shadow-sm"
+                : "border-white/10 bg-[#0F1D29]/90 hover:bg-[#132438] hover:border-white/20 shadow-sm"
+            )}
+            style={{
+              borderLeftColor: isLight ? "#0274BB" : "#38BDF8",
+              borderLeftWidth: "5px",
+            }}
+            title="Click to view all notices in queue (click again to hide)"
+          >
             <div className="flex items-center justify-between">
-              <span className={cn("text-xs font-semibold", isLight ? "text-slate-500" : "text-slate-400")}>Total Notices</span>
-              <Megaphone className={cn("h-4 w-4", isLight ? "text-sky-600" : "text-sky-400")} />
+              <span className={cn("text-xs font-bold transition", isLight ? "!text-sky-950 group-hover:text-[#0274BB]" : "text-slate-400 group-hover:text-sky-400")}>
+                Total Notices
+              </span>
+              <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition group-hover:scale-105 shadow-xs", isLight ? "bg-sky-100 text-[#0274BB] ring-1 ring-sky-300/60" : "bg-sky-500/15 text-sky-400")}>
+                <Megaphone className="h-4 w-4" />
+              </div>
             </div>
-            <p className={cn("mt-2 text-2xl font-black", isLight ? "text-slate-900" : "text-white")}>{stats.total}</p>
-            <p className={cn("mt-0.5 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>Stored in system</p>
-          </div>
+            <p className={cn("mt-2 text-2xl font-black", isLight ? "!text-slate-900" : "text-white")}>{stats.total}</p>
+            <div className="flex items-center justify-between mt-0.5">
+              <p className={cn("text-[11px] font-medium", isLight ? "!text-sky-800/80" : "text-slate-400")}>Stored in system</p>
+              <span className={cn("text-[10px] font-bold transition", isLight ? "!text-[#0274BB]" : "text-sky-300")}>
+                {activeView === "queue" && status === "All" && priorityFilter === "All" && !search ? "Active ✕" : "View all →"}
+              </span>
+            </div>
+          </button>
 
-          <div className={cn("rounded-2xl border p-4 transition-colors", isLight ? "border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50" : "border-emerald-500/20 bg-emerald-500/[0.03]")}>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeView === "queue" && status === "Published" && priorityFilter === "All") {
+                setActiveView("none");
+              } else {
+                setActiveView("queue");
+                setStatus("Published");
+                setPriorityFilter("All");
+                setTimeout(() => {
+                  window.scrollTo({ top: 320, behavior: "smooth" });
+                }, 50);
+              }
+            }}
+            className={cn(
+              "rounded-2xl border border-l-[5px] p-4 text-left transition-all cursor-pointer group active:scale-95 relative overflow-hidden",
+              isLight ? "border-l-[#059669]" : "border-l-[#10B981]",
+              activeView === "queue" && status === "Published" && priorityFilter === "All"
+                ? isLight
+                  ? "border-emerald-400 bg-emerald-100/90 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/30"
+                  : "border-emerald-400 bg-emerald-500/20 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-400/40"
+                : isLight
+                ? "border-emerald-200/90 bg-gradient-to-br from-emerald-50 via-emerald-50/70 to-teal-50/50 hover:from-emerald-100/80 hover:to-teal-100/60 hover:border-emerald-300 shadow-sm"
+                : "border-white/10 bg-[#0F1D29]/90 hover:bg-[#132438] hover:border-emerald-500/30 shadow-sm"
+            )}
+            style={{
+              borderLeftColor: isLight ? "#059669" : "#10B981",
+              borderLeftWidth: "5px",
+            }}
+            title="Click to filter live published notices (click again to hide)"
+          >
             <div className="flex items-center justify-between">
-              <span className={cn("text-xs font-semibold", isLight ? "text-emerald-700" : "text-emerald-300")}>Live & Published</span>
-              <Send className={cn("h-4 w-4", isLight ? "text-emerald-600" : "text-emerald-400")} />
+              <div className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span className={cn("text-xs font-bold", isLight ? "!text-emerald-900" : "text-emerald-300")}>Live & Published</span>
+              </div>
+              <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition group-hover:scale-105 shadow-xs", isLight ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300/60" : "bg-emerald-500/15 text-emerald-400")}>
+                <Send className="h-4 w-4" />
+              </div>
             </div>
-            <p className={cn("mt-2 text-2xl font-black", isLight ? "text-emerald-700" : "text-emerald-300")}>{stats.published}</p>
-            <p className={cn("mt-0.5 text-[11px]", isLight ? "text-emerald-600" : "text-emerald-400/80")}>Visible to audience</p>
-          </div>
+            <p className={cn("mt-2 text-2xl font-black", isLight ? "!text-emerald-700" : "text-emerald-300")}>{stats.published}</p>
+            <div className="flex items-center justify-between mt-0.5">
+              <p className={cn("text-[11px] font-medium", isLight ? "!text-emerald-700" : "text-emerald-400/80")}>Visible to audience</p>
+              <span className={cn("text-[10px] font-bold transition", isLight ? "!text-emerald-800" : "text-emerald-300")}>
+                {activeView === "queue" && status === "Published" && priorityFilter === "All" ? "Active ✕" : "Filter live →"}
+              </span>
+            </div>
+          </button>
 
-          <div className={cn("rounded-2xl border p-4 transition-colors", isLight ? "border-slate-200/80 bg-slate-50/80 hover:bg-slate-100/60" : "border-white/5 bg-white/[0.02]")}>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeView === "queue" && status === "Draft" && priorityFilter === "All") {
+                setActiveView("none");
+              } else {
+                setActiveView("queue");
+                setStatus("Draft");
+                setPriorityFilter("All");
+                setTimeout(() => {
+                  window.scrollTo({ top: 320, behavior: "smooth" });
+                }, 50);
+              }
+            }}
+            className={cn(
+              "rounded-2xl border border-l-[5px] p-4 text-left transition-all cursor-pointer group active:scale-95 relative overflow-hidden",
+              isLight ? "border-l-[#D97706]" : "border-l-[#FCD400]",
+              activeView === "queue" && status === "Draft" && priorityFilter === "All"
+                ? isLight
+                  ? "border-amber-400 bg-amber-100/90 shadow-md shadow-amber-500/10 ring-2 ring-amber-500/30"
+                  : "border-amber-400 bg-amber-500/20 shadow-md shadow-amber-500/10 ring-2 ring-amber-400/40"
+                : isLight
+                ? "border-amber-200/90 bg-gradient-to-br from-amber-50 via-amber-50/70 to-yellow-50/50 hover:from-amber-100/80 hover:to-yellow-100/60 hover:border-amber-300 shadow-sm"
+                : "border-white/10 bg-[#0F1D29]/90 hover:bg-[#132438] hover:border-white/20 shadow-sm"
+            )}
+            style={{
+              borderLeftColor: isLight ? "#D97706" : "#FCD400",
+              borderLeftWidth: "5px",
+            }}
+            title="Click to filter draft notices (click again to hide)"
+          >
             <div className="flex items-center justify-between">
-              <span className={cn("text-xs font-semibold", isLight ? "text-slate-500" : "text-slate-400")}>Draft Notices</span>
-              <FileText className={cn("h-4 w-4", isLight ? "text-slate-500" : "text-slate-400")} />
+              <span className={cn("text-xs font-bold transition", isLight ? "!text-amber-950 group-hover:text-amber-700" : "text-slate-400 group-hover:text-amber-400")}>
+                Draft Notices
+              </span>
+              <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition group-hover:scale-105 shadow-xs", isLight ? "bg-amber-100 text-amber-800 ring-1 ring-amber-300/60" : "bg-[#FCD400]/15 text-[#FCD400]")}>
+                <FileText className="h-4 w-4" />
+              </div>
             </div>
-            <p className={cn("mt-2 text-2xl font-black", isLight ? "text-slate-900" : "text-slate-200")}>{stats.drafts}</p>
-            <p className={cn("mt-0.5 text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>Pending review</p>
-          </div>
+            <p className={cn("mt-2 text-2xl font-black", isLight ? "!text-slate-900" : "text-slate-200")}>{stats.drafts}</p>
+            <div className="flex items-center justify-between mt-0.5">
+              <p className={cn("text-[11px] font-medium", isLight ? "!text-amber-800/80" : "text-slate-400")}>Pending review</p>
+              <span className={cn("text-[10px] font-bold transition", isLight ? "!text-amber-800" : "text-amber-300")}>
+                {activeView === "queue" && status === "Draft" && priorityFilter === "All" ? "Active ✕" : "Filter drafts →"}
+              </span>
+            </div>
+          </button>
 
-          <div className={cn("rounded-2xl border p-4 transition-colors", isLight ? "border-red-200 bg-red-50/60 hover:bg-red-50" : "border-red-500/20 bg-red-500/[0.03]")}>
+          <button
+            type="button"
+            onClick={() => {
+              if (activeView === "queue" && priorityFilter === "Urgent") {
+                setActiveView("none");
+              } else {
+                setActiveView("queue");
+                setPriorityFilter("Urgent");
+                setStatus("All");
+                setTimeout(() => {
+                  window.scrollTo({ top: 320, behavior: "smooth" });
+                }, 50);
+              }
+            }}
+            className={cn(
+              "rounded-2xl border border-l-[5px] p-4 text-left transition-all cursor-pointer group active:scale-95 relative overflow-hidden",
+              isLight ? "border-l-[#DC2626]" : "border-l-[#EF4444]",
+              activeView === "queue" && priorityFilter === "Urgent"
+                ? isLight
+                  ? "border-red-400 bg-red-100/90 shadow-md shadow-red-500/10 ring-2 ring-red-500/30"
+                  : "border-red-400 bg-red-500/20 shadow-md shadow-red-500/10 ring-2 ring-red-400/40"
+                : isLight
+                ? "border-red-200/90 bg-gradient-to-br from-red-50 via-red-50/70 to-rose-50/50 hover:from-red-100/80 hover:to-rose-100/60 hover:border-red-300 shadow-sm"
+                : "border-white/10 bg-[#0F1D29]/90 hover:bg-[#132438] hover:border-red-500/30 shadow-sm"
+            )}
+            style={{
+              borderLeftColor: isLight ? "#DC2626" : "#EF4444",
+              borderLeftWidth: "5px",
+            }}
+            title="Click to filter urgent alerts (click again to hide)"
+          >
             <div className="flex items-center justify-between">
-              <span className={cn("text-xs font-semibold", isLight ? "text-red-700" : "text-red-300")}>Urgent Alerts</span>
-              <Flame className={cn("h-4 w-4", isLight ? "text-red-600" : "text-red-400")} />
+              <span className={cn("text-xs font-bold", isLight ? "!text-red-900" : "text-red-300")}>Urgent Alerts</span>
+              <div className={cn("flex h-8 w-8 items-center justify-center rounded-xl transition group-hover:scale-105 shadow-xs", isLight ? "bg-red-100 text-red-800 ring-1 ring-red-300/60" : "bg-red-500/15 text-red-400")}>
+                <Flame className="h-4 w-4" />
+              </div>
             </div>
-            <p className={cn("mt-2 text-2xl font-black", isLight ? "text-red-700" : "text-red-400")}>{stats.urgent}</p>
-            <p className={cn("mt-0.5 text-[11px]", isLight ? "text-red-600" : "text-red-400/80")}>High priority dispatch</p>
-          </div>
+            <p className={cn("mt-2 text-2xl font-black", isLight ? "!text-red-700" : "text-red-400")}>{stats.urgent}</p>
+            <div className="flex items-center justify-between mt-0.5">
+              <p className={cn("text-[11px] font-medium", isLight ? "!text-red-700" : "text-red-400/80")}>High priority dispatch</p>
+              <span className={cn("text-[10px] font-bold transition", isLight ? "!text-red-800" : "text-red-300")}>
+                {activeView === "queue" && priorityFilter === "Urgent" ? "Active ✕" : "Filter urgent →"}
+              </span>
+            </div>
+          </button>
         </div>
       </div>
 
-      {/* ── Main Two-Column Layout ──────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* ── Left Column: Composer & Live Preview ────────────────────── */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35 }}
-          className={cn(
-            "lg:col-span-5 rounded-2xl border p-6 flex flex-col gap-5",
-            isLight
-              ? "border-slate-200/80 bg-white shadow-xs"
-              : "border-white/10 bg-[#0F1D29]/95 shadow-2xl backdrop-blur"
-          )}
-        >
-          {/* Composer Header */}
-          <div className={cn("flex items-center justify-between border-b pb-4", isLight ? "border-slate-100" : "border-white/5")}>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="flex h-2 w-2 rounded-full bg-[#FCD400]" />
-                <p className={cn("text-[10px] font-extrabold tracking-[0.2em] uppercase", isLight ? "text-amber-700" : "text-[#FCD400]")}>
-                  {editingId ? "Edit Mode" : "Notice Composer"}
-                </p>
-              </div>
-              <h2 className={cn("mt-1 text-xl font-bold tracking-tight", isLight ? "text-slate-900" : "text-white")}>
-                {editingId ? "Update Announcement" : "Publish Announcement"}
-              </h2>
-            </div>
-
-            {/* Composer Tab Toggle: Edit vs Preview */}
-            <div className={cn("flex items-center rounded-xl border p-0.5 text-xs font-semibold", isLight ? "border-slate-200 bg-slate-100" : "border-white/10 bg-[#0B1726]")}>
-              <button
-                type="button"
-                onClick={() => setComposerTab("edit")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition cursor-pointer",
-                  composerTab === "edit"
-                    ? isLight
-                      ? "bg-[#FFF300] text-[#0274BB] font-bold shadow-xs"
-                      : "bg-[#FCD400] text-[#0B1A2C] font-bold shadow-sm"
-                    : isLight
-                      ? "text-slate-600 hover:text-[#0274BB]"
-                      : "text-slate-400 hover:text-white"
-                )}
-              >
-                <PencilLine className="h-3.5 w-3.5" />
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => setComposerTab("preview")}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 transition cursor-pointer",
-                  composerTab === "preview"
-                    ? isLight
-                      ? "bg-[#FFF300] text-[#0274BB] font-bold shadow-xs"
-                      : "bg-[#FCD400] text-[#0B1A2C] font-bold shadow-sm"
-                    : isLight
-                      ? "text-slate-600 hover:text-[#0274BB]"
-                      : "text-slate-400 hover:text-white"
-                )}
-              >
-                <Eye className="h-3.5 w-3.5" />
-                Preview
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Preset Templates Bar */}
-          {!editingId && composerTab === "edit" && (
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
-                <span className={cn("flex items-center gap-1", isLight ? "text-slate-700" : "text-slate-400")}>
-                  <Sparkles className="h-3 w-3 text-[#FCD400]" />
-                  Instant Templates
-                </span>
-                <span className={cn("text-[10px] font-normal", isLight ? "text-slate-400" : "text-slate-500")}>Click to auto-fill</span>
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                {PRESET_TEMPLATES.map((tpl) => {
-                  const Icon = tpl.icon;
-                  return (
-                    <button
-                      key={tpl.id}
-                      type="button"
-                      onClick={() => applyTemplate(tpl)}
-                      className={cn(
-                        "flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition cursor-pointer group",
-                        isLight
-                          ? "border-slate-200 bg-slate-50 text-slate-700 hover:border-amber-400 hover:bg-amber-50/50 hover:text-amber-800"
-                          : "border-white/5 bg-[#122335]/60 text-slate-200 hover:border-[#FCD400]/40 hover:bg-[#162D44] hover:text-[#FCD400]"
-                      )}
-                    >
-                      <Icon className={cn("h-3.5 w-3.5 transition", isLight ? "text-slate-400 group-hover:text-amber-600" : "text-slate-400 group-hover:text-[#FCD400]")} />
-                      <span className="truncate">{tpl.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {composerTab === "edit" ? (
-            /* ── Editor Form ───────────────────────────────────────── */
-            <form onSubmit={(e) => saveAnnouncement(e, true)} className="flex flex-col gap-4">
-              {/* Title Field */}
-              <div className="flex flex-col gap-1.5">
-                <label className={cn("text-xs font-bold flex items-center justify-between", isLight ? "text-slate-700" : "text-slate-300")}>
-                  <span>Announcement Title *</span>
-                  <span className={cn("text-[10px]", isLight ? "text-slate-400" : "text-slate-500")}>{form.title.length}/120</span>
-                </label>
-                <input
-                  required
-                  maxLength={120}
-                  className={cn(
-                    "w-full rounded-xl border p-3 text-sm focus:border-[#FCD400] focus:ring-1 focus:ring-[#FCD400]/50 focus:outline-none transition",
-                    isLight
-                      ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-xs"
-                      : "border-white/10 bg-[#0B1726] text-white placeholder:text-slate-500 shadow-inner"
-                  )}
-                  placeholder="e.g., Extended Library Hours for Midterms"
-                  value={form.title}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, title: event.target.value }))
-                  }
-                />
-              </div>
-
-              {/* Content / Body Field */}
-              <div className="flex flex-col gap-1.5">
-                <label className={cn("text-xs font-bold flex items-center justify-between", isLight ? "text-slate-700" : "text-slate-300")}>
-                  <span>Announcement Message *</span>
-                  <span className={cn("text-[10px]", isLight ? "text-slate-400" : "text-slate-500")}>{form.content.length} characters</span>
-                </label>
-                <textarea
-                  required
-                  rows={4}
-                  className={cn(
-                    "w-full rounded-xl border p-3 text-xs leading-relaxed focus:border-[#FCD400] focus:ring-1 focus:ring-[#FCD400]/50 focus:outline-none transition resize-none",
-                    isLight
-                      ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-xs"
-                      : "border-white/10 bg-[#0B1726] text-white placeholder:text-slate-500 shadow-inner"
-                  )}
-                  placeholder="Provide clear details, timings, affected groups, instructions, or hyperlinks..."
-                  value={form.content}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, content: event.target.value }))
-                  }
-                />
-              </div>
-
-              {/* Target Audience Selector */}
-              <div className="flex flex-col gap-1.5">
-                <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>Target Audience</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: "All Users", label: "All Users", icon: Globe, desc: "Entire Campus" },
-                    { id: "Students", label: "Students", icon: GraduationCap, desc: "Learners Only" },
-                    { id: "Staff", label: "Staff", icon: Briefcase, desc: "Faculty & Library" },
-                  ].map((item) => {
-                    const isSelected = form.audience === item.id;
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() =>
-                          setForm((current) => ({
-                            ...current,
-                            audience: item.id as AnnouncementRecord["audience"],
-                          }))
-                        }
-                        className={cn(
-                          "flex flex-col items-center justify-center p-3 rounded-xl border transition text-center cursor-pointer",
-                          isSelected
-                            ? isLight
-                              ? "border-[#FFF300] bg-amber-50 text-slate-900 shadow-xs ring-1 ring-amber-300"
-                              : "border-[#FCD400] bg-[#FCD400]/10 text-white shadow-sm shadow-[#FCD400]/10 ring-1 ring-[#FCD400]/30"
-                            : isLight
-                              ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
-                        )}
-                      >
-                        <Icon className={cn("h-4 w-4 mb-1", isSelected ? (isLight ? "text-amber-600" : "text-[#FCD400]") : "text-slate-400")} />
-                        <span className="text-xs font-bold">{item.label}</span>
-                        <span className={cn("text-[10px] mt-0.5", isLight ? "text-slate-500" : "text-slate-500")}>{item.desc}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Priority & Visibility Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {/* Priority Selector */}
-                <div className="flex flex-col gap-1.5">
-                  <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>Priority Level</label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    {priorityOptions.map((opt) => {
-                      const isSelected = form.priority === opt;
-                      const isUrgent = opt === "Urgent";
-                      const isImportant = opt === "Important";
-                      
-                      const selectedStyle = isLight
-                        ? isUrgent
-                          ? "border-red-300 bg-red-50 text-red-800 ring-1 ring-red-300 font-bold"
-                          : isImportant
-                          ? "border-amber-300 bg-amber-50 text-amber-900 ring-1 ring-amber-300 font-bold"
-                          : "border-sky-300 bg-sky-50 text-sky-800 ring-1 ring-sky-300 font-bold"
-                        : isUrgent
-                        ? "border-red-500/60 bg-red-500/20 text-red-300 ring-1 ring-red-500/40 font-bold"
-                        : isImportant
-                        ? "border-amber-500/60 bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40 font-bold"
-                        : "border-sky-500/60 bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40 font-bold";
-
-                      const dotColor = isUrgent
-                        ? "bg-red-500"
-                        : isImportant
-                        ? "bg-amber-500"
-                        : "bg-sky-500";
-
-                      return (
-                        <button
-                          key={opt}
-                          type="button"
-                          onClick={() => setForm((c) => ({ ...c, priority: opt }))}
-                          className={cn(
-                            "flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs transition cursor-pointer",
-                            isSelected
-                              ? selectedStyle
-                              : isLight
-                              ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                              : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
-                          )}
-                        >
-                          <span className={`h-2 w-2 rounded-full ${dotColor}`} />
-                          {opt}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* Visibility Switch */}
-                <div className="flex flex-col gap-1.5">
-                  <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>Publish Target Status</label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setForm((c) => ({ ...c, published: true }))}
-                      className={cn(
-                        "flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-bold transition cursor-pointer",
-                        form.published
-                          ? isLight
-                            ? "border-emerald-300 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300 shadow-xs"
-                            : "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm shadow-emerald-500/10"
-                          : isLight
-                          ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
-                      )}
-                    >
-                      <Send className={cn("h-3.5 w-3.5", isLight ? "text-emerald-600" : "text-emerald-400")} />
-                      Broadcast Live
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setForm((c) => ({ ...c, published: false }))}
-                      className={cn(
-                        "flex items-center justify-center gap-1.5 py-2.5 px-2 rounded-xl border text-xs font-bold transition cursor-pointer",
-                        !form.published
-                          ? isLight
-                            ? "border-amber-300 bg-amber-50 text-amber-800 ring-1 ring-amber-300"
-                            : "border-amber-500/60 bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/40"
-                          : isLight
-                          ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                          : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
-                      )}
-                    >
-                      <FileText className={cn("h-3.5 w-3.5", isLight ? "text-amber-600" : "text-amber-400")} />
-                      Save as Draft
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── NEW: Announcement Duration Selection (1, 2, 3 Days) ── */}
-              <div className={cn("flex flex-col gap-2 rounded-2xl border p-3.5", isLight ? "border-slate-200 bg-slate-50 shadow-xs" : "border-white/10 bg-[#0B1726]/70 shadow-inner")}>
-                <div className="flex items-center justify-between">
-                  <label className={cn("text-xs font-bold flex items-center gap-1.5", isLight ? "text-slate-700" : "text-slate-200")}>
-                    <Clock className={cn("h-3.5 w-3.5", isLight ? "text-amber-600" : "text-[#FCD400]")} />
-                    Notice Duration & Auto-Expiry
-                  </label>
-                  <span className={cn("text-[11px] font-semibold", isLight ? "text-amber-700" : "text-[#FCD400]")}>
-                    {form.durationDays === 0 || !form.durationDays
-                      ? "Permanent (Never Expires)"
-                      : `Expires in ${form.durationDays} day${form.durationDays > 1 ? "s" : ""}`}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-5 gap-1.5">
-                  {DURATION_CHOICES.map((choice) => {
-                    const isSelected = (form.durationDays ?? 0) === choice.value;
-                    return (
-                      <button
-                        key={choice.value}
-                        type="button"
-                        onClick={() =>
-                          setForm((current) => ({ ...current, durationDays: choice.value }))
-                        }
-                        className={cn(
-                          "flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-center transition cursor-pointer",
-                          isSelected
-                            ? isLight
-                              ? "border-amber-400 bg-amber-100/70 text-amber-900 ring-1 ring-amber-400/50 font-bold shadow-xs"
-                              : "border-[#FCD400] bg-[#FCD400]/15 text-white ring-1 ring-[#FCD400]/40 font-bold shadow-sm shadow-[#FCD400]/10"
-                            : isLight
-                            ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                            : "border-white/10 bg-[#122335]/40 text-slate-400 hover:bg-[#122335] hover:text-slate-200"
-                        )}
-                      >
-                        <span className={cn("text-xs font-bold", isSelected ? (isLight ? "text-amber-900" : "text-[#FCD400]") : (isLight ? "text-slate-700" : "text-slate-200"))}>
-                          {choice.label}
-                        </span>
-                        <span className={cn("text-[9px] mt-0.5 whitespace-nowrap", isLight ? "text-slate-500" : "text-slate-400")}>
-                          {choice.hint}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Form Action Buttons */}
-              <div className={cn("flex flex-wrap items-center gap-2.5 pt-3 border-t", isLight ? "border-slate-100" : "border-white/5")}>
+      <AnimatePresence mode="wait">
+        {isAdmin && activeView === "composer" && (
+          /* ── Notice Composer (LANDSCAPE Full Width) ────────────────── */
+          <motion.div
+            key="composer"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.25 }}
+            className={cn(
+              "w-full rounded-3xl border p-6 sm:p-8 flex flex-col gap-6",
+              isLight
+                ? "border-slate-200/80 bg-white shadow-xs"
+                : "border-white/10 bg-[#0F1D29]/95 shadow-2xl backdrop-blur"
+            )}
+          >
+            {/* Composer Header */}
+            <div className={cn("flex flex-wrap items-center justify-between gap-4 border-b pb-4", isLight ? "border-slate-100" : "border-white/5")}>
+              <div className="flex items-center gap-3">
                 <button
                   type="button"
-                  disabled={saving || !form.title.trim()}
-                  onClick={(e) => saveAnnouncement(e, true)}
-                  className="flex-1 min-w-[200px] flex items-center justify-center gap-2 rounded-xl bg-[#FCD400] hover:bg-yellow-400 py-3 px-5 text-sm font-black text-[#0B1A2C] shadow-lg shadow-[#FCD400]/25 transition hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
-                >
-                  {saving ? (
-                    <>
-                      <RefreshCcw className="h-4 w-4 animate-spin text-[#0B1A2C]" />
-                      <span>Broadcasting Notice...</span>
-                    </>
-                  ) : editingId ? (
-                    <>
-                      <Check className="h-4 w-4 text-[#0B1A2C]" />
-                      <span>Update & Publish Live</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="h-4 w-4 text-[#0B1A2C]" />
-                      <span>🚀 Broadcast Live (Students & Staff)</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  disabled={saving || !form.title.trim()}
-                  onClick={(e) => saveAnnouncement(e, false)}
+                  onClick={() => {
+                    resetForm();
+                    setActiveView("none");
+                  }}
                   className={cn(
-                    "flex items-center justify-center gap-1.5 rounded-xl border py-3 px-4 text-xs font-bold transition active:scale-95 disabled:opacity-50 cursor-pointer",
+                    "flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-bold transition cursor-pointer",
                     isLight
-                      ? "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
-                      : "border-white/15 bg-[#122335] hover:bg-[#18324e] text-slate-300"
+                      ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                      : "border-white/10 bg-[#122335] text-slate-300 hover:text-white hover:bg-[#18324e]"
                   )}
-                  title="Save announcement as draft (hidden from students and librarians)"
+                  title="Close Notice Composer"
                 >
-                  <FileText className={cn("h-3.5 w-3.5", isLight ? "text-slate-500" : "text-slate-400")} />
-                  <span>Save Draft</span>
+                  <X className="h-3.5 w-3.5" />
+                  <span>Close</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className={cn(
-                    "rounded-xl border px-3.5 py-3 text-xs font-semibold transition cursor-pointer",
-                    isLight
-                      ? "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-slate-900"
-                      : "border-white/10 bg-[#0B1726] text-slate-400 hover:bg-white/10 hover:text-white"
-                  )}
-                >
-                  Reset
-                </button>
-              </div>
-            </form>
-          ) : (
-            /* ── Live Preview Mode ────────────────────────────────── */
-            <div className="flex flex-col gap-4 py-2">
-              <div className={cn("flex items-center justify-between text-xs px-3 py-2 rounded-xl border", isLight ? "border-amber-200 bg-amber-50 text-slate-700" : "border-white/5 bg-white/5 text-slate-400")}>
-                <span className={cn("flex items-center gap-1.5 font-semibold", isLight ? "text-amber-800" : "text-[#FCD400]")}>
-                  <Eye className="h-3.5 w-3.5" />
-                  Live Student & Campus Feed Simulation
-                </span>
-                <span>Rendered in BookHive App</span>
-              </div>
-
-              {/* Simulated Card Preview */}
-              <div
-                className={cn(
-                  "relative overflow-hidden rounded-2xl border p-5 transition-colors",
-                  isLight
-                    ? "border-slate-200 bg-slate-50 shadow-md text-slate-800"
-                    : "border-white/15 bg-gradient-to-b from-[#132438] to-[#0A1622] shadow-2xl text-white"
-                )}
-                style={{
-                  borderLeftColor:
-                    form.priority === "Urgent"
-                      ? "#EF4444"
-                      : form.priority === "Important"
-                      ? "#FCD400"
-                      : "#38BDF8",
-                  borderLeftWidth: 4,
-                }}
-              >
-                {/* Notice Header */}
-                <div className={cn("flex items-center justify-between gap-3 border-b pb-3", isLight ? "border-slate-200" : "border-white/5")}>
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#FCD400] font-mono text-xs font-black text-[#0B1A2C] shadow-md">
-                      BH
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <span className={cn("text-xs font-bold", isLight ? "text-slate-900" : "text-white")}>BookHive Administration</span>
-                        <CheckCircle2 className="h-3.5 w-3.5 text-[#FCD400]" />
-                      </div>
-                      <p className={cn("text-[10px]", isLight ? "text-slate-500" : "text-slate-400")}>Official Campus Dispatch • Just now</p>
-                    </div>
-                  </div>
-
+                <div>
                   <div className="flex items-center gap-2">
-                    {form.durationDays > 0 && (
-                      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-bold", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-500/40 bg-amber-500/15 text-amber-300")}>
-                        <Clock className="h-2.5 w-2.5" />
-                        {form.durationDays}d limit
-                      </span>
-                    )}
-                    <PriorityBadge priority={form.priority} isLight={isLight} />
-                    <StatusBadge published={form.published} isLight={isLight} />
+                    <span className="flex h-2 w-2 rounded-full bg-[#FCD400] animate-pulse" />
+                    <p className={cn("text-[10px] font-extrabold tracking-[0.2em] uppercase", isLight ? "text-amber-700" : "text-[#FCD400]")}>
+                      {editingId ? "Edit Mode • Landscape View" : "Notice Composer • Landscape View"}
+                    </p>
                   </div>
-                </div>
-
-                {/* Notice Title & Content */}
-                <div className="mt-4">
-                  <h3 className={cn("text-lg font-bold tracking-tight leading-snug", isLight ? "text-slate-900" : "text-white")}>
-                    {form.title || "Announcement Title Preview"}
-                  </h3>
-                  <p className={cn("mt-2 text-xs leading-relaxed whitespace-pre-wrap", isLight ? "text-slate-600" : "text-slate-300")}>
-                    {form.content ||
-                      "Your announcement body text will appear here with rich formatting and clear typography for student and staff readability."}
-                  </p>
-                </div>
-
-                {/* Notice Footer Tags */}
-                <div className={cn("mt-4 flex items-center justify-between pt-3 border-t text-[11px]", isLight ? "border-slate-200" : "border-white/5")}>
-                  <AudienceBadge audience={form.audience} isLight={isLight} />
-                  <span className={cn("text-[10px] font-mono", isLight ? "text-slate-500" : "text-slate-400")}>
-                    {form.durationDays > 0 ? `Duration: ${form.durationDays} Days` : "Duration: Permanent"}
-                  </span>
+                  <h2 className={cn("mt-1 text-xl sm:text-2xl font-bold tracking-tight", isLight ? "text-slate-900" : "text-white")}>
+                    {editingId ? "Update Announcement" : "Publish Announcement"}
+                  </h2>
                 </div>
               </div>
 
-              <div className="text-center pt-2">
+              {/* Composer Tab Toggle: Edit vs Preview */}
+              <div className="flex items-center gap-2">
+                <div className={cn("flex items-center rounded-xl border p-0.5 text-xs font-semibold", isLight ? "border-slate-200 bg-slate-100" : "border-white/10 bg-[#0B1726]")}>
+                  <button
+                    type="button"
+                    onClick={() => setComposerTab("edit")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition cursor-pointer",
+                      composerTab === "edit"
+                        ? isLight
+                          ? "bg-[#FFF300] text-[#0274BB] font-bold shadow-xs"
+                          : "bg-[#FCD400] text-[#0B1A2C] font-bold shadow-sm"
+                        : isLight
+                          ? "text-slate-600 hover:text-[#0274BB]"
+                          : "text-slate-400 hover:text-white"
+                    )}
+                  >
+                    <PencilLine className="h-3.5 w-3.5" />
+                    Edit Form
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setComposerTab("preview")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-lg px-3 py-1.5 transition cursor-pointer",
+                      composerTab === "preview"
+                        ? isLight
+                          ? "bg-[#FFF300] text-[#0274BB] font-bold shadow-xs"
+                          : "bg-[#FCD400] text-[#0B1A2C] font-bold shadow-sm"
+                        : isLight
+                          ? "text-slate-600 hover:text-[#0274BB]"
+                          : "text-slate-400 hover:text-white"
+                    )}
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                    Live Preview
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setComposerTab("edit")}
-                  className={cn("text-xs font-semibold cursor-pointer hover:underline", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}
+                  onClick={() => {
+                    resetForm();
+                    setActiveView("none");
+                  }}
+                  className={cn(
+                    "flex h-9 w-9 items-center justify-center rounded-xl border transition cursor-pointer",
+                    isLight
+                      ? "border-slate-200 bg-slate-50 text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+                      : "border-white/10 bg-[#122335] text-slate-400 hover:text-white hover:bg-white/10"
+                  )}
+                  title="Close and return to queue"
                 >
-                  ← Return to Editor to refine text
+                  <X className="h-4 w-4" />
                 </button>
               </div>
             </div>
-          )}
-        </motion.div>
 
-        {/* ── Right Column: Shared Notice Board & Queue ──────────────── */}
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.35, delay: 0.05 }}
-          className={cn(
-            "lg:col-span-7 rounded-2xl border p-6 flex flex-col gap-5 min-h-[580px]",
-            isLight
-              ? "border-slate-200/80 bg-white shadow-xs"
-              : "border-white/10 bg-[#0F1D29]/95 shadow-2xl backdrop-blur"
-          )}
-        >
+            {/* Quick Preset Templates Bar (Horizontal 4-grid) */}
+            {!editingId && composerTab === "edit" && (
+              <div className={cn("rounded-2xl border p-3.5 space-y-2", isLight ? "border-slate-100 bg-slate-50/70" : "border-white/5 bg-[#0B1726]/40")}>
+                <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider">
+                  <span className={cn("flex items-center gap-1.5", isLight ? "text-slate-700" : "text-slate-300")}>
+                    <Sparkles className="h-3.5 w-3.5 text-[#FCD400]" />
+                    Instant Templates (Auto-fill with one click)
+                  </span>
+                  <span className={cn("text-[10px] font-normal", isLight ? "text-slate-400" : "text-slate-500")}>Click template to auto-populate</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {PRESET_TEMPLATES.map((tpl) => {
+                    const Icon = tpl.icon;
+                    return (
+                      <button
+                        key={tpl.id}
+                        type="button"
+                        onClick={() => applyTemplate(tpl)}
+                        className={cn(
+                          "flex items-center gap-2.5 rounded-xl border p-2.5 text-left text-xs font-semibold transition cursor-pointer group",
+                          isLight
+                            ? "border-slate-200 bg-white text-slate-700 hover:border-amber-400 hover:bg-amber-50/50 hover:text-amber-800 shadow-xs"
+                            : "border-white/5 bg-[#122335]/70 text-slate-200 hover:border-[#FCD400]/40 hover:bg-[#162D44] hover:text-[#FCD400]"
+                        )}
+                      >
+                        <Icon className={cn("h-4 w-4 shrink-0 transition", isLight ? "text-slate-400 group-hover:text-amber-600" : "text-slate-400 group-hover:text-[#FCD400]")} />
+                        <span className="truncate">{tpl.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {composerTab === "edit" ? (
+              /* ── LANDSCAPE EDITOR FORM (Two Columns across width) ────────── */
+              <form onSubmit={(e) => saveAnnouncement(e, true)} className="flex flex-col gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                  {/* Left Column (7 cols): Content & Message */}
+                  <div className="lg:col-span-7 flex flex-col gap-4">
+                    {/* Title Field */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className={cn("text-xs font-bold flex items-center justify-between", isLight ? "text-slate-700" : "text-slate-300")}>
+                        <span>Announcement Title *</span>
+                        <span className={cn("text-[10px] font-mono", isLight ? "text-slate-400" : "text-slate-500")}>{form.title.length}/120</span>
+                      </label>
+                      <input
+                        required
+                        maxLength={120}
+                        className={cn(
+                          "w-full rounded-xl border p-3 text-sm focus:border-[#FCD400] focus:ring-1 focus:ring-[#FCD400]/50 focus:outline-none transition",
+                          isLight
+                            ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-xs"
+                            : "border-white/10 bg-[#0B1726] text-white placeholder:text-slate-500 shadow-inner"
+                        )}
+                        placeholder="e.g., Extended Library Hours for Midterms & Finals"
+                        value={form.title}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, title: event.target.value }))
+                        }
+                      />
+                    </div>
+
+                    {/* Content / Body Field */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className={cn("text-xs font-bold flex items-center justify-between", isLight ? "text-slate-700" : "text-slate-300")}>
+                        <span>Announcement Message *</span>
+                        <span className={cn("text-[10px] font-mono", isLight ? "text-slate-400" : "text-slate-500")}>{form.content.length} characters</span>
+                      </label>
+                      <textarea
+                        required
+                        rows={8}
+                        className={cn(
+                          "w-full rounded-xl border p-3.5 text-xs sm:text-sm leading-relaxed focus:border-[#FCD400] focus:ring-1 focus:ring-[#FCD400]/50 focus:outline-none transition resize-none",
+                          isLight
+                            ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 shadow-xs"
+                            : "border-white/10 bg-[#0B1726] text-white placeholder:text-slate-500 shadow-inner"
+                        )}
+                        placeholder="Provide clear details, schedules, affected departments, instructions, or hyperlinks for campus display..."
+                        value={form.content}
+                        onChange={(event) =>
+                          setForm((current) => ({ ...current, content: event.target.value }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {/* Right Column (5 cols): Metadata, Audience, Priority, Duration */}
+                  <div className="lg:col-span-5 flex flex-col gap-4">
+                    {/* Target Audience Selector */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>Target Audience</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "All Users", label: "All Users", icon: Globe, desc: "Entire Campus" },
+                          { id: "Students", label: "Students", icon: GraduationCap, desc: "Learners" },
+                          { id: "Staff", label: "Staff", icon: Briefcase, desc: "Faculty/Staff" },
+                        ].map((item) => {
+                          const isSelected = form.audience === item.id;
+                          const Icon = item.icon;
+                          return (
+                            <button
+                              key={item.id}
+                              type="button"
+                              onClick={() =>
+                                setForm((current) => ({
+                                  ...current,
+                                  audience: item.id as AnnouncementRecord["audience"],
+                                }))
+                              }
+                              className={cn(
+                                "flex flex-col items-center justify-center p-2.5 rounded-xl border transition text-center cursor-pointer",
+                                isSelected
+                                  ? isLight
+                                    ? "border-[#FFF300] bg-amber-50 text-slate-900 shadow-xs ring-1 ring-amber-300 font-bold"
+                                    : "border-[#FCD400] bg-[#FCD400]/10 text-white shadow-sm shadow-[#FCD400]/10 ring-1 ring-[#FCD400]/30 font-bold"
+                                  : isLight
+                                    ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                    : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
+                              )}
+                            >
+                              <Icon className={cn("h-4 w-4 mb-1", isSelected ? (isLight ? "text-amber-600" : "text-[#FCD400]") : "text-slate-400")} />
+                              <span className="text-xs">{item.label}</span>
+                              <span className={cn("text-[9px] mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>{item.desc}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Priority & Publish Target Status */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Priority Selector */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>Priority Level</label>
+                        <div className="flex flex-col gap-1.5">
+                          {priorityOptions.map((opt) => {
+                            const isSelected = form.priority === opt;
+                            const isUrgent = opt === "Urgent";
+                            const isImportant = opt === "Important";
+
+                            const selectedStyle = isLight
+                              ? isUrgent
+                                ? "border-red-300 bg-red-50 text-red-800 ring-1 ring-red-300 font-bold"
+                                : isImportant
+                                ? "border-amber-300 bg-amber-50 text-amber-900 ring-1 ring-amber-300 font-bold"
+                                : "border-sky-300 bg-sky-50 text-sky-800 ring-1 ring-sky-300 font-bold"
+                              : isUrgent
+                              ? "border-red-500/60 bg-red-500/20 text-red-300 ring-1 ring-red-500/40 font-bold"
+                              : isImportant
+                              ? "border-amber-500/60 bg-amber-500/20 text-amber-300 ring-1 ring-amber-500/40 font-bold"
+                              : "border-sky-500/60 bg-sky-500/20 text-sky-300 ring-1 ring-sky-500/40 font-bold";
+
+                            const dotColor = isUrgent
+                              ? "bg-red-500"
+                              : isImportant
+                              ? "bg-amber-500"
+                              : "bg-sky-500";
+
+                            return (
+                              <button
+                                key={opt}
+                                type="button"
+                                onClick={() => setForm((c) => ({ ...c, priority: opt }))}
+                                className={cn(
+                                  "flex items-center gap-2 py-2 px-3 rounded-xl border text-xs transition cursor-pointer",
+                                  isSelected
+                                    ? selectedStyle
+                                    : isLight
+                                    ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                    : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
+                                )}
+                              >
+                                <span className={`h-2 w-2 rounded-full ${dotColor}`} />
+                                <span>{opt}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Target Status */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>Target Status</label>
+                        <div className="flex flex-col gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setForm((c) => ({ ...c, published: true }))}
+                            className={cn(
+                              "flex items-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer",
+                              form.published
+                                ? isLight
+                                  ? "border-emerald-300 bg-emerald-50 text-emerald-800 ring-1 ring-emerald-300 shadow-xs"
+                                  : "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/40 shadow-sm shadow-emerald-500/10"
+                                : isLight
+                                ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
+                            )}
+                          >
+                            <Send className={cn("h-3.5 w-3.5", isLight ? "text-emerald-600" : "text-emerald-400")} />
+                            <span>Broadcast Live</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setForm((c) => ({ ...c, published: false }))}
+                            className={cn(
+                              "flex items-center gap-2 py-2 px-3 rounded-xl border text-xs font-bold transition cursor-pointer",
+                              !form.published
+                                ? isLight
+                                  ? "border-amber-300 bg-amber-50 text-amber-800 ring-1 ring-amber-300"
+                                  : "border-amber-500/60 bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/40"
+                                : isLight
+                                ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                : "border-white/10 bg-[#0B1726]/60 text-slate-400 hover:bg-[#0B1726] hover:text-slate-200"
+                            )}
+                          >
+                            <FileText className={cn("h-3.5 w-3.5", isLight ? "text-amber-600" : "text-amber-400")} />
+                            <span>Save as Draft</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Notice Duration & Auto-Expiry */}
+                    <div className={cn("flex flex-col gap-2 rounded-2xl border p-3", isLight ? "border-slate-200 bg-slate-50 shadow-xs" : "border-white/10 bg-[#0B1726]/70 shadow-inner")}>
+                      <div className="flex items-center justify-between">
+                        <label className={cn("text-xs font-bold flex items-center gap-1.5", isLight ? "text-slate-700" : "text-slate-200")}>
+                          <Clock className={cn("h-3.5 w-3.5", isLight ? "text-amber-600" : "text-[#FCD400]")} />
+                          Notice Duration
+                        </label>
+                        <span className={cn("text-[10px] font-semibold", isLight ? "text-amber-700" : "text-[#FCD400]")}>
+                          {form.durationDays === 0 || !form.durationDays
+                            ? "Permanent"
+                            : `Expires in ${form.durationDays}d`}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-5 gap-1">
+                        {DURATION_CHOICES.map((choice) => {
+                          const isSelected = (form.durationDays ?? 0) === choice.value;
+                          return (
+                            <button
+                              key={choice.value}
+                              type="button"
+                              onClick={() =>
+                                setForm((current) => ({ ...current, durationDays: choice.value }))
+                              }
+                              className={cn(
+                                "flex flex-col items-center justify-center py-2 px-1 rounded-xl border text-center transition cursor-pointer",
+                                isSelected
+                                  ? isLight
+                                    ? "border-amber-400 bg-amber-100/70 text-amber-900 ring-1 ring-amber-400/50 font-bold shadow-xs"
+                                    : "border-[#FCD400] bg-[#FCD400]/15 text-white ring-1 ring-[#FCD400]/40 font-bold shadow-sm shadow-[#FCD400]/10"
+                                  : isLight
+                                  ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                                  : "border-white/10 bg-[#122335]/40 text-slate-400 hover:bg-[#122335] hover:text-slate-200"
+                              )}
+                            >
+                              <span className={cn("text-xs font-bold", isSelected ? (isLight ? "text-amber-900" : "text-[#FCD400]") : (isLight ? "text-slate-700" : "text-slate-200"))}>
+                                {choice.label}
+                              </span>
+                              <span className={cn("text-[8.5px] mt-0.5 whitespace-nowrap", isLight ? "text-slate-500" : "text-slate-400")}>
+                                {choice.hint}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Form Action Buttons (Full-Width Bottom Bar) */}
+                <div className={cn("flex flex-wrap items-center justify-between gap-3 pt-4 border-t", isLight ? "border-slate-100" : "border-white/5")}>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetForm();
+                        setActiveView("none");
+                      }}
+                      className={cn(
+                        "rounded-xl border px-4 py-2.5 text-xs font-semibold transition cursor-pointer",
+                        isLight
+                          ? "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900"
+                          : "border-white/10 bg-[#0B1726] text-slate-300 hover:bg-white/10 hover:text-white"
+                      )}
+                    >
+                      Cancel & Close
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={resetForm}
+                      className={cn(
+                        "rounded-xl border px-3.5 py-2.5 text-xs font-semibold transition cursor-pointer",
+                        isLight
+                          ? "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-600"
+                          : "border-white/10 bg-[#0B1726] text-slate-400 hover:text-slate-200"
+                      )}
+                    >
+                      Reset Form
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      disabled={saving || !form.title.trim()}
+                      onClick={(e) => saveAnnouncement(e, false)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-xl border py-2.5 px-4 text-xs font-bold transition active:scale-95 disabled:opacity-50 cursor-pointer",
+                        isLight
+                          ? "border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700"
+                          : "border-white/15 bg-[#122335] hover:bg-[#18324e] text-slate-300"
+                      )}
+                      title="Save announcement as draft"
+                    >
+                      <FileText className={cn("h-3.5 w-3.5", isLight ? "text-slate-500" : "text-slate-400")} />
+                      <span>Save Draft</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={saving || !form.title.trim()}
+                      onClick={(e) => saveAnnouncement(e, true)}
+                      className="flex items-center gap-2 rounded-xl bg-[#FCD400] hover:bg-yellow-400 py-2.5 px-6 text-xs sm:text-sm font-black text-[#0B1A2C] shadow-lg shadow-[#FCD400]/25 transition hover:brightness-110 active:scale-95 disabled:opacity-50 cursor-pointer"
+                    >
+                      {saving ? (
+                        <>
+                          <RefreshCcw className="h-4 w-4 animate-spin text-[#0B1A2C]" />
+                          <span>Broadcasting...</span>
+                        </>
+                      ) : editingId ? (
+                        <>
+                          <Check className="h-4 w-4 text-[#0B1A2C]" />
+                          <span>Update & Publish Live</span>
+                        </>
+                      ) : (
+                        <>
+                          <Send className="h-4 w-4 text-[#0B1A2C]" />
+                          <span>🚀 Broadcast Live (Students & Staff)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            ) : (
+              /* ── Live Preview Mode (Full Width Landscape Simulation) ────────── */
+              <div className="flex flex-col gap-4 py-2">
+                <div className={cn("flex items-center justify-between text-xs px-4 py-2.5 rounded-xl border", isLight ? "border-amber-200 bg-amber-50 text-slate-700" : "border-white/5 bg-white/5 text-slate-400")}>
+                  <span className={cn("flex items-center gap-1.5 font-semibold", isLight ? "text-amber-800" : "text-[#FCD400]")}>
+                    <Eye className="h-3.5 w-3.5" />
+                    Live Student & Campus Feed Simulation (Full Landscape Render)
+                  </span>
+                  <span>Rendered in BookHive App</span>
+                </div>
+
+                {/* Simulated Card Preview */}
+                <div
+                  className={cn(
+                    "relative overflow-hidden rounded-2xl border p-6 transition-colors shadow-xl",
+                    isLight
+                      ? "border-slate-200 bg-slate-50 text-slate-800"
+                      : "border-white/15 bg-gradient-to-b from-[#132438] to-[#0A1622] text-white"
+                  )}
+                  style={{
+                    borderLeftColor:
+                      form.priority === "Urgent"
+                        ? "#EF4444"
+                        : form.priority === "Important"
+                        ? "#FCD400"
+                        : "#38BDF8",
+                    borderLeftWidth: 6,
+                  }}
+                >
+                  {/* Notice Header */}
+                  <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b pb-4", isLight ? "border-slate-200" : "border-white/5")}>
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#FCD400] font-mono text-sm font-black text-[#0B1A2C] shadow-md">
+                        BH
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn("text-sm font-bold", isLight ? "text-slate-900" : "text-white")}>BookHive Administration</span>
+                          <CheckCircle2 className="h-4 w-4 text-[#FCD400]" />
+                        </div>
+                        <p className={cn("text-xs", isLight ? "text-slate-500" : "text-slate-400")}>Official Campus Dispatch • Just now</p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {form.durationDays > 0 && (
+                        <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-bold", isLight ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-500/40 bg-amber-500/15 text-amber-300")}>
+                          <Clock className="h-3 w-3" />
+                          {form.durationDays}d limit
+                        </span>
+                      )}
+                      <PriorityBadge priority={form.priority} isLight={isLight} />
+                      <StatusBadge published={form.published} isLight={isLight} />
+                    </div>
+                  </div>
+
+                  {/* Notice Title & Content */}
+                  <div className="mt-5">
+                    <h3 className={cn("text-xl sm:text-2xl font-bold tracking-tight leading-snug", isLight ? "text-slate-900" : "text-white")}>
+                      {form.title || "Announcement Title Preview"}
+                    </h3>
+                    <p className={cn("mt-3 text-sm leading-relaxed whitespace-pre-wrap", isLight ? "text-slate-600" : "text-slate-300")}>
+                      {form.content ||
+                        "Your announcement body text will appear here with rich formatting and clear typography for student and staff readability across campus mobile and web portals."}
+                    </p>
+                  </div>
+
+                  {/* Notice Footer Tags */}
+                  <div className={cn("mt-6 flex flex-wrap items-center justify-between gap-3 pt-4 border-t text-xs", isLight ? "border-slate-200" : "border-white/5")}>
+                    <AudienceBadge audience={form.audience} isLight={isLight} />
+                    <span className={cn("font-mono text-xs", isLight ? "text-slate-500" : "text-slate-400")}>
+                      {form.durationDays > 0 ? `Duration: ${form.durationDays} Days` : "Duration: Permanent Notice"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-3 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setComposerTab("edit")}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-bold transition cursor-pointer",
+                      isLight
+                        ? "border-slate-200 bg-white hover:bg-slate-50 text-[#0274BB]"
+                        : "border-white/10 bg-[#122335] hover:bg-[#18324e] text-[#FCD400]"
+                    )}
+                  >
+                    <PencilLine className="h-3.5 w-3.5" />
+                    <span>Return to Editor Form</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={saving || !form.title.trim()}
+                    onClick={(e) => saveAnnouncement(e, true)}
+                    className="flex items-center gap-2 rounded-xl bg-[#FCD400] hover:bg-yellow-400 py-2 px-5 text-xs font-black text-[#0B1A2C] shadow-md transition hover:brightness-110 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Looks Great, Broadcast Live Now</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {activeView === "queue" && (
+          /* ── Shared Notice Board & Queue (FULL WIDTH) ──────────────── */
+          <motion.div
+            key="queue"
+            initial={{ opacity: 0, y: 14 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -14 }}
+            transition={{ duration: 0.25 }}
+            className={cn(
+              "w-full rounded-3xl border p-6 sm:p-8 flex flex-col gap-5 min-h-[580px]",
+              isLight
+                ? "border-slate-200/80 bg-white shadow-xs"
+                : "border-white/10 bg-[#0F1D29]/95 shadow-2xl backdrop-blur"
+            )}
+          >
           {/* Header & View Switcher */}
           <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b pb-4", isLight ? "border-slate-100" : "border-white/5")}>
             <div>
@@ -1029,7 +1336,7 @@ export function AnnouncementsModule({
               </span>
 
               {/* Bulk Clear All Button */}
-              {displayAnnouncements.length > 0 && (
+              {isAdmin && displayAnnouncements.length > 0 && (
                 confirmDeleteId === "CLEAR_ALL" ? (
                   <div className="flex items-center gap-1 rounded-xl border border-red-500/40 bg-red-950/80 p-1">
                     <button
@@ -1042,7 +1349,7 @@ export function AnnouncementsModule({
                     <button
                       type="button"
                       onClick={() => setConfirmDeleteId(null)}
-                      className="rounded-lg border border-white/10 px-2 py-1 text-[11px] text-slate-300 hover:text-white cursor-pointer"
+                      className="rounded-lg border border-white/20 px-2 py-1 text-[11px] font-bold !text-white hover:bg-white/20 cursor-pointer transition"
                     >
                       Cancel
                     </button>
@@ -1104,6 +1411,22 @@ export function AnnouncementsModule({
                   Table
                 </button>
               </div>
+
+              {/* Hide / Collapse Queue Button */}
+              <button
+                type="button"
+                onClick={() => setActiveView("none")}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition cursor-pointer",
+                  isLight
+                    ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    : "border-white/10 bg-[#122335] text-slate-300 hover:bg-[#18324e] hover:text-white"
+                )}
+                title="Hide Announcement Queue"
+              >
+                <X className="h-3.5 w-3.5 text-slate-400" />
+                <span>Hide</span>
+              </button>
             </div>
           </div>
 
@@ -1292,45 +1615,10 @@ export function AnnouncementsModule({
                               <DurationBadge announcement={announcement} isLight={isLight} />
                             </div>
 
-                            <div className="flex items-center gap-2">
-                              <span className={cn("text-[11px] font-mono", isLight ? "text-slate-400" : "text-slate-400")}>
+                            <div className="flex items-center gap-1.5">
+                              <span className={cn("text-xs sm:text-sm font-semibold tracking-tight", isLight ? "text-slate-600" : "text-slate-300")}>
                                 {formatDateTime(announcement.updatedAt)}
                               </span>
-
-                              {/* Prominent Quick Delete / Clear Button in Card Header */}
-                              {confirmDeleteId === announcement.id ? (
-                                <div className="flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/80 p-0.5 shadow-sm">
-                                  <button
-                                    type="button"
-                                    onClick={() => deleteAnnouncement(announcement.id)}
-                                    className="rounded-md bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white hover:bg-red-500 transition cursor-pointer"
-                                  >
-                                    Confirm
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setConfirmDeleteId(null)}
-                                    className="rounded-md px-1.5 py-0.5 text-[10px] text-slate-300 hover:text-white transition cursor-pointer"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setConfirmDeleteId(announcement.id)}
-                                  className={cn(
-                                    "inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-bold transition cursor-pointer",
-                                    isLight
-                                      ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100 hover:border-red-300"
-                                      : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/25 hover:border-red-500/60"
-                                  )}
-                                  title="Delete announcement from system"
-                                >
-                                  <Trash2 className="h-3 w-3 text-red-500" />
-                                  <span className="hidden sm:inline">Delete</span>
-                                </button>
-                              )}
                             </div>
                           </div>
 
@@ -1354,65 +1642,90 @@ export function AnnouncementsModule({
                             </div>
 
                             <div className="flex items-center gap-2">
-                              {/* Quick Status Toggle Button */}
-                              <button
-                                type="button"
-                                onClick={() => toggleStatus(announcement)}
-                                className={cn(
-                                  "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-[11px] font-bold transition cursor-pointer",
-                                  announcement.published
-                                    ? isLight
-                                      ? "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900"
-                                      : "border-slate-500/40 bg-slate-500/10 text-slate-300 hover:bg-slate-500/25 hover:text-white"
-                                    : isLight
-                                    ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
-                                    : "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 ring-1 ring-emerald-500/30 shadow-sm"
-                                )}
-                                title={announcement.published ? "Click to move to Draft (hide from students)" : "Click to Broadcast Live Now"}
-                              >
-                                {announcement.published ? (
-                                  <>
-                                    <EyeOff className="h-3 w-3 text-slate-400" />
-                                    <span>Move to Draft</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Send className="h-3 w-3 text-emerald-500" />
-                                    <span>🚀 Publish Live Now</span>
-                                  </>
-                                )}
-                              </button>
+                              {isAdmin ? (
+                                <>
+                                  {/* Quick Status Toggle Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleStatus(announcement)}
+                                    className={cn(
+                                      "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-[11px] font-bold transition cursor-pointer",
+                                      announcement.published
+                                        ? isLight
+                                          ? "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900"
+                                          : "border-slate-500/40 bg-slate-500/10 text-slate-300 hover:bg-slate-500/25 hover:text-white"
+                                        : isLight
+                                        ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                        : "border-emerald-500/60 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 ring-1 ring-emerald-500/30 shadow-sm"
+                                    )}
+                                    title={announcement.published ? "Click to move to Draft (hide from students)" : "Click to Broadcast Live Now"}
+                                  >
+                                    {announcement.published ? (
+                                      <>
+                                        <EyeOff className="h-3 w-3 text-slate-400" />
+                                        <span>Move to Draft</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Send className="h-3 w-3 text-emerald-500" />
+                                        <span>🚀 Publish Live Now</span>
+                                      </>
+                                    )}
+                                  </button>
 
-                              {/* Edit Button */}
-                              <button
-                                type="button"
-                                onClick={() => editAnnouncement(announcement)}
-                                className={cn(
-                                  "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer",
-                                  isLight
-                                    ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
-                                    : "border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 hover:border-sky-500/50"
-                                )}
-                              >
-                                <PencilLine className="h-3 w-3" />
-                                <span>Edit</span>
-                              </button>
+                                  {/* Edit Button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => editAnnouncement(announcement)}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer",
+                                      isLight
+                                        ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                        : "border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 hover:border-sky-500/50"
+                                    )}
+                                  >
+                                    <PencilLine className="h-3 w-3" />
+                                    <span>Edit</span>
+                                  </button>
 
-                              {/* Secondary Delete Button */}
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteId(announcement.id)}
-                                className={cn(
-                                  "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer",
-                                  isLight
-                                    ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                                    : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/50"
-                                )}
-                                title="Delete announcement"
-                              >
-                                <Trash2 className="h-3 w-3 text-red-500" />
-                                <span>Remove</span>
-                              </button>
+                                  {/* Delete / Remove Button with in-place Confirm & Cancel */}
+                                  {confirmDeleteId === announcement.id ? (
+                                    <div className="flex items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/80 p-0.5 shadow-sm">
+                                      <button
+                                        type="button"
+                                        onClick={() => deleteAnnouncement(announcement.id)}
+                                        className="rounded-md bg-red-600 px-2.5 py-0.5 text-[11px] font-bold text-white hover:bg-red-500 transition cursor-pointer shadow-xs"
+                                      >
+                                        Confirm
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteId(null)}
+                                        className="rounded-md px-2 py-0.5 text-[11px] font-bold !text-white hover:bg-white/20 transition cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteId(announcement.id)}
+                                      className={cn(
+                                        "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition cursor-pointer",
+                                        isLight
+                                          ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                          : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/50"
+                                      )}
+                                      title="Delete announcement"
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-500" />
+                                      <span>Remove</span>
+                                    </button>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-[11px] text-slate-400 italic">Official Campus Notice • View Only</span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1506,52 +1819,56 @@ export function AnnouncementsModule({
                           {formatDateTime(announcement.updatedAt)}
                         </td>
                         <td className="px-4 py-3.5 text-right whitespace-nowrap">
-                          {confirmDeleteId === announcement.id ? (
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                type="button"
-                                onClick={() => deleteAnnouncement(announcement.id)}
-                                className="rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-red-500 cursor-pointer shadow-sm"
-                              >
-                                Confirm
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteId(null)}
-                                className="rounded border border-white/10 px-1.5 py-1 text-[10px] text-slate-300 hover:text-white cursor-pointer"
-                              >
-                                Cancel
-                              </button>
-                            </div>
+                          {isAdmin ? (
+                            confirmDeleteId === announcement.id ? (
+                              <div className="flex items-center justify-end gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => deleteAnnouncement(announcement.id)}
+                                  className="rounded bg-red-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-red-500 cursor-pointer shadow-sm"
+                                >
+                                  Confirm
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(null)}
+                                  className="rounded border border-white/20 px-1.5 py-1 text-[10px] font-bold !text-white hover:bg-white/20 cursor-pointer transition"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => editAnnouncement(announcement)}
+                                  className={cn(
+                                    "rounded-lg border p-1.5 transition cursor-pointer",
+                                    isLight
+                                      ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                                      : "border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
+                                  )}
+                                  title="Edit"
+                                >
+                                  <PencilLine className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmDeleteId(announcement.id)}
+                                  className={cn(
+                                    "rounded-lg border p-1.5 transition cursor-pointer",
+                                    isLight
+                                      ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+                                      : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                                  )}
+                                  title="Delete announcement from system"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            )
                           ) : (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                type="button"
-                                onClick={() => editAnnouncement(announcement)}
-                                className={cn(
-                                  "rounded-lg border p-1.5 transition cursor-pointer",
-                                  isLight
-                                    ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
-                                    : "border-sky-500/30 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20"
-                                )}
-                                title="Edit"
-                              >
-                                <PencilLine className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setConfirmDeleteId(announcement.id)}
-                                className={cn(
-                                  "rounded-lg border p-1.5 transition cursor-pointer",
-                                  isLight
-                                    ? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
-                                    : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20"
-                                )}
-                                title="Delete announcement from system"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
+                            <span className="text-[11px] text-slate-400 italic">View Only</span>
                           )}
                         </td>
                       </tr>
@@ -1562,7 +1879,8 @@ export function AnnouncementsModule({
             </div>
           )}
         </motion.div>
-      </div>
+      )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,6 +1,6 @@
-# BookHive Student Mobile Application
+# BookHive Mobile Application
 
-BookHive Student is an Expo React Native mobile application for STI West Negros University students.
+BookHive is an Expo React Native mobile application for STI West Negros University students.
 
 ## Features
 

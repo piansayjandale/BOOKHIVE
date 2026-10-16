@@ -121,6 +121,11 @@ export function initSocketServer(httpServer) {
       emitTransactionDecided(decideData);
     });
 
+    socket.on("transaction:picked-up", (pickupData) => {
+      console.log("[Socket.io] Received transaction:picked-up event:", pickupData?.id || pickupData?.resourceTitle);
+      emitTransactionPickedUp(pickupData);
+    });
+
     socket.on("disconnect", (reason) => {
       console.log(`[Socket.io] Client disconnected (${socket.id}): ${reason}`);
     });
@@ -144,13 +149,11 @@ export function broadcastTelemetryUpdate(eventName, payload) {
 
 export function broadcastCirculationQueue(eventName, payload) {
   if (!io) return;
-  io.to(ROOMS.CIRCULATION_DESK).emit(eventName, payload);
   io.emit(eventName, payload);
 }
 
 export function broadcastCatalogUpdate(eventName, payload) {
   if (!io) return;
-  io.to(ROOMS.CATALOG_UPDATES).emit(eventName, payload);
   io.emit(eventName, payload);
 }
 
@@ -168,7 +171,6 @@ export function emitBookAdded(book) {
   if (io) {
     console.log("[Socket.io Broadcast] Emitting book:added for title:", book?.title);
     io.emit("book:added", book);
-    broadcastCatalogUpdate("book:added", book);
   }
 }
 
@@ -176,9 +178,7 @@ export function emitBorrowRequest(transaction) {
   if (io) {
     console.log("[Socket.io Broadcast] Emitting borrow:request for transaction:", transaction?.id || transaction?.resourceTitle);
     io.emit("borrow:request", transaction);
-    io.emit("reservation:request", transaction);
     io.emit("notification:new", transaction);
-    broadcastCirculationQueue("borrow:request", transaction);
   }
 }
 
@@ -186,9 +186,7 @@ export function emitReservationRequest(transaction) {
   if (io) {
     console.log("[Socket.io Broadcast] Emitting reservation:request for transaction:", transaction?.id || transaction?.resourceTitle);
     io.emit("reservation:request", transaction);
-    io.emit("borrow:request", transaction);
     io.emit("notification:new", transaction);
-    broadcastCirculationQueue("reservation:request", transaction);
   }
 }
 
@@ -203,12 +201,7 @@ export function emitBookReturned(transaction) {
     };
     io.emit("book:returned", payload);
     io.emit("transaction:returned", payload);
-    io.emit("transaction:decided", payload);
     io.emit("transaction:updated", payload);
-    broadcastCirculationQueue("book:returned", payload);
-    broadcastCirculationQueue("transaction:returned", payload);
-    broadcastCirculationQueue("transaction:decided", payload);
-    broadcastCirculationQueue("transaction:updated", payload);
     if (payload.studentId) {
       sendUserNotification(payload.studentId, payload);
     }
@@ -220,16 +213,11 @@ export function emitTransactionDecided(transaction) {
     console.log("[Socket.io Broadcast] Emitting transaction:decided for transaction:", transaction?.id, "Status:", transaction?.status);
     io.emit("transaction:decided", transaction);
     io.emit("transaction:updated", transaction);
-    io.emit("borrow:decided", transaction);
     io.emit("student:notification", transaction);
-    broadcastCirculationQueue("transaction:decided", transaction);
-    broadcastCirculationQueue("transaction:updated", transaction);
 
     if (transaction?.status === "Returned") {
       io.emit("book:returned", transaction);
       io.emit("transaction:returned", transaction);
-      broadcastCirculationQueue("book:returned", transaction);
-      broadcastCirculationQueue("transaction:returned", transaction);
     }
 
     if (transaction.studentId) {
@@ -242,13 +230,31 @@ export function emitTransactionUpdated(transaction) {
   if (io) {
     console.log("[Socket.io Broadcast] Emitting transaction:updated for transaction:", transaction?.id);
     io.emit("transaction:updated", transaction);
-    broadcastCirculationQueue("transaction:updated", transaction);
 
     if (transaction?.status === "Returned") {
       io.emit("book:returned", transaction);
       io.emit("transaction:returned", transaction);
-      broadcastCirculationQueue("book:returned", transaction);
-      broadcastCirculationQueue("transaction:returned", transaction);
+    }
+  }
+}
+
+export function emitTransactionPickedUp(transaction) {
+  if (io) {
+    console.log("[Socket.io Broadcast] Emitting transaction:picked-up for transaction:", transaction?.id || transaction?.resourceTitle);
+    const payload = {
+      ...transaction,
+      isPickedUp: true,
+      pickedUpAt: transaction?.pickedUpAt || new Date().toISOString(),
+    };
+    io.emit("transaction:picked-up", payload);
+    io.emit("transaction:updated", payload);
+    io.emit("student:notification", {
+      ...payload,
+      title: "Book Picked Up",
+      message: `You have successfully picked up "${payload.resourceTitle || payload.title || 'your book'}". Due date: ${payload.dueDate ? new Date(payload.dueDate).toLocaleDateString() : '7 days'}.`,
+    });
+    if (payload.userId || payload.studentId) {
+      sendUserNotification(payload.userId || payload.studentId, payload);
     }
   }
 }
@@ -303,6 +309,8 @@ export function emitAnnouncementDeleted(id) {
   if (io) {
     console.log("[Socket.io Broadcast] Emitting announcement:deleted:", id);
     io.emit("announcement:deleted", { id });
+    io.emit("announcement:removed", { id });
+    io.emit("announcements:updated", { action: "deleted", id });
     io.emit("notification:new", {
       id: `ann-deleted-${id}`,
       type: "announcement_deleted",
@@ -310,5 +318,14 @@ export function emitAnnouncementDeleted(id) {
     });
   }
 }
+
+export function emitSettingsUpdated(settings) {
+  if (io) {
+    console.log("[Socket.io Broadcast] Emitting settings:updated:", settings);
+    io.emit("settings:updated", settings);
+    io.emit("system:settings", settings);
+  }
+}
+
 
 

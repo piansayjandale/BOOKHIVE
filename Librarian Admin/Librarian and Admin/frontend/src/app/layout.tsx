@@ -27,6 +27,7 @@ export default async function RootLayout({
     <html
       lang="en"
       data-theme={initialTheme}
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
       className="h-full"
     >

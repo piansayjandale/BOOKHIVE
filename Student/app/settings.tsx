@@ -1,16 +1,55 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, Switch, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AnimatedScreen from '../components/AnimatedScreen';
 import { useThemeColors } from '../hooks/useThemeColors';
+import { useAuth } from '../data/AuthContext';
 
 export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDarkMode, toggleTheme, theme } = useThemeColors();
+  const { logout } = useAuth();
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
+
+  const handleLogout = async () => {
+    if (Platform.OS === 'web') {
+      const confirmed = typeof window !== 'undefined' && window.confirm
+        ? window.confirm('Are you sure you want to sign out?')
+        : true;
+      if (confirmed) {
+        try {
+          await logout();
+        } catch (e) {
+          console.warn('Logout error:', e);
+        }
+        router.replace('/login');
+      }
+      return;
+    }
+
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await logout();
+            } catch (e) {
+              console.warn('Logout error:', e);
+            }
+            router.replace('/login');
+          },
+        },
+      ]
+    );
+  };
 
   const options = [
     {
@@ -27,6 +66,20 @@ export default function SettingsScreen() {
       icon: 'lock-outline',
       onPress: () => router.push('/privacy-security')
     },
+    {
+      id: 'opt-3',
+      title: 'Terms & Agreement',
+      detail: 'Policies, library rules & obligations',
+      icon: 'file-document-outline',
+      onPress: () => router.push('/terms-agreement')
+    },
+    {
+      id: 'opt-4',
+      title: 'Help & Support',
+      detail: 'FAQs, user guides & assistant contact',
+      icon: 'help-circle-outline',
+      onPress: () => router.push('/help')
+    },
   ];
 
   return (
@@ -38,7 +91,7 @@ export default function SettingsScreen() {
             if (router.canGoBack?.()) {
               router.back();
             } else {
-              router.push('/profile');
+              router.replace('/(tabs)');
             }
           }}
           style={[styles.backButton, { backgroundColor: theme.cardBg }]}
@@ -58,44 +111,7 @@ export default function SettingsScreen() {
             <MaterialCommunityIcons name="bookshelf" size={40} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
           </View>
           <Text style={[styles.brandTitle, { color: theme.sectionTitle }]}>BookHive Monitor</Text>
-          <Text style={[styles.brandSubtitle, { color: theme.textSecondary }]}>Student Mobile Portal v2.5.0</Text>
-        </View>
-
-        {/* AI ENGINE SPECIFICATION CARD */}
-        <View style={[styles.aiCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          <View style={styles.aiHeader}>
-            <View style={styles.aiHeaderTitleRow}>
-              <MaterialCommunityIcons name="robot" size={20} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
-              <Text style={[styles.aiTitle, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>AI RECOMMENDATION ENGINE</Text>
-            </View>
-            <View style={[styles.activeBadge, !isDarkMode && { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
-              <Text style={[styles.activeText, !isDarkMode && { color: '#059669' }]}>ACTIVE</Text>
-            </View>
-          </View>
-
-          <View style={[styles.aiDivider, { backgroundColor: theme.cardBorder }]} />
-
-          <Text style={[styles.aiModelLabel, { color: theme.textSecondary }]}>Active Model</Text>
-          <Text style={[styles.aiModelName, { color: theme.textPrimary }]}>Google Gemini 2.0 Flash</Text>
-          
-          <Text style={[styles.aiDesc, { color: theme.textSecondary }]}>
-            This mobile application is powered by Gemini 2.0 Flash semantic intelligence. It evaluates your student profile, course department, and real-time borrowing logs to calculate match relevancy.
-          </Text>
-
-          <View style={styles.aiFeatures}>
-            <View style={styles.featureItem}>
-              <Ionicons name="sparkles" size={14} color={isDarkMode ? "#38BDF8" : theme.accentBlue} />
-              <Text style={[styles.featureText, { color: theme.textPrimary }]}>Semantic Query Parsing</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <MaterialCommunityIcons name="brain" size={14} color={isDarkMode ? "#38BDF8" : theme.accentBlue} />
-              <Text style={[styles.featureText, { color: theme.textPrimary }]}>Personalized Book Match %</Text>
-            </View>
-            <View style={styles.featureItem}>
-              <MaterialCommunityIcons name="magnify" size={14} color={isDarkMode ? "#38BDF8" : theme.accentBlue} />
-              <Text style={[styles.featureText, { color: theme.textPrimary }]}>Contextual Catalog Re-ranking</Text>
-            </View>
-          </View>
+          <Text style={[styles.brandSubtitle, { color: theme.textSecondary }]}>Student Mobile Application</Text>
         </View>
 
         {/* GENERAL SETTINGS GROUP */}
@@ -155,6 +171,42 @@ export default function SettingsScreen() {
             ios_backgroundColor={theme.cardBorder}
           />
         </View>
+
+        {/* ACCOUNT / SESSION GROUP */}
+        <Text style={[styles.groupTitle, { color: theme.textSecondary, marginTop: 12 }]}>ACCOUNT & SESSION</Text>
+
+        <TouchableOpacity
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.cardBg,
+              borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.35)' : '#FEE2E2',
+            },
+          ]}
+          onPress={handleLogout}
+          activeOpacity={0.85}
+        >
+          <View style={styles.cardLeft}>
+            <View
+              style={[
+                styles.iconWrapper,
+                {
+                  backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
+                  borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.3)' : '#FCA5A5',
+                },
+              ]}
+            >
+              <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
+            </View>
+            <View style={styles.cardTexts}>
+              <Text style={[styles.cardTitle, { color: '#EF4444' }]}>Sign Out</Text>
+              <Text style={[styles.cardDetail, { color: theme.textSecondary }]}>
+                Log out of your student account session
+              </Text>
+            </View>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={20} color="#EF4444" />
+        </TouchableOpacity>
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -218,80 +270,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     marginTop: 4,
-  },
-  aiCard: {
-    backgroundColor: '#111A2E',
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#1E293B',
-  },
-  aiHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  aiHeaderTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  aiTitle: {
-    color: '#FCD34D',
-    fontWeight: '800',
-    fontSize: 12,
-    letterSpacing: 1.2,
-  },
-  activeBadge: {
-    backgroundColor: '#064E3B',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#059669',
-  },
-  activeText: {
-    color: '#34D399',
-    fontSize: 9,
-    fontWeight: '800',
-  },
-  aiDivider: {
-    height: 1,
-    backgroundColor: '#1E293B',
-    marginVertical: 14,
-  },
-  aiModelLabel: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-  },
-  aiModelName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#F8FAFC',
-    marginTop: 4,
-  },
-  aiDesc: {
-    fontSize: 13,
-    color: '#94A3B8',
-    lineHeight: 20,
-    marginTop: 10,
-  },
-  aiFeatures: {
-    marginTop: 16,
-    gap: 10,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  featureText: {
-    fontSize: 12,
-    color: '#CBD5E1',
-    fontWeight: '500',
+    marginBottom: 8,
   },
   groupTitle: {
     fontSize: 11,

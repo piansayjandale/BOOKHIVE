@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { X, ShieldAlert, AlertTriangle, CheckCircle2, Clock, DollarSign } from "lucide-react";
 import type { TransactionRecord } from "@/lib/types";
-import { formatDate, cn } from "@/lib/utils";
+import { formatDate, cn, formatCourseShortcut } from "@/lib/utils";
 import { useTheme } from "@/components/providers/theme-provider";
 
 interface StudentViolationModalProps {
@@ -86,7 +86,7 @@ export function StudentViolationModal({
   const totalPenalty = useMemo(() => {
     return studentViolations.reduce((acc, curr) => {
       const days = getOverdueDays(curr.dueDate);
-      return acc + Math.max(1, days) * 10; // ₱10 per day overdue
+      return acc + Math.max(1, days) * 50; // ₱50 per day overdue
     }, 0);
   }, [studentViolations]);
 
@@ -96,7 +96,7 @@ export function StudentViolationModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
       {/* Backdrop */}
       <div
-        className={cn("fixed inset-0 backdrop-blur-sm transition-opacity", isLight ? "bg-slate-900/40" : "bg-black/80")}
+        className={cn("fixed inset-0 modal-backdrop backdrop-blur-md transition-opacity", isLight ? "bg-slate-900/40" : "bg-black/80")}
         onClick={onClose}
       />
 
@@ -158,7 +158,7 @@ export function StudentViolationModal({
             <div>
               <span className={cn("text-[10px] font-bold uppercase tracking-wider", isLight ? "text-slate-500" : "text-slate-400")}>Student ID / Section</span>
               <p className={cn("font-bold text-sm mt-0.5", isLight ? "text-slate-900" : "text-white")}>
-                {student.studentId} · {student.department || student.course || "Circulation"}
+                {student.studentId} · {formatCourseShortcut(student.department || student.course) || "BSIT"}
               </p>
             </div>
           </div>
@@ -197,7 +197,7 @@ export function StudentViolationModal({
               <div className="space-y-3">
                 {studentViolations.map((item, idx) => {
                   const days = getOverdueDays(item.dueDate);
-                  const fine = Math.max(1, days) * 10;
+                  const fine = Math.max(1, days) * 50;
 
                   return (
                     <div
@@ -246,7 +246,7 @@ export function StudentViolationModal({
                       </div>
 
                       <p className={cn("text-[11px] italic", isLight ? "text-slate-500" : "text-rose-300/80")}>
-                        Standard fine rate of ₱10.00/day overdue applied according to university library circulation policy.
+                        Standard fine rate of ₱50.00/day overdue applied according to university library circulation policy.
                       </p>
                     </div>
                   );
