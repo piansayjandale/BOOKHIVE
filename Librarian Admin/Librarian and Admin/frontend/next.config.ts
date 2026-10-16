@@ -46,11 +46,19 @@ const nextConfig: NextConfig = {
     ];
   },
   async redirects() {
+    const apkUrl =
+      process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL ||
+      "https://expo.dev/artifacts/eas/wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ.apk";
     return [
       {
         source: "/mobile",
         destination: "/download",
         permanent: true,
+      },
+      {
+        source: "/downloads/bookhive-release.apk",
+        destination: apkUrl,
+        permanent: false,
       },
     ];
   },
