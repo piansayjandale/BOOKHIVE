@@ -2,9 +2,15 @@
   "expo": {
     "name": "BookHive",
     "slug": "bookhive-student",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
     "plugins": [
       "expo-router",
       "expo-font",
@@ -20,13 +26,19 @@
     },
     "android": {
       "package": "ph.edu.stiwnu.bookhive",
+      "versionCode": 2,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
       "permissions": [
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ]
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
     },
     "extra": {
       "router": {},

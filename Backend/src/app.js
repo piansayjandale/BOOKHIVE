@@ -102,35 +102,47 @@ export function createApp() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Download BookHive for Android</title>
+  <title>Download BookHive for Android | STI WNU</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0b1825; color: #f1f5f9; padding: 2rem 1rem; margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; }
-    .container { max-width: 540px; width: 100%; background: #122130; border-radius: 16px; padding: 2.25rem 2rem; border: 1px solid #1e3a5f; box-shadow: 0 20px 40px rgba(0,0,0,0.5); text-align: center; }
-    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 0.35rem 0.85rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); margin-bottom: 1.25rem; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; color: #1e293b; padding: 2.5rem 1rem; margin: 0; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; box-sizing: border-box; }
+    .container { max-width: 500px; width: 100%; background: #ffffff; border-radius: 20px; padding: 2.5rem 2rem; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.06), 0 8px 10px -6px rgba(0,0,0,0.04); text-align: center; }
+    .logo-container { width: 84px; height: 84px; margin: 0 auto 1.25rem; background: #fef9c3; border-radius: 18px; border: 1px solid #fde047; display: flex; align-items: center; justify-content: center; padding: 10px; box-sizing: border-box; }
+    .logo-container img { width: 100%; height: 100%; object-fit: contain; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 0.35rem 0.85rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; margin-bottom: 1.25rem; }
     .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
-    h1 { color: #ffffff; margin: 0 0 0.5rem 0; font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; }
-    p.subtitle { color: #94a3b8; font-size: 0.95rem; margin: 0 0 1.75rem 0; line-height: 1.5; }
-    .btn-download { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 1rem 1.5rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: #0b1825; font-size: 1.05rem; font-weight: 700; text-decoration: none; border-radius: 12px; transition: all 0.2s; box-shadow: 0 8px 20px rgba(245, 158, 11, 0.35); }
-    .btn-download:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(245, 158, 11, 0.45); background: linear-gradient(135deg, #fbbf24, #f59e0b); }
-    .file-meta { margin-top: 0.75rem; font-size: 0.8rem; color: #64748b; }
-    .instructions { margin-top: 2rem; text-align: left; background: #0a1420; border-radius: 12px; padding: 1.25rem 1.5rem; border: 1px solid #1e293b; }
-    .instructions h3 { margin: 0 0 0.75rem 0; font-size: 0.9rem; color: #f8fafc; text-transform: uppercase; letter-spacing: 0.05em; }
-    .instructions ol { margin: 0; padding-left: 1.25rem; color: #cbd5e1; font-size: 0.85rem; line-height: 1.6; }
-    .instructions li { margin-bottom: 0.4rem; }
-    .footer { margin-top: 1.5rem; font-size: 0.75rem; color: #475569; }
-    .footer a { color: #38bdf8; text-decoration: none; }
+    h1 { color: #0f172a; margin: 0 0 0.5rem 0; font-size: 1.75rem; font-weight: 800; letter-spacing: -0.02em; }
+    p.subtitle { color: #475569; font-size: 0.95rem; margin: 0 0 1.75rem 0; line-height: 1.5; font-weight: 400; }
+    .btn-download { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; box-sizing: border-box; padding: 1rem 1.5rem; background: linear-gradient(135deg, #f59e0b, #d97706); color: #0b1825; font-size: 1.05rem; font-weight: 800; text-decoration: none; border-radius: 14px; transition: all 0.2s; box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3); }
+    .btn-download:hover { transform: translateY(-2px); box-shadow: 0 12px 24px rgba(245, 158, 11, 0.4); background: linear-gradient(135deg, #fbbf24, #f59e0b); }
+    .file-meta { margin-top: 1rem; font-size: 0.8rem; color: #64748b; display: flex; justify-content: center; gap: 8px; align-items: center; }
+    .meta-tag { background: #f1f5f9; padding: 2px 8px; border-radius: 6px; border: 1px solid #e2e8f0; font-weight: 600; color: #334155; }
+    .instructions { margin-top: 2rem; text-align: left; background: #f8fafc; border-radius: 14px; padding: 1.25rem 1.5rem; border: 1px solid #e2e8f0; }
+    .instructions h3 { margin: 0 0 0.75rem 0; font-size: 0.85rem; color: #0f172a; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 700; }
+    .instructions ol { margin: 0; padding-left: 1.25rem; color: #334155; font-size: 0.85rem; line-height: 1.6; }
+    .instructions li { margin-bottom: 0.5rem; }
+    .footer { margin-top: 1.75rem; font-size: 0.75rem; color: #94a3b8; }
+    .footer a { color: #0284c7; text-decoration: none; font-weight: 600; }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="badge"><span class="badge-dot"></span> Official Mobile Release &bull; Android</div>
+    <div class="logo-container">
+      <img src="/logo.png" alt="BookHive" />
+    </div>
+    <div class="badge"><span class="badge-dot"></span> Official Mobile Companion &bull; Android</div>
     <h1>BookHive for Android</h1>
     <p class="subtitle">Access library catalogs, digital student ID barcodes, holds, and loan due countdowns on your mobile device.</p>
     <a href="${directApkUrl}" download="${apkFileName}" class="btn-download">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       <span>Download BookHive APK</span>
     </a>
-    <div class="file-meta">Package: ${apkFileName} &bull; Target: Android 8.0+ &bull; Free</div>
+    <div class="file-meta">
+      <span class="meta-tag">Direct APK</span>
+      <span>&bull;</span>
+      <span>${apkFileName}</span>
+      <span>&bull;</span>
+      <span class="meta-tag" style="background:#fef3c7; color:#92400e; border-color:#fde68a;">Free</span>
+    </div>
     <div class="instructions">
       <h3>Installation Guide</h3>
       <ol>
@@ -140,7 +152,7 @@ export function createApp() {
       </ol>
     </div>
     <div class="footer">
-      <p>&copy; ${new Date().getFullYear()} BookHive Library Ecosystem. <a href="/">Return to API Overview</a></p>
+      <p>&copy; ${new Date().getFullYear()} BookHive Library Ecosystem. <a href="/">Return to Portal</a></p>
     </div>
   </div>
 </body>
