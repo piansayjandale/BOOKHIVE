@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import fs from "fs";
 import path from "path";
 
 const devOrigins = (
@@ -15,7 +16,9 @@ const nextConfig: NextConfig = {
     position: "bottom-left",
   },
   turbopack: {
-    root: path.join(__dirname, ".."),
+    root: fs.existsSync(path.join(__dirname, "node_modules"))
+      ? __dirname
+      : path.join(__dirname, ".."),
   },
   async headers() {
     return [

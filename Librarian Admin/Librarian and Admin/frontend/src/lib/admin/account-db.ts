@@ -130,6 +130,10 @@ function mapProfileRow(row: AccountUserRow): AdminProfilePayload {
 }
 
 async function seedAdminAccounts() {
+  if (process.env.NODE_ENV === "production") {
+    return;
+  }
+
   const existing = await pool.query<{ total: string }>(
     "SELECT COUNT(*) AS total FROM admin_account_users",
   );

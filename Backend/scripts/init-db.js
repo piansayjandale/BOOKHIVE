@@ -33,24 +33,52 @@ for (let i = 0; i < args.length; i++) {
 
 const dbConfig = getDatabaseConfig(cliUrl);
 
-const DEV_CREDENTIALS = [
+const isProductionOrRemote = !dbConfig.isLocal || process.env.NODE_ENV === "production";
+
+const STAFF_ACCOUNTS = [
+  {
+    name: "Super Administrator",
+    email: "superadmin@stiwnu.edu.ph",
+    role: "Super Admin",
+    envPassword: process.env.INITIAL_SUPERADMIN_PASSWORD || process.env.INITIAL_STAFF_PASSWORD || "",
+    devPassword: "BookHiveSuperAdmin!2026",
+    idNumber: "SUP-2026-0001",
+    department: "Executive System Governance",
+    course: "Platform Infrastructure",
+    envKeyHint: "INITIAL_SUPERADMIN_PASSWORD",
+  },
   {
     name: "Yana Palmares",
     email: "admin@stiwnu.edu.ph",
     role: "Admin",
-    password: "BookHiveAdmin!2026",
+    envPassword: process.env.INITIAL_ADMIN_PASSWORD || process.env.INITIAL_STAFF_PASSWORD || "",
+    devPassword: "BookHiveAdmin!2026",
     idNumber: "ADM-2026-0001",
     department: "Library Administration",
     course: "Library Administration",
+    envKeyHint: "INITIAL_ADMIN_PASSWORD",
+  },
+  {
+    name: "Yana Brich R. Palmares",
+    email: "librarian@stiwnu.edu.ph",
+    role: "Librarian",
+    envPassword: process.env.INITIAL_LIBRARIAN_PASSWORD || process.env.INITIAL_STAFF_PASSWORD || "",
+    devPassword: "BookHiveLibrarian!2026",
+    idNumber: "LIB-2026-0001",
+    department: "Library Services",
+    course: "Library Services",
+    envKeyHint: "INITIAL_LIBRARIAN_PASSWORD",
   },
   {
     name: "Joseph Tan",
     email: "joseph.tan@stiwnu.edu.ph",
     role: "Librarian",
-    password: "BookHiveLibrarian!2026",
+    envPassword: process.env.INITIAL_LIBRARIAN_PASSWORD || process.env.INITIAL_STAFF_PASSWORD || "",
+    devPassword: "BookHiveLibrarian!2026",
     idNumber: "LIB-2026-002",
     department: "Library",
     course: "Library Services",
+    envKeyHint: "INITIAL_LIBRARIAN_PASSWORD",
   },
 ];
 
@@ -95,7 +123,7 @@ async function run() {
     // 2. Seed initial admin and librarian users (unless --schema-only is specified)
     if (!schemaOnly) {
       console.log("[Step 2/2] Seeding initial administrative accounts...");
-      for (const cred of DEV_CREDENTIALS) {
+      for (const cred of STAFF_ACCOUNTS) {
         // Check by both email and id_number to respect unique constraints
         const checkRes = await client.query(
           "SELECT id, email, id_number, role FROM users WHERE email = $1 OR id_number = $2",
@@ -103,7 +131,18 @@ async function run() {
         );
 
         if (checkRes.rows.length === 0) {
-          const passwordHash = await bcrypt.hash(cred.password, 10);
+          const passwordToUse = isProductionOrRemote
+            ? cred.envPassword.trim()
+            : (cred.envPassword.trim() || cred.devPassword);
+
+          if (!passwordToUse) {
+            console.log(
+              `  ! Skipping ${cred.role} (${cred.email}) on remote/production database: set ${cred.envKeyHint} (or INITIAL_STAFF_PASSWORD) to seed with a secure password.`
+            );
+            continue;
+          }
+
+          const passwordHash = await bcrypt.hash(passwordToUse, 10);
           const query = `
             INSERT INTO users (name, id_number, email, password_hash, role, department, course, status)
             VALUES ($1, $2, $3, $4, $5, $6, $7, 'Active')

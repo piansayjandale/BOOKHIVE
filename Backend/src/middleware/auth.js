@@ -11,8 +11,8 @@ export async function authenticateToken(req, res, next) {
     return res.status(401).json({ message: "Missing authorization token." });
   }
 
-  // Gracefully authenticate mock dev tokens in development
-  if (token.startsWith("mock-jwt-")) {
+  // Gracefully authenticate mock dev tokens in development only
+  if (process.env.NODE_ENV !== "production" && token.startsWith("mock-jwt-")) {
     const isLibrarian = token.includes("librarian");
     const isAdmin = token.includes("admin") && !token.includes("super");
     const isSuperAdmin = token.includes("super");
@@ -27,13 +27,17 @@ export async function authenticateToken(req, res, next) {
   }
 
   try {
-    const possibleSecrets = [
-      env.jwtSecret,
-      process.env.BOOKHIVE_JWT_SECRET,
-      "development_jwt_secret_key_2026",
-      "replace_me",
-      "bookhive-dev-secret-change-me",
-    ].filter(Boolean);
+    const possibleSecrets = (
+      process.env.NODE_ENV === "production"
+        ? [env.jwtSecret, process.env.BOOKHIVE_JWT_SECRET]
+        : [
+            env.jwtSecret,
+            process.env.BOOKHIVE_JWT_SECRET,
+            "development_jwt_secret_key_2026",
+            "replace_me",
+            "bookhive-dev-secret-change-me",
+          ]
+    ).filter(Boolean);
 
     let decoded = null;
     for (const secret of possibleSecrets) {
@@ -64,14 +68,7 @@ export async function authenticateToken(req, res, next) {
             }
           }
 
-          const isDevMock = process.env.NODE_ENV !== "production" || 
-                            (typeof decoded.sub === "string" && (
-                              decoded.sub.startsWith("user-") || 
-                              decoded.sub.startsWith("super-") || 
-                              decoded.sub.startsWith("LIB-") || 
-                              decoded.sub.startsWith("ADM-") || 
-                              decoded.sub.startsWith("SUP-")
-                            ));
+          const isDevMock = process.env.NODE_ENV !== "production";
           if (!isDevMock) {
             return res.status(401).json({ message: "User account no longer exists. Please log in again." });
           }
@@ -101,8 +98,8 @@ export async function optionalAuthenticateToken(req, res, next) {
     return next();
   }
 
-  // Gracefully authenticate mock dev tokens in development
-  if (token.startsWith("mock-jwt-")) {
+  // Gracefully authenticate mock dev tokens in development only
+  if (process.env.NODE_ENV !== "production" && token.startsWith("mock-jwt-")) {
     const isLibrarian = token.includes("librarian");
     const isAdmin = token.includes("admin") && !token.includes("super");
     const isSuperAdmin = token.includes("super");
@@ -117,13 +114,17 @@ export async function optionalAuthenticateToken(req, res, next) {
   }
 
   try {
-    const possibleSecrets = [
-      env.jwtSecret,
-      process.env.BOOKHIVE_JWT_SECRET,
-      "development_jwt_secret_key_2026",
-      "replace_me",
-      "bookhive-dev-secret-change-me",
-    ].filter(Boolean);
+    const possibleSecrets = (
+      process.env.NODE_ENV === "production"
+        ? [env.jwtSecret, process.env.BOOKHIVE_JWT_SECRET]
+        : [
+            env.jwtSecret,
+            process.env.BOOKHIVE_JWT_SECRET,
+            "development_jwt_secret_key_2026",
+            "replace_me",
+            "bookhive-dev-secret-change-me",
+          ]
+    ).filter(Boolean);
 
     let decoded = null;
     for (const secret of possibleSecrets) {

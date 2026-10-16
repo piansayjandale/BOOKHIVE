@@ -154,6 +154,74 @@ async function migrate() {
     `);
     console.log("✓ Verified table: digitized_books (Librarian mobile intake & scanner queue)");
 
+    await client.query(`
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'bookhive';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS source_book_id TEXT;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS publication_date TEXT DEFAULT '';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS series TEXT DEFAULT '';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS genres TEXT DEFAULT '';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS language TEXT DEFAULT 'English';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS publisher TEXT DEFAULT '';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS pages INTEGER DEFAULT 0;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS rating REAL DEFAULT 0;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS num_ratings INTEGER DEFAULT 0;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS liked_percent REAL DEFAULT 0;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS cover_img TEXT DEFAULT '';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS bbe_score INTEGER DEFAULT 0;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS bbe_votes INTEGER DEFAULT 0;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS ai_score INTEGER DEFAULT 70;
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS volume TEXT DEFAULT 'Vol. 1';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS edition TEXT DEFAULT '1st Edition';
+      ALTER TABLE books ADD COLUMN IF NOT EXISTS accession_number TEXT DEFAULT '';
+
+      UPDATE books
+      SET publication_date = TO_CHAR(published_date, 'YYYY-MM-DD')
+      WHERE (publication_date IS NULL OR publication_date = '')
+        AND published_date IS NOT NULL;
+
+      CREATE INDEX IF NOT EXISTS idx_books_source ON books(source);
+      CREATE INDEX IF NOT EXISTS idx_books_borrow_count ON books(borrow_count DESC);
+    `);
+    console.log("✓ Verified columns & indexes: books (18 extended catalog & AI search columns)");
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS admin_account_users (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        id_number TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL,
+        department TEXT NOT NULL,
+        course TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Active',
+        last_active TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_account_profiles (
+        user_id TEXT PRIMARY KEY REFERENCES admin_account_users(id) ON DELETE CASCADE,
+        phone TEXT NOT NULL DEFAULT '',
+        bio TEXT NOT NULL DEFAULT '',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS admin_auth_logs (
+        id TEXT PRIMARY KEY,
+        actor TEXT NOT NULL,
+        message TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_admin_account_users_role ON admin_account_users(role);
+      CREATE INDEX IF NOT EXISTS idx_admin_account_users_last_active ON admin_account_users(last_active DESC);
+      CREATE INDEX IF NOT EXISTS idx_admin_auth_logs_created_at ON admin_auth_logs(created_at DESC);
+    `);
+    console.log("✓ Verified tables: admin_account_users, admin_account_profiles, admin_auth_logs");
+
     console.log("\n==================================================");
     console.log(" All migrations completed successfully!");
     console.log("==================================================");

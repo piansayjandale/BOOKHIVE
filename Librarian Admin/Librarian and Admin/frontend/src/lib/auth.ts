@@ -7,7 +7,7 @@ export const SESSION_COOKIE = "bookhive_access_token";
 const JWT_SECRET =
   process.env.BOOKHIVE_JWT_SECRET ??
   process.env.JWT_SECRET ??
-  "bookhive-dev-secret-change-me";
+  (process.env.NODE_ENV === "production" ? "" : "bookhive-dev-secret-change-me");
 const SESSION_DURATION_SECONDS = 60 * 60 * 8;
 
 interface TokenPayload extends SessionUser {
