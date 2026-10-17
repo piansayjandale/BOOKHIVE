@@ -56,6 +56,7 @@ export const MaintenanceModal: React.FC = () => {
   const resolveLatestApkUrl = (url?: string, fallback = LATEST_EAS_APK) => {
     if (
       !url ||
+      url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
       url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
       url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU")
     ) {

@@ -96,6 +96,7 @@ export function SuperAdminSettingsPage() {
         }
         if (
           settingsRes.settings.latestApkUrl &&
+          !settingsRes.settings.latestApkUrl.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") &&
           !settingsRes.settings.latestApkUrl.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") &&
           !settingsRes.settings.latestApkUrl.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU")
         ) {

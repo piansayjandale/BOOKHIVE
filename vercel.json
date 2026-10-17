@@ -1,10 +1,18 @@
 {
   "version": 2,
-  "rewrites": [
+  "redirects": [
     {
-      "source": "/downloads/(.*)",
-      "destination": "/downloads/$1"
+      "source": "/downloads/bookhive-release.apk",
+      "destination": "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
+      "permanent": false
     },
+    {
+      "source": "/downloads/app-release.apk",
+      "destination": "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
     {
       "source": "/(.*)",
       "destination": "/api/index.js"

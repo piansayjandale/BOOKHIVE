@@ -46,9 +46,15 @@ const nextConfig: NextConfig = {
     ];
   },
   async redirects() {
-    const apkUrl =
-      process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL ||
+    const latestEasApk =
       "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+    const envApk = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL;
+    const isStaleApk =
+      !envApk ||
+      envApk.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
+      envApk.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
+      envApk.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
+    const apkUrl = isStaleApk ? latestEasApk : envApk;
     return [
       {
         source: "/mobile",
@@ -57,6 +63,11 @@ const nextConfig: NextConfig = {
       },
       {
         source: "/downloads/bookhive-release.apk",
+        destination: apkUrl,
+        permanent: false,
+      },
+      {
+        source: "/downloads/app-release.apk",
         destination: apkUrl,
         permanent: false,
       },
