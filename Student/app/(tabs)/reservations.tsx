@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,9 @@ export default function ReservationsScreen() {
   const { isDarkMode, theme } = useThemeColors();
   
   const [activeTab, setActiveTab] = useState<'card' | 'reserved'>('card');
+  const outerScrollRef = useRef<ScrollView>(null);
+  const [outerViewportHeight, setOuterViewportHeight] = useState(0);
+  const [outerContentHeight, setOuterContentHeight] = useState(0);
   const [showQrModal, setShowQrModal] = useState(false);
   const [activeReservations, setActiveReservations] = useState<ReservationBook[]>(
     getUpcomingReservations()
@@ -304,10 +307,20 @@ export default function ReservationsScreen() {
       </View>
 
       <ScrollView
+        ref={outerScrollRef}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
+        bounces={false}
+        overScrollMode="never"
+        scrollEnabled={
+          activeTab === 'card'
+            ? outerViewportHeight > 0 && outerContentHeight > outerViewportHeight + 4
+            : true
+        }
+        onLayout={(e) => setOuterViewportHeight(e.nativeEvent.layout.height)}
+        onContentSizeChange={(_w, h) => setOuterContentHeight(h)}
         contentContainerStyle={{
-          paddingBottom: 120,
+          paddingBottom: activeTab === 'card' ? 16 : 120,
         }}
       >
         {/* SEGMENTED PILL TAB BAR */}
@@ -325,7 +338,10 @@ export default function ReservationsScreen() {
                     },
                   ],
             ]}
-            onPress={() => setActiveTab('card')}
+            onPress={() => {
+              setActiveTab('card');
+              outerScrollRef.current?.scrollTo({ y: 0, animated: false });
+            }}
             activeOpacity={0.8}
           >
             <Text

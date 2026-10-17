@@ -458,8 +458,11 @@ export default function ScannedCardScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+        bounces={false}
+        overScrollMode="never"
         contentContainerStyle={{
-          paddingBottom: 120,
+          paddingBottom: activeTab === 'libraryCard' ? 24 : 120,
         }}
       >
         {loading ? (
