@@ -17,6 +17,9 @@
     "db:cloud:mysql": "node seed-cloud-db.js",
     "db:seed:librarian": "node seed-librarian.js",
     "mobile:build:apk": "npm --prefix Student run build:apk",
+    "mobile:build:ios": "npm --prefix Student run build:ios",
+    "mobile:build:ios:sim": "npm --prefix Student run build:ios:sim",
+    "mobile:build:ios:prod": "npm --prefix Student run build:ios:prod",
     "expo:login": "cd Student && npx expo login",
     "expo:whoami": "cd Student && npx expo whoami",
     "expo:logout": "cd Student && npx expo logout"

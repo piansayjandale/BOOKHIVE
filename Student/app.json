@@ -14,6 +14,18 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "BookHive requires camera access to scan student ID cards and book barcodes."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BookHive requires access to your photos to upload profile and ID verification pictures."
+        }
+      ],
       "./plugins/with-custom-strings.js",
       "./plugins/with-network-security-config.js",
       "expo-status-bar"
@@ -35,6 +47,16 @@
         "INTERNET",
         "ACCESS_NETWORK_STATE"
       ]
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ph.edu.stiwnu.bookhive",
+      "buildNumber": "5",
+      "infoPlist": {
+        "NSCameraUsageDescription": "BookHive requires camera access to scan student ID cards and book barcodes.",
+        "NSPhotoLibraryUsageDescription": "BookHive requires access to your photos to upload profile and ID verification pictures.",
+        "NSPhotoLibraryAddUsageDescription": "BookHive requires permission to save library cards or receipts to your photo library."
+      }
     },
     "web": {
       "bundler": "metro",

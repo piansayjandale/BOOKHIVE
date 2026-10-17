@@ -12,6 +12,21 @@
       "android": {
         "buildType": "apk"
       },
+      "ios": {
+        "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
+      }
+    },
+    "preview-device": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "ios": {
+        "distribution": "internal"
+      },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
       }
@@ -19,6 +34,9 @@
     "production": {
       "android": {
         "buildType": "apk"
+      },
+      "ios": {
+        "distribution": "store"
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
