@@ -16,6 +16,7 @@ class SocketService {
   private announcementListeners: Set<SocketCallback> = new Set();
   private announcementDeletedListeners: Set<SocketCallback> = new Set();
   private settingsListeners: Set<SettingsUpdatedCallback> = new Set();
+  private maintenanceListeners: Set<SocketCallback> = new Set();
   private activeRooms: Set<string> = new Set();
   private isConnected: boolean = false;
   private reconnectTimer: any = null;
@@ -155,6 +156,21 @@ class SocketService {
           this.notifySettingsUpdated(data);
         });
 
+        this.socket.on("system:maintenance", (data: any) => {
+          console.log("[SocketService] Received system:maintenance event:", data);
+          this.notifyMaintenance(data);
+        });
+
+        this.socket.on("maintenance:updated", (data: any) => {
+          console.log("[SocketService] Received maintenance:updated event:", data);
+          this.notifyMaintenance(data);
+        });
+
+        this.socket.on("maintenance:status", (data: any) => {
+          console.log("[SocketService] Received maintenance:status event:", data);
+          this.notifyMaintenance(data);
+        });
+
         this.socket.on("disconnect", () => {
           console.log("[SocketService] Socket disconnected");
           this.isConnected = false;
@@ -248,6 +264,12 @@ class SocketService {
               }
             } else if (eventName === "settings:updated" || eventName === "system:settings") {
               this.notifySettingsUpdated(eventData);
+            } else if (
+              eventName === "system:maintenance" ||
+              eventName === "maintenance:updated" ||
+              eventName === "maintenance:status"
+            ) {
+              this.notifyMaintenance(eventData);
             }
           }
         } catch (e) {
@@ -492,6 +514,24 @@ class SocketService {
         cb(raw);
       } catch (e) {
         console.warn("[SocketService] Settings listener error:", e);
+      }
+    });
+  }
+
+  public subscribeToMaintenance(callback: SocketCallback) {
+    this.maintenanceListeners.add(callback);
+    return () => {
+      this.maintenanceListeners.delete(callback);
+    };
+  }
+
+  public notifyMaintenance(data: any) {
+    const payload = data?.maintenance || data;
+    this.maintenanceListeners.forEach((cb) => {
+      try {
+        cb(payload);
+      } catch (e) {
+        console.warn("[SocketService] Maintenance listener error:", e);
       }
     });
   }

@@ -328,6 +328,12 @@ export interface SuperAdminSettingsPayload {
     emailNotifications: boolean;
     allowAdminTransactionControl: boolean;
     aiStrictMode: boolean;
+    isMaintenanceMode?: boolean;
+    maintenanceTitle?: string;
+    maintenanceMessage?: string;
+    maintenanceUntil?: string | null;
+    minAppVersion?: string;
+    latestApkUrl?: string;
   };
   institutionalSync: {
     provider: string;

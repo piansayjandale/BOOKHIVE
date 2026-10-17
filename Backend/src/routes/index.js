@@ -8,6 +8,7 @@ import { superAdminRouter } from "./super-admin.routes.js";
 import { adminModel } from "../models/admin.model.js";
 import { adminController } from "../controllers/admin.controller.js";
 import { studentController } from "../controllers/student.controller.js";
+import { superAdminController } from "../controllers/super-admin.controller.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { optionalAuthenticateToken } from "../middleware/auth.js";
 
@@ -60,6 +61,10 @@ apiRouter.get("/digitized-books", optionalAuthenticateToken, asyncHandler(adminC
 apiRouter.post("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.addDigitizedBook));
 apiRouter.post("/digitized-books/:id/approve", optionalAuthenticateToken, asyncHandler(adminController.approveDigitizedBook));
 apiRouter.delete("/digitized-books/:id", optionalAuthenticateToken, asyncHandler(adminController.deleteDigitizedBook));
+
+// Remote System Maintenance Mode Status (Public for Mobile App & Web)
+apiRouter.get("/system/maintenance", asyncHandler(superAdminController.getMaintenance));
+apiRouter.get("/maintenance", asyncHandler(superAdminController.getMaintenance));
 
 
 

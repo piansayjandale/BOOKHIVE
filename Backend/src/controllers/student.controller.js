@@ -406,6 +406,12 @@ export const studentController = {
         emailNotifications: row.email_notifications ?? true,
         allowAdminTransactionControl: row.allow_admin_transaction_control ?? false,
         aiStrictMode: row.ai_strict_mode ?? true,
+        isMaintenanceMode: Boolean(row.is_maintenance_mode ?? false),
+        maintenanceTitle: row.maintenance_title || "System Maintenance & Update",
+        maintenanceMessage: row.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
+        maintenanceUntil: row.maintenance_until || null,
+        minAppVersion: row.min_app_version || "1.0.2",
+        latestApkUrl: row.latest_apk_url || "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
       };
       return res.json({ settings });
     } catch (err) {
@@ -415,6 +421,12 @@ export const studentController = {
           borrowLimit: 5,
           borrowDurationDays: 7,
           theme: "dark",
+          isMaintenanceMode: false,
+          maintenanceTitle: "System Maintenance & Update",
+          maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates.",
+          maintenanceUntil: null,
+          minAppVersion: "1.0.2",
+          latestApkUrl: "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
         },
       });
     }

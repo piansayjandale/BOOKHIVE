@@ -1,6 +1,7 @@
 import { Router } from "express";
 
 import { adminController } from "../controllers/admin.controller.js";
+import { superAdminController } from "../controllers/super-admin.controller.js";
 import { authenticateToken, requireAdmin, requireStaff } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/async-handler.js";
 
@@ -40,6 +41,8 @@ adminRouter.delete("/announcements/:id", requireAdmin, asyncHandler(adminControl
 // Settings
 adminRouter.get("/settings", asyncHandler(adminController.getSettings));
 adminRouter.patch("/settings", asyncHandler(adminController.updateSettings));
+adminRouter.get("/maintenance", asyncHandler(superAdminController.getMaintenance));
+adminRouter.post("/maintenance", requireAdmin, asyncHandler(superAdminController.updateMaintenance));
 
 // Reports
 adminRouter.get("/reports", asyncHandler(adminController.getReports));

@@ -48,7 +48,7 @@ const nextConfig: NextConfig = {
   async redirects() {
     const apkUrl =
       process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL ||
-      "https://expo.dev/artifacts/eas/BLWrA5nlFeebRjh0aiuPcKl2EJQ4msEWu-pbDiSlGzM.apk";
+      "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk";
     return [
       {
         source: "/mobile",

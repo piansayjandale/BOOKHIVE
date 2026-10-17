@@ -3,6 +3,7 @@ import { Stack } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider } from "../data/AuthContext";
 import { useThemeColors } from "../hooks/useThemeColors";
+import { MaintenanceModal } from "../components/MaintenanceModal";
 
 function RootStack() {
   const { theme } = useThemeColors();
@@ -55,6 +56,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <RootStack />
+        <MaintenanceModal />
       </AuthProvider>
     </SafeAreaProvider>
   );

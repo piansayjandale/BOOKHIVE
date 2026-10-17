@@ -1,7 +1,7 @@
 import { superAdminModel } from "../models/super-admin.model.js";
 import { adminModel } from "../models/admin.model.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
-import { emitSettingsUpdated } from "../socket.js";
+import { emitSettingsUpdated, emitMaintenanceUpdated } from "../socket.js";
 
 export const superAdminController = {
   // 1. Dashboard Vitals & Infrastructure Overview
@@ -313,5 +313,52 @@ export const superAdminController = {
     });
 
     return res.json(result);
+  },
+
+  // 9. Remote Maintenance Mode & Mobile App Update
+  async getMaintenance(req, res) {
+    const state = await superAdminModel.getMaintenanceState();
+    return res.json(state);
+  },
+
+  async updateMaintenance(req, res) {
+    const { inMaintenance, title, message, durationHours, durationMinutes, until, minVersion, latestApkUrl } = req.body;
+    let targetUntil = until ? new Date(until).toISOString() : null;
+
+    if (inMaintenance && !targetUntil) {
+      const minutes = (Number(durationHours || 0) * 60) + Number(durationMinutes || (durationHours ? 0 : 120)); // default 2 hours if not specified
+      targetUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    } else if (!inMaintenance) {
+      targetUntil = null;
+    }
+
+    const payload = {
+      isMaintenanceMode: Boolean(inMaintenance),
+    };
+    if (title !== undefined) payload.maintenanceTitle = title;
+    if (message !== undefined) payload.maintenanceMessage = message;
+    if (targetUntil !== undefined) payload.maintenanceUntil = targetUntil;
+    if (minVersion !== undefined) payload.minAppVersion = minVersion;
+    if (latestApkUrl !== undefined) payload.latestApkUrl = latestApkUrl;
+
+    await superAdminModel.updateSettings(payload);
+    const state = await superAdminModel.getMaintenanceState();
+
+    // Broadcast to all active connected apps
+    emitMaintenanceUpdated(state);
+    emitSettingsUpdated(payload);
+
+    const actor = req.user?.name || "Super Admin";
+    await adminModel.addHistoryLog({
+      actor: `Super Admin ${actor}`,
+      action: inMaintenance ? "Enabled Remote Maintenance Mode" : "Disabled Maintenance Mode",
+      target: "System Infrastructure",
+      module: "Settings",
+      detail: inMaintenance
+        ? `Activated maintenance lock until ${targetUntil || 'unspecified'}. Target app version: ${state.minVersion}.`
+        : "Disabled maintenance mode. Mobile apps unlocked and normal operation resumed.",
+    });
+
+    return res.json({ success: true, maintenance: state });
   },
 };

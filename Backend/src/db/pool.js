@@ -98,8 +98,70 @@ function getOrCreatePool() {
 if (dbConfig.hasExplicitConfig || process.env.DATABASE_URL) {
   try {
     getOrCreatePool();
+    setTimeout(() => {
+      runAutoMigrations().catch((e) => console.warn("[Backend DB] Auto-migration warning:", e.message));
+    }, 1500);
   } catch (initErr) {
     console.warn("[Backend DB] Initial connection notice:", initErr.message);
+  }
+}
+
+export async function runAutoMigrations() {
+  try {
+    const p = getOrCreatePool();
+    if (!p) return;
+    if (dbConfig.clientType === "mysql") {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS system_settings (
+          id INT PRIMARY KEY DEFAULT 1,
+          theme VARCHAR(50) NOT NULL DEFAULT 'dark',
+          borrow_limit INT NOT NULL DEFAULT 5,
+          borrow_duration_days INT NOT NULL DEFAULT 7,
+          storage_used_percent INT NOT NULL DEFAULT 0,
+          indexing_status VARCHAR(50) NOT NULL DEFAULT 'Healthy',
+          ai_engine VARCHAR(100) NOT NULL DEFAULT 'BookHive AI',
+          notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          email_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+          allow_admin_transaction_control BOOLEAN NOT NULL DEFAULT FALSE,
+          ai_strict_mode BOOLEAN NOT NULL DEFAULT TRUE,
+          is_maintenance_mode BOOLEAN NOT NULL DEFAULT FALSE,
+          maintenance_title VARCHAR(255) NOT NULL DEFAULT 'System Maintenance & Update',
+          maintenance_message TEXT,
+          maintenance_until TIMESTAMP NULL,
+          min_app_version VARCHAR(50) NOT NULL DEFAULT '1.0.2',
+          latest_apk_url TEXT,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        );
+      `);
+    } else {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS system_settings (
+          id INTEGER PRIMARY KEY DEFAULT 1,
+          theme TEXT NOT NULL DEFAULT 'dark',
+          borrow_limit INTEGER NOT NULL DEFAULT 5,
+          borrow_duration_days INTEGER NOT NULL DEFAULT 7,
+          storage_used_percent INTEGER NOT NULL DEFAULT 0,
+          indexing_status TEXT NOT NULL DEFAULT 'Healthy',
+          ai_engine TEXT NOT NULL DEFAULT 'BookHive AI',
+          notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          email_notifications BOOLEAN NOT NULL DEFAULT TRUE,
+          allow_admin_transaction_control BOOLEAN NOT NULL DEFAULT FALSE,
+          ai_strict_mode BOOLEAN NOT NULL DEFAULT TRUE,
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT system_settings_singleton CHECK (id = 1)
+        );
+        INSERT INTO system_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS is_maintenance_mode BOOLEAN NOT NULL DEFAULT FALSE;
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_title TEXT NOT NULL DEFAULT 'System Maintenance & Update';
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_message TEXT NOT NULL DEFAULT 'BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.';
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_until TIMESTAMPTZ DEFAULT NULL;
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS min_app_version TEXT NOT NULL DEFAULT '1.0.2';
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS latest_apk_url TEXT NOT NULL DEFAULT 'https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk';
+      `);
+    }
+    console.log("[Backend DB] System settings & maintenance mode verified.");
+  } catch (err) {
+    console.warn("[Backend DB] Auto-migrations notice:", err.message);
   }
 }
 

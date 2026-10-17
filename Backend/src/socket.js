@@ -327,5 +327,11 @@ export function emitSettingsUpdated(settings) {
   }
 }
 
-
-
+export function emitMaintenanceUpdated(maintenanceState) {
+  if (io) {
+    console.log("[Socket.io Broadcast] Emitting system:maintenance:", maintenanceState);
+    io.emit("system:maintenance", maintenanceState);
+    io.emit("maintenance:updated", maintenanceState);
+    io.emit("maintenance:status", maintenanceState);
+  }
+}

@@ -2,18 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
+  AlertOctagon,
   CheckCircle2,
+  Clock,
   Database,
   Download,
   FolderSync,
   History,
+  Lock,
   Play,
+  Radio,
   RefreshCw,
   RotateCcw,
   Save,
   Server,
   Settings2,
   ShieldCheck,
+  Smartphone,
+  Unlock,
   Zap,
 } from "lucide-react";
 
@@ -41,6 +47,21 @@ export function SuperAdminSettingsPage() {
   const [allowAdminTransactionControl, setAllowAdminTransactionControl] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
+  // Remote Maintenance Mode State
+  const [isMaintenanceMode, setIsMaintenanceMode] = useState(false);
+  const [maintenanceTitle, setMaintenanceTitle] = useState("System Maintenance & Update");
+  const [maintenanceMessage, setMaintenanceMessage] = useState(
+    "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused."
+  );
+  const [maintenanceUntil, setMaintenanceUntil] = useState<string | null>(null);
+  const [maintenanceDurationHours, setMaintenanceDurationHours] = useState(2);
+  const [minAppVersion, setMinAppVersion] = useState("1.0.2");
+  const [latestApkUrl, setLatestApkUrl] = useState(
+    "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk"
+  );
+  const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
+  const [remainingTimeText, setRemainingTimeText] = useState("");
+
   const loadSettingsAndBackups = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -58,6 +79,12 @@ export function SuperAdminSettingsPage() {
         setAiStrictMode(settingsRes.settings.aiStrictMode);
         setAllowAdminTransactionControl(settingsRes.settings.allowAdminTransactionControl);
         setNotificationsEnabled(settingsRes.settings.notificationsEnabled);
+        setIsMaintenanceMode(Boolean(settingsRes.settings.isMaintenanceMode));
+        if (settingsRes.settings.maintenanceTitle) setMaintenanceTitle(settingsRes.settings.maintenanceTitle);
+        if (settingsRes.settings.maintenanceMessage) setMaintenanceMessage(settingsRes.settings.maintenanceMessage);
+        if (settingsRes.settings.maintenanceUntil) setMaintenanceUntil(settingsRes.settings.maintenanceUntil);
+        if (settingsRes.settings.minAppVersion) setMinAppVersion(settingsRes.settings.minAppVersion);
+        if (settingsRes.settings.latestApkUrl) setLatestApkUrl(settingsRes.settings.latestApkUrl);
       }
     } catch (err) {
       console.warn("Failed to load settings:", err);
@@ -69,6 +96,73 @@ export function SuperAdminSettingsPage() {
   useEffect(() => {
     void loadSettingsAndBackups();
   }, [loadSettingsAndBackups]);
+
+  // Live countdown timer for active maintenance
+  useEffect(() => {
+    if (!isMaintenanceMode || !maintenanceUntil) {
+      setRemainingTimeText("");
+      return;
+    }
+
+    const updateTimer = () => {
+      const diffMs = new Date(maintenanceUntil).getTime() - Date.now();
+      if (diffMs <= 0) {
+        setRemainingTimeText("Maintenance concluding...");
+        void loadSettingsAndBackups();
+        return;
+      }
+      const totalSec = Math.floor(diffMs / 1000);
+      const h = Math.floor(totalSec / 3600);
+      const m = Math.floor((totalSec % 3600) / 60);
+      const s = totalSec % 60;
+      setRemainingTimeText(
+        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+      );
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 1000);
+    return () => clearInterval(interval);
+  }, [isMaintenanceMode, maintenanceUntil, loadSettingsAndBackups]);
+
+  // Toggle Remote Maintenance Mode
+  async function handleToggleMaintenance() {
+    try {
+      setIsTogglingMaintenance(true);
+      const nextState = !isMaintenanceMode;
+      const res = await requestJson<{ success: boolean; maintenance: any }>("/api/super-admin/maintenance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          inMaintenance: nextState,
+          title: maintenanceTitle,
+          message: maintenanceMessage,
+          durationHours: maintenanceDurationHours,
+          minVersion: minAppVersion,
+          latestApkUrl: latestApkUrl,
+        }),
+      });
+
+      if (res?.maintenance) {
+        setIsMaintenanceMode(Boolean(res.maintenance.inMaintenance));
+        setMaintenanceUntil(res.maintenance.until);
+      } else {
+        setIsMaintenanceMode(nextState);
+      }
+
+      notify(
+        nextState
+          ? `Remote maintenance lock activated for ${maintenanceDurationHours}h. All mobile apps locked.`
+          : "Remote maintenance mode deactivated. Mobile applications unlocked.",
+        nextState ? "info" : "success"
+      );
+      void loadSettingsAndBackups();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : "Failed to toggle maintenance mode.", "error");
+    } finally {
+      setIsTogglingMaintenance(false);
+    }
+  }
 
   // Save Settings
   async function handleSaveSettings(e: React.FormEvent) {
@@ -155,6 +249,177 @@ export function SuperAdminSettingsPage() {
         title="Global System Settings & Disaster Recovery"
         description="Global environment configurations, STI WNU institutional directory sync schedules, and automated database snapshot controls."
       />
+
+      {/* ── Remote Maintenance Mode & Mobile Update Card ─────────── */}
+      <div
+        className={`rounded-2xl border p-6 shadow-2xl space-y-6 transition-all ${
+          isMaintenanceMode
+            ? "border-amber-500/40 bg-gradient-to-br from-[#1c1809] to-[#101D2D] ring-1 ring-amber-500/20"
+            : "border-white/10 bg-[#101D2D]"
+        }`}
+      >
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/8 pb-5">
+          <div className="flex items-center gap-3">
+            <div
+              className={`flex h-11 w-11 items-center justify-center rounded-2xl ${
+                isMaintenanceMode
+                  ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                  : "bg-sky-500/15 text-sky-400 border border-sky-500/20"
+              }`}
+            >
+              {isMaintenanceMode ? <AlertOctagon className="h-6 w-6 animate-pulse" /> : <Radio className="h-6 w-6" />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-lg font-black text-white tracking-tight">
+                  Remote Maintenance Mode & Mobile App Update
+                </h3>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Remotely lock mobile apps with an un-dismissible countdown timer and dispatch the latest APK update link.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {isMaintenanceMode ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-amber-500/15 border border-amber-500/40 px-3.5 py-1 text-xs font-bold text-amber-300">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                MAINTENANCE ACTIVE ({remainingTimeText || "In Progress"})
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-3.5 py-1 text-xs font-bold text-emerald-400">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                SYSTEM LIVE · CLIENTS OPERATIONAL
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Live Banner when active */}
+        {isMaintenanceMode && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+            <div className="flex items-center justify-between text-amber-300 font-bold text-xs">
+              <span className="flex items-center gap-2">
+                <Clock className="h-4 w-4" />
+                Scheduled Maintenance Lockdown in Effect
+              </span>
+              <span className="font-mono text-sm bg-black/40 px-2.5 py-1 rounded-md border border-amber-500/30">
+                Time Remaining: {remainingTimeText || "Calculating..."}
+              </span>
+            </div>
+            <p className="text-slate-300 text-[11px] leading-relaxed">
+              Mobile phones are restricted to the maintenance screen. Students see your message and can tap to download
+              and install APK update v{minAppVersion}.
+              {maintenanceUntil && (
+                <span className="block text-amber-200/90 font-mono mt-1">
+                  Estimated Completion: {formatDateTime(maintenanceUntil)}
+                </span>
+              )}
+            </p>
+          </div>
+        )}
+
+        {/* Configuration Fields */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+          <div>
+            <FieldLabel>Duration Preset</FieldLabel>
+            <div className="grid grid-cols-4 gap-1.5 mt-1">
+              {[1, 2, 4, 8].map((hrs) => (
+                <button
+                  key={hrs}
+                  type="button"
+                  disabled={isMaintenanceMode}
+                  onClick={() => setMaintenanceDurationHours(hrs)}
+                  className={`py-2 text-xs font-bold rounded-lg border transition ${
+                    maintenanceDurationHours === hrs
+                      ? "bg-[#FCD400] text-slate-950 border-[#FCD400]"
+                      : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
+                  } disabled:opacity-50`}
+                >
+                  {hrs}h
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <FieldLabel>Target Min App Version</FieldLabel>
+            <input
+              type="text"
+              value={minAppVersion}
+              onChange={(e) => setMinAppVersion(e.target.value)}
+              placeholder="e.g. 1.0.2"
+              className="glass-input w-full p-2.5 mt-1 text-xs"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <FieldLabel>Latest APK Artifact URL (One-Tap Download Link)</FieldLabel>
+            <input
+              type="url"
+              value={latestApkUrl}
+              onChange={(e) => setLatestApkUrl(e.target.value)}
+              placeholder="https://expo.dev/artifacts/eas/...apk"
+              className="glass-input w-full p-2.5 mt-1 text-xs font-mono"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <FieldLabel>Maintenance Notice Title</FieldLabel>
+            <input
+              type="text"
+              value={maintenanceTitle}
+              onChange={(e) => setMaintenanceTitle(e.target.value)}
+              className="glass-input w-full p-2.5 mt-1 text-xs"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <FieldLabel>Maintenance Notice Message (Broadcast to Phones)</FieldLabel>
+            <input
+              type="text"
+              value={maintenanceMessage}
+              onChange={(e) => setMaintenanceMessage(e.target.value)}
+              className="glass-input w-full p-2.5 mt-1 text-xs"
+            />
+          </div>
+        </div>
+
+        {/* Action Toggle Button */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-white/8">
+          <span className="text-[11px] text-slate-400">
+            {isMaintenanceMode
+              ? "Ending maintenance will immediately broadcast unlock signals to all connected student phones."
+              : `Activating will immediately broadcast a ${maintenanceDurationHours}-hour lockdown with update download link.`}
+          </span>
+
+          <button
+            type="button"
+            disabled={isTogglingMaintenance}
+            onClick={() => void handleToggleMaintenance()}
+            className={`flex items-center justify-center gap-2 rounded-xl px-6 py-2.5 text-xs font-black transition shadow-lg disabled:opacity-50 ${
+              isMaintenanceMode
+                ? "bg-emerald-500 text-slate-950 hover:bg-emerald-400 shadow-emerald-500/20"
+                : "bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-amber-500/20"
+            }`}
+          >
+            {isMaintenanceMode ? (
+              <>
+                <Unlock className="h-4 w-4" />
+                {isTogglingMaintenance ? "Unlocking Mobile Apps..." : "End Maintenance & Unlock Mobile Apps Now"}
+              </>
+            ) : (
+              <>
+                <Lock className="h-4 w-4" />
+                {isTogglingMaintenance
+                  ? "Broadcasting Lock..."
+                  : `Activate ${maintenanceDurationHours}h Maintenance Lock & Broadcast to Apps`}
+              </>
+            )}
+          </button>
+        </div>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ── Section 1: Global Constants Form ──────────────────────── */}

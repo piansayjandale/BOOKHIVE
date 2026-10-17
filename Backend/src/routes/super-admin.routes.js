@@ -43,3 +43,8 @@ superAdminRouter.post("/settings/sync", asyncHandler(superAdminController.trigge
 superAdminRouter.get("/backups", asyncHandler(superAdminController.listBackups));
 superAdminRouter.post("/backups", asyncHandler(superAdminController.triggerBackup));
 superAdminRouter.post("/backups/restore", asyncHandler(superAdminController.restoreBackup));
+
+// 9. Remote Maintenance Mode & Mobile Update
+superAdminRouter.get("/maintenance", asyncHandler(superAdminController.getMaintenance));
+superAdminRouter.post("/maintenance", asyncHandler(superAdminController.updateMaintenance));
+superAdminRouter.patch("/maintenance", asyncHandler(superAdminController.updateMaintenance));

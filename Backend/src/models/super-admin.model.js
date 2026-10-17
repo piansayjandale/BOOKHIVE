@@ -574,6 +574,12 @@ export const superAdminModel = {
           emailNotifications: settings.email_notifications ?? true,
           allowAdminTransactionControl: settings.allow_admin_transaction_control ?? false,
           aiStrictMode: settings.ai_strict_mode ?? true,
+          isMaintenanceMode: Boolean(settings.is_maintenance_mode ?? false),
+          maintenanceTitle: settings.maintenance_title || "System Maintenance & Update",
+          maintenanceMessage: settings.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
+          maintenanceUntil: settings.maintenance_until || null,
+          minAppVersion: settings.min_app_version || "1.0.2",
+          latestApkUrl: settings.latest_apk_url || "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
         },
         institutionalSync: {
           provider: "STI WNU Active Directory & Academic Ecosystem",
@@ -595,12 +601,60 @@ export const superAdminModel = {
           emailNotifications: true,
           allowAdminTransactionControl: true,
           aiStrictMode: true,
+          isMaintenanceMode: false,
+          maintenanceTitle: "System Maintenance & Update",
+          maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
+          maintenanceUntil: null,
+          minAppVersion: "1.0.2",
+          latestApkUrl: "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
         },
         institutionalSync: {
           provider: "STI WNU Active Directory & Academic Ecosystem",
           autoSyncSchedule: "Daily at 02:00 AM PHT",
           lastSyncLogs: [],
         },
+      };
+    }
+  },
+
+  async getMaintenanceState() {
+    try {
+      const res = await pool.query("SELECT * FROM system_settings WHERE id = 1");
+      const s = res.rows[0] || {};
+      let inMaintenance = Boolean(s.is_maintenance_mode);
+      let until = s.maintenance_until ? new Date(s.maintenance_until).toISOString() : null;
+      let remainingSeconds = 0;
+
+      if (until) {
+        const diffMs = new Date(until).getTime() - Date.now();
+        if (diffMs > 0) {
+          remainingSeconds = Math.max(0, Math.round(diffMs / 1000));
+        } else if (inMaintenance) {
+          // If scheduled maintenance timer elapsed, auto-clear maintenance mode
+          inMaintenance = false;
+          await pool.query("UPDATE system_settings SET is_maintenance_mode = FALSE, updated_at = NOW() WHERE id = 1").catch(() => {});
+        }
+      }
+
+      return {
+        inMaintenance,
+        title: s.maintenance_title || "System Maintenance & Update",
+        message: s.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
+        until,
+        remainingSeconds,
+        minVersion: s.min_app_version || "1.0.2",
+        latestApkUrl: s.latest_apk_url || "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+      };
+    } catch (err) {
+      console.warn("superAdminModel.getMaintenanceState fallback:", err.message);
+      return {
+        inMaintenance: false,
+        title: "System Maintenance & Update",
+        message: "BookHive is currently undergoing scheduled maintenance and updates.",
+        until: null,
+        remainingSeconds: 0,
+        minVersion: "1.0.2",
+        latestApkUrl: "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
       };
     }
   },
@@ -628,6 +682,30 @@ export const superAdminModel = {
     if (data.notificationsEnabled !== undefined) {
       values.push(Boolean(data.notificationsEnabled));
       fields.push(`notifications_enabled = $${values.length}`);
+    }
+    if (data.isMaintenanceMode !== undefined) {
+      values.push(Boolean(data.isMaintenanceMode));
+      fields.push(`is_maintenance_mode = $${values.length}`);
+    }
+    if (data.maintenanceTitle !== undefined) {
+      values.push(String(data.maintenanceTitle).trim());
+      fields.push(`maintenance_title = $${values.length}`);
+    }
+    if (data.maintenanceMessage !== undefined) {
+      values.push(String(data.maintenanceMessage).trim());
+      fields.push(`maintenance_message = $${values.length}`);
+    }
+    if (data.maintenanceUntil !== undefined) {
+      values.push(data.maintenanceUntil ? new Date(data.maintenanceUntil) : null);
+      fields.push(`maintenance_until = $${values.length}`);
+    }
+    if (data.minAppVersion !== undefined) {
+      values.push(String(data.minAppVersion).trim());
+      fields.push(`min_app_version = $${values.length}`);
+    }
+    if (data.latestApkUrl !== undefined) {
+      values.push(String(data.latestApkUrl).trim());
+      fields.push(`latest_apk_url = $${values.length}`);
     }
 
     if (fields.length > 0) {
