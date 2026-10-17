@@ -562,6 +562,15 @@ export const superAdminModel = {
       const settings = res.rows[0] || {};
       const syncLogs = await pool.query("SELECT * FROM institutional_sync_logs ORDER BY synced_at DESC LIMIT 5");
 
+      const latestEasApk = "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+      const isStaleApk =
+        !settings.latest_apk_url ||
+        settings.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
+        settings.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
+      const isStaleVersion =
+        !settings.min_app_version ||
+        ["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(settings.min_app_version).trim());
+
       return {
         settings: {
           theme: settings.theme || "dark",
@@ -578,8 +587,8 @@ export const superAdminModel = {
           maintenanceTitle: settings.maintenance_title || "System Maintenance & Update",
           maintenanceMessage: settings.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
           maintenanceUntil: settings.maintenance_until || null,
-          minAppVersion: settings.min_app_version || "1.0.2",
-          latestApkUrl: settings.latest_apk_url || "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+          minAppVersion: isStaleVersion ? "1.0.4" : settings.min_app_version,
+          latestApkUrl: isStaleApk ? latestEasApk : settings.latest_apk_url,
         },
         institutionalSync: {
           provider: "STI WNU Active Directory & Academic Ecosystem",
@@ -605,8 +614,8 @@ export const superAdminModel = {
           maintenanceTitle: "System Maintenance & Update",
           maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
           maintenanceUntil: null,
-          minAppVersion: "1.0.2",
-          latestApkUrl: "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+          minAppVersion: "1.0.4",
+          latestApkUrl: "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
         },
         institutionalSync: {
           provider: "STI WNU Active Directory & Academic Ecosystem",
@@ -636,14 +645,23 @@ export const superAdminModel = {
         }
       }
 
+      const latestEasApk = "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+      const isStaleApk =
+        !s.latest_apk_url ||
+        s.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
+        s.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
+      const isStaleVersion =
+        !s.min_app_version ||
+        ["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(s.min_app_version).trim());
+
       return {
         inMaintenance,
         title: s.maintenance_title || "System Maintenance & Update",
         message: s.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
         until,
         remainingSeconds,
-        minVersion: s.min_app_version || "1.0.2",
-        latestApkUrl: s.latest_apk_url || "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+        minVersion: isStaleVersion ? "1.0.4" : s.min_app_version,
+        latestApkUrl: isStaleApk ? latestEasApk : s.latest_apk_url,
       };
     } catch (err) {
       console.warn("superAdminModel.getMaintenanceState fallback:", err.message);
@@ -653,8 +671,8 @@ export const superAdminModel = {
         message: "BookHive is currently undergoing scheduled maintenance and updates.",
         until: null,
         remainingSeconds: 0,
-        minVersion: "1.0.2",
-        latestApkUrl: "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+        minVersion: "1.0.4",
+        latestApkUrl: "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
       };
     }
   },

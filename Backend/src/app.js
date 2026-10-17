@@ -62,6 +62,22 @@ export function createApp() {
     return res.status(204).end();
   });
 
+  const LATEST_EAS_APK_URL =
+    process.env.LATEST_APK_URL ||
+    "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+
+  // Redirect placeholder APK files in /downloads to the compiled EAS APK artifact
+  app.get(["/downloads/bookhive-release.apk", "/downloads/app-release.apk"], (req, res, next) => {
+    const requestedFile = path.basename(req.path);
+    const localApkPath = path.join(rootPublicDir, "downloads", requestedFile);
+    try {
+      if (fs.existsSync(localApkPath) && fs.statSync(localApkPath).size > 100 * 1024) {
+        return next();
+      }
+    } catch {}
+    return res.redirect(302, LATEST_EAS_APK_URL);
+  });
+
   // Serve static assets from frontend and root public directories
   if (fs.existsSync(frontendPublicDir)) {
     app.use(express.static(frontendPublicDir, { maxAge: "1d" }));
@@ -122,7 +138,12 @@ export function createApp() {
   app.get(["/download", "/mobile"], (req, res) => {
     const apkFileName = "bookhive-release.apk";
     const ipaFileName = "bookhive-release.ipa";
-    const directApkUrl = "/downloads/" + apkFileName;
+    const localApkPath = path.join(rootPublicDir, "downloads", apkFileName);
+    let hasRealLocalApk = false;
+    try {
+      hasRealLocalApk = fs.existsSync(localApkPath) && fs.statSync(localApkPath).size > 100 * 1024;
+    } catch {}
+    const directApkUrl = hasRealLocalApk ? "/downloads/" + apkFileName : LATEST_EAS_APK_URL;
     const userAgent = req.get("user-agent") || "";
     const isIOS = /iPhone|iPad|iPod/i.test(userAgent);
     const hasIpa = fs.existsSync(path.join(rootPublicDir, "downloads", ipaFileName));
@@ -131,8 +152,7 @@ export function createApp() {
 
     // Check if client explicitly requests direct file download via query parameter
     if (req.query.direct === "true" || req.query.file === "true") {
-      const localApkPath = path.join(rootPublicDir, "downloads", apkFileName);
-      if (fs.existsSync(localApkPath)) {
+      if (hasRealLocalApk) {
         return res.download(localApkPath, apkFileName);
       }
       return res.redirect(directApkUrl);
@@ -147,6 +167,7 @@ export function createApp() {
           android: {
             downloadUrl: directApkUrl,
             filename: apkFileName,
+            version: "1.0.4",
             format: "APK",
             compatibility: "Android 8.0+",
           },

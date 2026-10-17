@@ -88,8 +88,19 @@ export function SuperAdminSettingsPage() {
         if (settingsRes.settings.maintenanceTitle) setMaintenanceTitle(settingsRes.settings.maintenanceTitle);
         if (settingsRes.settings.maintenanceMessage) setMaintenanceMessage(settingsRes.settings.maintenanceMessage);
         if (settingsRes.settings.maintenanceUntil) setMaintenanceUntil(settingsRes.settings.maintenanceUntil);
-        if (settingsRes.settings.minAppVersion) setMinAppVersion(settingsRes.settings.minAppVersion);
-        if (settingsRes.settings.latestApkUrl) setLatestApkUrl(settingsRes.settings.latestApkUrl);
+        if (
+          settingsRes.settings.minAppVersion &&
+          !["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(settingsRes.settings.minAppVersion).trim())
+        ) {
+          setMinAppVersion(settingsRes.settings.minAppVersion);
+        }
+        if (
+          settingsRes.settings.latestApkUrl &&
+          !settingsRes.settings.latestApkUrl.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") &&
+          !settingsRes.settings.latestApkUrl.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU")
+        ) {
+          setLatestApkUrl(settingsRes.settings.latestApkUrl);
+        }
 
         if (inMaint && settingsRes.settings.maintenanceUntil) {
           const diffMs = new Date(settingsRes.settings.maintenanceUntil).getTime() - Date.now();

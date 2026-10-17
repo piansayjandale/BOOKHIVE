@@ -395,6 +395,15 @@ export const studentController = {
     try {
       const { rows } = await pool.query("SELECT * FROM system_settings WHERE id = 1 LIMIT 1");
       const row = rows[0] || {};
+      const latestEasApk = "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+      const isStaleApk =
+        !row.latest_apk_url ||
+        row.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
+        row.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
+      const isStaleVersion =
+        !row.min_app_version ||
+        ["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(row.min_app_version).trim());
+
       const settings = {
         theme: row.theme || "dark",
         borrowLimit: Number(row.borrow_limit || 5),
@@ -410,8 +419,8 @@ export const studentController = {
         maintenanceTitle: row.maintenance_title || "System Maintenance & Update",
         maintenanceMessage: row.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
         maintenanceUntil: row.maintenance_until || null,
-        minAppVersion: row.min_app_version || "1.0.2",
-        latestApkUrl: row.latest_apk_url || "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+        minAppVersion: isStaleVersion ? "1.0.4" : row.min_app_version,
+        latestApkUrl: isStaleApk ? latestEasApk : row.latest_apk_url,
       };
       return res.json({ settings });
     } catch (err) {
@@ -425,8 +434,8 @@ export const studentController = {
           maintenanceTitle: "System Maintenance & Update",
           maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates.",
           maintenanceUntil: null,
-          minAppVersion: "1.0.2",
-          latestApkUrl: "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+          minAppVersion: "1.0.4",
+          latestApkUrl: "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
         },
       });
     }
@@ -1003,14 +1012,31 @@ export const studentController = {
       const totalFine = violations ? violations.reduce((acc, v) => acc + (Number(v.penaltyAmount) || 0), 0) : 0;
 
       const cardRowsHtml = (libraryCard && libraryCard.length > 0)
-        ? libraryCard.map(item => `
-            <tr>
+        ? libraryCard.map(item => {
+            const hl = item.highlightType || 'none';
+            const rowBg = hl === 'green'
+              ? 'background: rgba(74, 222, 128, 0.08);'
+              : hl === 'violet'
+              ? 'background: rgba(168, 85, 247, 0.08);'
+              : hl === 'red'
+              ? 'background: rgba(239, 68, 68, 0.10);'
+              : '';
+            const dueCellStyle = hl === 'green'
+              ? 'background: rgba(74, 222, 128, 0.22); color: #86EFAC; font-weight: 700;'
+              : hl === 'violet'
+              ? 'background: rgba(168, 85, 247, 0.28); color: #D8B4FE; font-weight: 700;'
+              : hl === 'red'
+              ? 'background: rgba(239, 68, 68, 0.28); color: #F87171; font-weight: 700;'
+              : '';
+            return `
+            <tr style="${rowBg}">
               <td>${item.borrowDate || "—"}</td>
-              <td>${item.dueReturnDate || "—"}</td>
+              <td style="${dueCellStyle}">${item.dueReturnDate || "—"}</td>
               <td class="bold-text">${item.bookTitle || "—"}</td>
-              <td><span class="status-pill status-${(item.status || "active").toLowerCase()}">${item.status || "Approved"}</span></td>
+              <td><span class="status-pill status-${(item.status || "active").toLowerCase().replace(/\s+/g, '-')}">${item.status || "Approved"}</span></td>
             </tr>
-          `).join("")
+          `;
+          }).join("")
         : `<tr><td colspan="4" style="text-align: center; color: #64748B; padding: 20px;">No borrow history recorded on this library pass.</td></tr>`;
 
       const violationsHtml = hasViolations
@@ -1044,7 +1070,7 @@ export const studentController = {
             :root {
               --bg: #080F1E;
               --card: #111A2E;
-              --card-inner: #16233B;
+              --card-inner: #162444;
               --border: #24334C;
               --gold: #FFD700;
               --text: #F8FAFC;
@@ -1183,6 +1209,8 @@ export const studentController = {
             /* Table */
             .table-wrap {
               overflow-x: auto;
+              overflow-y: auto;
+              max-height: 410px;
               border: 1px solid var(--border);
               border-radius: 10px;
             }
@@ -1192,7 +1220,10 @@ export const studentController = {
               font-size: 12px;
               text-align: left;
             }
-            th {
+            thead th {
+              position: sticky;
+              top: 0;
+              z-index: 2;
               background: #18253E;
               color: #CBD5E1;
               padding: 10px 8px;
@@ -1218,9 +1249,39 @@ export const studentController = {
               background: rgba(59, 130, 246, 0.15);
               color: #60A5FA;
             }
+            .status-reservation {
+              background: rgba(168, 85, 247, 0.2);
+              color: #D8B4FE;
+            }
             .status-overdue {
               background: rgba(239, 68, 68, 0.15);
               color: #EF4444;
+            }
+            .legend-box {
+              display: flex;
+              flex-wrap: wrap;
+              align-items: center;
+              justify-content: center;
+              gap: 12px;
+              row-gap: 8px;
+              margin-top: 12px;
+              padding: 8px 10px;
+              background: rgba(30, 41, 59, 0.45);
+              border-radius: 10px;
+              border: 1px solid #1E293B;
+              font-size: 11px;
+              color: #CBD5E1;
+              font-weight: 600;
+            }
+            .legend-item {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+            }
+            .legend-dot {
+              width: 9px;
+              height: 9px;
+              border-radius: 50%;
             }
             /* Violations */
             .clear-card {
@@ -1345,6 +1406,11 @@ export const studentController = {
                     ${cardRowsHtml}
                   </tbody>
                 </table>
+              </div>
+              <div class="legend-box">
+                <div class="legend-item"><span class="legend-dot" style="background: #86EFAC;"></span>Green: Borrow (Active)</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #F87171;"></span>Red: Due to Return</div>
+                <div class="legend-item"><span class="legend-dot" style="background: #C084FC;"></span>Violet: Reservation</div>
               </div>
             </div>
 

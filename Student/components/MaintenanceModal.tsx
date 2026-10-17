@@ -50,6 +50,27 @@ export const MaintenanceModal: React.FC = () => {
   const [downloadStarted, setDownloadStarted] = useState<boolean>(false);
   const intervalRef = useRef<any>(null);
 
+  const LATEST_EAS_APK =
+    "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+
+  const resolveLatestApkUrl = (url?: string, fallback = LATEST_EAS_APK) => {
+    if (
+      !url ||
+      url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
+      url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU")
+    ) {
+      return fallback;
+    }
+    return url;
+  };
+
+  const resolveMinVersion = (ver?: string, fallback = "1.0.4") => {
+    if (!ver || ["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(ver).trim())) {
+      return fallback;
+    }
+    return ver;
+  };
+
   // Fetch current maintenance status from backend
   const checkMaintenanceStatus = useCallback(async (showFeedback = false) => {
     try {
@@ -68,8 +89,8 @@ export const MaintenanceModal: React.FC = () => {
           message: data.message || prev.message,
           until: data.until || null,
           remainingSeconds: Number(data.remainingSeconds || 0),
-          minVersion: data.minVersion || prev.minVersion,
-          latestApkUrl: data.latestApkUrl || prev.latestApkUrl,
+          minVersion: resolveMinVersion(data.minVersion, prev.minVersion),
+          latestApkUrl: resolveLatestApkUrl(data.latestApkUrl, prev.latestApkUrl),
         }));
 
         if (data.until) {
@@ -113,8 +134,8 @@ export const MaintenanceModal: React.FC = () => {
             message: data.message || prev.message,
             until: data.until || null,
             remainingSeconds: Number(data.remainingSeconds || 0),
-            minVersion: data.minVersion || prev.minVersion,
-            latestApkUrl: data.latestApkUrl || prev.latestApkUrl,
+            minVersion: resolveMinVersion(data.minVersion, prev.minVersion),
+            latestApkUrl: resolveLatestApkUrl(data.latestApkUrl, prev.latestApkUrl),
           }));
 
           if (data.until) {
@@ -186,9 +207,7 @@ export const MaintenanceModal: React.FC = () => {
 
   // Handle direct download of latest update APK
   const handleDownloadUpdate = async () => {
-    const apkUrl =
-      maintenance.latestApkUrl ||
-      "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk";
+    const apkUrl = resolveLatestApkUrl(maintenance.latestApkUrl, LATEST_EAS_APK);
 
     try {
       setDownloadStarted(true);

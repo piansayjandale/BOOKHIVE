@@ -373,31 +373,86 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
                   <div className="flex-1 px-3 py-2.5">Book Title</div>
                 </div>
 
-                {/* Data Rows */}
-                {loadingTxns ? (
-                  <div className="p-4 text-center text-slate-400 italic">Loading library card records...</div>
-                ) : studentTxns.filter((t) => t.type === "Borrow").length === 0 ? (
-                  <div className="p-4 text-center text-slate-400 italic">No borrow records on library card.</div>
-                ) : (
-                  studentTxns
-                    .filter((t) => t.type === "Borrow")
-                    .map((tx, idx) => (
-                      <div
-                        key={tx.id || idx}
-                        className="flex border-b border-[#24334C] last:border-b-0 hover:bg-white/[0.02]"
-                      >
-                        <div className="w-[28%] px-3 py-2 border-r border-[#24334C] text-slate-300">
-                          {tx.requestedAt ? new Date(tx.requestedAt).toLocaleDateString() : "—"}
-                        </div>
-                        <div className="w-[28%] px-3 py-2 border-r border-[#24334C] text-amber-300 font-medium">
-                          {tx.dueDate ? new Date(tx.dueDate).toLocaleDateString() : (tx.status === "Approved" ? "Active Loan" : "—")}
-                        </div>
-                        <div className="flex-1 px-3 py-2 font-semibold text-white truncate">
-                          {tx.resourceTitle}
-                        </div>
-                      </div>
-                    ))
-                )}
+                {/* Data Rows (Scrollable at 13 rows) */}
+                <div className="max-h-[390px] overflow-y-auto">
+                  {loadingTxns ? (
+                    <div className="p-4 text-center text-slate-400 italic">Loading library card records...</div>
+                  ) : studentTxns.filter((t) => (t.type === "Borrow" && t.status !== "Pending" && t.status !== "Declined") || (t.type === "Reservation" && t.status === "Approved")).length === 0 ? (
+                    <div className="p-4 text-center text-slate-400 italic">No borrow records on library card.</div>
+                  ) : (
+                    studentTxns
+                      .filter((t) => (t.type === "Borrow" && t.status !== "Pending" && t.status !== "Declined") || (t.type === "Reservation" && t.status === "Approved"))
+                      .map((tx, idx) => {
+                        const isReturned = tx.status === "Returned" || (tx.status as string) === "Completed";
+                        const isReservation = tx.type === "Reservation";
+                        const isDue = !isReturned && !isReservation && tx.dueDate && (() => {
+                          const d = new Date(tx.dueDate);
+                          if (isNaN(d.getTime())) return false;
+                          const now = new Date();
+                          const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                          const dueStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                          return dueStart <= todayStart;
+                        })();
+
+                        const dueText = isReturned
+                          ? "Returned"
+                          : isReservation
+                          ? "Reservation"
+                          : tx.dueDate
+                          ? new Date(tx.dueDate).toISOString().split("T")[0]
+                          : "7 days";
+
+                        const rowBgClass = isReturned
+                          ? ""
+                          : isReservation
+                          ? "bg-purple-500/[0.08]"
+                          : isDue
+                          ? "bg-red-500/[0.10]"
+                          : "bg-emerald-400/[0.08]";
+
+                        const dueCellClass = isReturned
+                          ? "text-slate-300"
+                          : isReservation
+                          ? "bg-purple-500/28 text-[#D8B4FE] font-bold"
+                          : isDue
+                          ? "bg-red-500/28 text-[#F87171] font-bold"
+                          : "bg-emerald-400/22 text-[#86EFAC] font-bold";
+
+                        return (
+                          <div
+                            key={tx.id || idx}
+                            className={`flex border-b border-[#24334C] last:border-b-0 min-h-[30px] items-center hover:bg-white/[0.02] ${rowBgClass}`}
+                          >
+                            <div className="w-[28%] px-3 py-2 border-r border-[#24334C] text-slate-300 font-mono text-[11px]">
+                              {tx.requestedAt ? new Date(tx.requestedAt).toISOString().split("T")[0] : "—"}
+                            </div>
+                            <div className={`w-[28%] px-3 py-2 border-r border-[#24334C] font-mono text-[11px] flex items-center justify-center ${dueCellClass}`}>
+                              {dueText}
+                            </div>
+                            <div className="flex-1 px-3 py-2 font-semibold text-white truncate">
+                              {tx.resourceTitle}
+                            </div>
+                          </div>
+                        );
+                      })
+                  )}
+                </div>
+              </div>
+
+              {/* Enclosed Status Legend Box */}
+              <div className="flex flex-wrap items-center justify-center gap-4 mt-3 py-2 px-3 rounded-xl border border-[#1E293B] bg-slate-800/45 text-[11px] font-semibold text-slate-300">
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#86EFAC]" />
+                  <span>Green: Borrow (Active)</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#F87171]" />
+                  <span>Red: Due to Return</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-[#C084FC]" />
+                  <span>Violet: Reservation</span>
+                </div>
               </div>
             </div>
 

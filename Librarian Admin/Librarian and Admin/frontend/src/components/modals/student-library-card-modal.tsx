@@ -128,8 +128,9 @@ export function StudentLibraryCardModal({
 
   if (!open || !student) return null;
 
-  // Render 16 lined rows to match the official mobile pass ledger visual
-  const TOTAL_ROWS = Math.max(16, studentBorrows.length);
+  // Lock to 13 visible rows with internal scrolling to match the mobile Library Card design
+  const VISIBLE_ROWS = 13;
+  const TOTAL_ROWS = Math.max(VISIBLE_ROWS, studentBorrows.length);
   const rows = Array.from({ length: TOTAL_ROWS }, (_, i) => studentBorrows[i] || null);
 
   return (
@@ -228,7 +229,7 @@ export function StudentLibraryCardModal({
 
           {/* PHYSICAL LIBRARY CARD CONTAINER (Matches Mobile & Ledger Design) */}
           <div className={cn(
-            "rounded-2xl border p-5 shadow-sm",
+            "rounded-2xl border p-5 shadow-sm overflow-hidden",
             isLight ? "border-2 border-slate-200 bg-white" : "border border-[#2E3F5C] bg-[#142033] shadow-lg"
           )}>
             {/* Header inside card */}
@@ -280,96 +281,106 @@ export function StudentLibraryCardModal({
                 </div>
               </div>
 
-              {/* Data / Grid Rows */}
-              {rows.map((row, idx) => {
-                const isReservation = row?.type === "Reservation" || (row as any)?.action === "Reserve";
-                const isReturned = row?.status === "Returned" || (row?.status as string) === "Completed";
-                const isNowAvailable = !!(
-                  row && (
-                    row.available === "true" ||
-                    (row.available as any) === true ||
-                    (row as any).isAvailable === true ||
-                    !!row.availableAt
-                  )
-                );
+              {/* Data / Grid Rows (Scrollable at 13 rows) */}
+              <div className="max-h-[390px] overflow-y-auto">
+                {rows.map((row, idx) => {
+                  const isReservation = row?.type === "Reservation" || (row as any)?.action === "Reserve";
+                  const isReturned = row?.status === "Returned" || (row?.status as string) === "Completed";
+                  const isNowAvailable = !!(
+                    row && (
+                      row.available === "true" ||
+                      (row.available as any) === true ||
+                      (row as any).isAvailable === true ||
+                      !!row.availableAt
+                    )
+                  );
 
-                let dueReturnText = "";
-                let highlightClass = "";
+                  let dueReturnText = "";
+                  let highlightClass = "";
 
-                if (row) {
-                  if (isReturned) {
-                    dueReturnText = "Returned";
-                    highlightClass = "";
-                  } else if (isReservation) {
-                    dueReturnText = "Reservation";
-                    highlightClass = isLight
-                      ? "bg-purple-100 text-purple-800 font-bold"
-                      : "bg-purple-500/25 text-purple-300 font-bold";
-                  } else {
-                    dueReturnText = row.dueDate ? formatDueDate(row.dueDate) : "7 days";
-                    if (isDueToReturn(row.dueDate)) {
+                  if (row) {
+                    if (isReturned) {
+                      dueReturnText = "Returned";
+                      highlightClass = "";
+                    } else if (isReservation) {
+                      dueReturnText = "Reservation";
                       highlightClass = isLight
-                        ? "bg-red-100 text-red-800 font-bold border border-red-300"
-                        : "bg-red-500/25 text-red-300 font-bold border border-red-500/30";
+                        ? "bg-purple-100 text-purple-800 font-bold"
+                        : "bg-purple-500/28 text-[#D8B4FE] font-bold";
                     } else {
-                      highlightClass = isLight
-                        ? "bg-emerald-50 text-emerald-700 font-semibold"
-                        : "bg-emerald-500/10 text-emerald-300 font-semibold";
+                      dueReturnText = row.dueDate ? formatDueDate(row.dueDate) : "7 days";
+                      if (isDueToReturn(row.dueDate)) {
+                        highlightClass = isLight
+                          ? "bg-red-100 text-red-800 font-bold border border-red-300"
+                          : "bg-red-500/28 text-[#F87171] font-bold";
+                      } else {
+                        highlightClass = isLight
+                          ? "bg-[#86EFAC] text-[#064E3B] font-bold"
+                          : "bg-emerald-400/22 text-[#86EFAC] font-bold";
+                      }
                     }
                   }
-                }
 
-                return (
-                  <div
-                    key={row?.id ? `borrow-row-${row.id}-${idx}` : `empty-row-${idx}`}
-                    className={cn(
-                      "flex border-b last:border-b-0 min-h-[30px] items-center transition-colors",
-                      isLight
-                        ? "border-slate-100 hover:bg-blue-50/40 text-slate-800"
-                        : "border-[#24334C] hover:bg-white/[0.02] text-white",
-                      row && !isReturned && isReservation && (
-                        isLight ? "bg-purple-50/30" : "bg-purple-500/[0.03]"
-                      ),
-                      row && !isReturned && !isReservation && isDueToReturn(row.dueDate) && (
-                        isLight ? "bg-red-50/30" : "bg-red-500/[0.04]"
-                      )
-                    )}
-                  >
-                    <div className={cn("w-[36%] px-3.5 py-1.5 border-r font-mono text-[11px]", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300")}>
-                      {row?.requestedAt ? formatBorrowDateTime(row.requestedAt) : ""}
-                    </div>
-                    <div className={cn("w-[26%] px-3.5 py-1.5 border-r font-mono text-[11px] flex items-center justify-center", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300", highlightClass)}>
-                      {dueReturnText}
-                    </div>
-                    <div className={cn("flex-1 px-3.5 py-1.5 font-semibold flex items-center justify-between gap-2", isLight ? "text-slate-900" : "text-white")}>
-                      <span className="line-clamp-2 break-words">{row?.resourceTitle || ""}</span>
-                      {isReservation && !isReturned && (
-                        <span className={cn(
-                          "rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase shrink-0",
-                          isLight ? "bg-purple-100 text-purple-700 border border-purple-300" : "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                        )}>
-                          {isNowAvailable ? "Available" : "Reserved"}
-                        </span>
+                  return (
+                    <div
+                      key={row?.id ? `borrow-row-${row.id}-${idx}` : `empty-row-${idx}`}
+                      className={cn(
+                        "flex border-b last:border-b-0 min-h-[30px] items-center transition-colors",
+                        isLight
+                          ? "border-slate-100 hover:bg-blue-50/40 text-slate-800"
+                          : "border-[#24334C] hover:bg-white/[0.02] text-white",
+                        row && !isReturned && isReservation && (
+                          isLight ? "bg-purple-50/35" : "bg-purple-500/[0.08]"
+                        ),
+                        row && !isReturned && !isReservation && isDueToReturn(row.dueDate) && (
+                          isLight ? "bg-red-50/35" : "bg-red-500/[0.10]"
+                        ),
+                        row && !isReturned && !isReservation && !isDueToReturn(row.dueDate) && (
+                          isLight ? "bg-emerald-50/35" : "bg-emerald-400/[0.08]"
+                        )
                       )}
+                    >
+                      <div className={cn("w-[36%] px-3.5 py-1.5 border-r font-mono text-[11px]", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300")}>
+                        {row?.requestedAt ? formatBorrowDateTime(row.requestedAt) : ""}
+                      </div>
+                      <div className={cn("w-[26%] px-3.5 py-1.5 border-r font-mono text-[11px] flex items-center justify-center", isLight ? "border-slate-100 text-slate-600 font-medium" : "border-[#24334C] text-slate-300", highlightClass)}>
+                        {dueReturnText}
+                      </div>
+                      <div className={cn("flex-1 px-3.5 py-1.5 font-semibold flex items-center justify-between gap-2", isLight ? "text-slate-900" : "text-white")}>
+                        <span className="line-clamp-2 break-words">{row?.resourceTitle || ""}</span>
+                        {isReservation && !isReturned && (
+                          <span className={cn(
+                            "rounded px-1.5 py-0.5 text-[9px] font-extrabold uppercase shrink-0",
+                            isLight ? "bg-purple-100 text-purple-700 border border-purple-300" : "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                          )}>
+                            {isNowAvailable ? "Available" : "Reserved"}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </div>
 
-            {/* Visual Status Legend */}
-            <div className="flex items-center gap-4 mt-3 px-1 text-[11px] font-medium">
+            {/* Visual Status Legend - Enclosed cleanly inside library card */}
+            <div className={cn(
+              "flex flex-wrap items-center justify-center gap-4 mt-3 py-2 px-3 rounded-xl border text-[11px] font-semibold",
+              isLight
+                ? "bg-slate-100/75 border-slate-200 text-slate-600"
+                : "bg-slate-800/45 border-[#1E293B] text-slate-300"
+            )}>
               <div className="flex items-center gap-1.5">
-                <span className={cn("h-3 w-3 rounded", isLight ? "bg-emerald-200 border border-emerald-400" : "bg-emerald-500/30 border border-emerald-500/50")} />
-                <span className={isLight ? "text-slate-600" : "text-slate-300"}>Borrow (Active)</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-[#86EFAC]" />
+                <span>Green: Borrow (Active)</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className={cn("h-3 w-3 rounded", isLight ? "bg-red-200 border border-red-400" : "bg-red-500/30 border border-red-500/50")} />
-                <span className={isLight ? "text-slate-600" : "text-slate-300"}>Due to Return</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-[#F87171]" />
+                <span>Red: Due to Return</span>
               </div>
               <div className="flex items-center gap-1.5">
-                <span className={cn("h-3 w-3 rounded", isLight ? "bg-purple-200 border border-purple-400" : "bg-purple-500/30 border border-purple-500/50")} />
-                <span className={isLight ? "text-slate-600" : "text-slate-300"}>Reservation (Queued)</span>
+                <span className="h-2.5 w-2.5 rounded-full bg-[#C084FC]" />
+                <span>Violet: Reservation</span>
               </div>
             </div>
           </div>
