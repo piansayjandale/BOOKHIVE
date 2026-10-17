@@ -638,11 +638,25 @@ export function TransactionsModule() {
         : Array.isArray(payload)
         ? payload
         : [];
-      const list: TransactionRecord[] = rawList.map((row: any) => ({
-        ...row,
-        pickedUpAt: row.pickedUpAt || row.picked_up_at || null,
-        isPickedUp: Boolean(row.pickedUpAt || row.picked_up_at || row.isPickedUp),
-      }));
+      const list: TransactionRecord[] = rawList
+        .map((row: any) => ({
+          ...row,
+          studentName: row.studentName || row.student_name || "Student",
+          studentId: row.studentId || row.student_id || "N/A",
+          resourceTitle: row.resourceTitle || row.resource_title || row.title || "Book",
+          isbn: row.isbn || "N/A",
+          type: (String(row.type || "").toLowerCase() === "reservation" ? "Reservation" : "Borrow") as TransactionType,
+          pickedUpAt: row.pickedUpAt || row.picked_up_at || null,
+          isPickedUp: Boolean(row.pickedUpAt || row.picked_up_at || row.isPickedUp),
+        }))
+        .filter(
+          (row: TransactionRecord) =>
+            !(
+              (row.studentName === "Student" || !row.studentName) &&
+              (row.studentId === "N/A" || !row.studentId) &&
+              (row.resourceTitle === "Book" || !row.resourceTitle)
+            )
+        );
 
       startTransition(() => {
         setAllTransactions((prev) => {
@@ -903,9 +917,30 @@ export function TransactionsModule() {
     void loadAllTransactions();
 
     // 1. Real-time WebSocket Listeners
-    const unsubscribeBorrow = dashboardSocket.subscribeToBorrowRequest((data: any) => {
-      if (data) {
-        const isReservation = (data.type || data.action) === "Reservation";
+    const unsubscribeBorrow = dashboardSocket.subscribeToBorrowRequest((rawData: any) => {
+      if (rawData) {
+        const data =
+          rawData?.payload && typeof rawData.payload === "object"
+            ? { ...rawData, ...rawData.payload }
+            : rawData;
+
+        const hasRealStudent =
+          Boolean(data?.studentName && data.studentName !== "Student") ||
+          Boolean(data?.studentId && data.studentId !== "N/A");
+        const hasRealBook =
+          Boolean(data?.resourceTitle && data.resourceTitle !== "Book") ||
+          Boolean(data?.title && data.title !== "Book") ||
+          Boolean(data?.isbn && data.isbn !== "N/A");
+
+        // Ignore malformed/wrapped ghost socket events that lack student and book details
+        if (!hasRealStudent && !hasRealBook) {
+          scheduleReloadTransactions(400);
+          return;
+        }
+
+        const rawTypeStr = String(data.type || data.action || "Borrow").toLowerCase();
+        const isReservation = rawTypeStr === "reservation" || rawTypeStr === "reserve";
+        const normalizedType: TransactionType = isReservation ? "Reservation" : "Borrow";
         const title = data.resourceTitle || data.title || "Book";
         const student = data.studentName || "A student";
 
@@ -922,35 +957,59 @@ export function TransactionsModule() {
               t.id === rawId ||
               t.id === data.id ||
               t.id === data.transactionId ||
-              (((data.isbn && t.isbn === data.isbn) || (title && t.resourceTitle?.toLowerCase().trim() === title.toLowerCase().trim())) &&
-               (t.studentId === data.studentId || t.studentName === data.studentName))
+              (((data.isbn && data.isbn !== "N/A" && t.isbn === data.isbn) ||
+                (title && t.resourceTitle?.toLowerCase().trim() === title.toLowerCase().trim())) &&
+                (t.studentId === data.studentId || t.studentName === data.studentName))
           );
           // If an item for this book/student is already in the dataset and is not Pending (e.g. already Approved/Returned),
           // DO NOT recreate a duplicate Pending item!
           if (existing && existing.status !== "Pending") {
             return prev;
           }
+          const isExistingUuid = Boolean(
+            existing?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(existing.id)
+          );
+          const isIncomingUuid = Boolean(
+            rawId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(rawId))
+          );
+          const resolvedId = isIncomingUuid ? String(rawId) : isExistingUuid ? existing!.id : String(rawId);
+
           const newTxn: TransactionRecord = {
-            id: rawId,
-            studentName: data.studentName || "Student",
-            studentId: data.studentId || "N/A",
-            resourceTitle: data.resourceTitle || data.title || "Book",
-            isbn: data.isbn || "N/A",
-            type: data.type || (isReservation ? "Reservation" : "Borrow"),
-            status: data.status || "Pending",
-            requestedAt: data.requestedAt || new Date().toISOString(),
-            dueDate: data.dueDate,
-            department: data.department || "Circulation",
-            durationDays: data.durationDays || 7,
-            queuePosition: data.queuePosition,
-            availableAt: data.availableAt,
-            expiresAt: data.expiresAt,
+            id: resolvedId,
+            studentName:
+              (data.studentName && data.studentName !== "Student" ? data.studentName : null) ||
+              existing?.studentName ||
+              "Student",
+            studentId:
+              (data.studentId && data.studentId !== "N/A" ? data.studentId : null) ||
+              existing?.studentId ||
+              "N/A",
+            resourceTitle:
+              (data.resourceTitle && data.resourceTitle !== "Book" ? data.resourceTitle : null) ||
+              (data.title && data.title !== "Book" ? data.title : null) ||
+              existing?.resourceTitle ||
+              "Book",
+            isbn:
+              (data.isbn && data.isbn !== "N/A" ? data.isbn : null) ||
+              existing?.isbn ||
+              "N/A",
+            type: normalizedType,
+            status: data.status || existing?.status || "Pending",
+            requestedAt: data.requestedAt || existing?.requestedAt || new Date().toISOString(),
+            dueDate: data.dueDate || existing?.dueDate,
+            department: data.department || existing?.department || "Circulation",
+            durationDays: data.durationDays || existing?.durationDays || 7,
+            queuePosition: data.queuePosition ?? existing?.queuePosition,
+            availableAt: data.availableAt ?? existing?.availableAt,
+            expiresAt: data.expiresAt ?? existing?.expiresAt,
             pickedUpAt: data.pickedUpAt || existing?.pickedUpAt || null,
             isPickedUp: Boolean(data.isPickedUp || existing?.isPickedUp),
           };
 
           if (existing) {
-            return prev.map((t) => (t.id === existing.id || t.id === rawId || t.id === data.id ? { ...t, ...newTxn } : t));
+            return prev.map((t) =>
+              t.id === existing.id || t.id === rawId || t.id === data.id ? { ...t, ...newTxn } : t
+            );
           }
           return [newTxn, ...prev];
         });
@@ -1231,6 +1290,21 @@ export function TransactionsModule() {
                       ...t,
                       ...serverTx,
                       id: serverTx.id,
+                      studentName:
+                        (serverTx.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
+                        serverTx.student_name ||
+                        t.studentName,
+                      studentId:
+                        (serverTx.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
+                        serverTx.student_id ||
+                        t.studentId,
+                      resourceTitle:
+                        (serverTx.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
+                        serverTx.resource_title ||
+                        t.resourceTitle,
+                      isbn:
+                        (serverTx.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
+                        t.isbn,
                       status: "Returned" as TransactionStatus,
                       returnedAt: now,
                       updatedAt: now,
@@ -1383,11 +1457,29 @@ export function TransactionsModule() {
                       ...t,
                       ...serverTx,
                       id: serverTx.id,
-                      type: serverTx.type || t.type,
+                      studentName:
+                        (serverTx.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
+                        serverTx.student_name ||
+                        t.studentName,
+                      studentId:
+                        (serverTx.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
+                        serverTx.student_id ||
+                        t.studentId,
+                      resourceTitle:
+                        (serverTx.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
+                        serverTx.resource_title ||
+                        t.resourceTitle,
+                      isbn:
+                        (serverTx.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
+                        t.isbn,
+                      type:
+                        String(serverTx.type || t.type || "").toLowerCase() === "reservation"
+                          ? "Reservation"
+                          : "Borrow",
                       status: serverTx.status || nextStatus,
-                      availableAt: serverTx.availableAt ?? t.availableAt,
-                      expiresAt: serverTx.expiresAt ?? t.expiresAt,
-                      dueDate: serverTx.dueDate || t.dueDate,
+                      availableAt: serverTx.availableAt ?? serverTx.available_at ?? t.availableAt,
+                      expiresAt: serverTx.expiresAt ?? serverTx.expires_at ?? t.expiresAt,
+                      dueDate: serverTx.dueDate || serverTx.due_date || t.dueDate,
                       comment: serverTx.comment ?? comment ?? t.comment,
                       updatedAt: now,
                     }
@@ -1525,6 +1617,21 @@ export function TransactionsModule() {
                       ...t,
                       ...serverTx,
                       id: serverTx.id,
+                      studentName:
+                        (serverTx.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
+                        serverTx.student_name ||
+                        t.studentName,
+                      studentId:
+                        (serverTx.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
+                        serverTx.student_id ||
+                        t.studentId,
+                      resourceTitle:
+                        (serverTx.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
+                        serverTx.resource_title ||
+                        t.resourceTitle,
+                      isbn:
+                        (serverTx.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
+                        t.isbn,
                       type: "Borrow" as TransactionType,
                       status: "Approved" as TransactionStatus,
                       updatedAt: now,

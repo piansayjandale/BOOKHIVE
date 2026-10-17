@@ -225,7 +225,11 @@ class DashboardSocketService {
     });
   }
 
-  private routeIncomingEvent(eventName: string, eventData: any) {
+  private routeIncomingEvent(eventName: string, rawEventData: any) {
+    const eventData =
+      rawEventData?.payload && typeof rawEventData.payload === "object"
+        ? { ...rawEventData, ...rawEventData.payload }
+        : rawEventData;
     console.log(`[DashboardSocket] Routing event: ${eventName}`, eventData);
 
     const isBorrow = (eventData?.type || eventData?.action) !== "Reservation";

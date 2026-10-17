@@ -173,8 +173,24 @@ export const calculateAiPromptMatchPercentage = (
   if (!book.title) return 0;
   if (!query && !hasFileAttached) return 0;
 
-  const normalizedQuery = (query || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
-  const normalizedTitle = (book.title || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const rawQuery = (query || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const coreQuery =
+    rawQuery
+      .replace(
+        /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+        ""
+      )
+      .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+      .trim() || rawQuery;
+
+  const normalizedQuery = coreQuery.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const normalizedTitle = (book.title || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const normalizedAuthor = (book.author || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   const normalizedDesc = (book.description || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
   const normalizedCat = (book.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -184,9 +200,15 @@ export const calculateAiPromptMatchPercentage = (
     return 100;
   }
 
-  // 2. Exact Query Phrase in Title or Author -> 90% - 95%
-  if (normalizedQuery.length > 3 && normalizedTitle.includes(normalizedQuery)) {
-    return Math.min(98, 90 + Math.round((normalizedQuery.length / Math.max(1, normalizedTitle.length)) * 8));
+  const titleWords = normalizedTitle.split(/\s+/).filter(Boolean);
+  const sigTitleWords = titleWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  const effectiveTitleWords = sigTitleWords.length > 0 ? sigTitleWords : titleWords;
+
+  // 2. Exact Query Phrase in Title or Author -> 92% - 99%
+  if (normalizedQuery.length >= 2 && normalizedTitle.includes(normalizedQuery)) {
+    const isWholeWord = titleWords.includes(normalizedQuery) || normalizedTitle.startsWith(normalizedQuery);
+    const ratio = Math.min(1, normalizedQuery.length / Math.max(1, normalizedTitle.length));
+    return Math.min(99, Math.round((isWholeWord ? 94 : 90) + ratio * 5));
   }
 
   if (normalizedQuery.length > 3 && normalizedAuthor.length > 0 && normalizedAuthor.includes(normalizedQuery)) {
@@ -194,8 +216,10 @@ export const calculateAiPromptMatchPercentage = (
   }
 
   // 3. Tokenize natural language prompt and extract significant AI keywords
-  const allWords = normalizedQuery.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-  const meaningfulWords = allWords.filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  const allWords = normalizedQuery.split(/\s+/).filter(Boolean);
+  const filteredWords = allWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  const isDirective = DIRECTIVE_PATTERNS.some((p) => p.test(rawQuery));
+  const meaningfulWords = filteredWords.length > 0 ? filteredWords : isDirective ? [] : allWords;
 
   // If user only provided directive phrases (e.g. "is there any books similar to this file?")
   if (meaningfulWords.length === 0) {
@@ -205,13 +229,22 @@ export const calculateAiPromptMatchPercentage = (
     return 0;
   }
 
+  let exactTitleWordMatches = 0;
   let titleMatches = 0;
   let authorMatches = 0;
   let descMatches = 0;
   let catMatches = 0;
 
   for (const kw of meaningfulWords) {
-    if (normalizedTitle.includes(kw)) titleMatches++;
+    if (titleWords.includes(kw)) {
+      exactTitleWordMatches++;
+      titleMatches++;
+    } else if (
+      normalizedTitle.includes(kw) ||
+      (kw.length >= 4 && titleWords.some((tw) => tw.startsWith(kw) || kw.startsWith(tw)))
+    ) {
+      titleMatches++;
+    }
     if (normalizedAuthor.includes(kw)) authorMatches++;
     if (normalizedCat.includes(kw)) catMatches++;
     if (normalizedDesc.includes(kw)) descMatches++;
@@ -222,19 +255,45 @@ export const calculateAiPromptMatchPercentage = (
     return hasFileAttached ? 50 : 0;
   }
 
-  // Compute composite AI score based on keyword coverage
+  let matchedBookWords = 0;
+  for (const tw of effectiveTitleWords) {
+    if (
+      meaningfulWords.some(
+        (kw) => tw === kw || tw.includes(kw) || (kw.length >= 4 && (tw.startsWith(kw) || kw.startsWith(tw)))
+      )
+    ) {
+      matchedBookWords++;
+    }
+  }
+  const bookTitleCoverage = effectiveTitleWords.length > 0 ? matchedBookWords / effectiveTitleWords.length : 0;
   const titleRatio = titleMatches / meaningfulWords.length;
+
+  // All prompt words matched in the book title -> 92% - 100%
+  if (titleMatches === meaningfulWords.length) {
+    if (exactTitleWordMatches === meaningfulWords.length && bookTitleCoverage >= 0.99) {
+      return 100;
+    }
+    return Math.min(99, Math.max(92, 91 + Math.round(bookTitleCoverage * 6) + (exactTitleWordMatches > 0 ? 2 : 0)));
+  }
+
+  // Partial prompt words matched in the book title -> 80% - 93%
+  if (titleMatches > 0) {
+    return Math.min(
+      93,
+      Math.max(80, 78 + Math.round(titleRatio * 12) + Math.round(bookTitleCoverage * 5) + (exactTitleWordMatches > 0 ? 2 : 0))
+    );
+  }
+
   const authorRatio = authorMatches / meaningfulWords.length;
   const catRatio = catMatches / meaningfulWords.length;
   const descRatio = Math.min(1, descMatches / meaningfulWords.length);
 
-  let score = 55;
-  if (titleMatches > 0) score += Math.round(titleRatio * 30);
-  if (authorMatches > 0) score += Math.round(authorRatio * 20);
-  if (catMatches > 0) score += Math.round(catRatio * 15);
+  let score = 60;
+  if (authorMatches > 0) score += Math.round(authorRatio * 24);
+  if (catMatches > 0) score += Math.round(catRatio * 14);
   if (descMatches > 0) score += Math.round(descRatio * 10);
 
-  return Math.min(98, Math.max(60, score));
+  return Math.min(90, Math.max(65, score));
 };
 
 export const extractFileKeywords = async (file: { name: string; uri?: string; mimeType?: string }): Promise<string[]> => {
@@ -657,6 +716,7 @@ export default function SearchScreen() {
         } : null);
 
         let returnedBooks: any[] = [];
+        let analysisPayload: any = null;
 
         try {
           const res = await axios.post(
@@ -664,14 +724,14 @@ export default function SearchScreen() {
             {
               prompt: query || "",
               file: filePayload,
-              department: dept || activeDepartment,
+              department: dept || null,
               limit: 40,
             },
             headers
           );
 
           if (res.data?.success && Array.isArray(res.data.books)) {
-            setAiAnalysis(res.data.aiAnalysis || null);
+            analysisPayload = res.data.aiAnalysis || null;
             returnedBooks = res.data.books;
           }
         } catch (postErr) {
@@ -686,16 +746,28 @@ export default function SearchScreen() {
               headers
             );
             if (aiQueryRes.data?.books && Array.isArray(aiQueryRes.data.books)) {
-              returnedBooks = aiQueryRes.data.books.map((b: any, idx: number) => formatSearchItem(b, idx));
+              returnedBooks = aiQueryRes.data.books.map((b: any, idx: number) => ({
+                ...formatSearchItem(b, idx),
+                matchPercentage: b.matchPercentage,
+              }));
             }
           } catch (getErr) {
             console.log("ai search fallback error:", getErr);
           }
         }
 
+        if (analysisPayload) {
+          setAiAnalysis({
+            ...analysisPayload,
+            totalMatches: Math.max(Number(analysisPayload.totalMatches || 0), returnedBooks.length),
+          });
+        }
+
         if (returnedBooks.length > 0) {
           setAiBooks(returnedBooks);
           mergeBooksPool(returnedBooks);
+        } else {
+          setAiBooks(null);
         }
       } catch (err) {
         console.log("AI search error:", err);
@@ -703,7 +775,7 @@ export default function SearchScreen() {
         setLoading(false);
       }
     },
-    [selectedFile, activeDepartment, mergeBooksPool, formatSearchItem]
+    [selectedFile, mergeBooksPool, formatSearchItem]
   );
 
   // FILE PICKER WITH BASE64 EXTRACTION
@@ -930,12 +1002,34 @@ export default function SearchScreen() {
   const processedBooks = React.useMemo(() => {
     if (!isSearchActive) return [];
 
-    // 1. If AI search has returned books from backend (in AI Prompt mode or with file attached), use them!
+    // 1. If AI search has returned books from backend (in AI Prompt mode or with file attached), score and sort them accurately!
     if (aiBooks && aiBooks.length > 0 && (!isPrefixFilter || selectedFile !== null)) {
-      return aiBooks.map((item: any) => ({
-        item,
-        match: item.matchPercentage || 85,
-      }));
+      return aiBooks
+        .map((item: any) => {
+          const info = item.volumeInfo || {};
+          const clientScore =
+            activeQuery.length > 0
+              ? calculateAiPromptMatchPercentage(
+                  {
+                    title: info.title || item.title || "",
+                    author: (info.authors || []).join(" ") || item.author || "",
+                    description: info.description || item.description || "",
+                    category: (info.categories || []).join(" ") || item.category || "",
+                  },
+                  activeQuery,
+                  Boolean(selectedFile)
+                )
+              : 0;
+          const match = Math.max(Number(item.matchPercentage || 0), clientScore) || 85;
+          return {
+            item,
+            match,
+          };
+        })
+        .sort((a: any, b: any) => {
+          if (b.match !== a.match) return b.match - a.match;
+          return (a.item.volumeInfo?.title || "").localeCompare(b.item.volumeInfo?.title || "");
+        });
     }
 
     const fileKw = selectedFile?.keywords || [];
@@ -1414,7 +1508,7 @@ export default function SearchScreen() {
                         fontWeight: "800",
                         color: isDarkMode ? "#38BDF8" : "#0284C7",
                       }}>
-                        {aiAnalysis.totalMatches} MATCHES
+                        {Math.max(Number(aiAnalysis.totalMatches || 0), processedBooks.length)} MATCHES
                       </Text>
                     </View>
                   </View>

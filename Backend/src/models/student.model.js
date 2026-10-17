@@ -685,8 +685,16 @@ export const studentModel = {
 
       if (mode === "ai") {
         // AI PROMPT & KEYWORD SEARCH MODE
-        const allWords = cleanQuery.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
-        const meaningfulWords = allWords.filter(w => w.length > 1 && !STOP_WORDS.has(w));
+        const coreQuery = cleanQuery
+          .replace(
+            /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+            ""
+          )
+          .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+          .trim() || cleanQuery;
+
+        const allWords = coreQuery.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+        const meaningfulWords = allWords.filter(w => w.length >= 2 && !STOP_WORDS.has(w));
         const keywords = meaningfulWords.length > 0 ? meaningfulWords : allWords;
 
         if (keywords.length === 0) {
@@ -696,16 +704,19 @@ export const studentModel = {
         const params = [];
         let pIdx = 1;
 
-        params.push(`%${cleanQuery}%`);
+        params.push(coreQuery);
+        const exactParamIdx = pIdx++;
+        params.push(`%${coreQuery}%`);
         const phraseParamIdx = pIdx++;
 
         const kwParams = [];
-        for (const kw of keywords.slice(0, 5)) {
+        for (const kw of keywords.slice(0, 8)) {
           params.push(`%${kw}%`);
           kwParams.push(pIdx++);
         }
 
         const orClauses = [
+          `LOWER(TRIM(b.title)) = LOWER($${exactParamIdx})`,
           `LOWER(b.title) LIKE LOWER($${phraseParamIdx})`,
           `LOWER(b.author) LIKE LOWER($${phraseParamIdx})`,
         ];
@@ -715,23 +726,23 @@ export const studentModel = {
           orClauses.push(`LOWER(b.author) LIKE LOWER($${kIdx})`);
           orClauses.push(`LOWER(COALESCE(b.summary, '')) LIKE LOWER($${kIdx})`);
           orClauses.push(`LOWER(COALESCE(b.category, '')) LIKE LOWER($${kIdx})`);
-          orClauses.push(`LOWER(COALESCE(b.genres, '')) LIKE LOWER($${kIdx})`);
+          orClauses.push(`LOWER(COALESCE(b.genres::text, '')) LIKE LOWER($${kIdx})`);
           orClauses.push(`LOWER(COALESCE(b.department, '')) LIKE LOWER($${kIdx})`);
         }
 
         const whereClause = orClauses.join(" OR ");
 
         const relevanceCases = [
-          `CASE WHEN LOWER(b.title) = LOWER($${phraseParamIdx}) THEN 100 ELSE 0 END`,
-          `CASE WHEN LOWER(b.title) LIKE LOWER($${phraseParamIdx}) THEN 60 ELSE 0 END`,
-          `CASE WHEN LOWER(b.author) LIKE LOWER($${phraseParamIdx}) THEN 40 ELSE 0 END`,
+          `CASE WHEN LOWER(TRIM(b.title)) = LOWER($${exactParamIdx}) THEN 300 ELSE 0 END`,
+          `CASE WHEN LOWER(b.title) LIKE LOWER($${phraseParamIdx}) THEN 180 ELSE 0 END`,
+          `CASE WHEN LOWER(b.author) LIKE LOWER($${phraseParamIdx}) THEN 80 ELSE 0 END`,
         ];
 
         for (const kIdx of kwParams) {
-          relevanceCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${kIdx}) THEN 30 ELSE 0 END`);
-          relevanceCases.push(`CASE WHEN LOWER(b.author) LIKE LOWER($${kIdx}) THEN 25 ELSE 0 END`);
+          relevanceCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${kIdx}) THEN 90 ELSE 0 END`);
+          relevanceCases.push(`CASE WHEN LOWER(b.author) LIKE LOWER($${kIdx}) THEN 35 ELSE 0 END`);
           relevanceCases.push(`CASE WHEN LOWER(COALESCE(b.category, '')) LIKE LOWER($${kIdx}) THEN 20 ELSE 0 END`);
-          relevanceCases.push(`CASE WHEN LOWER(COALESCE(b.genres, '')) LIKE LOWER($${kIdx}) THEN 15 ELSE 0 END`);
+          relevanceCases.push(`CASE WHEN LOWER(COALESCE(b.genres::text, '')) LIKE LOWER($${kIdx}) THEN 15 ELSE 0 END`);
           relevanceCases.push(`CASE WHEN LOWER(COALESCE(b.summary, '')) LIKE LOWER($${kIdx}) THEN 10 ELSE 0 END`);
         }
 
@@ -765,9 +776,9 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
             ${relevanceSql}
           FROM books b
           LEFT JOIN transactions t ON (
@@ -828,9 +839,9 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
-            COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
             (
               CASE WHEN LOWER(b.title) = LOWER($5) THEN 100
                    WHEN LOWER(b.title) LIKE LOWER($1) THEN 90
@@ -875,6 +886,7 @@ export const studentModel = {
         pool.query(countSql, countQueryParams),
       ]);
 
+      const normCleanQ = cleanQuery.toLowerCase().trim();
       const books = booksResult.rows.map(b => {
         const totalCopies = Math.max(1, Number(b.copies || 1));
         const borrowedCount = Number(b.borrowedCount || 0);
@@ -885,6 +897,19 @@ export const studentModel = {
         const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
         const isAvailable = availableCopies > 0;
         const status = isAvailable ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
+        const normTitle = String(b.title || "").toLowerCase().trim();
+        let matchPercentage = 85;
+        if (normCleanQ && normTitle === normCleanQ) {
+          matchPercentage = 100;
+        } else if (normCleanQ && normTitle.includes(normCleanQ)) {
+          matchPercentage = Math.min(99, 92 + Math.round((normCleanQ.length / Math.max(1, normTitle.length)) * 7));
+        } else if (normCleanQ) {
+          const qWords = normCleanQ.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+          const tHits = qWords.filter(w => normTitle.includes(w)).length;
+          if (tHits > 0 && qWords.length > 0) {
+            matchPercentage = Math.min(98, 82 + Math.round((tHits / qWords.length) * 15));
+          }
+        }
         return {
           ...b,
           totalCopies,
@@ -898,6 +923,7 @@ export const studentModel = {
           isAvailable,
           status,
           availability: status,
+          matchPercentage,
         };
       });
 

@@ -16,17 +16,26 @@ export const eventDispatcher = {
    */
   async dispatchBorrowRequest(transaction) {
     try {
+      const normalizedType =
+        String(transaction?.type || "").toLowerCase() === "reservation"
+          ? "Reservation"
+          : "Borrow";
       const payload = {
-        event_type: "BORROW_REQUEST",
+        ...transaction,
+        type: normalizedType,
+        event_type: normalizedType === "Reservation" ? "RESERVATION_REQUEST" : "BORROW_REQUEST",
         entity_id: transaction.id,
         actor_id: transaction.studentId || transaction.userId,
-        payload: transaction,
+        payload: { ...transaction, type: normalizedType },
         timestamp: new Date().toISOString(),
       };
 
-      // 1. Broadcast to Circulation Desk queue
-      broadcastCirculationQueue("borrow:request", payload);
-      broadcastCirculationQueue("reservation:request", payload);
+      // 1. Broadcast to Circulation Desk queue using the matching event channel
+      if (normalizedType === "Reservation") {
+        broadcastCirculationQueue("reservation:request", payload);
+      } else {
+        broadcastCirculationQueue("borrow:request", payload);
+      }
 
       // 2. Broadcast updated Super Admin telemetry & counters
       await this.dispatchTelemetryRefresh();
@@ -41,6 +50,7 @@ export const eventDispatcher = {
   async dispatchReservationCancelled(transaction) {
     try {
       const payload = {
+        ...transaction,
         event_type: "RESERVATION_CANCELLED",
         entity_id: transaction.id,
         actor_id: transaction.studentId,
@@ -62,6 +72,7 @@ export const eventDispatcher = {
   async dispatchTransactionDecision(transaction) {
     try {
       const payload = {
+        ...transaction,
         event_type: `TRANSACTION_${String(transaction.status || "").toUpperCase()}`,
         entity_id: transaction.id,
         actor_id: transaction.studentId,

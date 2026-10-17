@@ -577,14 +577,18 @@ export const adminModel = {
         whereClauses.push(`t.student_id = $${filters.length}`);
       }
 
+      whereClauses.push(
+        `NOT (COALESCE(t.student_name, 'Student') IN ('Student', '') AND COALESCE(t.student_id, 'N/A') IN ('N/A', '') AND COALESCE(t.resource_title, 'Book') IN ('Book', ''))`
+      );
+
       const whereClause = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
 
       const query = `
         SELECT
           t.id,
           t.user_id AS "userId",
-          t.student_name AS "studentName",
-          t.student_id AS "studentId",
+          COALESCE(NULLIF(NULLIF(t.student_name, ''), 'Student'), u.name, 'Student') AS "studentName",
+          COALESCE(NULLIF(NULLIF(t.student_id, ''), 'N/A'), u.id_number, 'N/A') AS "studentId",
           t.resource_title AS "resourceTitle",
           t.isbn,
           t.department,
@@ -597,7 +601,7 @@ export const adminModel = {
               ELSE 'Circulation'
             END
           ) AS "bookDepartment",
-          t.type,
+          CASE WHEN LOWER(t.type::text) = 'reservation' THEN 'Reservation' ELSE 'Borrow' END AS "type",
           t.status,
           t.requested_at AS "requestedAt",
           t.due_date AS "dueDate",
@@ -638,7 +642,7 @@ export const adminModel = {
             ELSE 'Available'
           END AS "available"
         FROM transactions t
-        LEFT JOIN users u ON t.user_id = u.id
+        LEFT JOIN users u ON (t.user_id = u.id OR (t.student_id IS NOT NULL AND t.student_id != 'N/A' AND lower(t.student_id) = lower(u.id_number)))
         LEFT JOIN LATERAL (
           SELECT department
           FROM books

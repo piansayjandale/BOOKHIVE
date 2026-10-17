@@ -126,52 +126,61 @@ const STOP_WORDS_SET = new Set([
 ]);
 
 /**
- * Searches the 48,000+ local books by keyword tokens across title, author, category, and summary
+ * Searches the 48,000+ local books by keyword tokens, prioritizing title matches first
  */
 export const searchBooksByKeyword = (query: string, limit = 100): Book[] => {
   if (!query) return [];
-  const words = query
-    .toLowerCase()
+  const rawQuery = query.toLowerCase().trim();
+  const coreQuery =
+    rawQuery
+      .replace(
+        /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+        ""
+      )
+      .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+      .trim() || rawQuery;
+
+  const allWords = coreQuery
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS_SET.has(w));
+    .filter(Boolean);
+  const filteredWords = allWords.filter((w) => w.length >= 2 && !STOP_WORDS_SET.has(w));
+  const words = filteredWords.length > 0 ? filteredWords : allWords;
   if (words.length === 0) return [];
 
-  const results: Book[] = [];
+  const exactAndAllTitleMatches: Book[] = [];
+  const partialTitleMatches: Book[] = [];
+  const metadataMatches: Book[] = [];
+
   for (let i = 0; i < liveBooksCatalog.length; i++) {
     const b = liveBooksCatalog[i];
-    const text = `${b.title} ${b.author} ${b.category || ""} ${b.department} ${b.summary || ""}`.toLowerCase();
-    let matchesAll = true;
+    const titleLower = (b.title || "").toLowerCase();
+
+    let titleHits = 0;
     for (const w of words) {
-      if (!text.includes(w)) {
-        matchesAll = false;
-        break;
+      if (titleLower.includes(w)) {
+        titleHits++;
       }
     }
-    if (matchesAll) {
-      results.push(b);
-      if (results.length >= limit) break;
-    }
-  }
 
-  if (results.length < 10) {
-    const existing = new Set(results.map((r) => r.isbn));
-    for (let i = 0; i < liveBooksCatalog.length; i++) {
-      const b = liveBooksCatalog[i];
-      if (existing.has(b.isbn)) continue;
-      const text = `${b.title} ${b.author} ${b.category || ""}`.toLowerCase();
-      let matchCount = 0;
+    if (titleHits === words.length) {
+      exactAndAllTitleMatches.push(b);
+      if (exactAndAllTitleMatches.length >= limit) break;
+    } else if (titleHits > 0 && partialTitleMatches.length < limit) {
+      partialTitleMatches.push(b);
+    } else if (metadataMatches.length < limit) {
+      const metaText = `${b.author} ${b.category || ""} ${b.department} ${b.summary || ""}`.toLowerCase();
+      let metaHits = 0;
       for (const w of words) {
-        if (text.includes(w)) matchCount++;
+        if (metaText.includes(w)) metaHits++;
       }
-      if (matchCount > 0) {
-        results.push(b);
-        if (results.length >= limit) break;
+      if (metaHits > 0) {
+        metadataMatches.push(b);
       }
     }
   }
 
-  return results;
+  return [...exactAndAllTitleMatches, ...partialTitleMatches, ...metadataMatches].slice(0, limit);
 };
 
 /**

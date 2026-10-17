@@ -268,7 +268,25 @@ export async function PATCH(
       } catch (syncErr) {
         console.warn("Direct DB availability sync error:", syncErr);
       }
-      return NextResponse.json({ transaction: rows[0], ok: true });
+      const normalizedTx = {
+        ...tx,
+        id: String(tx.id),
+        studentName: tx.studentName || tx.student_name || body?.studentName || "Student",
+        studentId: tx.studentId || tx.student_id || body?.studentId || "N/A",
+        resourceTitle: tx.resourceTitle || tx.resource_title || body?.resourceTitle || "Book",
+        isbn: tx.isbn || body?.isbn || "N/A",
+        department: tx.department || "Circulation",
+        type: String(tx.type || "").toLowerCase() === "reservation" ? "Reservation" : "Borrow",
+        status: tx.status || nextStatus,
+        requestedAt: tx.requestedAt || tx.requested_at || null,
+        dueDate: tx.dueDate || tx.due_date || null,
+        availableAt: tx.availableAt || tx.available_at || null,
+        expiresAt: tx.expiresAt || tx.expires_at || null,
+        pickedUpAt: tx.pickedUpAt || tx.picked_up_at || null,
+        isPickedUp: Boolean(tx.isPickedUp || tx.pickedUpAt || tx.picked_up_at),
+        comment: tx.comment ?? comment ?? null,
+      };
+      return NextResponse.json({ transaction: normalizedTx, ok: true });
     }
 
     // Secondary in-memory store fallback

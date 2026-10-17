@@ -260,38 +260,59 @@ export function interpretPromptAndFile(prompt = "", file = null, extractedText =
     }
   }
 
-  // Detect curriculum domain from file
-  const domain = resolveCurriculumDomain(fileName, extractedText);
+  // Strip conversational prefixes/filler to isolate the core book title or keyword phrase
+  let coreQuery = cleanPrompt;
+  for (const pattern of DIRECTIVE_PHRASES) {
+    coreQuery = coreQuery.replace(pattern, " ");
+  }
+  coreQuery = coreQuery
+    .replace(
+      /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+      ""
+    )
+    .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+    .trim();
 
-  // Extract residual prompt keywords (removing stop words and directive words)
-  const promptWords = cleanPrompt
+  if (!coreQuery && cleanPrompt && !isDirectiveSimilarToFile) {
+    coreQuery = cleanPrompt;
+  }
+
+  // Extract prompt keywords (supporting 2+ letter words and falling back to raw words if all are stop words)
+  const rawPromptWords = (coreQuery || cleanPrompt)
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+    .filter(Boolean);
+
+  const filteredPromptWords = rawPromptWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  const promptWords =
+    filteredPromptWords.length > 0
+      ? filteredPromptWords
+      : isDirectiveSimilarToFile
+      ? []
+      : rawPromptWords.filter((w) => w.length >= 1);
+
+  // Detect curriculum domain from file or prompt
+  const domain = resolveCurriculumDomain(`${fileName} ${cleanPrompt}`, extractedText);
 
   const searchKeywords = new Set();
   const searchCategories = new Set();
-  let detectedSubject = domain ? domain.subject : "Academic Subject Reference";
-  let targetDepartment = domain ? domain.department : null;
 
-  if (domain) {
-    domain.keywords.forEach((k) => searchKeywords.add(k));
-    domain.categories.forEach((c) => searchCategories.add(c));
-  }
+  // 1. Always prioritize the user's explicit prompt words FIRST so they are never truncated
+  promptWords.forEach((pw) => searchKeywords.add(pw));
 
-  // Extract salient words from file name
+  // 2. Extract salient words from file name
   if (fileName) {
     const rawNameTokens = fileName
       .replace(/\.[^/.]+$/, "")
       .replace(/[_-]+/g, " ")
       .toLowerCase()
       .split(/\s+/)
-      .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+      .filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
     rawNameTokens.forEach((t) => searchKeywords.add(t));
   }
 
-  // Extract salient words from extracted text if available
+  // 3. Extract salient words from extracted file text if available
   if (extractedText && extractedText.length > 0) {
     const textTokens = extractedText
       .toLowerCase()
@@ -302,8 +323,24 @@ export function interpretPromptAndFile(prompt = "", file = null, extractedText =
     textTokens.forEach((t) => searchKeywords.add(t));
   }
 
-  // Incorporate residual prompt words (if user specified additional constraints like "chapter 2 ethics")
-  promptWords.forEach((pw) => searchKeywords.add(pw));
+  // 4. Add curriculum domain keywords (when a file is attached or domain is explicitly matched)
+  if (domain) {
+    domain.keywords.forEach((k) => searchKeywords.add(k));
+    domain.categories.forEach((c) => searchCategories.add(c));
+  }
+
+  const formattedPromptTopic =
+    promptWords.length > 0
+      ? promptWords
+          .slice(0, 5)
+          .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+          .join(" ")
+      : cleanPrompt;
+
+  const detectedSubject = domain
+    ? domain.subject
+    : formattedPromptTopic || "Library Catalog Reference";
+  const targetDepartment = domain ? domain.department : null;
 
   const keywordList = Array.from(searchKeywords);
   const categoryList = Array.from(searchCategories);
@@ -312,11 +349,157 @@ export function interpretPromptAndFile(prompt = "", file = null, extractedText =
     isDirectiveSimilarToFile,
     detectedSubject,
     targetDepartment,
+    promptWords,
+    coreQuery: coreQuery || cleanPrompt,
     keywordList,
     categoryList,
     cleanPrompt,
     hasFile: Boolean(file && file.name),
   };
+}
+
+/**
+ * Computes an accurate relevance match percentage (0-100%) prioritizing book title matches
+ */
+export function computeAccurateMatchPercentage(row, analysis) {
+  const rawTitle = String(row.title || "").trim();
+  if (!rawTitle) return 0;
+
+  const normTitle = rawTitle.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const cleanTitle = normTitle.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const compactTitle = normTitle.replace(/[^a-z0-9]/g, "");
+  const titleWords = cleanTitle.split(/\s+/).filter(Boolean);
+  const significantTitleWords = titleWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
+  const effectiveTitleWords = significantTitleWords.length > 0 ? significantTitleWords : titleWords;
+
+  const normAuthor = String(row.author || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const normCategory = `${row.category || ""} ${row.genres || ""} ${row.department || ""}`
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  const normSummary = String(row.summary || row.description || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+  const coreQuery = String(analysis.coreQuery || analysis.cleanPrompt || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+  const cleanQuery = coreQuery.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const compactQuery = coreQuery.replace(/[^a-z0-9]/g, "");
+
+  // 1. Exact Title Match -> 100%
+  if (
+    cleanQuery.length > 0 &&
+    (normTitle === coreQuery || cleanTitle === cleanQuery || (compactQuery.length > 0 && compactTitle === compactQuery))
+  ) {
+    return 100;
+  }
+
+  const promptWords = Array.isArray(analysis.promptWords) ? analysis.promptWords : [];
+
+  // 2. Full query phrase contained directly in the book title -> 94% - 99%
+  if (cleanQuery.length >= 2 && cleanTitle.includes(cleanQuery)) {
+    const wholeWordMatch = titleWords.includes(cleanQuery) || cleanTitle.startsWith(cleanQuery);
+    const lengthRatio = Math.min(1, cleanQuery.length / Math.max(1, cleanTitle.length));
+    const base = wholeWordMatch ? 94 : 90;
+    return Math.min(99, Math.round(base + lengthRatio * 5));
+  }
+
+  // 3. Evaluate word-by-word matches against the Book Title, Author, Category, and Summary
+  if (promptWords.length > 0) {
+    let exactTitleWordHits = 0;
+    let partialTitleWordHits = 0;
+    let authorHits = 0;
+    let catHits = 0;
+    let summaryHits = 0;
+
+    for (const pw of promptWords) {
+      const pwLower = pw.toLowerCase();
+      if (titleWords.includes(pwLower)) {
+        exactTitleWordHits++;
+        partialTitleWordHits++;
+      } else if (
+        cleanTitle.includes(pwLower) ||
+        (pwLower.length >= 4 && titleWords.some((tw) => tw.startsWith(pwLower) || pwLower.startsWith(tw)))
+      ) {
+        partialTitleWordHits++;
+      }
+
+      if (normAuthor.includes(pwLower)) authorHits++;
+      if (normCategory.includes(pwLower)) catHits++;
+      if (normSummary.includes(pwLower)) summaryHits++;
+    }
+
+    // Count how many of the book's significant title words were matched by the prompt
+    let matchedBookTitleWords = 0;
+    for (const tw of effectiveTitleWords) {
+      if (
+        promptWords.some(
+          (pw) =>
+            tw === pw ||
+            tw.includes(pw) ||
+            (pw.length >= 4 && (tw.startsWith(pw) || pw.startsWith(tw)))
+        )
+      ) {
+        matchedBookTitleWords++;
+      }
+    }
+    const bookTitleCoverage =
+      effectiveTitleWords.length > 0 ? matchedBookTitleWords / effectiveTitleWords.length : 0;
+    const promptTitleRatio = partialTitleWordHits / promptWords.length;
+
+    // All prompt words found in the book title
+    if (partialTitleWordHits === promptWords.length) {
+      if (exactTitleWordHits === promptWords.length && bookTitleCoverage >= 0.99) {
+        return 100;
+      }
+      const boost = Math.round(bookTitleCoverage * 6) + (exactTitleWordHits === promptWords.length ? 2 : 0);
+      return Math.min(99, Math.max(92, 91 + boost));
+    }
+
+    // Partial prompt words found in the book title
+    if (partialTitleWordHits > 0) {
+      const score =
+        78 +
+        Math.round(promptTitleRatio * 12) +
+        Math.round(bookTitleCoverage * 5) +
+        (exactTitleWordHits > 0 ? 2 : 0);
+      return Math.min(93, Math.max(80, score));
+    }
+
+    // Author match
+    if (authorHits > 0) {
+      const authorRatio = authorHits / promptWords.length;
+      return Math.min(90, Math.max(78, Math.round(78 + authorRatio * 12)));
+    }
+
+    // Category / Summary match
+    if (catHits > 0 || summaryHits > 0) {
+      const metaRatio = Math.min(1, (catHits + summaryHits) / promptWords.length);
+      return Math.min(82, Math.max(68, Math.round(68 + metaRatio * 12)));
+    }
+  }
+
+  // 4. File-based / curriculum domain match fallback
+  if (analysis.hasFile || (analysis.keywordList && analysis.keywordList.length > 0)) {
+    const kws = analysis.keywordList || [];
+    let hits = 0;
+    for (const kw of kws) {
+      const kwL = kw.toLowerCase();
+      if (cleanTitle.includes(kwL)) hits += 2;
+      else if (normCategory.includes(kwL) || normSummary.includes(kwL)) hits += 1;
+    }
+    if (hits > 0) {
+      return Math.min(92, Math.max(72, 70 + Math.min(22, hits * 4)));
+    }
+  }
+
+  return 72;
 }
 
 /**
@@ -326,62 +509,115 @@ export async function executeAiSearch({ prompt, file, limit = 40, department = n
   const extractedText = await extractTextFromFile(file || {});
   const analysis = interpretPromptAndFile(prompt, file, extractedText);
 
-  const keywords = analysis.keywordList;
-  const categories = analysis.categoryList;
+  const promptWords = analysis.promptWords || [];
+  const keywords = analysis.keywordList || [];
+  const categories = analysis.categoryList || [];
+  const coreQuery = (analysis.coreQuery || "").trim();
 
-  if (keywords.length === 0 && !analysis.hasFile && !prompt) {
+  if (keywords.length === 0 && !analysis.hasFile && !coreQuery) {
     return {
       books: [],
       total: 0,
       aiAnalysis: {
+        fileName: file?.name || "",
         summary: "Please provide a search prompt or attach a document.",
         detectedSubject: "None",
         topics: [],
+        totalMatches: 0,
       },
     };
   }
 
-  // Build intelligent SQL query ranking by semantic relevance to file and prompt
   const queryParams = [];
   let paramIdx = 1;
 
   const keywordCases = [];
   const orClauses = [];
+  const titleMatchCases = [];
 
-  // 1. Primary search keywords from file analysis
-  for (const kw of keywords.slice(0, 8)) {
-    queryParams.push(`%${kw}%`);
-    const idx = paramIdx++;
-    orClauses.push(`LOWER(b.title) LIKE LOWER($${idx})`);
-    orClauses.push(`LOWER(COALESCE(b.summary, '')) LIKE LOWER($${idx})`);
-    orClauses.push(`LOWER(COALESCE(b.category, '')) LIKE LOWER($${idx})`);
-    orClauses.push(`LOWER(COALESCE(b.genres, '')) LIKE LOWER($${idx})`);
+  // 1. Exact & Full Phrase Title / Author Matching
+  if (coreQuery.length > 0 && !analysis.isDirectiveSimilarToFile) {
+    queryParams.push(coreQuery);
+    const exactIdx = paramIdx++;
+    queryParams.push(`%${coreQuery}%`);
+    const phraseIdx = paramIdx++;
 
-    keywordCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${idx}) THEN 40 ELSE 0 END`);
-    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.summary, '')) LIKE LOWER($${idx}) THEN 25 ELSE 0 END`);
-    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.category, '')) LIKE LOWER($${idx}) THEN 20 ELSE 0 END`);
+    orClauses.push(`LOWER(TRIM(b.title)) = LOWER($${exactIdx})`);
+    orClauses.push(`LOWER(b.title) LIKE LOWER($${phraseIdx})`);
+    orClauses.push(`LOWER(b.author) LIKE LOWER($${phraseIdx})`);
+
+    keywordCases.push(`CASE WHEN LOWER(TRIM(b.title)) = LOWER($${exactIdx}) THEN 350 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${phraseIdx}) THEN 220 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(b.author) LIKE LOWER($${phraseIdx}) THEN 90 ELSE 0 END`);
+    titleMatchCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${phraseIdx}) THEN 1 ELSE 0 END`);
   }
 
-  // 2. Category / Subject cases
+  // 2. Prompt Word-by-Word Title & Metadata Matching (Highest priority for title words)
+  for (const pw of promptWords.slice(0, 8)) {
+    queryParams.push(`%${pw}%`);
+    const idx = paramIdx++;
+
+    orClauses.push(`LOWER(b.title) LIKE LOWER($${idx})`);
+    orClauses.push(`LOWER(b.author) LIKE LOWER($${idx})`);
+    orClauses.push(`LOWER(COALESCE(b.summary, '')) LIKE LOWER($${idx})`);
+    orClauses.push(`LOWER(COALESCE(b.category, '')) LIKE LOWER($${idx})`);
+    orClauses.push(`LOWER(COALESCE(b.genres::text, '')) LIKE LOWER($${idx})`);
+    orClauses.push(`LOWER(COALESCE(b.department, '')) LIKE LOWER($${idx})`);
+
+    keywordCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${idx}) THEN 100 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(b.author) LIKE LOWER($${idx}) THEN 45 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.category, '')) LIKE LOWER($${idx}) THEN 25 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.genres::text, '')) LIKE LOWER($${idx}) THEN 20 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.summary, '')) LIKE LOWER($${idx}) THEN 15 ELSE 0 END`);
+    titleMatchCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${idx}) THEN 1 ELSE 0 END`);
+
+    // Also support prefix/stem matching for words >= 4 chars (e.g., "program" <-> "programming")
+    if (pw.length >= 5) {
+      const stem = pw.replace(/(ing|tion|s|es|ed|ment)$/i, "");
+      if (stem.length >= 4 && stem !== pw) {
+        queryParams.push(`%${stem}%`);
+        const sIdx = paramIdx++;
+        orClauses.push(`LOWER(b.title) LIKE LOWER($${sIdx})`);
+        keywordCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${sIdx}) THEN 60 ELSE 0 END`);
+        titleMatchCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${sIdx}) THEN 1 ELSE 0 END`);
+      }
+    }
+  }
+
+  // 3. Supplementary File & Domain Keywords (when file is attached or no prompt words matched)
+  const extraKeywords = keywords.filter((k) => !promptWords.includes(k)).slice(0, 8);
+  for (const kw of extraKeywords) {
+    queryParams.push(`%${kw}%`);
+    const idx = paramIdx++;
+    if (analysis.hasFile || promptWords.length === 0) {
+      orClauses.push(`LOWER(b.title) LIKE LOWER($${idx})`);
+      orClauses.push(`LOWER(COALESCE(b.summary, '')) LIKE LOWER($${idx})`);
+      orClauses.push(`LOWER(COALESCE(b.category, '')) LIKE LOWER($${idx})`);
+      orClauses.push(`LOWER(COALESCE(b.genres::text, '')) LIKE LOWER($${idx})`);
+    }
+    keywordCases.push(`CASE WHEN LOWER(b.title) LIKE LOWER($${idx}) THEN 35 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.summary, '')) LIKE LOWER($${idx}) THEN 20 ELSE 0 END`);
+    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.category, '')) LIKE LOWER($${idx}) THEN 15 ELSE 0 END`);
+  }
+
+  // 4. Category / Subject cases (only broaden OR clause when file is attached)
   for (const cat of categories.slice(0, 5)) {
     queryParams.push(`%${cat}%`);
     const cIdx = paramIdx++;
-    orClauses.push(`LOWER(COALESCE(b.category, '')) LIKE LOWER($${cIdx})`);
-    orClauses.push(`LOWER(COALESCE(b.genres, '')) LIKE LOWER($${cIdx})`);
-
-    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.category, '')) LIKE LOWER($${cIdx}) THEN 25 ELSE 0 END`);
+    if (analysis.hasFile) {
+      orClauses.push(`LOWER(COALESCE(b.category, '')) LIKE LOWER($${cIdx})`);
+      orClauses.push(`LOWER(COALESCE(b.genres::text, '')) LIKE LOWER($${cIdx})`);
+    }
+    keywordCases.push(`CASE WHEN LOWER(COALESCE(b.category, '')) LIKE LOWER($${cIdx}) THEN 20 ELSE 0 END`);
   }
 
-  // If department filter specified
-  let deptClause = "";
-  if (department && department !== "All") {
-    queryParams.push(`%${department}%`);
-    const dIdx = paramIdx++;
-    deptClause = `AND (b.department ILIKE $${dIdx} OR b.category ILIKE $${dIdx})`;
-  }
-
+  // NOTE: Do NOT restrict WHERE by department when searching by prompt/keywords,
+  // because the mobile client sends activeDepartment ("Circulation Section") by default,
+  // which previously hid books in Filipiniana, Engineering, or "Circulation" (without "Section")
+  // and caused 0 MATCHES to be returned!
   const whereClause = orClauses.length > 0 ? `(${orClauses.join(" OR ")})` : "1=1";
   const relevanceExpression = keywordCases.length > 0 ? `(${keywordCases.join(" + ")})` : "50";
+  const titleHitsExpression = titleMatchCases.length > 0 ? `(${titleMatchCases.join(" + ")})` : "0";
 
   queryParams.push(limit);
   const limitIdx = paramIdx++;
@@ -405,52 +641,105 @@ export async function executeAiSearch({ prompt, file, limit = 40, department = n
       COALESCE(b.copies, 1) AS copies,
       COALESCE(b.pages, 320) AS pages,
       COALESCE(b.language, 'EN') AS language,
-      ${relevanceExpression} AS relevance_score
+      b.volume,
+      b.edition,
+      b.accession_number AS "accessionNumber",
+      COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+      COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
+      ${relevanceExpression} AS relevance_score,
+      ${titleHitsExpression} AS title_hits
     FROM books b
-    WHERE ${whereClause}
-      ${deptClause}
-    ORDER BY relevance_score DESC, b.title ASC
+    LEFT JOIN transactions t ON (
+      (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+      OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
+    )
+    WHERE b.archived_at IS NULL
+      AND ${whereClause}
+    GROUP BY b.id
+    ORDER BY title_hits DESC, relevance_score DESC, b.title ASC
     LIMIT $${limitIdx};
   `;
 
   let books = [];
   try {
     const res = await pool.query(sql, queryParams);
-    const maxScore = res.rows.length > 0 ? Math.max(...res.rows.map((r) => Number(r.relevance_score) || 1)) : 1;
+    let rows = res.rows || [];
 
-    books = res.rows.map((row) => {
-      const rawScore = Number(row.relevance_score) || 0;
-      // Normalize match percentage cleanly between 72% and 98%
-      const matchPercentage = Math.min(98, Math.max(72, Math.round(70 + (rawScore / maxScore) * 28)));
+    // If the user searched a text prompt (no file attached) and at least one book matched in the TITLE,
+    // prioritize books that actually match the prompt words in title or author so results are tightly accurate to the prompt!
+    if (!analysis.hasFile && promptWords.length > 0 && rows.some((r) => Number(r.title_hits) > 0)) {
+      const titleOrAuthorRows = rows.filter((r) => {
+        if (Number(r.title_hits) > 0) return true;
+        const authorLower = String(r.author || "").toLowerCase();
+        return promptWords.some((pw) => authorLower.includes(pw));
+      });
+      if (titleOrAuthorRows.length > 0) {
+        rows = titleOrAuthorRows;
+      }
+    }
 
-      return {
-        id: String(row.id),
-        isbn: row.isbn,
-        local: true,
-        status: row.status || "Available",
-        shelfLocation: row.shelfLocation || "Circulation Shelf",
-        department: row.department || "Circulation Section",
-        matchPercentage,
-        volumeInfo: {
-          title: row.title || "Library Reference",
-          authors: [row.author || "Unknown Author"],
-          description: row.description || row.summary || "",
-          categories: [row.category || row.genres || row.department || "General"],
-          publishedDate: String(row.year || "2024"),
-          pageCount: row.pages || 320,
-          language: row.language || "en",
-          imageLinks: {
-            thumbnail: row.coverUrl || "https://via.placeholder.com/100",
+    books = rows
+      .map((row) => {
+        const matchPercentage = computeAccurateMatchPercentage(row, analysis);
+        const totalCopies = Math.max(1, Number(row.copies || 1));
+        const borrowedCount = Number(row.borrowedCount || 0);
+        const reservedCount = Number(row.reservedCount || 0);
+        const unavailableCopies = Math.min(totalCopies, borrowedCount);
+        const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+        const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+        const isAvailable = availableCopies > 0;
+        const computedStatus = isAvailable ? "Available" : reservedCount > 0 ? "Reserved" : "Unavailable";
+
+        return {
+          id: String(row.id),
+          isbn: row.isbn || "",
+          local: true,
+          status: computedStatus,
+          availability: computedStatus,
+          available: isAvailable,
+          copies: totalCopies,
+          availableCopies,
+          borrowedCount,
+          reservedCount,
+          volume: row.volume || "Single Volume / None",
+          edition: row.edition || "Single Edition / None",
+          accessionNumber: row.accessionNumber || "",
+          shelfLocation: row.shelfLocation || "Circulation Shelf",
+          department: row.department || "Circulation Section",
+          matchPercentage,
+          volumeInfo: {
+            title: row.title || "Library Reference",
+            authors: [row.author || "Unknown Author"],
+            description: row.description || row.summary || "",
+            categories: [
+              row.category ||
+                (Array.isArray(row.genres) ? row.genres[0] : row.genres) ||
+                row.department ||
+                "General",
+            ],
+            publishedDate: String(row.year || "2024"),
+            pageCount: row.pages || 320,
+            language: row.language || "en",
+            imageLinks: {
+              thumbnail: row.coverUrl || "https://via.placeholder.com/100",
+            },
           },
-        },
-      };
-    });
+        };
+      })
+      .sort((a, b) => {
+        if (b.matchPercentage !== a.matchPercentage) {
+          return b.matchPercentage - a.matchPercentage;
+        }
+        return (a.volumeInfo?.title || "").localeCompare(b.volumeInfo?.title || "");
+      });
   } catch (err) {
     console.error("[AI Search] Database search error:", err.message);
   }
 
   // Structure user-facing AI analysis summary
-  const topTopics = keywords.slice(0, 6).map((k) => k.charAt(0).toUpperCase() + k.slice(1));
+  const topTopics = (promptWords.length > 0 ? promptWords : keywords)
+    .slice(0, 6)
+    .map((k) => k.charAt(0).toUpperCase() + k.slice(1));
   const fileNotice = file?.name ? `Analyzed file "${file.name}"` : "Analyzed prompt";
   const intentNotice = analysis.isDirectiveSimilarToFile
     ? `Identified topic: ${analysis.detectedSubject}. Recommending relevant library books matching the file.`

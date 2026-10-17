@@ -174,16 +174,45 @@ export function emitBookAdded(book) {
   }
 }
 
-export function emitBorrowRequest(transaction) {
-  if (io) {
+export function emitBorrowRequest(rawTransaction) {
+  if (io && rawTransaction) {
+    const base = rawTransaction?.payload && typeof rawTransaction.payload === "object"
+      ? { ...rawTransaction, ...rawTransaction.payload }
+      : rawTransaction;
+    if (!base.id && !base.transactionId && !base.resourceTitle && !base.title) {
+      return;
+    }
+    const rawType = String(base.type || base.action || "Borrow").trim();
+    const normalizedType =
+      rawType.toLowerCase() === "reservation" || rawType.toLowerCase() === "reserve"
+        ? "Reservation"
+        : "Borrow";
+    const transaction = {
+      ...base,
+      type: normalizedType,
+      status: base.status || "Pending",
+      resourceTitle: base.resourceTitle || base.title || "Book",
+    };
     console.log("[Socket.io Broadcast] Emitting borrow:request for transaction:", transaction?.id || transaction?.resourceTitle);
     io.emit("borrow:request", transaction);
     io.emit("notification:new", transaction);
   }
 }
 
-export function emitReservationRequest(transaction) {
-  if (io) {
+export function emitReservationRequest(rawTransaction) {
+  if (io && rawTransaction) {
+    const base = rawTransaction?.payload && typeof rawTransaction.payload === "object"
+      ? { ...rawTransaction, ...rawTransaction.payload }
+      : rawTransaction;
+    if (!base.id && !base.transactionId && !base.resourceTitle && !base.title) {
+      return;
+    }
+    const transaction = {
+      ...base,
+      type: "Reservation",
+      status: base.status || "Pending",
+      resourceTitle: base.resourceTitle || base.title || "Book",
+    };
     console.log("[Socket.io Broadcast] Emitting reservation:request for transaction:", transaction?.id || transaction?.resourceTitle);
     io.emit("reservation:request", transaction);
     io.emit("notification:new", transaction);
