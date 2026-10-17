@@ -110,9 +110,15 @@ export default function ReservationsScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const reservedBooks = activeReservations.filter(
-    (book) => book.action === 'Reserve' || book.status === 'Pending' || book.status === 'Waitlisted'
-  );
+  const reservedBooks = activeReservations.filter((book) => {
+    const isRes =
+      book.action === 'Reserve' ||
+      (book as any).type === 'Reservation' ||
+      book.status === 'Reserved' ||
+      book.status === 'Reservation';
+    // Unapproved reservations must not appear in the reservation tab until approved by the librarian
+    return isRes && (book.status === 'Approved' || book.status === 'Reserved');
+  });
 
   const studentFullName = user?.fullName || profile.name || "Student";
   const studentCourseSection = `${user?.course || profile.course || "General Program"}${profile.yearlevel ? ` - ${profile.yearlevel}` : ""}`;
@@ -168,7 +174,7 @@ export default function ReservationsScreen() {
   };
 
   // Build rows for the Library Card table (minimum 16 rows to match the reference design visual)
-  // Officially approved borrowed books, active loans, active reservations, and returned history belong here
+  // Officially approved borrowed books, active loans, approved reservations, and returned history belong here
   const approvedLibraryCardBooks = useMemo(() => {
     return libraryCardBooks.filter((item) => {
       if (!item) return false;
@@ -179,8 +185,8 @@ export default function ReservationsScreen() {
         item.status === 'Reserved' ||
         item.status === 'Reservation';
       if (isRes) {
-        // Active reservations belong on the card in Violet
-        return item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Reserved' || item.status === 'Approved';
+        // Only librarian-approved reservations belong on the card in Violet
+        return item.status === 'Reserved' || item.status === 'Approved';
       }
       if (item.status === 'Pending' || item.status === 'Waitlisted') return false;
       if (item.action === 'Borrow' && item.status === 'Upcoming') return false;

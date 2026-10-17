@@ -172,7 +172,7 @@ export const reservationTimerService = {
         SELECT id, isbn, resource_title AS "resourceTitle", student_name AS "studentName", student_id AS "studentId"
         FROM transactions
         WHERE type = 'Reservation'
-          AND status = 'Pending'
+          AND status = 'Approved'
           AND (available_at IS NULL OR expires_at <= NOW())
           AND (
             (isbn IS NOT NULL AND isbn != '' AND isbn != 'N/A' AND isbn = $1)

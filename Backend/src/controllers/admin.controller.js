@@ -763,7 +763,8 @@ export const adminController = {
 
   async decideTransaction(req, res) {
     const { transactionId } = req.params;
-    const { status, comment, type, dueDate, action, pickedUp, resourceTitle, isbn, studentId, studentName } = req.body;
+    const { status: rawStatus, decision, comment, type, dueDate, action, pickedUp, resourceTitle, isbn, studentId, studentName } = req.body;
+    const status = rawStatus || decision;
 
     const actorId = req.user?.sub || req.user?.id;
     const isUuid = Boolean(actorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(actorId)));

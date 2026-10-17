@@ -136,46 +136,33 @@ export default function BooksScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  // Deduplicated Unified Reservation List
+  // Deduplicated Unified Reservation List (only librarian-approved reservations)
   const reservationList = useMemo(() => {
     const seenIds = new Set<string>();
     const list: ReservationBook[] = [];
 
+    const tryAdd = (item: ReservationBook) => {
+      if (!item || !item.id || seenIds.has(item.id)) return;
+      const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation' || item.status === 'Reserved';
+      if (!isRes) return;
+      if (item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Declined' || item.status === 'Cancelled') return;
+      seenIds.add(item.id);
+      list.push(item);
+    };
+
     // 1. Upcoming active reservations
     for (const item of upcomingReservations) {
-      const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation' || item.queuePosition !== undefined || item.status === 'Pending';
-      if (isRes && !seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        list.push(item);
-      }
+      tryAdd(item);
     }
 
     // 2. All stored reservations
     for (const item of allReservations) {
-      const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation' || item.queuePosition !== undefined;
-      if (isRes && !seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        list.push(item);
-      }
+      tryAdd(item);
     }
 
     // 3. Historical reservation records
     for (const item of allHistory) {
-      const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation' || item.queuePosition !== undefined;
-      if (isRes && !seenIds.has(item.id)) {
-        seenIds.add(item.id);
-        list.push(item);
-      }
-    }
-
-    // Fallback if none flagged specifically with action Reserve: include any pending reservations
-    if (list.length === 0) {
-      for (const item of allReservations) {
-        if (item.status === 'Pending' && !seenIds.has(item.id)) {
-          seenIds.add(item.id);
-          list.push(item);
-        }
-      }
+      tryAdd(item);
     }
 
     return list;

@@ -1131,13 +1131,13 @@
         const dueStr = t.due_date ? new Date(t.due_date).toLocaleDateString() : 'N/A';
 
         let actionBtns = '';
-        if (isReservation) {
-          actionBtns = '<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3);">Waitlisted in Queue</span>';
-        } else if (t.status === 'Pending') {
+        if (t.status === 'Pending') {
           actionBtns = `
-            <button class="action-btn action-btn-green" onclick="decideTx('${t.id}', 'Approved')">Approve</button>
-            <button class="action-btn action-btn-red" onclick="decideTx('${t.id}', 'Declined')">Decline</button>
+            <button class="action-btn action-btn-green" onclick="decideTx('${t.id}', 'Approved', '${t.type || 'Borrow'}')">Approve</button>
+            <button class="action-btn action-btn-red" onclick="decideTx('${t.id}', 'Declined', '${t.type || 'Borrow'}')">Decline</button>
           `;
+        } else if (isReservation && t.status === 'Approved') {
+          actionBtns = '<span class="badge" style="background: rgba(139, 92, 246, 0.15); color: #c084fc; border: 1px solid rgba(139, 92, 246, 0.3);">Approved in Queue</span>';
         } else if (t.status === 'Approved') {
           actionBtns = `
             <button class="action-btn action-btn-blue" onclick="returnTx('${t.id}')">Return</button>
@@ -1192,8 +1192,17 @@
     }
 
     // 6. Transaction Actions
-    window.decideTx = async function(id, decision) {
-      if (!confirm(`Are you sure you want to mark this transaction as ${decision}?`)) return;
+    window.decideTx = async function(id, decision, type = 'Borrow') {
+      let comment = '';
+      if (decision === 'Declined') {
+        const entered = prompt(`Optional reason / comment for declining this ${type} request:`);
+        if (entered === null) return; // User cancelled
+        comment = entered;
+      } else {
+        if (!confirm(`Are you sure you want to approve this ${type} request?`)) return;
+        const entered = prompt(`Optional administrator comment for approving this ${type}:`);
+        if (entered) comment = entered;
+      }
       try {
         const res = await fetch(`/api/transactions/${id}`, {
           method: 'PATCH',
@@ -1201,7 +1210,7 @@
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
           },
-          body: JSON.stringify({ decision })
+          body: JSON.stringify({ status: decision, decision, comment, type })
         });
         if (res.ok) {
           loadTransactions();

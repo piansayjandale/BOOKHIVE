@@ -698,6 +698,8 @@ export const syncTransactionsWithBackend = async (force = false) => {
           available: String(tx.available === "Available" || tx.available === "true" || tx.available === true),
           shelf: tx.shelf || undefined,
           action: tx.type === 'Reservation' ? 'Reserve' : 'Borrow',
+          type: tx.type === 'Reservation' ? 'Reservation' : 'Borrow',
+          comment: tx.comment || undefined,
           availableAt: tx.availableAt || undefined,
           expiresAt: tx.expiresAt || undefined,
           claimDeadlineRemainingSeconds: typeof tx.claimDeadlineRemainingSeconds === 'number' ? tx.claimDeadlineRemainingSeconds : undefined,
@@ -715,7 +717,13 @@ export const syncTransactionsWithBackend = async (force = false) => {
       }
 
       // Filter active (non-returned/declined) reservations/borrows for getReservations/getUpcomingReservations
-      cachedReservations = uniqueMappedList.filter(item => item.status !== 'Completed' && item.status !== 'Declined');
+      // Unapproved (Pending) reservations must not show in the reservations tab or library card
+      cachedReservations = uniqueMappedList.filter(item => {
+        if (item.status === 'Completed' || item.status === 'Declined' || item.status === 'Cancelled') return false;
+        const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation';
+        if (isRes && (item.status === 'Pending' || item.status === 'Waitlisted')) return false;
+        return true;
+      });
       cachedHistory = uniqueMappedList;
 
       await AsyncStorage.setItem("STUDENT_RESERVATIONS", JSON.stringify(cachedReservations));
@@ -740,7 +748,12 @@ export const getReservations = () => {
 
 export const getUpcomingReservations = () => {
   syncTransactionsWithBackend();
-  return cachedReservations.filter((item) => item.status !== "Completed" && item.status !== "Declined");
+  return cachedReservations.filter((item) => {
+    if (item.status === "Completed" || item.status === "Declined" || item.status === "Cancelled") return false;
+    const isRes = item.action === "Reserve" || (item as any).type === "Reservation";
+    if (isRes && (item.status === "Pending" || item.status === "Waitlisted")) return false;
+    return true;
+  });
 };
 
 export const getReservationHistory = () => {
@@ -770,8 +783,8 @@ export const getLibraryCardHistory = (): ReservationBook[] => {
       item.status === 'Reservation';
 
     if (isReservation) {
-      // Active reservations (Pending, Waitlisted, Reserved, Approved) belong on the library card in Violet
-      if (item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Reserved' || item.status === 'Approved') {
+      // Only librarian-approved reservations belong on the library card in Violet
+      if (item.status === 'Reserved' || item.status === 'Approved') {
         seenIds.add(item.id);
         list.push(item);
       }
@@ -1033,10 +1046,12 @@ export const addReservation = async (reservation: any) => {
     }
   }
 
-  // Instantly push to local cache for reactive UX
+  // Instantly push to local cache for reactive UX (only for Borrow; Pending Reservations stay hidden until Librarian approves)
   const existing = cachedReservations.find((item) => item.id === reservation.id);
   if (!existing) {
-    cachedReservations.push(reservation);
+    if (reservation.action === 'Borrow') {
+      cachedReservations.push(reservation);
+    }
     cachedHistory.unshift(reservation);
   }
   notify();
@@ -2091,10 +2106,11 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
   const isReturned = status === "Returned";
   const isDueReminder = incomingData?.event_type === "BOOK_DUE_REMINDER" || (incomingData?.title && incomingData.title.toLowerCase().includes("due"));
   const type = txData.type || (localMatch?.action === "Reserve" ? "Reservation" : localMatch?.action) || "Borrow";
-  const isReservation = type === "Reservation" || type === "Reserve" || localMatch?.action === "Reserve";
+  const isReservation = type === "Reservation" || type === "Reserve";
+  const commentNote = txData.comment ? ` Librarian note: ${txData.comment}` : "";
 
   let notifTitle = `${type} Update`;
-  let notifBody = `Your ${type.toLowerCase()} request for "${title}" has been updated to ${status}.`;
+  let notifBody = `Your ${type.toLowerCase()} request for "${title}" has been updated to ${status}.${commentNote}`;
 
   if (isDueReminder) {
     const isToday = isDateToday(txData.dueDate);
@@ -2107,20 +2123,24 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
   } else if (isReservation) {
     if (status === "Available" || status === "Ready" || txData.available === "true" || txData.available === true) {
       notifTitle = `Reserved Book Available`;
-      notifBody = `Good news! "${title}" has been returned and is now available for you to borrow. Please visit the library to claim your reserved copy.`;
+      notifBody = `Good news! "${title}" has been returned and is now available for you to borrow. Please visit the library to claim your reserved copy.${commentNote}`;
     } else if (status === "Expired") {
       notifTitle = `Reservation Expired`;
       notifBody = `Your reservation hold window for "${title}" has expired. The book has been passed to the next student in line.`;
     } else if (status === "Cancelled") {
       notifTitle = `Reservation Cancelled`;
-      notifBody = `Your reservation for "${title}" has been cancelled.`;
+      notifBody = `Your reservation for "${title}" has been cancelled.${commentNote}`;
+    } else if (isDeclined) {
+      notifTitle = `Reservation Declined`;
+      const commentPart = txData.comment ? ` Reason: ${txData.comment}` : "";
+      notifBody = `Your reservation request for "${title}" was declined by the librarian.${commentPart}`;
     } else {
-      notifTitle = `Reservation Queued`;
-      notifBody = `You are on the 1st-come 1st-served waitlist for "${title}". You will be automatically notified when the book is returned and ready for pickup.`;
+      notifTitle = `Reservation Approved & Queued`;
+      notifBody = `Your reservation for "${title}" has been approved and added to the 1st-come, 1st-served queue. When a copy is available, it will automatically become an active borrow.${commentNote}`;
     }
   } else if (isApproved) {
     notifTitle = `${type} Approved`;
-    notifBody = `Your ${type.toLowerCase()} request for "${title}" has been approved by the librarian. 24-hour pickup window is active.`;
+    notifBody = `Your ${type.toLowerCase()} request for "${title}" has been approved by the librarian. 24-hour pickup window is active.${commentNote}`;
   } else if (isDeclined) {
     notifTitle = `${type} Declined`;
     const commentPart = txData.comment ? ` Reason: ${txData.comment}` : "";
@@ -2133,7 +2153,7 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
   // 4. Stable Deterministic ID
   const stableId = isDueReminder
     ? `due-${txId || title}-${formatDateOnly(txData.dueDate || new Date())}`
-    : `tx-decided-${txId || title}-${isPickedUp ? "picked-up" : status.toLowerCase()}`;
+    : `tx-decided-${txId || title}-${isPickedUp ? "picked-up" : status.toLowerCase()}-${type.toLowerCase()}`;
 
   // 5. Strict deduplication check: avoid duplicate notifications
   const contentKey = `${notifTitle.toLowerCase()}|||${notifBody.toLowerCase()}`;
@@ -2226,22 +2246,51 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
     const resolvedDueDate = txData.dueDate
       ? new Date(txData.dueDate).toISOString().split('T')[0]
       : (txData.due_date ? new Date(txData.due_date).toISOString().split('T')[0] : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+    const resolvedAction = isReservation ? "Reserve" : "Borrow";
+    const resolvedType = isReservation ? "Reservation" : "Borrow";
 
-    cachedReservations = cachedReservations.map((r) =>
-      r.id === txId || (r.title && title && r.title.toLowerCase() === title.toLowerCase())
-        ? {
-            ...r,
-            status: isPickedUp ? "Picked Up" : status,
-            pickedUpAt: isPickedUp ? (txData.pickedUpAt || nowIso) : r.pickedUpAt,
-            isPickedUp: isPickedUp || r.isPickedUp,
-            pickupDate: isPickedUp ? (txData.pickedUpAt ? formatBorrowDateTime(txData.pickedUpAt) : "Today") : (r.pickupDate || resolvedBorrowDate),
-            borrowDate: r.borrowDate || resolvedBorrowDate,
-            dueDate: resolvedDueDate,
-            returnDate: resolvedDueDate,
-          }
-        : r
-    );
-    if (isDeclined || isReturned) {
+    const reservationFound = cachedReservations.some((r) => r.id === txId || (r.title && title && r.title.toLowerCase() === title.toLowerCase()));
+    if (reservationFound) {
+      cachedReservations = cachedReservations.map((r) =>
+        r.id === txId || (r.title && title && r.title.toLowerCase() === title.toLowerCase())
+          ? {
+              ...r,
+              action: resolvedAction,
+              type: resolvedType,
+              status: isPickedUp ? "Picked Up" : status,
+              pickedUpAt: isPickedUp ? (txData.pickedUpAt || nowIso) : r.pickedUpAt,
+              isPickedUp: isPickedUp || r.isPickedUp,
+              pickupDate: isPickedUp ? (txData.pickedUpAt ? formatBorrowDateTime(txData.pickedUpAt) : "Today") : (r.pickupDate || resolvedBorrowDate),
+              borrowDate: r.borrowDate || resolvedBorrowDate,
+              dueDate: resolvedDueDate,
+              returnDate: resolvedDueDate,
+              comment: txData.comment || (r as any).comment,
+            } as any
+          : r
+      );
+    } else if (status === "Approved" || isPickedUp) {
+      const match = historyMatch || localMatch || txData;
+      cachedReservations.unshift({
+        id: txId,
+        isbn: match.isbn,
+        title: title || match.title || "Book",
+        author: match.author || "Author",
+        category: match.category || match.department || "Circulation",
+        department: match.department || match.category || "Circulation",
+        action: resolvedAction,
+        type: resolvedType,
+        status: isPickedUp ? "Picked Up" : "Approved",
+        isReturned: false,
+        borrowDate: resolvedBorrowDate,
+        pickupDate: isPickedUp ? (txData.pickedUpAt ? formatBorrowDateTime(txData.pickedUpAt) : "Today") : resolvedBorrowDate,
+        returnDate: resolvedDueDate,
+        dueDate: resolvedDueDate,
+        available: isReservation ? "false" : "true",
+        comment: txData.comment || undefined,
+      } as any);
+    }
+
+    if (isDeclined || isReturned || status === "Cancelled") {
       cachedReservations = cachedReservations.filter((r) => r.id !== txId && (!title || r.title !== title));
     }
 
@@ -2251,6 +2300,8 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
         h.id === txId || (h.title && title && h.title.toLowerCase() === title.toLowerCase())
           ? {
               ...h,
+              action: resolvedAction,
+              type: resolvedType,
               status: status === "Returned" ? "Completed" : (isPickedUp ? "Picked Up" : status),
               isReturned: status === "Returned",
               pickedUpAt: isPickedUp ? (txData.pickedUpAt || nowIso) : h.pickedUpAt,
@@ -2259,8 +2310,8 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
               borrowDate: h.borrowDate || resolvedBorrowDate,
               dueDate: resolvedDueDate,
               returnDate: status === "Returned" ? new Date().toISOString().split('T')[0] : (resolvedDueDate || h.returnDate),
-              comment: txData.comment || h.comment,
-            }
+              comment: txData.comment || (h as any).comment,
+            } as any
           : h
       );
     } else if (status === "Approved" || isPickedUp) {
@@ -2272,14 +2323,16 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
         author: match.author || "Author",
         category: match.category || match.department || "Circulation",
         department: match.department || match.category || "Circulation",
-        action: type === "Reservation" ? "Reserve" : "Borrow",
+        action: resolvedAction,
+        type: resolvedType,
         status: isPickedUp ? "Picked Up" : "Approved",
         isReturned: false,
         borrowDate: resolvedBorrowDate,
         pickupDate: isPickedUp ? (txData.pickedUpAt ? formatBorrowDateTime(txData.pickedUpAt) : "Today") : resolvedBorrowDate,
         returnDate: resolvedDueDate,
         dueDate: resolvedDueDate,
-        available: "true",
+        available: isReservation ? "false" : "true",
+        comment: txData.comment || undefined,
       } as any);
     }
 
@@ -2747,8 +2800,7 @@ export const fetchStudentCardAndViolations = async (qrPayload: string): Promise<
       b.status === "On Loan" ||
       b.status === "Completed" ||
       b.status === "Reserved" ||
-      b.status === "Returned" ||
-      ((b.action === 'Reserve' || (b as any).type === 'Reservation') && (b.status === 'Pending' || b.status === 'Waitlisted'))
+      b.status === "Returned"
     )
     .map((b) => {
       const isReturned = b.status === "Returned" || b.status === "Completed";

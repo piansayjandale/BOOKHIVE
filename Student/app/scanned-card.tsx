@@ -102,7 +102,7 @@ export default function ScannedCardScreen() {
 
   const student = data?.student;
   const libraryCard = data?.libraryCard || [];
-  const reservedBooks = data?.reservedBooks || [];
+  const reservedBooks = (data?.reservedBooks || []).filter((item: any) => item?.status !== 'Pending' && item?.status !== 'Waitlisted' && item?.status !== 'Declined');
   const violations = data?.violations || [];
 
   const studentFullName = student?.fullName || student?.name || "Student";
@@ -371,8 +371,8 @@ export default function ScannedCardScreen() {
         item?.status === "Reservation" ||
         item?.dueReturnDate === "Reservation";
       if (isRes) {
-        // Active reservations belong on the card in Violet
-        return item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Reserved' || item.status === 'Approved';
+        // Only librarian-approved reservations belong on the card in Violet
+        return item.status === 'Reserved' || item.status === 'Approved';
       }
       if (item.status === 'Pending' || item.status === 'Upcoming') return false;
       return true;

@@ -1344,40 +1344,7 @@ export const studentModel = {
 
       let row = null;
       try {
-        // 1. Guard: Verify that all copies are currently unavailable before permitting a reservation
-        try {
-          const availCheck = `
-            SELECT 
-              b.copies,
-              (SELECT COUNT(*)::int FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Borrow' AND t.status IN ('Approved', 'Pending')) AS "borrowedCount",
-              (SELECT COUNT(*)::int FROM transactions t WHERE ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn) OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))) AND t.type = 'Reservation' AND t.status = 'Pending' AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW())) AS "heldCount"
-            FROM books b
-            WHERE (b.isbn IS NOT NULL AND b.isbn != '' AND b.isbn != 'N/A' AND b.isbn = $1)
-               OR (b.title IS NOT NULL AND lower(b.title) = lower($2))
-               OR (b.id::text = $3)
-            LIMIT 1
-          `;
-          const availRes = await pool.query(availCheck, [isbn || '', resourceTitle || '', bookId || '']);
-          if (availRes.rows.length > 0) {
-            const bData = availRes.rows[0];
-            const totalCopies = Math.max(1, Number(bData.copies || 1));
-            const inUseCopies = Number(bData.borrowedCount || 0) + Number(bData.heldCount || 0);
-            const netAvailable = Math.max(0, totalCopies - inUseCopies);
-            if (netAvailable > 0) {
-              const availErr = new Error(`Copies of "${resourceTitle || 'this book'}" are currently available for immediate borrowing. Reservation is only permitted when all copies are checked out or unavailable.`);
-              availErr.code = "COPIES_AVAILABLE";
-              availErr.statusCode = 400;
-              throw availErr;
-            }
-          }
-        } catch (availErr) {
-          if (availErr.code === "COPIES_AVAILABLE") {
-            throw availErr;
-          }
-          warnIfNotOffline("DB student:reserveBook avail check fallback:", availErr.message);
-        }
-
-        // 2. Determine 1st-come 1st-served queue position
+        // 1. Determine 1st-come 1st-served queue position among active reservations
         let queuePosition = 1;
         try {
           const queueCountRes = await pool.query(
@@ -1385,8 +1352,8 @@ export const studentModel = {
              FROM transactions
              WHERE ((isbn IS NOT NULL AND isbn != '' AND isbn != 'N/A' AND isbn = $1)
                     OR (resource_title IS NOT NULL AND LOWER(resource_title) = LOWER($2)))
-               AND type = 'Reservation'
-               AND status = 'Pending'`,
+                AND type = 'Reservation'
+                AND status IN ('Pending', 'Approved')`,
             [isbn || '', resourceTitle || '']
           );
           queuePosition = Number(queueCountRes.rows[0]?.count || 0) + 1;
@@ -2025,7 +1992,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
             AND (
               (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed'))
-              OR (t.type::text = 'Reservation' AND t.status::text IN ('Pending', 'Approved', 'Waitlisted', 'Reserved'))
+              OR (t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved'))
             )
           ORDER BY t.requested_at DESC
         `;
@@ -2155,10 +2122,9 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           FROM transactions t
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
             AND (
-              t.type = 'Reservation'
-              OR (t.type = 'Borrow' AND t.status = 'Pending')
+              (t.type = 'Reservation' AND t.status = 'Approved')
+              OR (t.type = 'Borrow' AND t.status = 'Approved')
             )
-            AND t.status IN ('Pending', 'Approved')
           ORDER BY t.requested_at DESC
         `;
         const { rows: resRows } = await pool.query(resSql, [String(student.id), String(student.idNumber)]);

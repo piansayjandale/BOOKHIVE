@@ -670,40 +670,66 @@ export const adminModel = {
       }
 
       // Check existing transaction type and availability
+      let existingType = type || "Borrow";
       let extraConversionSql = "";
       try {
         const checkAvail = await pool.query(
           `
           SELECT 
             t.type,
+            t.requested_at,
             (
-              SELECT GREATEST(0, COALESCE(MAX(b.copies), 1) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END))
+              SELECT GREATEST(0, COALESCE(
+                (
+                  SELECT MAX(b.copies)
+                  FROM books b
+                  WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+                     OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
+                ),
+                1
+              ) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'On Loan', 'Picked Up') THEN 1 END))
               FROM transactions sub_t
-              LEFT JOIN books b ON (
-                (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b.isbn = sub_t.isbn)
-                OR (sub_t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(sub_t.resource_title))
+              WHERE (
+                (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND sub_t.isbn = t.isbn)
+                OR (t.resource_title IS NOT NULL AND LOWER(sub_t.resource_title) = LOWER(t.resource_title))
               )
-              WHERE (sub_t.isbn = t.isbn OR LOWER(sub_t.resource_title) = LOWER(t.resource_title))
-            ) AS "netAvailable"
+            ) AS "netAvailable",
+            (
+              SELECT COUNT(*)::int
+              FROM transactions queue_t
+              WHERE (
+                (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND queue_t.isbn = t.isbn)
+                OR (t.resource_title IS NOT NULL AND LOWER(queue_t.resource_title) = LOWER(t.resource_title))
+              )
+                AND queue_t.type = 'Reservation'
+                AND queue_t.status = 'Approved'
+                AND queue_t.requested_at < t.requested_at
+                AND queue_t.id != t.id
+            ) AS "approvedAheadCount"
           FROM transactions t
           WHERE t.id::text = $1::text
           `,
           [transactionId]
         );
-        if (checkAvail.rows.length > 0 && checkAvail.rows[0].type === "Reservation") {
-          const netAvail = parseInt(checkAvail.rows[0].netAvailable || 0, 10);
-          // If explicitly converting to Borrow, OR approving a reservation where a copy is free, automatically turn into Borrow!
-          if (type === "Borrow" || (status === "Approved" && netAvail > 0)) {
-            extraConversionSql = `, type = 'Borrow', requested_at = NOW(), available_at = NOW(), expires_at = NOW() + INTERVAL '24 hours', picked_up_at = NULL`;
+        if (checkAvail.rows.length > 0) {
+          existingType = checkAvail.rows[0].type || existingType;
+          if (existingType === "Reservation") {
+            const netAvail = parseInt(checkAvail.rows[0].netAvailable || 0, 10);
+            const ahead = parseInt(checkAvail.rows[0].approvedAheadCount || 0, 10);
+            // If explicitly converting to Borrow, OR approving a reservation where a copy is free for this queue position, automatically turn into Borrow!
+            if (type === "Borrow" || (status === "Approved" && netAvail > ahead)) {
+              extraConversionSql = `, type = 'Borrow', requested_at = NOW(), available_at = NOW(), expires_at = NOW() + INTERVAL '24 hours', picked_up_at = NULL`;
+            }
           }
         }
       } catch (availErr) {
         console.warn("Check available copies during reservation decision:", availErr.message);
       }
 
-      // If approving, start the 1-day pickup timer window (only if not already set by extraConversionSql)
+      // If approving a Borrow request, start the 1-day pickup timer window.
+      // For a queued Reservation (where no copy is available yet), keep available_at and expires_at NULL until a copy is returned and promoted.
       let approvalPickupSql = "";
-      if (status === "Approved" && !extraConversionSql) {
+      if (status === "Approved" && !extraConversionSql && existingType !== "Reservation") {
         approvalPickupSql = `, available_at = COALESCE(available_at, NOW()), expires_at = CASE WHEN picked_up_at IS NOT NULL THEN NULL ELSE COALESCE(expires_at, NOW() + INTERVAL '24 hours') END, picked_up_at = CASE WHEN picked_up_at IS NOT NULL THEN picked_up_at ELSE NULL END`;
       }
 
