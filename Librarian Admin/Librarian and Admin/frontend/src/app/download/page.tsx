@@ -20,12 +20,15 @@ export const metadata: Metadata = {
     "Download the official BookHive Android mobile companion application (.APK) for STI West Negros University students and library members.",
 };
 
+const EAS_APK_URL =
+  "https://expo.dev/artifacts/eas/BLWrA5nlFeebRjh0aiuPcKl2EJQ4msEWu-pbDiSlGzM.apk";
+
 const DOWNLOAD_URL =
-  process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL || "/downloads/bookhive-release.apk";
+  process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL || EAS_APK_URL;
 
 export default function DownloadPage() {
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between selection:bg-amber-300 selection:text-slate-900 relative">
+    <div className="download-page-root fixed inset-0 overflow-y-auto overflow-x-hidden bg-slate-50 text-slate-800 flex flex-col justify-between selection:bg-amber-300 selection:text-slate-900">
       {/* Decorative top ambient glow */}
       <div className="absolute top-0 inset-x-0 h-96 bg-gradient-to-b from-amber-500/10 via-sky-500/5 to-transparent pointer-events-none" />
 
@@ -166,9 +169,17 @@ export default function DownloadPage() {
                 3
               </span>
               <p className="leading-relaxed">
-                Open the downloaded file from your notifications or Downloads folder, and tap{" "}
-                <strong className="text-slate-900">&ldquo;Install&rdquo;</strong>. If requested, toggle <strong className="text-slate-900">&ldquo;Allow from this source&rdquo;</strong> to complete installation.
+                Open the downloaded file from your notifications or <strong className="text-slate-900">Downloads</strong> folder, then tap{" "}
+                <strong className="text-slate-900">&ldquo;Install&rdquo;</strong> (or <strong className="text-slate-900">&ldquo;Update&rdquo;</strong> if updating). If requested, toggle <strong className="text-slate-900">&ldquo;Allow from this source&rdquo;</strong> to proceed.
               </p>
+            </div>
+
+            {/* Existing user update tip */}
+            <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200/90 text-[11px] text-amber-950 leading-relaxed">
+              <span className="font-bold text-amber-900 block mb-0.5">
+                Note for users updating from an earlier build:
+              </span>
+              Android requires explicitly tapping the downloaded APK to install the update. If your phone home screen still displays the old icon after installing, simply remove the home screen shortcut and drag BookHive from your App Drawer, or restart your device to refresh your launcher&apos;s icon cache.
             </div>
           </div>
 

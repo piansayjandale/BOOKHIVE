@@ -848,6 +848,15 @@ body {
   font-family: var(--font-body), sans-serif;
 }
 
+/* Allow natural vertical scrolling on public download and landing pages */
+html:has(.download-page-root),
+body:has(.download-page-root) {
+  height: auto !important;
+  min-height: 100% !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
+
 *,
 *::before,
 *::after {
