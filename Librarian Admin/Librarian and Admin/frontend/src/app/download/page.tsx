@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 };
 
 const EAS_APK_URL =
-  "https://expo.dev/artifacts/eas/9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU.apk";
+  "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
 
 const DOWNLOAD_URL =
   process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL || EAS_APK_URL;

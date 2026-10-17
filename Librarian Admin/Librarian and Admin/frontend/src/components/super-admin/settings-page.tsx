@@ -55,9 +55,9 @@ export function SuperAdminSettingsPage() {
   );
   const [maintenanceUntil, setMaintenanceUntil] = useState<string | null>(null);
   const [maintenanceDurationHours, setMaintenanceDurationHours] = useState(1);
-  const [minAppVersion, setMinAppVersion] = useState("1.0.3");
+  const [minAppVersion, setMinAppVersion] = useState("1.0.4");
   const [latestApkUrl, setLatestApkUrl] = useState(
-    "https://expo.dev/artifacts/eas/9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU.apk"
+    "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk"
   );
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
   const [remainingTimeText, setRemainingTimeText] = useState("");
