@@ -695,15 +695,23 @@ export function TransactionsModule() {
               : 0;
             const isRecentlyMutated = Date.now() - localUpdateTime < 4000;
             if (isRecentlyMutated) {
+              const serverPromotedToBorrow =
+                localItem.type === "Reservation" && serverItem.type === "Borrow";
               return {
                 ...serverItem,
                 status: localItem.status,
-                type: localItem.type,
+                type: serverPromotedToBorrow ? "Borrow" : localItem.type,
                 pickedUpAt: localItem.pickedUpAt || serverItem.pickedUpAt,
                 isPickedUp: localItem.isPickedUp || serverItem.isPickedUp,
-                dueDate: localItem.dueDate || serverItem.dueDate,
-                availableAt: localItem.availableAt || serverItem.availableAt,
-                expiresAt: localItem.expiresAt || serverItem.expiresAt,
+                dueDate: serverPromotedToBorrow
+                  ? serverItem.dueDate || localItem.dueDate
+                  : localItem.dueDate || serverItem.dueDate,
+                availableAt: serverPromotedToBorrow
+                  ? serverItem.availableAt || localItem.availableAt
+                  : localItem.availableAt || serverItem.availableAt,
+                expiresAt: serverPromotedToBorrow
+                  ? serverItem.expiresAt || localItem.expiresAt
+                  : localItem.expiresAt || serverItem.expiresAt,
                 updatedAt: localItem.updatedAt,
               };
             }
@@ -1283,8 +1291,8 @@ export function TransactionsModule() {
           prev.map((t) => (t.id === id || (targetTxn && t.id === targetTxn.id) ? {
             ...t,
             status: nextStatus,
-            availableAt: nextStatus === "Approved" ? (t.availableAt || now) : t.availableAt,
-            expiresAt: nextStatus === "Approved" ? (t.expiresAt || expiresAt) : t.expiresAt,
+            availableAt: nextStatus === "Approved" && t.type !== "Reservation" ? (t.availableAt || now) : t.availableAt,
+            expiresAt: nextStatus === "Approved" && t.type !== "Reservation" ? (t.expiresAt || expiresAt) : t.expiresAt,
             pickedUpAt: nextStatus === "Approved" ? (t.pickedUpAt ?? null) : t.pickedUpAt,
             isPickedUp: nextStatus === "Approved" ? Boolean(t.isPickedUp) : t.isPickedUp,
             comment: comment || t.comment,
@@ -1375,7 +1383,12 @@ export function TransactionsModule() {
                       ...t,
                       ...serverTx,
                       id: serverTx.id,
-                      status: nextStatus,
+                      type: serverTx.type || t.type,
+                      status: serverTx.status || nextStatus,
+                      availableAt: serverTx.availableAt ?? t.availableAt,
+                      expiresAt: serverTx.expiresAt ?? t.expiresAt,
+                      dueDate: serverTx.dueDate || t.dueDate,
+                      comment: serverTx.comment ?? comment ?? t.comment,
                       updatedAt: now,
                     }
                   : t
@@ -1401,7 +1414,7 @@ export function TransactionsModule() {
   const handleConfirmDecision = async () => {
     if (!confirmModalData) return;
     const { id, nextStatus, transaction } = confirmModalData;
-    const comment = nextStatus === "Declined" ? declineComment : undefined;
+    const comment = declineComment.trim() ? declineComment.trim() : undefined;
     setConfirmModalData(null);
     await handleUpdateStatus(id, nextStatus, comment, transaction);
   };
@@ -2474,26 +2487,29 @@ export function TransactionsModule() {
               </div>
             </div>
 
-            {/* Reason / Remarks for Declining */}
-            {confirmModalData.nextStatus === "Declined" && (
-              <div className="flex flex-col gap-1.5">
-                <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>
-                  Reason for Decline <span className="text-slate-400 font-normal">(Optional)</span>
-                </label>
-                <textarea
-                  value={declineComment}
-                  onChange={(e) => setDeclineComment(e.target.value)}
-                  placeholder="e.g., Book currently undergoing binding repair, hold quota exceeded..."
-                  rows={3}
-                  className={cn(
-                    "w-full rounded-xl p-3 text-xs sm:text-sm border transition focus:outline-none focus:ring-2",
-                    isLight
-                      ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400 focus:border-[#0274BB] focus:ring-[#0274BB]/20"
-                      : "bg-[#0c1424] border-slate-700 text-white placeholder-slate-500 focus:border-[#FCD400] focus:ring-[#FCD400]/20"
-                  )}
-                />
-              </div>
-            )}
+            {/* Reason / Remarks for Approving or Declining */}
+            <div className="flex flex-col gap-1.5">
+              <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>
+                {confirmModalData.nextStatus === "Declined" ? "Reason for Decline" : "Librarian Comment / Remarks"}{" "}
+                <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <textarea
+                value={declineComment}
+                onChange={(e) => setDeclineComment(e.target.value)}
+                placeholder={
+                  confirmModalData.nextStatus === "Declined"
+                    ? "e.g., Book currently undergoing binding repair, hold quota exceeded..."
+                    : "e.g., Approved in queue #1, please claim at Circulation Desk when notified..."
+                }
+                rows={3}
+                className={cn(
+                  "w-full rounded-xl p-3 text-xs sm:text-sm border transition focus:outline-none focus:ring-2",
+                  isLight
+                    ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400 focus:border-[#0274BB] focus:ring-[#0274BB]/20"
+                    : "bg-[#0c1424] border-slate-700 text-white placeholder-slate-500 focus:border-[#FCD400] focus:ring-[#FCD400]/20"
+                )}
+              />
+            </div>
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-3 pt-2">

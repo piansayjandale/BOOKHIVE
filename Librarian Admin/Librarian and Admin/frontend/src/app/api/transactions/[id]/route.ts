@@ -71,23 +71,81 @@ export async function PATCH(
       `;
       params = [id, validDecidedBy];
     } else if (nextType === "Borrow" || nextStatus === "Approved") {
-      query = `
-        UPDATE transactions
-        SET
-          ${nextType === "Borrow" ? "type = 'Borrow'," : ""}
-          status = $2,
-          requested_at = NOW(),
-          due_date = COALESCE(due_date, NOW() + INTERVAL '7 days'),
-          decided_by = $3,
-          decided_at = NOW(),
-          available_at = COALESCE(available_at, NOW()),
-          expires_at = CASE WHEN picked_up_at IS NOT NULL THEN NULL ELSE COALESCE(expires_at, NOW() + INTERVAL '24 hours') END,
-          picked_up_at = CASE WHEN picked_up_at IS NOT NULL THEN picked_up_at ELSE NULL END,
-          comment = COALESCE($4, comment)
-        WHERE id::text = $1::text
-        RETURNING *
-      `;
-      params = [id, nextStatus, validDecidedBy, comment];
+      let shouldConvertToBorrow = nextType === "Borrow";
+      let isReservationTarget = body?.type === "Reservation";
+
+      if (nextStatus === "Approved" && !shouldConvertToBorrow) {
+        try {
+          const { rows: targetRows } = await pool.query(
+            `SELECT id, type, isbn, resource_title, requested_at FROM transactions WHERE id::text = $1::text LIMIT 1`,
+            [id]
+          );
+          const targetTx = targetRows[0];
+          if (targetTx && targetTx.type === "Reservation") {
+            isReservationTarget = true;
+            const { rows: availRows } = await pool.query(
+              `SELECT
+                 COALESCE((
+                   SELECT copies FROM books b
+                   WHERE ($1::text IS NOT NULL AND $1::text != '' AND $1::text != 'N/A' AND b.isbn = $1::text)
+                      OR ($2::text IS NOT NULL AND LOWER(b.title) = LOWER($2::text))
+                   ORDER BY (CASE WHEN $1::text IS NOT NULL AND $1::text != '' AND $1::text != 'N/A' AND b.isbn = $1::text THEN 0 ELSE 1 END)
+                   LIMIT 1
+                 ), 1)::int AS "totalCopies",
+                 COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END)::int AS "activeBorrows",
+                 COUNT(CASE WHEN sub_t.type = 'Reservation' AND sub_t.status = 'Approved' AND sub_t.id::text != $3::text AND sub_t.requested_at < COALESCE($4::timestamptz, NOW()) THEN 1 END)::int AS "approvedAhead"
+               FROM transactions sub_t
+               WHERE (
+                 ($1::text IS NOT NULL AND $1::text != '' AND $1::text != 'N/A' AND sub_t.isbn = $1::text)
+                 OR ($2::text IS NOT NULL AND LOWER(sub_t.resource_title) = LOWER($2::text))
+               )`,
+              [targetTx.isbn || "", targetTx.resource_title || "", String(targetTx.id), targetTx.requested_at || null]
+            );
+            const totalCopies = Number(availRows[0]?.totalCopies ?? 1);
+            const activeBorrows = Number(availRows[0]?.activeBorrows ?? 0);
+            const approvedAhead = Number(availRows[0]?.approvedAhead ?? 0);
+            const netAvailable = Math.max(0, totalCopies - activeBorrows);
+            if (netAvailable > approvedAhead) {
+              shouldConvertToBorrow = true;
+            }
+          }
+        } catch {
+          // ignore lookup error
+        }
+      }
+
+      if (isReservationTarget && !shouldConvertToBorrow) {
+        query = `
+          UPDATE transactions
+          SET
+            status = $2,
+            due_date = COALESCE(due_date, NOW() + INTERVAL '7 days'),
+            decided_by = $3,
+            decided_at = NOW(),
+            comment = COALESCE($4, comment)
+          WHERE id::text = $1::text
+          RETURNING *
+        `;
+        params = [id, nextStatus, validDecidedBy, comment];
+      } else {
+        query = `
+          UPDATE transactions
+          SET
+            ${shouldConvertToBorrow ? "type = 'Borrow'," : ""}
+            status = $2,
+            requested_at = NOW(),
+            due_date = COALESCE(due_date, NOW() + INTERVAL '7 days'),
+            decided_by = $3,
+            decided_at = NOW(),
+            available_at = COALESCE(available_at, NOW()),
+            expires_at = CASE WHEN picked_up_at IS NOT NULL THEN NULL ELSE COALESCE(expires_at, NOW() + INTERVAL '24 hours') END,
+            picked_up_at = CASE WHEN picked_up_at IS NOT NULL THEN picked_up_at ELSE NULL END,
+            comment = COALESCE($4, comment)
+          WHERE id::text = $1::text
+          RETURNING *
+        `;
+        params = [id, nextStatus, validDecidedBy, comment];
+      }
     } else {
       query = `
         UPDATE transactions

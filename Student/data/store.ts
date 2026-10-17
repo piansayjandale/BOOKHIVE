@@ -297,19 +297,35 @@ const loadCacheFromStorage = async () => {
       cachedHistory = JSON.parse(historyStr);
     }
 
-    // Clean up any stale "Upcoming" status on pending borrow items
-    cachedReservations = cachedReservations.map(item => {
-      if (item.action === 'Borrow' && item.status === 'Upcoming') {
-        return { ...item, status: 'Pending' };
-      }
-      return item;
-    });
-    cachedHistory = cachedHistory.map(item => {
-      if (item.action === 'Borrow' && item.status === 'Upcoming') {
-        return { ...item, status: 'Pending' };
-      }
-      return item;
-    });
+    // Clean up any stale "Upcoming" status on pending borrow items and remove unapproved reservations
+    cachedReservations = cachedReservations
+      .map(item => {
+        if (item.action === 'Borrow' && item.status === 'Upcoming') {
+          return { ...item, status: 'Pending' };
+        }
+        return item;
+      })
+      .filter(item => {
+        const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation';
+        if (isRes && (item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Declined' || item.status === 'Cancelled')) {
+          return false;
+        }
+        return true;
+      });
+    cachedHistory = cachedHistory
+      .map(item => {
+        if (item.action === 'Borrow' && item.status === 'Upcoming') {
+          return { ...item, status: 'Pending' };
+        }
+        return item;
+      })
+      .filter(item => {
+        const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation';
+        if (isRes && (item.status === 'Pending' || item.status === 'Waitlisted' || item.status === 'Declined' || item.status === 'Cancelled')) {
+          return false;
+        }
+        return true;
+      });
 
     const notificationsStr = await AsyncStorage.getItem("STUDENT_NOTIFICATIONS");
     if (notificationsStr) {
@@ -1051,8 +1067,8 @@ export const addReservation = async (reservation: any) => {
   if (!existing) {
     if (reservation.action === 'Borrow') {
       cachedReservations.push(reservation);
+      cachedHistory.unshift(reservation);
     }
-    cachedHistory.unshift(reservation);
   }
   notify();
 

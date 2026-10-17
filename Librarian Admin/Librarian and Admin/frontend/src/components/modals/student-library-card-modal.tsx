@@ -100,7 +100,7 @@ export function StudentLibraryCardModal({
         statusStr === "Completed" ||
         statusStr === "Picked Up" ||
         statusStr === "On Loan" ||
-        (isReservation && (statusStr === "Pending" || statusStr === "Waitlisted" || statusStr === "Reserved"));
+        (isReservation && (statusStr === "Approved" || statusStr === "Reserved"));
       if (!matchesStudent || (!isBorrow && !isReservation) || !isApprovedOrActive) return false;
 
       const uniqueKey = t.id || `${t.studentId}-${t.resourceTitle}-${t.requestedAt}`;
@@ -118,7 +118,7 @@ export function StudentLibraryCardModal({
     return studentBorrows.filter((t) => {
       const isRes = t.type === "Reservation" || (t as any).action === "Reserve";
       const s = String(t.status || "");
-      return isRes && (s === "Approved" || s === "Pending" || s === "Waitlisted" || s === "Reserved");
+      return isRes && (s === "Approved" || s === "Reserved");
     }).length;
   }, [studentBorrows]);
 
