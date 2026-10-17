@@ -435,12 +435,14 @@ export const studentController = {
   async getBorrowHistory(req, res) {
     try {
       const userId = req.user.sub;
-      const history = await studentModel.getUserBorrowHistory(userId).catch(() => []);
+      const history = await studentModel.getUserBorrowHistory(userId);
 
-      return res.json({ history: history || [] });
+      return res.json({ history: Array.isArray(history) ? history : [] });
     } catch (err) {
-      console.warn("[studentController.getBorrowHistory] Safe fallback:", err.message);
-      return res.json({ history: [] });
+      console.warn("[studentController.getBorrowHistory] Database query failed, preserving client cache:", err.message);
+      return res.status(503).json({
+        message: "Unable to sync borrow history right now. Preserving local Library Card records.",
+      });
     }
   },
 

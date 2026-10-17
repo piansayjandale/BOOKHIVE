@@ -960,15 +960,15 @@ export const studentModel = {
           CASE WHEN t.status = 'Approved' THEN t.decided_at ELSE NULL END AS "approvedAt",
           CASE WHEN t.status = 'Returned' THEN t.decided_at ELSE NULL END AS "returnedAt",
           CASE 
-            WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Reserved') THEN (
+            WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved') THEN (
               SELECT COUNT(*)::int + 1
               FROM transactions sub
               WHERE (
                 (sub.isbn IS NOT NULL AND sub.isbn != '' AND sub.isbn != 'N/A' AND sub.isbn = t.isbn)
                 OR (sub.resource_title IS NOT NULL AND LOWER(sub.resource_title) = LOWER(t.resource_title))
               )
-                AND sub.type = 'Reservation'
-                AND sub.status IN ('Approved', 'Reserved')
+                AND sub.type::text = 'Reservation'
+                AND sub.status::text IN ('Approved', 'Reserved')
                 AND sub.requested_at < t.requested_at
             )
             ELSE NULL
@@ -987,7 +987,7 @@ export const studentModel = {
           OR LOWER(t.student_id) = LOWER($1)
           OR LOWER(t.student_id) = (SELECT LOWER(id_number) FROM users WHERE id::text = $1 OR LOWER(id_number) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1)
         )
-          AND NOT (t.type = 'Reservation' AND t.status IN ('Pending', 'Waitlisted', 'Declined', 'Cancelled'))
+          AND NOT (t.type::text = 'Reservation' AND t.status::text IN ('Pending', 'Waitlisted', 'Declined', 'Cancelled'))
         ORDER BY t.requested_at DESC
       `;
       const { rows } = await pool.query(query, [userId]);
@@ -1002,7 +1002,7 @@ export const studentModel = {
       });
     } catch (error) {
       warnIfNotOffline("DB student:getUserBorrowHistory unavailable:", error.message);
-      return [];
+      throw error;
     }
   },
 
@@ -1974,15 +1974,15 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
               ELSE COALESCE(b.availability, 'Available')
             END AS "available",
             CASE 
-              WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Reserved') THEN (
+              WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved') THEN (
                 SELECT COUNT(*)::int + 1
                 FROM transactions sub
                 WHERE (
                   (sub.isbn IS NOT NULL AND sub.isbn != '' AND sub.isbn != 'N/A' AND sub.isbn = t.isbn)
                   OR (sub.resource_title IS NOT NULL AND LOWER(sub.resource_title) = LOWER(t.resource_title))
                 )
-                  AND sub.type = 'Reservation'
-                  AND sub.status IN ('Approved', 'Reserved')
+                  AND sub.type::text = 'Reservation'
+                  AND sub.status::text IN ('Approved', 'Reserved')
                   AND sub.requested_at < t.requested_at
               )
               ELSE NULL

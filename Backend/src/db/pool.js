@@ -75,14 +75,14 @@ function getOrCreatePool() {
       connectionString: dbConfig.connectionString,
       ssl: pgSsl,
       connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS ?? 10000),
-      idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 1500),
-      max: Number(process.env.DB_MAX_CONNECTIONS ?? 5),
-      allowExitOnIdle: true, // Prevents FUNCTION_INVOCATION_FAILED by allowing Node event loop to exit
+      idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS ?? 30000),
+      max: Number(process.env.DB_MAX_CONNECTIONS ?? 10),
+      keepAlive: true,
+      allowExitOnIdle: isVercelServerless,
     });
 
     rawPool.on("error", (err) => {
-      console.warn("[Backend DB] Database client notice:", err.message);
-      isOffline = true;
+      console.warn("[Backend DB] Idle client notice (pool will reconnect automatically):", err.message);
     });
 
     isOffline = false;

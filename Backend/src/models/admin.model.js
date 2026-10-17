@@ -690,7 +690,7 @@ export const adminModel = {
                      OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
                 ),
                 1
-              ) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'On Loan', 'Picked Up') THEN 1 END))
+              ) - COUNT(CASE WHEN sub_t.type::text = 'Borrow' AND sub_t.status::text IN ('Approved', 'On Loan', 'Picked Up') THEN 1 END))
               FROM transactions sub_t
               WHERE (
                 (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND sub_t.isbn = t.isbn)
@@ -704,8 +704,8 @@ export const adminModel = {
                 (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND queue_t.isbn = t.isbn)
                 OR (t.resource_title IS NOT NULL AND LOWER(queue_t.resource_title) = LOWER(t.resource_title))
               )
-                AND queue_t.type = 'Reservation'
-                AND queue_t.status = 'Approved'
+                AND queue_t.type::text = 'Reservation'
+                AND queue_t.status::text = 'Approved'
                 AND queue_t.requested_at < t.requested_at
                 AND queue_t.id != t.id
             ) AS "approvedAheadCount"
