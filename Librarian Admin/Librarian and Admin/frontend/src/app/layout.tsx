@@ -10,6 +10,16 @@ export const metadata: Metadata = {
   title: "BookHive Monitor",
   description:
     "BookHive admin dashboard for STI West Negros University Library with AI prompt search, reservations, and descriptive analytics.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BookHive",
+  },
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default async function RootLayout({
