@@ -188,7 +188,9 @@ export default function ReservationsScreen() {
     });
   }, [libraryCardBooks]);
 
-  const TOTAL_CARD_ROWS = Math.max(16, approvedLibraryCardBooks.length);
+  const CARD_ROW_HEIGHT = 28;
+  const VISIBLE_CARD_ROWS = 13;
+  const TOTAL_CARD_ROWS = Math.max(VISIBLE_CARD_ROWS, approvedLibraryCardBooks.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = approvedLibraryCardBooks[index];
     const isReturned = !!(item?.isReturned || item?.status === 'Completed' || item?.status === 'Returned' || item?.date === 'Returned');
@@ -297,6 +299,7 @@ export default function ReservationsScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
         contentContainerStyle={{
           paddingBottom: 120,
         }}
@@ -443,116 +446,135 @@ export default function ReservationsScreen() {
                 </View>
               </View>
 
-              {/* Table Data / Lined Grid Rows */}
-              {cardTableRows.map((row, idx) => (
-                <TouchableOpacity
-                  key={`card-row-${row.id}-${idx}`}
-                  disabled={!row.hasData || !(row.isReservation && row.isNowAvailable)}
-                  onPress={() => {
-                    if (row.isReservation && row.isNowAvailable && row.rawItem) {
-                      navigateToDetails(row.rawItem, true);
-                    }
-                  }}
-                  activeOpacity={0.7}
-                  style={[
-                    styles.tableDataRow,
-                    {
-                      borderBottomColor: isDarkMode ? '#273752' : '#E2E8F0',
-                      borderBottomWidth: idx === cardTableRows.length - 1 ? 0 : 1,
-                    },
-                    row.hasData && !row.isReturned && row.highlightType === 'violet' && {
-                      backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.08)' : 'rgba(233, 213, 255, 0.25)',
-                    },
-                    row.hasData && !row.isReturned && row.highlightType === 'green' && {
-                      backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.08)' : 'rgba(134, 239, 172, 0.25)',
-                    },
-                    row.hasData && !row.isReturned && row.highlightType === 'red' && {
-                      backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.10)' : 'rgba(254, 202, 202, 0.35)',
-                    },
-                  ]}
-                >
-                  <View style={[styles.colBorrowDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
-                    <Text style={[styles.cellDataText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]} numberOfLines={1}>
-                      {row.borrowDate}
-                    </Text>
-                  </View>
-
-                  <View
+              {/* Table Data / Lined Grid Rows (Scrollable if > 13 books) */}
+              <ScrollView
+                style={cardTableRows.length > VISIBLE_CARD_ROWS ? { maxHeight: VISIBLE_CARD_ROWS * CARD_ROW_HEIGHT } : undefined}
+                nestedScrollEnabled={true}
+                showsVerticalScrollIndicator={cardTableRows.length > VISIBLE_CARD_ROWS}
+                contentContainerStyle={{ flexGrow: 0 }}
+              >
+                {cardTableRows.map((row, idx) => (
+                  <TouchableOpacity
+                    key={`card-row-${row.id}-${idx}`}
+                    disabled={!row.hasData || !(row.isReservation && row.isNowAvailable)}
+                    onPress={() => {
+                      if (row.isReservation && row.isNowAvailable && row.rawItem) {
+                        navigateToDetails(row.rawItem, true);
+                      }
+                    }}
+                    activeOpacity={0.7}
                     style={[
-                      styles.colDueDate,
-                      { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
-                      row.hasData && !row.isReturned && row.highlightType === 'green' && {
-                        backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                      styles.tableDataRow,
+                      {
+                        height: CARD_ROW_HEIGHT,
+                        borderBottomColor: isDarkMode ? '#273752' : '#E2E8F0',
+                        borderBottomWidth: idx === cardTableRows.length - 1 ? 0 : 1,
                       },
                       row.hasData && !row.isReturned && row.highlightType === 'violet' && {
-                        backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.28)' : '#E9D5FF',
+                        backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.08)' : 'rgba(233, 213, 255, 0.25)',
+                      },
+                      row.hasData && !row.isReturned && row.highlightType === 'green' && {
+                        backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.08)' : 'rgba(134, 239, 172, 0.25)',
                       },
                       row.hasData && !row.isReturned && row.highlightType === 'red' && {
-                        backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.28)' : '#FCA5A5',
+                        backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.10)' : 'rgba(254, 202, 202, 0.35)',
                       },
                     ]}
                   >
-                    <Text
-                      style={[
-                        styles.cellDataText,
-                        row.hasData && !row.isReturned && row.highlightType === 'green'
-                          ? {
-                              color: isDarkMode ? '#86EFAC' : '#064E3B',
-                              fontWeight: '700',
-                            }
-                          : row.hasData && !row.isReturned && row.highlightType === 'violet'
-                          ? {
-                              color: isDarkMode ? '#D8B4FE' : '#6B21A8',
-                              fontWeight: '700',
-                            }
-                          : row.hasData && !row.isReturned && row.highlightType === 'red'
-                          ? {
-                              color: isDarkMode ? '#F87171' : '#991B1B',
-                              fontWeight: '700',
-                            }
-                          : {
-                              color: isDarkMode ? '#CBD5E1' : '#334155',
-                            },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {row.dueReturnDate}
-                    </Text>
-                  </View>
+                    <View style={[styles.colBorrowDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
+                      <Text style={[styles.cellDataText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]} numberOfLines={1}>
+                        {row.borrowDate}
+                      </Text>
+                    </View>
 
-                  <View style={styles.colBookTitle}>
-                    <Text style={[styles.cellDataTitleText, { color: isDarkMode ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
-                      {row.bookTitle}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
+                    <View
+                      style={[
+                        styles.colDueDate,
+                        { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
+                        row.hasData && !row.isReturned && row.highlightType === 'green' && {
+                          backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                        },
+                        row.hasData && !row.isReturned && row.highlightType === 'violet' && {
+                          backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.28)' : '#E9D5FF',
+                        },
+                        row.hasData && !row.isReturned && row.highlightType === 'red' && {
+                          backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.28)' : '#FCA5A5',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.cellDataText,
+                          row.hasData && !row.isReturned && row.highlightType === 'green'
+                            ? {
+                                color: isDarkMode ? '#86EFAC' : '#064E3B',
+                                fontWeight: '700',
+                              }
+                            : row.hasData && !row.isReturned && row.highlightType === 'violet'
+                            ? {
+                                color: isDarkMode ? '#D8B4FE' : '#6B21A8',
+                                fontWeight: '700',
+                              }
+                            : row.hasData && !row.isReturned && row.highlightType === 'red'
+                            ? {
+                                color: isDarkMode ? '#F87171' : '#991B1B',
+                                fontWeight: '700',
+                              }
+                            : {
+                                color: isDarkMode ? '#CBD5E1' : '#334155',
+                              },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {row.dueReturnDate}
+                      </Text>
+                    </View>
+
+                    <View style={styles.colBookTitle}>
+                      <Text style={[styles.cellDataTitleText, { color: isDarkMode ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
+                        {row.bookTitle}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
 
-            {/* CARD STATUS LEGEND */}
-            <View style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 16,
-              marginTop: 12,
-              paddingTop: 4,
-            }}>
+            {/* CARD STATUS LEGEND - Enclosed cleanly inside library card */}
+            <View
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                rowGap: 8,
+                marginTop: 12,
+                paddingVertical: 8,
+                paddingHorizontal: 10,
+                backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.45)' : 'rgba(241, 245, 249, 0.75)',
+                borderRadius: 10,
+                borderWidth: 1,
+                borderColor: isDarkMode ? '#1E293B' : '#E2E8F0',
+                width: '100%',
+                alignSelf: 'center',
+              }}
+            >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#86EFAC' }} />
-                <Text style={{ fontSize: 11, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
+                <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#86EFAC' }} />
+                <Text style={{ fontSize: 10.5, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
                   Green: Borrow (Active)
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#F87171' }} />
-                <Text style={{ fontSize: 11, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
+                <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#F87171' }} />
+                <Text style={{ fontSize: 10.5, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
                   Red: Due to Return
                 </Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#C084FC' }} />
-                <Text style={{ fontSize: 11, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
+                <View style={{ width: 9, height: 9, borderRadius: 4.5, backgroundColor: '#C084FC' }} />
+                <Text style={{ fontSize: 10.5, color: isDarkMode ? '#CBD5E1' : '#475569', fontWeight: '600' }}>
                   Violet: Reservation
                 </Text>
               </View>
@@ -988,6 +1010,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: 14,
+    overflow: 'hidden',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 10,
@@ -1081,7 +1104,8 @@ const styles = StyleSheet.create({
   /* TABLE DATA ROWS */
   tableDataRow: {
     flexDirection: 'row',
-    minHeight: 25,
+    height: 28,
+    minHeight: 28,
     alignItems: 'center',
   },
   cellDataText: {

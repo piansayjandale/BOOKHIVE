@@ -379,7 +379,9 @@ export default function ScannedCardScreen() {
     });
   }, [libraryCard]);
 
-  const TOTAL_CARD_ROWS = Math.max(14, approvedLibraryCard.length);
+  const CARD_ROW_HEIGHT = 28;
+  const VISIBLE_CARD_ROWS = 13;
+  const TOTAL_CARD_ROWS = Math.max(VISIBLE_CARD_ROWS, approvedLibraryCard.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = approvedLibraryCard[index];
     const isReturned = item?.status === "Returned" || item?.status === "Completed";
@@ -892,83 +894,91 @@ export default function ScannedCardScreen() {
                         </View>
                       </View>
 
-                      {/* Table Data / Lined Grid Rows */}
-                      {cardTableRows.map((row, idx) => (
-                        <View
-                          key={`scanned-row-${row.id}-${idx}`}
-                          style={[
-                            styles.tableDataRow,
-                            {
-                              borderBottomColor: isDarkMode ? '#273752' : '#E2E8F0',
-                              borderBottomWidth: idx === cardTableRows.length - 1 ? 0 : 1,
-                            },
-                            row.hasData && !row.isReturned && row.highlightType === 'violet' && {
-                              backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.08)' : 'rgba(233, 213, 255, 0.25)',
-                            },
-                            row.hasData && !row.isReturned && row.highlightType === 'green' && {
-                              backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.08)' : 'rgba(134, 239, 172, 0.25)',
-                            },
-                            row.hasData && !row.isReturned && row.highlightType === 'red' && {
-                              backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.10)' : 'rgba(254, 202, 202, 0.35)',
-                            },
-                          ]}
-                        >
-                          <View style={[styles.colBorrowDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
-                            <Text style={[styles.cellDataText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]} numberOfLines={1}>
-                              {row.borrowDate}
-                            </Text>
-                          </View>
-
+                      {/* Table Data / Lined Grid Rows (Scrollable if > 13 books) */}
+                      <ScrollView
+                        style={cardTableRows.length > VISIBLE_CARD_ROWS ? { maxHeight: VISIBLE_CARD_ROWS * CARD_ROW_HEIGHT } : undefined}
+                        nestedScrollEnabled={true}
+                        showsVerticalScrollIndicator={cardTableRows.length > VISIBLE_CARD_ROWS}
+                        contentContainerStyle={{ flexGrow: 0 }}
+                      >
+                        {cardTableRows.map((row, idx) => (
                           <View
+                            key={`scanned-row-${row.id}-${idx}`}
                             style={[
-                              styles.colDueDate,
-                              { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
-                              row.hasData && !row.isReturned && row.highlightType === 'green' && {
-                                backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                              styles.tableDataRow,
+                              {
+                                height: CARD_ROW_HEIGHT,
+                                borderBottomColor: isDarkMode ? '#273752' : '#E2E8F0',
+                                borderBottomWidth: idx === cardTableRows.length - 1 ? 0 : 1,
                               },
                               row.hasData && !row.isReturned && row.highlightType === 'violet' && {
-                                backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.28)' : '#E9D5FF',
+                                backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.08)' : 'rgba(233, 213, 255, 0.25)',
+                              },
+                              row.hasData && !row.isReturned && row.highlightType === 'green' && {
+                                backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.08)' : 'rgba(134, 239, 172, 0.25)',
                               },
                               row.hasData && !row.isReturned && row.highlightType === 'red' && {
-                                backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.28)' : '#FCA5A5',
+                                backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.10)' : 'rgba(254, 202, 202, 0.35)',
                               },
                             ]}
                           >
-                            <Text
-                              style={[
-                                styles.cellDataText,
-                                row.hasData && !row.isReturned && row.highlightType === 'green'
-                                  ? {
-                                      color: isDarkMode ? '#86EFAC' : '#064E3B',
-                                      fontWeight: '700',
-                                    }
-                                  : row.hasData && !row.isReturned && row.highlightType === 'violet'
-                                  ? {
-                                      color: isDarkMode ? '#D8B4FE' : '#6B21A8',
-                                      fontWeight: '700',
-                                    }
-                                  : row.hasData && !row.isReturned && row.highlightType === 'red'
-                                  ? {
-                                      color: isDarkMode ? '#F87171' : '#991B1B',
-                                      fontWeight: '700',
-                                    }
-                                  : {
-                                      color: isDarkMode ? '#CBD5E1' : '#334155',
-                                    },
-                              ]}
-                              numberOfLines={1}
-                            >
-                              {row.dueReturnDate}
-                            </Text>
-                          </View>
+                            <View style={[styles.colBorrowDate, { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' }]}>
+                              <Text style={[styles.cellDataText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]} numberOfLines={1}>
+                                {row.borrowDate}
+                              </Text>
+                            </View>
 
-                          <View style={styles.colBookTitle}>
-                            <Text style={[styles.cellDataTitleText, { color: isDarkMode ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
-                              {row.bookTitle}
-                            </Text>
+                            <View
+                              style={[
+                                styles.colDueDate,
+                                { borderRightColor: isDarkMode ? '#273752' : '#E2E8F0' },
+                                row.hasData && !row.isReturned && row.highlightType === 'green' && {
+                                  backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.22)' : '#86EFAC',
+                                },
+                                row.hasData && !row.isReturned && row.highlightType === 'violet' && {
+                                  backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.28)' : '#E9D5FF',
+                                },
+                                row.hasData && !row.isReturned && row.highlightType === 'red' && {
+                                  backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.28)' : '#FCA5A5',
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.cellDataText,
+                                  row.hasData && !row.isReturned && row.highlightType === 'green'
+                                    ? {
+                                        color: isDarkMode ? '#86EFAC' : '#064E3B',
+                                        fontWeight: '700',
+                                      }
+                                    : row.hasData && !row.isReturned && row.highlightType === 'violet'
+                                    ? {
+                                        color: isDarkMode ? '#D8B4FE' : '#6B21A8',
+                                        fontWeight: '700',
+                                      }
+                                    : row.hasData && !row.isReturned && row.highlightType === 'red'
+                                    ? {
+                                        color: isDarkMode ? '#F87171' : '#991B1B',
+                                        fontWeight: '700',
+                                      }
+                                    : {
+                                        color: isDarkMode ? '#CBD5E1' : '#334155',
+                                      },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {row.dueReturnDate}
+                              </Text>
+                            </View>
+
+                            <View style={styles.colBookTitle}>
+                              <Text style={[styles.cellDataTitleText, { color: isDarkMode ? '#FFFFFF' : '#0F172A' }]} numberOfLines={1}>
+                                {row.bookTitle}
+                              </Text>
+                            </View>
                           </View>
-                        </View>
-                      ))}
+                        ))}
+                      </ScrollView>
                     </View>
 
                     {/* Visual Status Legend */}
@@ -1494,6 +1504,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     borderWidth: 1,
     padding: 14,
+    overflow: 'hidden',
     elevation: 3,
   },
   cardTopHeader: {
@@ -1579,7 +1590,8 @@ const styles = StyleSheet.create({
   /* TABLE DATA ROWS */
   tableDataRow: {
     flexDirection: 'row',
-    minHeight: 25,
+    height: 28,
+    minHeight: 28,
     alignItems: 'center',
   },
   cellDataText: {
@@ -1670,10 +1682,20 @@ const styles = StyleSheet.create({
   },
   legendContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: 16,
+    justifyContent: 'center',
+    gap: 12,
+    rowGap: 8,
     marginTop: 12,
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(30, 41, 59, 0.45)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    width: '100%',
+    alignSelf: 'center',
   },
   legendItem: {
     flexDirection: 'row',
