@@ -74,14 +74,14 @@ async function queryDbTransactions(
       t.picked_up_at AS "pickedUpAt",
       CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
       CASE
-        WHEN t.type = 'Reservation' AND t.status = 'Pending' THEN (
+        WHEN t.type = 'Reservation' AND t.status IN ('Pending', 'Approved') THEN (
           SELECT COUNT(*)::int + 1
           FROM transactions t_q
           WHERE t_q.type = 'Reservation'
-            AND t_q.status = 'Pending'
+            AND t_q.status IN ('Pending', 'Approved')
             AND (
-              (t.isbn IS NOT NULL AND t_q.isbn = t.isbn)
-              OR (t.resource_title IS NOT NULL AND t_q.resource_title = t.resource_title)
+              (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t_q.isbn = t.isbn)
+              OR (t.resource_title IS NOT NULL AND LOWER(t_q.resource_title) = LOWER(t.resource_title))
             )
             AND t_q.requested_at < t.requested_at
         )

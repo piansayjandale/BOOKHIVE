@@ -613,7 +613,10 @@ export const adminModel = {
             WHEN t.type = 'Reservation' AND t.status IN ('Pending', 'Approved') THEN (
               SELECT COUNT(*)::int + 1
               FROM transactions sub
-              WHERE (sub.isbn = t.isbn OR LOWER(sub.resource_title) = LOWER(t.resource_title))
+              WHERE (
+                (sub.isbn IS NOT NULL AND sub.isbn != '' AND sub.isbn != 'N/A' AND sub.isbn = t.isbn)
+                OR (sub.resource_title IS NOT NULL AND LOWER(sub.resource_title) = LOWER(t.resource_title))
+              )
                 AND sub.type = 'Reservation'
                 AND sub.status IN ('Pending', 'Approved')
                 AND sub.requested_at < t.requested_at
