@@ -896,9 +896,12 @@ export default function ScannedCardScreen() {
 
                       {/* Table Data / Lined Grid Rows (Scrollable if > 13 books) */}
                       <ScrollView
-                        style={cardTableRows.length > VISIBLE_CARD_ROWS ? { maxHeight: VISIBLE_CARD_ROWS * CARD_ROW_HEIGHT } : undefined}
+                        style={{ height: VISIBLE_CARD_ROWS * CARD_ROW_HEIGHT }}
                         nestedScrollEnabled={true}
+                        scrollEnabled={cardTableRows.length > VISIBLE_CARD_ROWS}
                         showsVerticalScrollIndicator={cardTableRows.length > VISIBLE_CARD_ROWS}
+                        overScrollMode="never"
+                        bounces={false}
                         contentContainerStyle={{ flexGrow: 0 }}
                       >
                         {cardTableRows.map((row, idx) => (
