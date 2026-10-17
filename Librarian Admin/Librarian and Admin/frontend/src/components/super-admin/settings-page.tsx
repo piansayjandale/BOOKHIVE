@@ -54,13 +54,16 @@ export function SuperAdminSettingsPage() {
     "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused."
   );
   const [maintenanceUntil, setMaintenanceUntil] = useState<string | null>(null);
-  const [maintenanceDurationHours, setMaintenanceDurationHours] = useState(2);
-  const [minAppVersion, setMinAppVersion] = useState("1.0.2");
+  const [maintenanceDurationHours, setMaintenanceDurationHours] = useState(1);
+  const [minAppVersion, setMinAppVersion] = useState("1.0.3");
   const [latestApkUrl, setLatestApkUrl] = useState(
-    "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk"
+    "https://expo.dev/artifacts/eas/9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU.apk"
   );
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
   const [remainingTimeText, setRemainingTimeText] = useState("");
+  const [timerHours, setTimerHours] = useState("01");
+  const [timerMinutes, setTimerMinutes] = useState("00");
+  const [timerSeconds, setTimerSeconds] = useState("00");
 
   const loadSettingsAndBackups = useCallback(async () => {
     try {
@@ -79,12 +82,30 @@ export function SuperAdminSettingsPage() {
         setAiStrictMode(settingsRes.settings.aiStrictMode);
         setAllowAdminTransactionControl(settingsRes.settings.allowAdminTransactionControl);
         setNotificationsEnabled(settingsRes.settings.notificationsEnabled);
-        setIsMaintenanceMode(Boolean(settingsRes.settings.isMaintenanceMode));
+        
+        const inMaint = Boolean(settingsRes.settings.isMaintenanceMode);
+        setIsMaintenanceMode(inMaint);
         if (settingsRes.settings.maintenanceTitle) setMaintenanceTitle(settingsRes.settings.maintenanceTitle);
         if (settingsRes.settings.maintenanceMessage) setMaintenanceMessage(settingsRes.settings.maintenanceMessage);
         if (settingsRes.settings.maintenanceUntil) setMaintenanceUntil(settingsRes.settings.maintenanceUntil);
         if (settingsRes.settings.minAppVersion) setMinAppVersion(settingsRes.settings.minAppVersion);
         if (settingsRes.settings.latestApkUrl) setLatestApkUrl(settingsRes.settings.latestApkUrl);
+
+        if (inMaint && settingsRes.settings.maintenanceUntil) {
+          const diffMs = new Date(settingsRes.settings.maintenanceUntil).getTime() - Date.now();
+          if (diffMs > 0) {
+            const totalSec = Math.floor(diffMs / 1000);
+            const h = Math.floor(totalSec / 3600);
+            const m = Math.floor((totalSec % 3600) / 60);
+            const s = totalSec % 60;
+            setTimerHours(h.toString().padStart(2, "0"));
+            setTimerMinutes(m.toString().padStart(2, "0"));
+            setTimerSeconds(s.toString().padStart(2, "0"));
+            setRemainingTimeText(
+              `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
+            );
+          }
+        }
       }
     } catch (err) {
       console.warn("Failed to load settings:", err);
@@ -97,17 +118,29 @@ export function SuperAdminSettingsPage() {
     void loadSettingsAndBackups();
   }, [loadSettingsAndBackups]);
 
-  // Live countdown timer for active maintenance
+  // Sync preview timer display when not in active maintenance
+  useEffect(() => {
+    if (!isMaintenanceMode) {
+      setTimerHours(maintenanceDurationHours.toString().padStart(2, "0"));
+      setTimerMinutes("00");
+      setTimerSeconds("00");
+      setRemainingTimeText(`${maintenanceDurationHours.toString().padStart(2, "0")}:00:00`);
+    }
+  }, [maintenanceDurationHours, isMaintenanceMode]);
+
+  // Live countdown timer ticker for active maintenance
   useEffect(() => {
     if (!isMaintenanceMode || !maintenanceUntil) {
-      setRemainingTimeText("");
       return;
     }
 
     const updateTimer = () => {
       const diffMs = new Date(maintenanceUntil).getTime() - Date.now();
       if (diffMs <= 0) {
-        setRemainingTimeText("Maintenance concluding...");
+        setTimerHours("00");
+        setTimerMinutes("00");
+        setTimerSeconds("00");
+        setRemainingTimeText("00:00:00");
         void loadSettingsAndBackups();
         return;
       }
@@ -115,9 +148,13 @@ export function SuperAdminSettingsPage() {
       const h = Math.floor(totalSec / 3600);
       const m = Math.floor((totalSec % 3600) / 60);
       const s = totalSec % 60;
-      setRemainingTimeText(
-        `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`
-      );
+      const padH = h.toString().padStart(2, "0");
+      const padM = m.toString().padStart(2, "0");
+      const padS = s.toString().padStart(2, "0");
+      setTimerHours(padH);
+      setTimerMinutes(padM);
+      setTimerSeconds(padS);
+      setRemainingTimeText(`${padH}:${padM}:${padS}`);
     };
 
     updateTimer();
@@ -130,6 +167,21 @@ export function SuperAdminSettingsPage() {
     try {
       setIsTogglingMaintenance(true);
       const nextState = !isMaintenanceMode;
+
+      // Instant optimistic UI update so the timer starts immediately on click!
+      if (nextState) {
+        const optimisticEnd = new Date(Date.now() + maintenanceDurationHours * 3600 * 1000).toISOString();
+        setIsMaintenanceMode(true);
+        setMaintenanceUntil(optimisticEnd);
+        setTimerHours(maintenanceDurationHours.toString().padStart(2, "0"));
+        setTimerMinutes("00");
+        setTimerSeconds("00");
+        setRemainingTimeText(`${maintenanceDurationHours.toString().padStart(2, "0")}:00:00`);
+      } else {
+        setIsMaintenanceMode(false);
+        setMaintenanceUntil(null);
+      }
+
       const res = await requestJson<{ success: boolean; maintenance: any }>("/api/super-admin/maintenance", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -146,19 +198,18 @@ export function SuperAdminSettingsPage() {
       if (res?.maintenance) {
         setIsMaintenanceMode(Boolean(res.maintenance.inMaintenance));
         setMaintenanceUntil(res.maintenance.until);
-      } else {
-        setIsMaintenanceMode(nextState);
       }
 
       notify(
         nextState
-          ? `Remote maintenance lock activated for ${maintenanceDurationHours}h. All mobile apps locked.`
+          ? `Remote maintenance lock activated for ${maintenanceDurationHours}h. Live timer running & apps locked.`
           : "Remote maintenance mode deactivated. Mobile applications unlocked.",
         nextState ? "info" : "success"
       );
       void loadSettingsAndBackups();
     } catch (err) {
       notify(err instanceof Error ? err.message : "Failed to toggle maintenance mode.", "error");
+      void loadSettingsAndBackups();
     } finally {
       setIsTogglingMaintenance(false);
     }
@@ -296,27 +347,62 @@ export function SuperAdminSettingsPage() {
           </div>
         </div>
 
-        {/* Live Banner when active */}
-        {isMaintenanceMode && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
-            <div className="flex items-center justify-between text-amber-300 font-bold text-xs">
-              <span className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                Scheduled Maintenance Lockdown in Effect
-              </span>
-              <span className="font-mono text-sm bg-black/40 px-2.5 py-1 rounded-md border border-amber-500/30">
-                Time Remaining: {remainingTimeText || "Calculating..."}
-              </span>
+        {/* Live Digital Countdown Timer Section */}
+        {isMaintenanceMode ? (
+          <div className="rounded-2xl border border-amber-500/40 bg-gradient-to-r from-amber-500/15 via-[#1a1402] to-amber-500/10 p-5 shadow-inner">
+            <div className="flex flex-col md:flex-row items-center justify-between gap-5">
+              <div className="space-y-1.5 text-center md:text-left">
+                <div className="inline-flex items-center gap-2 text-amber-300 font-black text-xs uppercase tracking-wider bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full">
+                  <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                  <span>Remote Lockdown Active · {maintenanceDurationHours}h Window</span>
+                </div>
+                <h4 className="text-base font-extrabold text-white">
+                  Maintenance Countdown Running
+                </h4>
+                <p className="text-xs text-slate-300 max-w-md leading-relaxed">
+                  Mobile devices are restricted to the maintenance screen. Students see your broadcast message and can tap to download update v{minAppVersion}.
+                  {maintenanceUntil && (
+                    <span className="block text-amber-200/90 font-mono mt-1 text-[11px]">
+                      Scheduled Completion: {formatDateTime(maintenanceUntil)}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* Big Digital Clock Display */}
+              <div className="flex items-center gap-2 bg-[#060d16] border border-amber-500/30 p-3 rounded-2xl shadow-xl">
+                <div className="flex flex-col items-center bg-[#0d1b2a] border border-amber-500/20 rounded-xl px-4 py-2 min-w-[72px]">
+                  <span className="font-mono text-3xl font-black text-white">{timerHours}</span>
+                  <span className="text-[9px] font-black text-amber-400 tracking-widest mt-0.5">HOURS</span>
+                </div>
+                <span className="text-2xl font-black text-amber-400 font-mono pb-4">:</span>
+                <div className="flex flex-col items-center bg-[#0d1b2a] border border-amber-500/20 rounded-xl px-4 py-2 min-w-[72px]">
+                  <span className="font-mono text-3xl font-black text-white">{timerMinutes}</span>
+                  <span className="text-[9px] font-black text-amber-400 tracking-widest mt-0.5">MINUTES</span>
+                </div>
+                <span className="text-2xl font-black text-amber-400 font-mono pb-4">:</span>
+                <div className="flex flex-col items-center bg-[#0d1b2a] border border-amber-500/20 rounded-xl px-4 py-2 min-w-[72px]">
+                  <span className="font-mono text-3xl font-black text-amber-300">{timerSeconds}</span>
+                  <span className="text-[9px] font-black text-amber-400 tracking-widest mt-0.5">SECONDS</span>
+                </div>
+              </div>
             </div>
-            <p className="text-slate-300 text-[11px] leading-relaxed">
-              Mobile phones are restricted to the maintenance screen. Students see your message and can tap to download
-              and install APK update v{minAppVersion}.
-              {maintenanceUntil && (
-                <span className="block text-amber-200/90 font-mono mt-1">
-                  Estimated Completion: {formatDateTime(maintenanceUntil)}
-                </span>
-              )}
-            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/5 text-slate-300">
+                <Clock className="h-4 w-4" />
+              </div>
+              <div>
+                <span className="font-bold text-slate-200">Selected Lockdown Window: {maintenanceDurationHours} Hour{maintenanceDurationHours > 1 ? "s" : ""}</span>
+                <p className="text-[11px] text-slate-400">Activating will immediately broadcast a {maintenanceDurationHours}-hour countdown timer to all student phones.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 font-mono text-xs bg-black/30 border border-white/10 px-3 py-1.5 rounded-lg text-slate-300">
+              <span className="text-slate-400">Timer Preview:</span>
+              <strong className="text-white font-bold">{timerHours}:{timerMinutes}:{timerSeconds}</strong>
+            </div>
           </div>
         )}
 

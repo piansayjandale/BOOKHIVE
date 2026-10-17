@@ -40,9 +40,9 @@ export const MaintenanceModal: React.FC = () => {
       "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
     until: null,
     remainingSeconds: 0,
-    minVersion: "1.0.2",
+    minVersion: "1.0.3",
     latestApkUrl:
-      "https://expo.dev/artifacts/eas/u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU.apk",
+      "https://expo.dev/artifacts/eas/9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU.apk",
   });
 
   const [countdownSeconds, setCountdownSeconds] = useState<number>(0);

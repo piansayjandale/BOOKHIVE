@@ -323,13 +323,17 @@ export const superAdminController = {
 
   async updateMaintenance(req, res) {
     const { inMaintenance, title, message, durationHours, durationMinutes, until, minVersion, latestApkUrl } = req.body;
-    let targetUntil = until ? new Date(until).toISOString() : null;
+    let targetUntil = null;
 
-    if (inMaintenance && !targetUntil) {
-      const minutes = (Number(durationHours || 0) * 60) + Number(durationMinutes || (durationHours ? 0 : 120)); // default 2 hours if not specified
-      targetUntil = new Date(Date.now() + minutes * 60 * 1000).toISOString();
-    } else if (!inMaintenance) {
-      targetUntil = null;
+    if (inMaintenance) {
+      if (until) {
+        targetUntil = new Date(until).toISOString();
+      } else {
+        const hrs = Number(durationHours) > 0 ? Number(durationHours) : 2;
+        const mins = Number(durationMinutes) > 0 ? Number(durationMinutes) : 0;
+        const totalMinutes = (hrs * 60) + mins;
+        targetUntil = new Date(Date.now() + totalMinutes * 60 * 1000).toISOString();
+      }
     }
 
     const payload = {
