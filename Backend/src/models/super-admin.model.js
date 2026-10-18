@@ -562,9 +562,10 @@ export const superAdminModel = {
       const settings = res.rows[0] || {};
       const syncLogs = await pool.query("SELECT * FROM institutional_sync_logs ORDER BY synced_at DESC LIMIT 5");
 
-      const latestEasApk = "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
+      const latestEasApk = "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
       const isStaleApk =
         !settings.latest_apk_url ||
+        settings.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
         settings.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
         settings.latest_apk_url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
         settings.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
@@ -617,7 +618,7 @@ export const superAdminModel = {
           maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
           maintenanceUntil: null,
           minAppVersion: "1.0.5",
-          latestApkUrl: "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk",
+          latestApkUrl: "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk",
         },
         institutionalSync: {
           provider: "STI WNU Active Directory & Academic Ecosystem",
@@ -647,9 +648,10 @@ export const superAdminModel = {
         }
       }
 
-      const latestEasApk = "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
+      const latestEasApk = "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
       const isStaleApk =
         !s.latest_apk_url ||
+        s.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
         s.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
         s.latest_apk_url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
         s.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
@@ -676,7 +678,7 @@ export const superAdminModel = {
         until: null,
         remainingSeconds: 0,
         minVersion: "1.0.5",
-        latestApkUrl: "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk",
+        latestApkUrl: "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk",
       };
     }
   },

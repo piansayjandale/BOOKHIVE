@@ -395,9 +395,10 @@ export const studentController = {
     try {
       const { rows } = await pool.query("SELECT * FROM system_settings WHERE id = 1 LIMIT 1");
       const row = rows[0] || {};
-      const latestEasApk = "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
+      const latestEasApk = "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
       const isStaleApk =
         !row.latest_apk_url ||
+        row.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
         row.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
         row.latest_apk_url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
         row.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
@@ -437,7 +438,7 @@ export const studentController = {
           maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates.",
           maintenanceUntil: null,
           minAppVersion: "1.0.5",
-          latestApkUrl: "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk",
+          latestApkUrl: "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk",
         },
       });
     }

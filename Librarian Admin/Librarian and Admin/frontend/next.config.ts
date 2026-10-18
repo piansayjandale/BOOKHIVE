@@ -47,10 +47,11 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     const latestEasApk =
-      "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
+      "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
     const envApk = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL;
     const isStaleApk =
       !envApk ||
+      envApk.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
       envApk.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
       envApk.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
       envApk.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||

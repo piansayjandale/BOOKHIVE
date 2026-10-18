@@ -64,7 +64,7 @@ export function createApp() {
 
   const LATEST_EAS_APK_URL =
     process.env.LATEST_APK_URL ||
-    "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
+    "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
 
   // Redirect placeholder APK files in /downloads to the compiled EAS APK artifact
   app.get(["/downloads/bookhive-release.apk", "/downloads/app-release.apk"], (req, res, next) => {

@@ -57,7 +57,7 @@ export function SuperAdminSettingsPage() {
   const [maintenanceDurationHours, setMaintenanceDurationHours] = useState(1);
   const [minAppVersion, setMinAppVersion] = useState("1.0.5");
   const [latestApkUrl, setLatestApkUrl] = useState(
-    "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk"
+    "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk"
   );
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
   const [remainingTimeText, setRemainingTimeText] = useState("");
@@ -96,6 +96,7 @@ export function SuperAdminSettingsPage() {
         }
         if (
           settingsRes.settings.latestApkUrl &&
+          !settingsRes.settings.latestApkUrl.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") &&
           !settingsRes.settings.latestApkUrl.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") &&
           !settingsRes.settings.latestApkUrl.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") &&
           !settingsRes.settings.latestApkUrl.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") &&
