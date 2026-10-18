@@ -2,7 +2,7 @@
   "expo": {
     "name": "BookHive",
     "slug": "bookhive-student",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "icon": "./assets/icon.png",
@@ -38,7 +38,7 @@
     },
     "android": {
       "package": "ph.edu.stiwnu.bookhive",
-      "versionCode": 5,
+      "versionCode": 6,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
@@ -51,7 +51,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "ph.edu.stiwnu.bookhive",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "infoPlist": {
         "NSCameraUsageDescription": "BookHive requires camera access to scan student ID cards and book barcodes.",
         "NSPhotoLibraryUsageDescription": "BookHive requires access to your photos to upload profile and ID verification pictures.",

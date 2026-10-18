@@ -395,15 +395,16 @@ export const studentController = {
     try {
       const { rows } = await pool.query("SELECT * FROM system_settings WHERE id = 1 LIMIT 1");
       const row = rows[0] || {};
-      const latestEasApk = "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+      const latestEasApk = "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
       const isStaleApk =
         !row.latest_apk_url ||
+        row.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
         row.latest_apk_url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
         row.latest_apk_url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
         row.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
       const isStaleVersion =
         !row.min_app_version ||
-        ["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(row.min_app_version).trim());
+        ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4"].includes(String(row.min_app_version).trim());
 
       const settings = {
         theme: row.theme || "dark",
@@ -420,7 +421,7 @@ export const studentController = {
         maintenanceTitle: row.maintenance_title || "System Maintenance & Update",
         maintenanceMessage: row.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
         maintenanceUntil: row.maintenance_until || null,
-        minAppVersion: isStaleVersion ? "1.0.4" : row.min_app_version,
+        minAppVersion: isStaleVersion ? "1.0.5" : row.min_app_version,
         latestApkUrl: isStaleApk ? latestEasApk : row.latest_apk_url,
       };
       return res.json({ settings });
@@ -435,8 +436,8 @@ export const studentController = {
           maintenanceTitle: "System Maintenance & Update",
           maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates.",
           maintenanceUntil: null,
-          minAppVersion: "1.0.4",
-          latestApkUrl: "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
+          minAppVersion: "1.0.5",
+          latestApkUrl: "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk",
         },
       });
     }

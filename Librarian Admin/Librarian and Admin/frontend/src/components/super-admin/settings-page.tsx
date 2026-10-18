@@ -55,9 +55,9 @@ export function SuperAdminSettingsPage() {
   );
   const [maintenanceUntil, setMaintenanceUntil] = useState<string | null>(null);
   const [maintenanceDurationHours, setMaintenanceDurationHours] = useState(1);
-  const [minAppVersion, setMinAppVersion] = useState("1.0.4");
+  const [minAppVersion, setMinAppVersion] = useState("1.0.5");
   const [latestApkUrl, setLatestApkUrl] = useState(
-    "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk"
+    "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk"
   );
   const [isTogglingMaintenance, setIsTogglingMaintenance] = useState(false);
   const [remainingTimeText, setRemainingTimeText] = useState("");
@@ -90,12 +90,13 @@ export function SuperAdminSettingsPage() {
         if (settingsRes.settings.maintenanceUntil) setMaintenanceUntil(settingsRes.settings.maintenanceUntil);
         if (
           settingsRes.settings.minAppVersion &&
-          !["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(settingsRes.settings.minAppVersion).trim())
+          !["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4"].includes(String(settingsRes.settings.minAppVersion).trim())
         ) {
           setMinAppVersion(settingsRes.settings.minAppVersion);
         }
         if (
           settingsRes.settings.latestApkUrl &&
+          !settingsRes.settings.latestApkUrl.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") &&
           !settingsRes.settings.latestApkUrl.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") &&
           !settingsRes.settings.latestApkUrl.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") &&
           !settingsRes.settings.latestApkUrl.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU")

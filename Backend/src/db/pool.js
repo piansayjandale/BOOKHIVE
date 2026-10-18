@@ -134,7 +134,7 @@ export async function runAutoMigrations() {
         );
       `);
     } else {
-      const latestEasApk = 'https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk';
+      const latestEasApk = 'https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk';
       await pool.query(`
         CREATE TABLE IF NOT EXISTS system_settings (
           id INTEGER PRIMARY KEY DEFAULT 1,
@@ -156,15 +156,16 @@ export async function runAutoMigrations() {
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_title TEXT NOT NULL DEFAULT 'System Maintenance & Update';
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_message TEXT NOT NULL DEFAULT 'BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.';
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_until TIMESTAMPTZ DEFAULT NULL;
-        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS min_app_version TEXT NOT NULL DEFAULT '1.0.4';
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS min_app_version TEXT NOT NULL DEFAULT '1.0.5';
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS latest_apk_url TEXT NOT NULL DEFAULT '${latestEasApk}';
         UPDATE system_settings
-        SET min_app_version = '1.0.4',
+        SET min_app_version = '1.0.5',
             latest_apk_url = '${latestEasApk}'
         WHERE id = 1
           AND (
-            min_app_version IN ('1.0.0', '1.0.1', '1.0.2', '1.0.3')
+            min_app_version IN ('1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4')
             OR latest_apk_url IS NULL
+            OR latest_apk_url LIKE '%m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ%'
             OR latest_apk_url LIKE '%wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ%'
             OR latest_apk_url LIKE '%u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU%'
             OR latest_apk_url LIKE '%9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU%'

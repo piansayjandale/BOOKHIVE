@@ -40,9 +40,9 @@ export const MaintenanceModal: React.FC = () => {
       "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
     until: null,
     remainingSeconds: 0,
-    minVersion: "1.0.4",
+    minVersion: "1.0.5",
     latestApkUrl:
-      "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk",
+      "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk",
   });
 
   const [countdownSeconds, setCountdownSeconds] = useState<number>(0);
@@ -51,11 +51,12 @@ export const MaintenanceModal: React.FC = () => {
   const intervalRef = useRef<any>(null);
 
   const LATEST_EAS_APK =
-    "https://expo.dev/artifacts/eas/m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ.apk";
+    "https://expo.dev/artifacts/eas/mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI.apk";
 
   const resolveLatestApkUrl = (url?: string, fallback = LATEST_EAS_APK) => {
     if (
       !url ||
+      url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
       url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
       url.includes("u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU") ||
       url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU")
@@ -65,8 +66,8 @@ export const MaintenanceModal: React.FC = () => {
     return url;
   };
 
-  const resolveMinVersion = (ver?: string, fallback = "1.0.4") => {
-    if (!ver || ["1.0.0", "1.0.1", "1.0.2", "1.0.3"].includes(String(ver).trim())) {
+  const resolveMinVersion = (ver?: string, fallback = "1.0.5") => {
+    if (!ver || ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4"].includes(String(ver).trim())) {
       return fallback;
     }
     return ver;
