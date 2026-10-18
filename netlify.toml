@@ -1,0 +1,11 @@
+[build]
+  base = "Librarian Admin/Librarian and Admin/frontend"
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_API_URL = "https://bookhive-backend-13kk.onrender.com/api"
