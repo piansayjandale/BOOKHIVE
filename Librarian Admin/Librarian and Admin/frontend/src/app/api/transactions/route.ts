@@ -156,15 +156,23 @@ export async function GET(request: Request) {
       allowAdminControl: true,
     });
   } catch (dbError) {
-    console.error("Direct DB transactions query error:", dbError);
     const transactions = store.listTransactions();
+    const borrowRequests = transactions.filter((t: any) => String(t.type || "").toLowerCase() === "borrow");
+    const returnRecords = transactions.filter((t: any) => String(t.type || "").toLowerCase() === "return" || t.status === "Returned");
+    const reservations = transactions.filter((t: any) => String(t.type || "").toLowerCase() === "reservation");
+    const summary = {
+      pending: transactions.filter((t: any) => t.status === "Pending").length,
+      approved: transactions.filter((t: any) => t.status === "Approved").length,
+      declined: transactions.filter((t: any) => t.status === "Declined").length,
+      returned: transactions.filter((t: any) => t.status === "Returned").length,
+    };
     return NextResponse.json({
       transactions,
-      borrowRequests: [],
-      returnRecords: [],
-      reservations: [],
+      borrowRequests,
+      returnRecords,
+      reservations,
       transactionHistory: transactions,
-      summary: { pending: 0, approved: 0, declined: 0, returned: 0 },
+      summary,
       allowAdminControl: true,
     });
   }

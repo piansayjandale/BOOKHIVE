@@ -6,10 +6,22 @@ import { proxyToBackend } from "@/lib/proxy";
 import { extractUploadContext } from "@/lib/search/uploads";
 import { BACKEND_URL } from "@/lib/config";
 
+import { adminRepository } from "@/lib/admin/repository";
+
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  return proxyToBackend("/api/admin/prompt-search", request);
+  try {
+    const proxyRes = await proxyToBackend("/api/admin/prompt-search", request);
+    if (proxyRes.ok) {
+      return proxyRes;
+    }
+  } catch (err) {
+    console.warn("Proxy to /api/admin/prompt-search failed, using fallback:", err);
+  }
+
+  const logs = await adminRepository.getSearchLogs();
+  return NextResponse.json({ logs });
 }
 
 export async function POST(request: Request) {
