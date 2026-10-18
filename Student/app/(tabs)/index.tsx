@@ -42,6 +42,7 @@ import {
   getLibraryPoints,
   saveSearchQuery,
   setCachedAllBooks,
+  getCachedAllBooks,
   getPersonalizedRecommendedBooks,
 } from "../../data/store";
 import axios from "axios";
@@ -402,9 +403,45 @@ export default function HomeScreen() {
     };
   }, []);
 
-  const [allBooks, setAllBooks] = React.useState<any[]>([]);
-  const [newArrivals, setNewArrivals] = React.useState<any[]>([]);
-  const [isLoadingBooks, setIsLoadingBooks] = React.useState<boolean>(true);
+  // Instant Stale-While-Revalidate initial catalog hydration
+  const initialLocalBooks = React.useMemo(() => {
+    const cached = getCachedAllBooks();
+    if (Array.isArray(cached) && cached.length > 0) return cached;
+    if (Array.isArray(localBooks) && localBooks.length > 0) {
+      return localBooks.slice(0, 100).map((book: any, idx: number) => {
+        const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
+        const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
+        const dept = book.department || "Circulation";
+        return {
+          id: String(book.id || `book-${idx}`),
+          title: book.title || "STI Library Resource",
+          author: book.author || "Unknown Author",
+          rating: (book.rating && Number(book.rating) > 0) ? String(book.rating) : String(pseudoRating),
+          category: book.genres || book.category || dept,
+          department: dept,
+          isbn: book.isbn || "",
+          shelf: book.shelfLocation || book.shelf || "CIR-01A.1",
+          available: String(book.availableCopies !== undefined ? book.availableCopies > 0 : (book.availability === "Available" || book.availability === "true" || book.status === "Available" || book.status !== "Unavailable" || book.available !== false)),
+          status: book.status || (book.available === false ? "Unavailable" : "Available"),
+          year: book.publicationDate ? String(book.publicationDate).substring(0, 4) : (book.year ? String(book.year) : "2024"),
+          publicationDate: book.publicationDate || (book.year ? `${book.year}-01-01` : "2024-01-01"),
+          pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
+          language: book.language || "EN",
+          description: book.summary || book.description || "",
+          coverImage: book.coverUrl || book.coverImage || book.cover || null,
+          copies: String(book.copies !== undefined && book.copies !== null ? book.copies : 1),
+          volume: book.volume || "Single Volume / None",
+          edition: book.edition || "Single Edition / None",
+          accessionNumber: book.accessionNumber || "",
+        };
+      });
+    }
+    return [];
+  }, []);
+
+  const [allBooks, setAllBooks] = React.useState<any[]>(initialLocalBooks);
+  const [newArrivals, setNewArrivals] = React.useState<any[]>(initialLocalBooks);
+  const [isLoadingBooks, setIsLoadingBooks] = React.useState<boolean>(() => initialLocalBooks.length === 0);
   const [isRefreshing, setIsRefreshing] = React.useState<boolean>(false);
   const [activeCarouselIndex, setActiveCarouselIndex] = React.useState<number>(0);
   const [liveBanner, setLiveBanner] = React.useState<{ title: string; body: string } | null>(null);
@@ -498,57 +535,33 @@ export default function HomeScreen() {
     },
   ]);
 
-  const fetchBooksPayload = React.useCallback(async () => {
-    setIsLoadingBooks(true);
+  const fetchBooksPayload = React.useCallback(async (forceLoading = false) => {
+    // Only show full loading spinner if there are no books currently rendered
+    if (forceLoading && allBooks.length === 0) {
+      setIsLoadingBooks(true);
+    }
     try {
       const headers = await getAuthHeaders();
-      let booksArray: any[] = [];
-      let trendingArray: any[] = [];
+      const client = axios.create({ timeout: 8000 });
 
-      // 1. Fetch Trending Books (synchronized with Web System topBooks)
-      try {
-        const trendingRes = await axios.get(`${API_URL}/api/trending-books`, headers);
-        if (trendingRes.status === 200 && Array.isArray(trendingRes.data?.books)) {
-          trendingArray = trendingRes.data.books;
-        } else if (trendingRes.status === 200 && Array.isArray(trendingRes.data?.topBooks)) {
-          trendingArray = trendingRes.data.topBooks;
-        }
-      } catch {
-        try {
-          const dashRes = await axios.get(`${API_URL}/api/dashboard`, headers);
-          if (dashRes.status === 200 && Array.isArray(dashRes.data?.topBooks)) {
-            trendingArray = dashRes.data.topBooks;
-          }
-        } catch {
-          try {
-            const adminDashRes = await axios.get(`${API_URL}/api/admin/dashboard`, headers);
-            if (adminDashRes.status === 200 && Array.isArray(adminDashRes.data?.topBooks)) {
-              trendingArray = adminDashRes.data.topBooks;
-            }
-          } catch {}
-        }
+      // Parallel non-blocking requests for both trending books and catalog
+      const [trendingPromise, booksPromise] = await Promise.allSettled([
+        client.get(`${API_URL}/api/trending-books`, headers).catch(() => client.get(`${API_URL}/api/dashboard`, headers)),
+        client.get(`${API_URL}/api/books?limit=100`, headers).catch(() => client.get(`${API_URL}/api/student/books?limit=100`, headers)),
+      ]);
+
+      let trendingArray: any[] = [];
+      let booksArray: any[] = [];
+
+      if (trendingPromise.status === "fulfilled" && trendingPromise.value?.data) {
+        const tData = trendingPromise.value.data;
+        if (Array.isArray(tData.books)) trendingArray = tData.books;
+        else if (Array.isArray(tData.topBooks)) trendingArray = tData.topBooks;
       }
 
-      // 2. Fetch Catalog Books (ordered by created_at DESC for New Arrivals)
-      try {
-        const response = await axios.get(`${API_URL}/api/books?limit=100`, headers);
-        if (response.status === 200 && Array.isArray(response.data?.books)) {
-          booksArray = response.data.books;
-        }
-      } catch {
-        try {
-          const studentRes = await axios.get(`${API_URL}/api/student/books?limit=100`, headers);
-          if (studentRes.status === 200 && Array.isArray(studentRes.data?.books)) {
-            booksArray = studentRes.data.books;
-          }
-        } catch {
-          try {
-            const adminRes = await axios.get(`${API_URL}/api/admin/books?limit=100`, headers);
-            if (adminRes.status === 200 && Array.isArray(adminRes.data?.books)) {
-              booksArray = adminRes.data.books;
-            }
-          } catch {}
-        }
+      if (booksPromise.status === "fulfilled" && booksPromise.value?.data) {
+        const bData = booksPromise.value.data;
+        if (Array.isArray(bData.books)) booksArray = bData.books;
       }
 
       let mappedBooks: any[] = [];
@@ -580,9 +593,12 @@ export default function HomeScreen() {
         });
       }
 
-      // Fallback/enrich with local books catalog
-      if (mappedBooks.length === 0 && Array.isArray(localBooks) && localBooks.length > 0) {
-        mappedBooks = localBooks.slice(0, 100).map((book: any, idx: number) => {
+      if (mappedBooks.length > 0) {
+        setAllBooks(mappedBooks);
+        setCachedAllBooks(mappedBooks);
+        setNewArrivals(mappedBooks);
+      } else if (allBooks.length === 0 && Array.isArray(localBooks) && localBooks.length > 0) {
+        const fallback = localBooks.slice(0, 100).map((book: any, idx: number) => {
           const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
           const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
           const dept = book.department || "General";
@@ -602,12 +618,10 @@ export default function HomeScreen() {
             coverImage: null,
           };
         });
+        setAllBooks(fallback);
+        setCachedAllBooks(fallback);
+        setNewArrivals(fallback);
       }
-
-      setAllBooks(mappedBooks);
-      setCachedAllBooks(mappedBooks);
-      // New arrivals tab includes all newly added books into the system
-      setNewArrivals(mappedBooks);
 
       // Process Trending Books (synced with Web System topBooks)
       if (Array.isArray(trendingArray) && trendingArray.length > 0) {
@@ -638,41 +652,15 @@ export default function HomeScreen() {
           };
         });
         setTrendingBooks(mappedTrending.slice(0, 5));
-      } else if (mappedBooks.length > 0) {
+      } else if (mappedBooks.length > 0 && trendingBooks.length === 0) {
         setTrendingBooks(mappedBooks.slice(0, 5));
       }
     } catch (error) {
-      console.log("Error fetching books payload, using catalog fallback:", error);
-      if (Array.isArray(localBooks) && localBooks.length > 0) {
-        const fallback = localBooks.slice(0, 100).map((book: any, idx: number) => {
-          const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
-          const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
-          const dept = book.department || "General";
-          return {
-            id: `local-book-${idx}`,
-            title: book.title,
-            author: book.author,
-            description: book.description || "",
-            year: String(book.year || "2024"),
-            pages: String(book.pages || "320"),
-            language: "EN",
-            category: dept,
-            department: dept,
-            rating: String(pseudoRating),
-            shelf: "General Shelf",
-            available: String(book.available !== false),
-            coverImage: null,
-          };
-        });
-        setAllBooks(fallback);
-        setCachedAllBooks(fallback);
-        setNewArrivals(fallback);
-        setTrendingBooks(fallback.slice(0, 5));
-      }
+      console.log("Error fetching books payload:", error);
     } finally {
       setIsLoadingBooks(false);
     }
-  }, []);
+  }, [allBooks.length, trendingBooks.length]);
 
   // Real-time socket updates: automatically refresh when new books are added or borrowed
   React.useEffect(() => {
@@ -1335,7 +1323,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={[styles.featuredPlaceholderCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          {isLoadingBooks ? (
+          {isLoadingBooks && trendingBooks.length === 0 ? (
             <View style={styles.categoryLoadingBox}>
               <ActivityIndicator size="small" color={isDarkMode ? theme.accentGold : theme.accentBlue} />
               <Text style={styles.loadingText}>Loading Trending Books...</Text>
@@ -1569,7 +1557,7 @@ export default function HomeScreen() {
                   />
                 </TouchableOpacity>
               </View>
-              {isLoadingBooks ? (
+              {isLoadingBooks && categoryBooks.length === 0 ? (
                 <View style={styles.categoryLoadingBox}>
                   <ActivityIndicator size="small" color={isDarkMode ? theme.accentGold : theme.accentBlue} />
                 </View>

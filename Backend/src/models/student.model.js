@@ -388,7 +388,7 @@ export const studentModel = {
 
       return {
         books,
-        total: parseInt(countResult.rows[0].count, 10),
+        total: Number(total),
       };
     } catch (error) {
       warnIfNotOffline("DB student:getAvailableBooks unavailable:", error.message);

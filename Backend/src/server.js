@@ -44,6 +44,23 @@ if (!process.env.VERCEL) {
   server.listen(PORT, HOST, () => {
     console.log(`[BookHive API] Server listening on http://${HOST}:${PORT}`);
     initOcrWorker().catch((e) => console.warn("[OCR Warmup] Notice:", e.message));
+
+    // Self Keep-Alive Heartbeat for Render Free Instances:
+    // Pinging /health every 10 minutes prevents the container from spinning down due to inactivity
+    const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || "https://bookhive-backend-13kk.onrender.com";
+    if (RENDER_EXTERNAL_URL && !RENDER_EXTERNAL_URL.includes("localhost") && !RENDER_EXTERNAL_URL.includes("127.0.0.1")) {
+      const PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
+      setInterval(async () => {
+        try {
+          const pingRes = await fetch(`${RENDER_EXTERNAL_URL}/health`);
+          if (pingRes.ok) {
+            console.log(`[Keep-Alive] Pinged ${RENDER_EXTERNAL_URL}/health - Status: ${pingRes.status}`);
+          }
+        } catch (err) {
+          console.warn(`[Keep-Alive] Ping notice: ${err.message}`);
+        }
+      }, PING_INTERVAL);
+    }
   });
 }
 

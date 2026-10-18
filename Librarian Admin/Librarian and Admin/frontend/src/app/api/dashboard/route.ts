@@ -7,7 +7,15 @@ import { BACKEND_URL } from "@/lib/config";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+let cachedDashboardData: any = null;
+let cachedDashboardExpiry = 0;
+
 export async function GET() {
+  const now = Date.now();
+  if (cachedDashboardData && now < cachedDashboardExpiry) {
+    return NextResponse.json(cachedDashboardData);
+  }
+
   try {
     // Get auth token from cookies
     const cookieStore = await cookies();
@@ -23,11 +31,13 @@ export async function GET() {
         ...(token && { Authorization: `Bearer ${token}` }),
       },
       cache: "no-store",
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(20000),
     });
 
     if (response.ok) {
       const data = await response.json();
+      cachedDashboardData = data;
+      cachedDashboardExpiry = now + 15000; // 15s in-memory cache for ultra-fast navigation
       return NextResponse.json(data);
     }
     console.warn(`Backend /api/admin/dashboard returned ${response.status}. Using local repository fallback.`);

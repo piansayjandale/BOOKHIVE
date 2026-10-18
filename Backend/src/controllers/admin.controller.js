@@ -31,9 +31,19 @@ let dashboardOverviewCache = null;
 let dashboardOverviewCacheExpiry = 0;
 const DASHBOARD_CACHE_TTL_MS = 20000; // 20 seconds cache for instant loads
 
+const cacheInvalidationListeners = new Set();
+export function onCacheInvalidation(fn) {
+  if (typeof fn === "function") {
+    cacheInvalidationListeners.add(fn);
+  }
+}
+
 export function invalidateDashboardCache() {
   dashboardOverviewCache = null;
   dashboardOverviewCacheExpiry = 0;
+  cacheInvalidationListeners.forEach((fn) => {
+    try { fn(); } catch {}
+  });
 }
 
 
@@ -122,7 +132,8 @@ const DEV_CREDENTIALS = {
 
 export const adminController = {
   async login(req, res) {
-    const { identifier, password } = req.body;
+    const identifier = req.body.identifier || req.body.email || req.body.username;
+    const { password } = req.body;
     
     let user = null;
     try {

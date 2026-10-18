@@ -6,7 +6,7 @@ import { studentRouter } from "./student.routes.js";
 import { superAdminRouter } from "./super-admin.routes.js";
 
 import { adminModel } from "../models/admin.model.js";
-import { adminController } from "../controllers/admin.controller.js";
+import { adminController, onCacheInvalidation } from "../controllers/admin.controller.js";
 import { studentController } from "../controllers/student.controller.js";
 import { superAdminController } from "../controllers/super-admin.controller.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -21,10 +21,26 @@ apiRouter.use("/student", studentRouter);
 
 // Standardized direct endpoint aliases for Expo Mobile App & Web Dashboard integration
 apiRouter.get("/dashboard", asyncHandler(adminController.getDashboard));
+// In-memory cache for trending books to deliver instant sub-millisecond responses
+let trendingBooksCache = null;
+let trendingBooksCacheExpiry = 0;
+
+export function invalidateTrendingBooksCache() {
+  trendingBooksCache = null;
+  trendingBooksCacheExpiry = 0;
+}
+onCacheInvalidation(invalidateTrendingBooksCache);
+
 apiRouter.get("/trending-books", asyncHandler(async (_req, res) => {
+  const now = Date.now();
+  if (trendingBooksCache && now < trendingBooksCacheExpiry) {
+    return res.json(trendingBooksCache);
+  }
   try {
     const topBooks = await adminModel.getTopBorrowedBooks(10).catch(() => []);
-    return res.json({ books: topBooks || [], topBooks: topBooks || [] });
+    trendingBooksCache = { books: topBooks || [], topBooks: topBooks || [] };
+    trendingBooksCacheExpiry = now + 60 * 1000;
+    return res.json(trendingBooksCache);
   } catch (err) {
     console.warn("[trending-books Fallback]:", err.message);
     return res.json({ books: [], topBooks: [] });

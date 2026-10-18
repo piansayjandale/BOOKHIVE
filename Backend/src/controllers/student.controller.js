@@ -18,9 +18,16 @@ import { pool } from "../db/pool.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
 import { processPaperScan } from "../services/ocr.service.js";
 import { executeAiSearch } from "../services/ai-search.service.js";
-import { invalidateDashboardCache } from "./admin.controller.js";
+import { invalidateDashboardCache, onCacheInvalidation } from "./admin.controller.js";
 
+let studentBooksCache = null;
+let studentBooksCacheExpiry = 0;
 
+export function invalidateStudentBooksCache() {
+  studentBooksCache = null;
+  studentBooksCacheExpiry = 0;
+}
+onCacheInvalidation(invalidateStudentBooksCache);
 
 export const studentController = {
   async login(req, res) {
@@ -279,17 +286,30 @@ export const studentController = {
       const page = Math.max(1, Number(req.query.page ?? 1));
       const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)));
 
+      // Fast-path: return cached initial catalog for instant response (< 2ms)
+      const now = Date.now();
+      if (page === 1 && limit <= 100 && studentBooksCache && now < studentBooksCacheExpiry) {
+        return res.json(studentBooksCache);
+      }
+
       const result = await studentModel.getAvailableBooks(page, limit).catch((err) => {
         console.warn("[studentController.getBooks] Safe query fallback:", err.message);
         return { books: [], total: 0 };
       });
 
-      return res.json({
+      const responsePayload = {
         books: result?.books || [],
         total: result?.total || 0,
         page,
         limit,
-      });
+      };
+
+      if (page === 1 && limit <= 100 && responsePayload.books.length > 0) {
+        studentBooksCache = responsePayload;
+        studentBooksCacheExpiry = now + 60 * 1000;
+      }
+
+      return res.json(responsePayload);
     } catch (err) {
       console.warn("[studentController.getBooks] Unexpected error, returning empty list:", err.message);
       return res.json({
