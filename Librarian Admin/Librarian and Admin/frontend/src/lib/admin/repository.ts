@@ -17,6 +17,7 @@ import {
 import { hashAdminPassword, verifyAdminPassword } from "@/lib/admin/passwords";
 import { catalogRepository } from "@/lib/catalog/repository";
 import { store } from "@/lib/data/store";
+import { pool } from "@/lib/db";
 import type {
   AdminBookRecord,
   AdminBooksPayload,
@@ -314,6 +315,42 @@ function getAllTransactions() {
     .sort((left, right) => new Date(right.requestedAt).getTime() - new Date(left.requestedAt).getTime());
 }
 
+async function loadDbTransactions(): Promise<any[]> {
+  try {
+    const res = await pool.query(`
+      SELECT
+        t.id::text AS id,
+        t.user_id::text AS "userId",
+        t.student_name AS "studentName",
+        t.student_id AS "studentId",
+        t.resource_title AS "resourceTitle",
+        t.isbn,
+        t.department,
+        t.type,
+        t.status,
+        COALESCE(t.duration_days, 7)::int AS "durationDays",
+        t.requested_at AS "requestedAt",
+        t.due_date AS "dueDate",
+        t.decided_by AS "decidedBy",
+        t.decided_at AS "decidedAt",
+        t.comment
+      FROM transactions t
+      ORDER BY t.requested_at DESC
+    `);
+    if (res.rows && res.rows.length > 0) {
+      return res.rows.map((r: any) => ({
+        ...r,
+        requestedAt: r.requestedAt ? new Date(r.requestedAt).toISOString() : new Date().toISOString(),
+        dueDate: r.dueDate ? new Date(r.dueDate).toISOString() : undefined,
+        decidedAt: r.decidedAt ? new Date(r.decidedAt).toISOString() : undefined,
+      }));
+    }
+  } catch (err) {
+    console.warn("DB loadTransactions unavailable, using in-memory store:", err);
+  }
+  return getAllTransactions();
+}
+
 function getMonthKey(value: string) {
   return new Intl.DateTimeFormat("en-PH", { month: "short" }).format(new Date(value));
 }
@@ -409,7 +446,13 @@ export const adminRepository = {
 
   async getDashboard(): Promise<AdminDashboardPayload> {
     const state = await getAdminState();
-    const transactions = getAllTransactions();
+    let transactions: any[] = [];
+    try {
+      transactions = await loadDbTransactions();
+    } catch {
+      transactions = getAllTransactions();
+    }
+
     let catalogCount = 0;
     let totalUsers = getAllUsers(state).length;
     let newUsers = getAllUsers(state).slice(0, 5);
@@ -431,100 +474,253 @@ export const adminRepository = {
       (item) => item.type === "Borrow" && item.status === "Approved",
     ).length;
     const pendingRequests = transactions.filter((item) => item.status === "Pending").length;
-
-    const monthMap = new Map<string, { borrows: number; returns: number; reservations: number }>();
-    for (const transaction of transactions.slice(0, 18)) {
-      const month = getMonthKey(transaction.requestedAt);
-      const entry = monthMap.get(month) ?? { borrows: 0, returns: 0, reservations: 0 };
-      if (transaction.type === "Borrow") entry.borrows += 1;
-      if (transaction.type === "Return") entry.returns += 1;
-      if (transaction.type === "Reservation") entry.reservations += 1;
-      monthMap.set(month, entry);
-    }
-
-    const departmentMap = new Map<Department, number>();
-    for (const transaction of transactions) {
-      departmentMap.set(transaction.department, (departmentMap.get(transaction.department) ?? 0) + 1);
-    }
-
-    const recentHistory = store.listHistory("", "All").slice(0, 8);
+    const totalBorrows = transactions.filter(
+      (item) => item.type === "Borrow" || item.status === "Returned"
+    ).length;
 
     const summary = {
       totalUsers,
       totalBooks: catalogCount,
       activeBorrowedBooks: approvedBorrows,
       pendingRequests,
+      totalBorrows,
     };
-    // Rank top books directly from live borrow transactions in store / database
-    let allCatalogBooks: BookRecord[] = [];
-    try {
-      allCatalogBooks = (await catalogRepository.listBooks({ limit: 200, offset: 0 })).books;
-    } catch {
-      allCatalogBooks = [];
-    }
 
-    const borrowCountMap = new Map<string, { title: string; count: number }>();
-    for (const tx of transactions) {
-      const typeStr = (tx.type || (tx as any).action || "").toLowerCase();
-      if (typeStr === "borrow" || typeStr === "return") {
-        const key = (tx.resourceTitle || (tx as any).title || "").trim();
-        if (key) {
-          const curr = borrowCountMap.get(key) || { title: key, count: 0 };
-          curr.count += 1;
-          borrowCountMap.set(key, curr);
+    // 1. Live Department Usage: Student enrollment count by academic college
+    let departmentUsage: any[] = [];
+    try {
+      const deptRes = await pool.query(`
+        SELECT u.department, u.course, COUNT(*)::int AS count
+        FROM users u
+        WHERE LOWER(u.role::text) = 'student' OR u.role IS NULL
+        GROUP BY u.department, u.course
+      `);
+      const counts: Record<string, number> = { CICT: 0, COE: 0, CBMA: 0, CAS: 0, CED: 0, CHTM: 0, CCJE: 0 };
+      for (const row of deptRes.rows) {
+        const combined = `${row.department || ""} ${row.course || ""}`.toUpperCase();
+        if (
+          combined.includes("CICT") ||
+          combined.includes("INFORMATION") ||
+          combined.includes("BSIT") ||
+          combined.includes("BSCS") ||
+          combined.includes("COMPUTER") ||
+          combined.includes("TECH") ||
+          combined.includes("SOFTWARE")
+        ) {
+          counts.CICT += row.count;
+        } else if (
+          combined.includes("COE") ||
+          combined.includes("ENGINEERING") ||
+          combined.includes("BSCE") ||
+          combined.includes("BSEE") ||
+          combined.includes("BSCPE") ||
+          combined.includes("BSME") ||
+          combined.includes("MARITIME")
+        ) {
+          counts.COE += row.count;
+        } else if (
+          combined.includes("CBMA") ||
+          combined.includes("BUSINESS") ||
+          combined.includes("ACCOUNTANCY") ||
+          combined.includes("ACCOUNTING") ||
+          combined.includes("BSA") ||
+          combined.includes("BSBA") ||
+          combined.includes("MANAGEMENT") ||
+          combined.includes("FINANCE")
+        ) {
+          counts.CBMA += row.count;
+        } else if (
+          combined.includes("CAS") ||
+          combined.includes("ARTS") ||
+          combined.includes("SCIENCES") ||
+          combined.includes("BACOMM") ||
+          combined.includes("COMMUNICATION") ||
+          combined.includes("PSYCHOLOGY") ||
+          combined.includes("GENERAL") ||
+          combined.includes("WNU STI")
+        ) {
+          counts.CAS += row.count;
+        } else if (
+          combined.includes("CED") ||
+          combined.includes("EDUCATION") ||
+          combined.includes("TEACHER") ||
+          combined.includes("BSED") ||
+          combined.includes("BEED")
+        ) {
+          counts.CED += row.count;
+        } else if (
+          combined.includes("CHTM") ||
+          combined.includes("HOSPITALITY") ||
+          combined.includes("TOURISM") ||
+          combined.includes("BSTM") ||
+          combined.includes("BSHM") ||
+          combined.includes("HOTEL") ||
+          combined.includes("HRM")
+        ) {
+          counts.CHTM += row.count;
+        } else if (
+          combined.includes("CCJE") ||
+          combined.includes("CRIMINAL") ||
+          combined.includes("JUSTICE") ||
+          combined.includes("CRIMINOLOGY") ||
+          combined.includes("BSCRIM")
+        ) {
+          counts.CCJE += row.count;
+        } else {
+          counts.CICT += row.count;
         }
       }
+
+      departmentUsage = [
+        { department: "College of Information and Communications Technology (CICT)", key: "CICT", code: "CICT", mascot: "Red Sentinels", usage: counts.CICT, count: counts.CICT, color: "#EF4444" },
+        { department: "College of Engineering (COE)", key: "COE", code: "COE", mascot: "Orange Erudites", usage: counts.COE, count: counts.COE, color: "#FF6B00" },
+        { department: "College of Business Management and Accountancy (CBMA)", key: "CBMA", code: "CBMA", mascot: "Yellow Tycoons", usage: counts.CBMA, count: counts.CBMA, color: "#EAB308" },
+        { department: "College of Arts and Sciences (CAS)", key: "CAS", code: "CAS", mascot: "Green Titans", usage: counts.CAS, count: counts.CAS, color: "#10B981" },
+        { department: "College of Education (CED)", key: "CED", code: "CED", mascot: "Blue Guardians", usage: counts.CED, count: counts.CED, color: "#3B82F6" },
+        { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", code: "CHTM", mascot: "Pink Vikings", usage: counts.CHTM, count: counts.CHTM, color: "#EC4899" },
+        { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", code: "CCJE", mascot: "Purple Wizards", usage: counts.CCJE, count: counts.CCJE, color: "#8B5CF6" },
+      ];
+    } catch (err) {
+      console.warn("DB getDepartmentUsage fallback:", err);
+      const departmentMap = new Map<Department, number>();
+      for (const transaction of transactions) {
+        departmentMap.set(transaction.department, (departmentMap.get(transaction.department) ?? 0) + 1);
+      }
+      departmentUsage = Array.from(departmentMap.entries()).map(([department, usage]) => ({
+        department,
+        usage,
+        count: usage,
+      }));
     }
 
-    const rankedTitles = Array.from(borrowCountMap.entries())
-      .sort((a, b) => b[1].count - a[1].count);
-
+    // 2. Live Top Borrowed Books from database transactions + catalog metadata
     let topBooks: BookRecord[] = [];
-    const usedIds = new Set<string>();
+    try {
+      const txTopRes = await pool.query(`
+        SELECT
+          MAX(t.resource_title) AS title,
+          MAX(t.isbn) AS isbn,
+          MAX(t.department) AS department,
+          COUNT(*)::int AS "borrowCount"
+        FROM transactions t
+        WHERE LOWER(t.type::text) IN ('borrow', 'return') OR LOWER(t.status::text) IN ('approved', 'returned')
+          AND t.resource_title IS NOT NULL AND TRIM(t.resource_title) != ''
+        GROUP BY LOWER(TRIM(t.resource_title))
+        ORDER BY "borrowCount" DESC
+        LIMIT 10
+      `);
 
-    for (const [title, item] of rankedTitles) {
-      if (topBooks.length >= 10) break;
-      const matched = allCatalogBooks.find(
-        (b) => b.title.toLowerCase() === title.toLowerCase()
-      );
-      if (matched && !usedIds.has(matched.id)) {
-        usedIds.add(matched.id);
-        topBooks.push({
-          ...matched,
-          shelfLocation: matched.shelfLocation || "CIR-01A.1",
-          availability: matched.availability || "Available",
-          borrowCount: item.count,
-        });
-      } else {
-        topBooks.push({
-          id: `ranked-tx-${topBooks.length}`,
-          title,
-          author: "Unknown Author",
-          isbn: "N/A",
-          publicationDate: "2026-09-01",
-          department: "Circulation",
-          shelfLocation: "CIR-01A.1",
-          borrowCount: item.count,
-          summary: "Popular resource in the library circulation queue.",
-          availability: "Available",
-          aiScore: 0,
+      if (txTopRes.rows && txTopRes.rows.length > 0) {
+        const titles = txTopRes.rows.map((r: any) => (r.title || "").trim().toLowerCase()).filter(Boolean);
+        const isbns = txTopRes.rows.map((r: any) => (r.isbn || "").trim()).filter(Boolean);
+
+        const bookMap = new Map<string, any>();
+        if (titles.length > 0 || isbns.length > 0) {
+          const catalogRes = await pool.query(`
+            SELECT
+              id::text AS id, title, author, isbn, department, category, genres,
+              shelf_location AS "shelfLocation",
+              COALESCE(availability, 'Available') AS availability,
+              COALESCE(copies, 1)::int AS copies,
+              summary,
+              publication_date AS "publicationDate"
+            FROM books
+            WHERE archived_at IS NULL
+              AND (LOWER(TRIM(title)) = ANY($1::text[]) OR isbn = ANY($2::text[]))
+          `, [titles, isbns]);
+
+          for (const b of catalogRes.rows) {
+            if (b.title) bookMap.set(b.title.trim().toLowerCase(), b);
+            if (b.isbn) bookMap.set(b.isbn.trim(), b);
+          }
+        }
+
+        topBooks = txTopRes.rows.map((tx: any, idx: number) => {
+          const detail = bookMap.get((tx.title || "").trim().toLowerCase()) || (tx.isbn ? bookMap.get(tx.isbn.trim()) : null);
+          return {
+            id: detail?.id || `ranked-tx-${idx}`,
+            title: detail?.title || tx.title,
+            author: detail?.author || "STI Library Collection",
+            isbn: detail?.isbn || tx.isbn || "N/A",
+            department: detail?.department || tx.department || "Circulation",
+            category: detail?.category || "Circulation",
+            genres: detail?.genres || "",
+            shelfLocation: detail?.shelfLocation || "CIR-01A.1",
+            availability: detail?.availability || "Available",
+            borrowCount: tx.borrowCount,
+            summary: detail?.summary || "Library resource with active borrowing history.",
+            publicationDate: detail?.publicationDate ? new Date(detail.publicationDate).toISOString().split("T")[0] : "2026-09-01",
+            aiScore: 0,
+          };
         });
       }
+    } catch (err) {
+      console.warn("DB getTopBorrowedBooks fallback:", err);
     }
 
-    if (topBooks.length < 10) {
-      for (const b of allCatalogBooks) {
+    // Fallback top books if DB query produced nothing
+    if (topBooks.length === 0) {
+      let allCatalogBooks: BookRecord[] = [];
+      try {
+        allCatalogBooks = (await catalogRepository.listBooks({ limit: 200, offset: 0 })).books;
+      } catch {
+        allCatalogBooks = [];
+      }
+
+      const borrowCountMap = new Map<string, { title: string; count: number }>();
+      for (const tx of transactions) {
+        const typeStr = (tx.type || (tx as any).action || "").toLowerCase();
+        if (typeStr === "borrow" || typeStr === "return") {
+          const key = (tx.resourceTitle || (tx as any).title || "").trim();
+          if (key) {
+            const curr = borrowCountMap.get(key) || { title: key, count: 0 };
+            curr.count += 1;
+            borrowCountMap.set(key, curr);
+          }
+        }
+      }
+
+      const rankedTitles = Array.from(borrowCountMap.entries()).sort((a, b) => b[1].count - a[1].count);
+      const usedIds = new Set<string>();
+
+      for (const [title, item] of rankedTitles) {
         if (topBooks.length >= 10) break;
-        if (!usedIds.has(b.id) && !topBooks.some((t) => t.title.toLowerCase() === b.title.toLowerCase())) {
-          usedIds.add(b.id);
+        const matched = allCatalogBooks.find((b) => b.title.toLowerCase() === title.toLowerCase());
+        if (matched && !usedIds.has(matched.id)) {
+          usedIds.add(matched.id);
           topBooks.push({
-            ...b,
-            shelfLocation: b.shelfLocation || "CIR-01A.1",
-            availability: b.availability || "Available",
-            borrowCount: 0,
+            ...matched,
+            shelfLocation: matched.shelfLocation || "CIR-01A.1",
+            availability: matched.availability || "Available",
+            borrowCount: item.count,
+          });
+        } else {
+          topBooks.push({
+            id: `ranked-tx-${topBooks.length}`,
+            title,
+            author: "Unknown Author",
+            isbn: "N/A",
+            publicationDate: "2026-09-01",
+            department: "Circulation",
+            shelfLocation: "CIR-01A.1",
+            borrowCount: item.count,
+            summary: "Popular resource in the library circulation queue.",
+            availability: "Available",
+            aiScore: 0,
           });
         }
       }
+    }
+
+    // 3. Live Monthly Trends
+    const monthMap = new Map<string, { borrows: number; returns: number; reservations: number }>();
+    for (const transaction of transactions.slice(0, 30)) {
+      const month = getMonthKey(transaction.requestedAt);
+      const entry = monthMap.get(month) ?? { borrows: 0, returns: 0, reservations: 0 };
+      if (transaction.type === "Borrow") entry.borrows += 1;
+      if (transaction.type === "Return" || transaction.status === "Returned") entry.returns += 1;
+      if (transaction.type === "Reservation") entry.reservations += 1;
+      monthMap.set(month, entry);
     }
     const monthlyBorrowTrends = Array.from(monthMap.entries()).map(([month, value]) => ({
       month,
@@ -532,10 +728,8 @@ export const adminRepository = {
       returns: value.returns,
       reservations: value.reservations,
     }));
-    const departmentUsage = Array.from(departmentMap.entries()).map(([department, usage]) => ({
-      department,
-      usage,
-    }));
+
+    const recentHistory = store.listHistory("", "All").slice(0, 8);
     const recentActivities = recentHistory.map((entry) => ({
       id: entry.id,
       actor: entry.actor,
@@ -835,7 +1029,7 @@ export const adminRepository = {
 
   async getTransactions(): Promise<AdminTransactionsPayload> {
     const state = await getAdminState();
-    const transactions = getAllTransactions();
+    const transactions = await loadDbTransactions();
 
     return {
       summary: {
@@ -914,23 +1108,86 @@ export const adminRepository = {
   },
 
   async getAnalytics(): Promise<AnalyticsPayload> {
-    const transactions = getAllTransactions();
-    const books = await catalogRepository.getTrendingBooks(8);
+    const transactions = await loadDbTransactions();
+    let books: any[] = [];
+    try {
+      const topRes = await pool.query(`
+        SELECT
+          MAX(t.resource_title) AS title,
+          COUNT(*)::int AS "borrowCount"
+        FROM transactions t
+        WHERE LOWER(t.type::text) IN ('borrow', 'return') OR LOWER(t.status::text) IN ('approved', 'returned')
+          AND t.resource_title IS NOT NULL AND TRIM(t.resource_title) != ''
+        GROUP BY LOWER(TRIM(t.resource_title))
+        ORDER BY "borrowCount" DESC
+        LIMIT 8
+      `);
+      if (topRes.rows && topRes.rows.length > 0) {
+        books = topRes.rows.map((r: any) => ({ title: r.title, borrows: r.borrowCount }));
+      }
+    } catch {
+      books = [];
+    }
 
-    const departmentCounts = new Map<Department, number>();
+    if (books.length === 0) {
+      books = (await catalogRepository.getTrendingBooks(8)).map((b: BookRecord) => ({ title: b.title, borrows: b.borrowCount }));
+    }
+
+    let departmentEntries: Array<{ department: any; total: number }> = [];
+    try {
+      const deptRes = await pool.query(`
+        SELECT u.department, u.course, COUNT(*)::int AS count
+        FROM users u
+        WHERE LOWER(u.role::text) = 'student' OR u.role IS NULL
+        GROUP BY u.department, u.course
+      `);
+      const counts: Record<string, number> = { CICT: 0, COE: 0, CBMA: 0, CAS: 0, CED: 0, CHTM: 0, CCJE: 0 };
+      for (const row of deptRes.rows) {
+        const combined = `${row.department || ""} ${row.course || ""}`.toUpperCase();
+        if (combined.includes("CICT") || combined.includes("INFORMATION") || combined.includes("BSIT") || combined.includes("BSCS") || combined.includes("TECH") || combined.includes("COMPUTER")) {
+          counts.CICT += row.count;
+        } else if (combined.includes("COE") || combined.includes("ENGINEERING") || combined.includes("BSCE") || combined.includes("BSEE") || combined.includes("BSCPE") || combined.includes("BSME") || combined.includes("MARITIME")) {
+          counts.COE += row.count;
+        } else if (combined.includes("CBMA") || combined.includes("BUSINESS") || combined.includes("ACCOUNTANCY") || combined.includes("ACCOUNTING") || combined.includes("BSA") || combined.includes("BSBA") || combined.includes("MANAGEMENT") || combined.includes("FINANCE")) {
+          counts.CBMA += row.count;
+        } else if (combined.includes("CAS") || combined.includes("ARTS") || combined.includes("SCIENCES") || combined.includes("BACOMM") || combined.includes("COMMUNICATION") || combined.includes("PSYCHOLOGY") || combined.includes("GENERAL") || combined.includes("WNU STI")) {
+          counts.CAS += row.count;
+        } else if (combined.includes("CED") || combined.includes("EDUCATION") || combined.includes("TEACHER") || combined.includes("BSED") || combined.includes("BEED")) {
+          counts.CED += row.count;
+        } else if (combined.includes("CHTM") || combined.includes("HOSPITALITY") || combined.includes("TOURISM") || combined.includes("BSTM") || combined.includes("BSHM") || combined.includes("HOTEL") || combined.includes("HRM")) {
+          counts.CHTM += row.count;
+        } else if (combined.includes("CCJE") || combined.includes("CRIMINAL") || combined.includes("JUSTICE") || combined.includes("CRIMINOLOGY") || combined.includes("BSCRIM")) {
+          counts.CCJE += row.count;
+        } else {
+          counts.CICT += row.count;
+        }
+      }
+      departmentEntries = [
+        { department: "CICT" as Department, total: counts.CICT },
+        { department: "COE" as Department, total: counts.COE },
+        { department: "CBMA" as Department, total: counts.CBMA },
+        { department: "CAS" as Department, total: counts.CAS },
+        { department: "CED" as Department, total: counts.CED },
+        { department: "CHTM" as Department, total: counts.CHTM },
+        { department: "CCJE" as Department, total: counts.CCJE },
+      ];
+    } catch {
+      const departmentCounts = new Map<Department, number>();
+      for (const transaction of transactions) {
+        departmentCounts.set(transaction.department, (departmentCounts.get(transaction.department) ?? 0) + 1);
+      }
+      departmentEntries = Array.from(departmentCounts.entries()).map(([department, total]) => ({ department, total }));
+    }
+
     const monthlyCounts = new Map<string, { borrows: number; returns: number; reservations: number }>();
     const yearlyCounts = new Map<string, number>();
     const statusCounts = new Map<string, number>();
 
     for (const transaction of transactions) {
-      departmentCounts.set(
-        transaction.department,
-        (departmentCounts.get(transaction.department) ?? 0) + 1,
-      );
       const month = getMonthKey(transaction.requestedAt);
       const monthEntry = monthlyCounts.get(month) ?? { borrows: 0, returns: 0, reservations: 0 };
       if (transaction.type === "Borrow") monthEntry.borrows += 1;
-      if (transaction.type === "Return") monthEntry.returns += 1;
+      if (transaction.type === "Return" || transaction.status === "Returned") monthEntry.returns += 1;
       if (transaction.type === "Reservation") monthEntry.reservations += 1;
       monthlyCounts.set(month, monthEntry);
       const year = getYearKey(transaction.requestedAt);
@@ -939,11 +1196,8 @@ export const adminRepository = {
     }
 
     return {
-      mostBorrowedBooks: books.map((book: BookRecord) => ({ title: book.title, borrows: book.borrowCount })),
-      mostActiveDepartments: Array.from(departmentCounts.entries()).map(([department, total]) => ({
-        department,
-        total,
-      })),
+      mostBorrowedBooks: books,
+      mostActiveDepartments: departmentEntries,
       monthlyTrends: Array.from(monthlyCounts.entries()).map(([month, value]) => ({
         month,
         borrows: value.borrows,

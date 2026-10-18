@@ -117,6 +117,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     totalUsers: 0,
     pendingRequests: 0,
     activeBorrowedBooks: 0,
+    totalBorrows: 0,
   });
   const [departmentUsage, setDepartmentUsage] = useState<any[]>([]);
   const [topBooks, setTopBooks] = useState<any[]>([]);
@@ -290,6 +291,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
               totalUsers: Number(data.summary.totalUsers) || 0,
               pendingRequests: Number(data.summary.pendingRequests) || 0,
               activeBorrowedBooks: Number(data.summary.activeBorrowedBooks) || 0,
+              totalBorrows: Number(data.summary.totalBorrows) || 0,
             });
           }
           if (Array.isArray(data.departmentUsage) && data.departmentUsage.length > 0) {
@@ -399,8 +401,12 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   }, [topBooks]);
 
   const totalBorrowsCount = useMemo(() => {
+    if (summary.totalBorrows > 0) return summary.totalBorrows;
+    if (topBooks && topBooks.length > 0) {
+      return topBooks.reduce((acc, curr) => acc + Number(curr.borrowCount ?? curr.borrows ?? 0), 0);
+    }
     return displayTopBooks.reduce((acc, curr) => acc + (curr.borrowCount || 0), 0);
-  }, [displayTopBooks]);
+  }, [summary.totalBorrows, topBooks, displayTopBooks]);
 
   const fetchNewArrivals = useCallback(async () => {
     try {
@@ -1446,47 +1452,50 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 ) : (
                   /* Ranked List View */
                   <div className="flex flex-col gap-2 overflow-y-auto max-h-full pr-1">
-                    {displayTopBooks.map((book: any, idx: number) => (
-                      <div
-                        key={book.title + idx}
-                        onClick={() => {
-                          const fullBook = topBooks.find((t) => (t.id && t.id === book.id) || (t.title && t.title.toLowerCase() === book.title.toLowerCase())) || book;
-                          setSelectedBook(fullBook);
-                        }}
-                        className={cn(
-                          "flex items-center justify-between gap-3 rounded-xl p-2.5 transition cursor-pointer",
-                          isLight
-                            ? "border border-slate-200/80 bg-slate-50/90 hover:bg-sky-50 hover:border-blue-300"
-                            : "border border-white/5 bg-[#122335]/70 hover:bg-[#122335] hover:border-[#FCD400]/40"
-                        )}
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className={cn(
-                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-black font-mono shadow-sm",
-                              idx === 0
-                                ? (isLight ? "bg-[#FFF300] text-[#0274BB]" : "bg-[#FCD400] text-[#0B1A2C]")
-                                : idx === 1
-                                ? (isLight ? "bg-slate-200 text-slate-800" : "bg-slate-300 text-[#0B1A2C]")
-                                : idx === 2
-                                ? "bg-amber-500 text-white"
-                                : (isLight ? "bg-slate-100 text-slate-600" : "bg-white/10 text-slate-300")
-                            )}
-                          >
-                            {idx + 1}
+                    {(topBooks && topBooks.length > 0 ? topBooks.slice(0, 8) : displayTopBooks).map((book: any, idx: number) => {
+                      const borrowNum = Number(book.borrowCount ?? book.borrows ?? 0);
+                      return (
+                        <div
+                          key={book.title + idx}
+                          onClick={() => {
+                            const fullBook = topBooks.find((t) => (t.id && t.id === book.id) || (t.title && t.title.toLowerCase() === book.title.toLowerCase())) || book;
+                            setSelectedBook(fullBook);
+                          }}
+                          className={cn(
+                            "flex items-center justify-between gap-3 rounded-xl p-2.5 transition cursor-pointer",
+                            isLight
+                              ? "border border-slate-200/80 bg-slate-50/90 hover:bg-sky-50 hover:border-blue-300"
+                              : "border border-white/5 bg-[#122335]/70 hover:bg-[#122335] hover:border-[#FCD400]/40"
+                          )}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className={cn(
+                                "flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs font-black font-mono shadow-sm",
+                                idx === 0
+                                  ? (isLight ? "bg-[#FFF300] text-[#0274BB]" : "bg-[#FCD400] text-[#0B1A2C]")
+                                  : idx === 1
+                                  ? (isLight ? "bg-slate-200 text-slate-800" : "bg-slate-300 text-[#0B1A2C]")
+                                  : idx === 2
+                                  ? "bg-amber-500 text-white"
+                                  : (isLight ? "bg-slate-100 text-slate-600" : "bg-white/10 text-slate-300")
+                              )}
+                            >
+                              {idx + 1}
+                            </div>
+                            <div className="min-w-0">
+                              <p className={cn("truncate text-xs font-bold", isLight ? "text-[#0274BB]" : "text-white")}>{book.title}</p>
+                              <p className={cn("truncate text-[10px]", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>
+                                {book.author || "STI Library"} • <span className={isLight ? "text-[#0274BB] font-semibold" : "text-[#FCD400]/80"}>{book.category || book.department || "Circulation"}</span>
+                              </p>
+                            </div>
                           </div>
-                          <div className="min-w-0">
-                            <p className={cn("truncate text-xs font-bold", isLight ? "text-[#0274BB]" : "text-white")}>{book.title}</p>
-                            <p className={cn("truncate text-[10px]", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>
-                              {book.author} • <span className={isLight ? "text-[#0274BB] font-semibold" : "text-[#FCD400]/80"}>{book.category}</span>
-                            </p>
+                          <div className={cn("rounded-md px-2 py-0.5 text-xs font-bold font-mono shrink-0", isLight ? "border border-[#ebd000] bg-[#FFF300] text-[#0274BB]" : "border border-[#FCD400]/40 bg-[#FCD400]/10 text-[#FCD400]")}>
+                            {borrowNum} borrows
                           </div>
                         </div>
-                        <div className={cn("rounded-md px-2 py-0.5 text-xs font-bold font-mono shrink-0", isLight ? "border border-[#ebd000] bg-[#FFF300] text-[#0274BB]" : "border border-[#FCD400]/40 bg-[#FCD400]/10 text-[#FCD400]")}>
-                          {book.borrowCount} borrows
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

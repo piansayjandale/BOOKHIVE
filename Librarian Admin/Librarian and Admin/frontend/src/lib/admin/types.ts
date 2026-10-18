@@ -64,6 +64,7 @@ export interface AdminDashboardPayload {
     totalBooks: number;
     activeBorrowedBooks: number;
     pendingRequests: number;
+    totalBorrows?: number;
   };
   systemHealth?: {
     status: "NOMINAL" | "DEGRADED" | "CRITICAL";
@@ -79,8 +80,13 @@ export interface AdminDashboardPayload {
     reservations: number;
   }>;
   departmentUsage: Array<{
-    department: Department;
+    department: Department | string;
     usage: number;
+    count?: number;
+    code?: string;
+    key?: string;
+    mascot?: string;
+    color?: string;
   }>;
   recentActivities: AdminActivityItem[];
   newUsers: AdminUserRecord[];
