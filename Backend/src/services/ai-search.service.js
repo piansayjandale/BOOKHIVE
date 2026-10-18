@@ -1,5 +1,6 @@
 import "../polyfills.js";
 import { pool } from "../db/pool.js";
+import { searchCatalogByKeyword, formatCatalogBook } from "./catalog-loader.service.js";
 
 
 // Academic Curriculum Knowledge Base for College Handouts, Syllabi & Course Codes
@@ -453,13 +454,12 @@ export function computeAccurateMatchPercentage(row, analysis) {
       effectiveTitleWords.length > 0 ? matchedBookTitleWords / effectiveTitleWords.length : 0;
     const promptTitleRatio = partialTitleWordHits / promptWords.length;
 
-    // All prompt words found in the book title
+    // All prompt words found in the book title -> 94% - 100%
     if (partialTitleWordHits === promptWords.length) {
-      if (exactTitleWordHits === promptWords.length && bookTitleCoverage >= 0.99) {
+      if (exactTitleWordHits === promptWords.length && bookTitleCoverage >= 0.85) {
         return 100;
       }
-      const boost = Math.round(bookTitleCoverage * 6) + (exactTitleWordHits === promptWords.length ? 2 : 0);
-      return Math.min(99, Math.max(92, 91 + boost));
+      return Math.min(99, Math.max(94, 93 + Math.round(bookTitleCoverage * 6)));
     }
 
     // Partial prompt words found in the book title
@@ -664,6 +664,39 @@ export async function executeAiSearch({ prompt, file, limit = 40, department = n
   try {
     const res = await pool.query(sql, queryParams);
     let rows = res.rows || [];
+
+    // Supplement from 48k catalog books so books like "Romeo and Juliet" match across web and mobile
+    if (promptWords.length > 0) {
+      try {
+        const catalogMatches = searchCatalogByKeyword(coreQuery || prompt, 20);
+        const existingTitles = new Set(rows.map((r) => (r.title || "").toLowerCase().trim()));
+        for (const cb of catalogMatches) {
+          const cbTitle = (cb.title || "").toLowerCase().trim();
+          if (!existingTitles.has(cbTitle)) {
+            existingTitles.add(cbTitle);
+            const fb = formatCatalogBook(cb);
+            let titleHits = 0;
+            for (const pw of promptWords) {
+              if (cbTitle.includes(pw.toLowerCase())) titleHits++;
+            }
+            const rowItem = {
+              ...fb,
+              title_hits: titleHits,
+              relevance_score: titleHits > 0 ? 300 : 50,
+              borrowedCount: 0,
+              reservedCount: 0,
+            };
+            if (titleHits > 0) {
+              rows.unshift(rowItem);
+            } else {
+              rows.push(rowItem);
+            }
+          }
+        }
+      } catch (catErr) {
+        console.warn("[AI Search] Catalog keyword supplement warning:", catErr.message);
+      }
+    }
 
     // If the user searched a text prompt (no file attached) and at least one book matched in the TITLE,
     // prioritize books that actually match the prompt words in title or author so results are tightly accurate to the prompt!

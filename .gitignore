@@ -92,7 +92,5 @@ Desktop.ini
 # ------------------------------------------------------------------------------
 # 8. Project-Specific Exclusions
 # ------------------------------------------------------------------------------
-backend/data/imports/books.catalog.json
-**/backend/data/imports/books.catalog.json
 .git_backup/
 **/.git_backup/

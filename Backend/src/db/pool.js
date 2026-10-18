@@ -9,6 +9,7 @@ import {
   resolveDatabaseUrl,
   resolveDatabaseType,
 } from "./connection-config.js";
+import { ensureEssentialBooksSeeded } from "../services/catalog-loader.service.js";
 
 const { Pool: PgPool } = pg;
 
@@ -174,6 +175,7 @@ export async function runAutoMigrations() {
       `);
     }
     console.log("[Backend DB] System settings & maintenance mode verified.");
+    await ensureEssentialBooksSeeded(pool);
   } catch (err) {
     console.warn("[Backend DB] Auto-migrations notice:", err.message);
   }

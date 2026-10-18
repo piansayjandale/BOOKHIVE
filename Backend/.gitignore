@@ -44,5 +44,4 @@ Thumbs.db
 .idea/
 
 # Large Datasets / Temp files
-data/imports/books.catalog.json
 .git_backup/

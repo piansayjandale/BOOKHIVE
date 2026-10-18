@@ -369,12 +369,29 @@ function searchSeedCatalogBooks(options: {
       const publisherLower = (book.publisher || "").toLowerCase();
       const haystack = `${titleLower} ${authorLower} ${summaryLower} ${genresLower} ${publisherLower}`.toLowerCase();
 
-      // 1. Exact Phrase Matches
+      // 1. Title Keyword & Exact Matches
+      const cleanTitle = titleLower.replace(/[^a-z0-9]/g, "");
+      const cleanQuery = queryValue.replace(/[^a-z0-9]/g, "");
+      const isExactTitle = cleanTitle === cleanQuery || titleLower === queryValue || titleLower.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "") === cleanQuery;
+      const activeWords = tokens.filter(w => !["the", "a", "an", "is", "about", "for", "to", "in", "on", "of", "and", "or", "find", "search", "books", "book", "show", "me"].includes(w));
+      const allWordsInTitle = activeWords.length > 0 && activeWords.every(w => titleLower.includes(w));
+      const someWordsInTitle = activeWords.length > 0 && activeWords.some(w => titleLower.includes(w));
+
+      if (isExactTitle) {
+        score += 500;
+        matchedBy.add("exact title match");
+        matchedBy.add("AI prompt keyword");
+      } else if (allWordsInTitle) {
+        score += 350;
+        matchedBy.add("title keyword match");
+        matchedBy.add("AI prompt keyword");
+      } else if (someWordsInTitle) {
+        score += 150;
+        matchedBy.add("title semantic");
+      }
+
       if (queryValue) {
-        if (exactIncludes(titleLower, queryValue)) {
-          score += 50;
-          matchedBy.add("exact title");
-        } else if (exactIncludes(authorLower, queryValue)) {
+        if (exactIncludes(authorLower, queryValue)) {
           score += 40;
           matchedBy.add("exact author");
         } else if (exactIncludes(summaryLower, queryValue)) {
@@ -444,9 +461,13 @@ function searchSeedCatalogBooks(options: {
       // 5. Book Quality Base (AI Score includes popularity/rating)
       score += Math.round(book.aiScore * 0.1); // max ~10
 
-      // 6. Calculate a highly dynamic relevance percentage (15% to 99%)
+      // 6. Calculate a highly dynamic relevance percentage (15% to 100%)
       let relevance = 15;
-      if (tokens.length > 0) {
+      if (isExactTitle) {
+        relevance = 100;
+      } else if (allWordsInTitle) {
+        relevance = 99;
+      } else if (tokens.length > 0) {
         const matchRatio = matchedTokens / tokens.length;
         if (matchRatio > 0) {
           // Scale from 35% to 85% based on match ratio
@@ -459,7 +480,7 @@ function searchSeedCatalogBooks(options: {
         relevance = haystack.includes(queryValue) ? 90 : 35;
       }
 
-      relevance = Math.min(99, Math.max(15, relevance));
+      relevance = Math.min(100, Math.max(15, relevance));
       
       if (matchedBy.size === 0) {
         matchedBy.add("semantic inference");
@@ -817,12 +838,29 @@ export const catalogRepository = {
           const publisherLower = (row.publisher || "").toLowerCase();
           const haystack = `${titleLower} ${authorLower} ${summaryLower} ${genresLower} ${publisherLower}`.toLowerCase();
 
-          // 1. Exact Phrase Matches
+          // 1. Title Keyword & Exact Matches
+          const cleanTitle = titleLower.replace(/[^a-z0-9]/g, "");
+          const cleanQuery = queryValue.replace(/[^a-z0-9]/g, "");
+          const isExactTitle = cleanTitle === cleanQuery || titleLower === queryValue || titleLower.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "") === cleanQuery;
+          const activeWords = tokens.filter(w => !["the", "a", "an", "is", "about", "for", "to", "in", "on", "of", "and", "or", "find", "search", "books", "book", "show", "me"].includes(w));
+          const allWordsInTitle = activeWords.length > 0 && activeWords.every(w => titleLower.includes(w));
+          const someWordsInTitle = activeWords.length > 0 && activeWords.some(w => titleLower.includes(w));
+
+          if (isExactTitle) {
+            score += 500;
+            matchedBy.add("exact title match");
+            matchedBy.add("AI prompt keyword");
+          } else if (allWordsInTitle) {
+            score += 350;
+            matchedBy.add("title keyword match");
+            matchedBy.add("AI prompt keyword");
+          } else if (someWordsInTitle) {
+            score += 150;
+            matchedBy.add("title semantic");
+          }
+
           if (queryValue) {
-            if (exactIncludes(titleLower, queryValue)) {
-              score += 50;
-              matchedBy.add("exact title");
-            } else if (exactIncludes(authorLower, queryValue)) {
+            if (exactIncludes(authorLower, queryValue)) {
               score += 40;
               matchedBy.add("exact author");
             } else if (exactIncludes(summaryLower, queryValue)) {
@@ -892,9 +930,13 @@ export const catalogRepository = {
           // 5. Book Quality Base (AI Score includes popularity/rating)
           score += Math.round((row.ai_score ?? 70) * 0.1); // max ~10
 
-          // 6. Calculate a highly dynamic relevance percentage (15% to 99%)
+          // 6. Calculate a highly dynamic relevance percentage (15% to 100%)
           let relevance = 15;
-          if (tokens.length > 0) {
+          if (isExactTitle) {
+            relevance = 100;
+          } else if (allWordsInTitle) {
+            relevance = 99;
+          } else if (tokens.length > 0) {
             const matchRatio = matchedTokens / tokens.length;
             if (matchRatio > 0) {
               // Scale from 35% to 85% based on match ratio
@@ -907,7 +949,7 @@ export const catalogRepository = {
             relevance = haystack.includes(queryValue) ? 90 : 35;
           }
 
-          relevance = Math.min(99, Math.max(15, relevance));
+          relevance = Math.min(100, Math.max(15, relevance));
 
           if (matchedBy.size === 0) {
             matchedBy.add("semantic inference");

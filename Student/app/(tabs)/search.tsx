@@ -196,7 +196,13 @@ export const calculateAiPromptMatchPercentage = (
   const normalizedCat = (book.category || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
   // 1. Exact Title Match -> 100%
-  if (normalizedQuery.length > 0 && normalizedTitle === normalizedQuery) {
+  const cleanTitle = normalizedTitle.replace(/[^a-z0-9]/g, "");
+  const cleanQuery = normalizedQuery.replace(/[^a-z0-9]/g, "");
+  const titleNoArticle = normalizedTitle.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
+  if (
+    cleanQuery.length > 0 &&
+    (normalizedTitle === normalizedQuery || cleanTitle === cleanQuery || titleNoArticle === cleanQuery)
+  ) {
     return 100;
   }
 
@@ -268,12 +274,12 @@ export const calculateAiPromptMatchPercentage = (
   const bookTitleCoverage = effectiveTitleWords.length > 0 ? matchedBookWords / effectiveTitleWords.length : 0;
   const titleRatio = titleMatches / meaningfulWords.length;
 
-  // All prompt words matched in the book title -> 92% - 100%
+  // All prompt words matched in the book title -> 94% - 100%
   if (titleMatches === meaningfulWords.length) {
-    if (exactTitleWordMatches === meaningfulWords.length && bookTitleCoverage >= 0.99) {
+    if (exactTitleWordMatches === meaningfulWords.length && bookTitleCoverage >= 0.85) {
       return 100;
     }
-    return Math.min(99, Math.max(92, 91 + Math.round(bookTitleCoverage * 6) + (exactTitleWordMatches > 0 ? 2 : 0)));
+    return Math.min(99, Math.max(94, 91 + Math.round(bookTitleCoverage * 6) + (exactTitleWordMatches > 0 ? 2 : 0)));
   }
 
   // Partial prompt words matched in the book title -> 80% - 93%
@@ -1004,7 +1010,23 @@ export default function SearchScreen() {
 
     // 1. If AI search has returned books from backend (in AI Prompt mode or with file attached), score and sort them accurately!
     if (aiBooks && aiBooks.length > 0 && (!isPrefixFilter || selectedFile !== null)) {
-      return aiBooks
+      // Also combine local catalog books whose title matches the prompt keywords so that exact matches (e.g. "Romeo and Juliet") are never missed!
+      const localKwMatches = activeQuery.length > 0 ? searchBooksByKeyword(activeQuery, 25) : [];
+      const combinedAiPool = [...aiBooks];
+      const seenTitles = new Set(
+        combinedAiPool.map((b: any) => (b.volumeInfo?.title || b.title || "").toLowerCase().trim())
+      );
+
+      for (const lm of localKwMatches) {
+        const formatted = formatSearchItem(lm);
+        const lmTitle = (formatted.volumeInfo?.title || "").toLowerCase().trim();
+        if (!seenTitles.has(lmTitle)) {
+          seenTitles.add(lmTitle);
+          combinedAiPool.push(formatted);
+        }
+      }
+
+      return combinedAiPool
         .map((item: any) => {
           const info = item.volumeInfo || {};
           const clientScore =
@@ -1026,6 +1048,7 @@ export default function SearchScreen() {
             match,
           };
         })
+        .filter((entry: any) => entry.match > 0)
         .sort((a: any, b: any) => {
           if (b.match !== a.match) return b.match - a.match;
           return (a.item.volumeInfo?.title || "").localeCompare(b.item.volumeInfo?.title || "");

@@ -16,6 +16,11 @@ function warnIfNotOffline(label, error) {
 
 import { pool } from "../db/pool.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
+import {
+  searchCatalogByPrefix,
+  searchCatalogByKeyword,
+  formatCatalogBook,
+} from "../services/catalog-loader.service.js";
 
 let mockDigitizedBooks = [
   {
@@ -2588,6 +2593,66 @@ export const adminModel = {
           };
         });
 
+        // Supplement from 48k books catalog so books like "Romeo and Juliet" match across web and mobile
+        try {
+          const catalogMatches = searchCatalogByPrefix(cleanQ, 60);
+          const existingKeys = new Set(results.map(r => (r.title || "").toLowerCase().trim()));
+          for (const cb of catalogMatches) {
+            const cbTitle = (cb.title || "").toLowerCase().trim();
+            if (existingKeys.has(cbTitle)) continue;
+            existingKeys.add(cbTitle);
+            if (department !== "All" && cb.department && cb.department !== department) continue;
+
+            let relevance = 75;
+            const matchedBy = [];
+            if (cbTitle === cleanQ || cbTitle.replace(/[^a-z0-9]/g, "") === rawClean) {
+              relevance = 100;
+              matchedBy.push("exact title match");
+            } else if (cbTitle.startsWith(cleanQ) || cbTitle.startsWith(rawClean)) {
+              const ratio = Math.min(1, rawClean.length / Math.max(1, cbTitle.length));
+              relevance = Math.min(98, Math.round(85 + ratio * 14));
+              matchedBy.push("title prefix filter");
+            } else if (cbTitle.replace(/^(the|a|an)\s+/i, "").startsWith(cleanQ)) {
+              relevance = 90;
+              matchedBy.push("title prefix filter");
+            } else if (cbTitle.includes(cleanQ)) {
+              relevance = 85;
+              matchedBy.push("title keyword filter");
+            } else if ((cb.author || "").toLowerCase().includes(cleanQ)) {
+              relevance = 80;
+              matchedBy.push("author filter match");
+            } else {
+              relevance = 75;
+              matchedBy.push("filter match");
+            }
+
+            const fb = formatCatalogBook(cb);
+            results.push({
+              id: fb.id,
+              title: fb.title,
+              author: fb.author,
+              isbn: fb.isbn,
+              department: fb.department,
+              availability: fb.availability,
+              relevance,
+              summary: fb.summary,
+              matchedBy,
+              genres: fb.genres,
+              language: fb.language,
+              rating: fb.rating,
+              coverImg: fb.cover_img,
+              score: relevance,
+            });
+          }
+        } catch (catErr) {
+          console.warn("Catalog prefix supplement warning:", catErr.message);
+        }
+
+        results.sort((a, b) => {
+          if (b.relevance !== a.relevance) return b.relevance - a.relevance;
+          return a.title.localeCompare(b.title);
+        });
+
         const cleanQuery = (queryText || "Filter search").trim();
         const actorName = input.actorName || "Staff";
         const actorId = input.actorId || null;
@@ -2674,25 +2739,61 @@ export const adminModel = {
           query += " AND department = $1";
           params.push(department);
         }
-        const { rows } = await pool.query(query, params);
+        const { rows: dbRows } = await pool.query(query, params);
+        const rows = [...dbRows];
+
+        // Supplement from 48k catalog books
+        try {
+          const catalogKw = searchCatalogByKeyword(queryText, 40);
+          const existingTitles = new Set(rows.map(r => (r.title || "").toLowerCase().trim()));
+          for (const cb of catalogKw) {
+            const cbTitle = (cb.title || "").toLowerCase().trim();
+            if (!existingTitles.has(cbTitle)) {
+              existingTitles.add(cbTitle);
+              if (department !== "All" && cb.department && cb.department !== department) continue;
+              rows.push(formatCatalogBook(cb));
+            }
+          }
+        } catch (catErr) {
+          console.warn("Catalog keyword supplement warning:", catErr.message);
+        }
+
+        const queryValue = queryText.trim().toLowerCase();
+        const cleanQuery = queryValue.replace(/[^a-z0-9]/g, "");
+        const activeWords = (filteredTokens.length > 0 ? filteredTokens : tokens).filter(w => !stopWords.has(w));
+
         fallbackResults = rows.map(row => {
           const book = mapBookRow(row);
           let score = 0;
           const matchedBy = new Set();
           
           const titleLower = (book.title || "").toLowerCase();
+          const cleanTitle = titleLower.replace(/[^a-z0-9]/g, "");
           const authorLower = (book.author || "").toLowerCase();
           const summaryLower = (book.summary || "").toLowerCase();
           const genresLower = (book.genres || "").toLowerCase();
           const publisherLower = (book.publisher || "").toLowerCase();
           const haystack = `${titleLower} ${authorLower} ${summaryLower} ${genresLower} ${publisherLower}`;
           
-          const queryValue = queryText.trim().toLowerCase();
+          const isExactTitle = cleanTitle === cleanQuery || titleLower === queryValue || titleLower.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "") === cleanQuery;
+          const allWordsInTitle = activeWords.length > 0 && activeWords.every(w => titleLower.includes(w));
+          const someWordsInTitle = activeWords.length > 0 && activeWords.some(w => titleLower.includes(w));
+
+          if (isExactTitle) {
+            score += 500;
+            matchedBy.add("exact title match");
+            matchedBy.add("AI prompt keyword");
+          } else if (allWordsInTitle) {
+            score += 350;
+            matchedBy.add("title keyword match");
+            matchedBy.add("AI prompt keyword");
+          } else if (someWordsInTitle) {
+            score += 150;
+            matchedBy.add("title semantic");
+          }
+
           if (queryValue) {
-            if (titleLower.includes(queryValue)) {
-              score += 50;
-              matchedBy.add("exact title");
-            } else if (authorLower.includes(queryValue)) {
+            if (authorLower.includes(queryValue)) {
               score += 40;
               matchedBy.add("exact author");
             } else if (summaryLower.includes(queryValue)) {
@@ -2740,7 +2841,11 @@ export const adminModel = {
           score += Math.round((book.aiScore || 70) * 0.1);
           
           let relevance = 15;
-          if (tokens.length > 0) {
+          if (isExactTitle) {
+            relevance = 100;
+          } else if (allWordsInTitle) {
+            relevance = 99;
+          } else if (tokens.length > 0) {
             const matchRatio = matchedTokens / tokens.length;
             if (matchRatio > 0) {
               relevance = 35 + Math.round(matchRatio * 50) + Math.min(14, Math.round(score * 0.1));
@@ -2749,7 +2854,7 @@ export const adminModel = {
             relevance = haystack.includes(queryValue) ? 90 : 35;
           }
           
-          relevance = Math.min(99, Math.max(15, relevance));
+          relevance = Math.min(100, Math.max(15, relevance));
           if (matchedBy.size === 0) {
             matchedBy.add("semantic inference");
           }
@@ -2819,6 +2924,19 @@ export const adminModel = {
           finalQuery += " LIMIT 80";
           
           let { rows: candidateRows } = await pool.query(finalQuery, tokenParams);
+          
+          // Prepend catalog keyword matches (especially title matches) into candidates
+          try {
+            const catalogCand = searchCatalogByKeyword(queryText, 30);
+            const seenCandTitles = new Set(candidateRows.map(r => (r.title || "").toLowerCase().trim()));
+            for (const cb of catalogCand) {
+              const cbTitle = (cb.title || "").toLowerCase().trim();
+              if (!seenCandTitles.has(cbTitle)) {
+                seenCandTitles.add(cbTitle);
+                candidateRows.unshift(formatCatalogBook(cb));
+              }
+            }
+          } catch (e) {}
           
           // If we got very few candidates, relax the SQL search to pull highly active books in the same department
           if (candidateRows.length < 15) {
@@ -2931,6 +3049,77 @@ Only include books with relevance >= 20%. If no books match, return an empty "ma
       } else {
         results = await runLocalFallback();
       }
+
+      // Post-search title keyword accuracy boost
+      const cleanQ = queryText.toLowerCase().trim().replace(/[^a-z0-9]/g, "");
+      const promptKeywords = (filteredTokens.length > 0 ? filteredTokens : tokens).filter(w => !stopWords.has(w));
+
+      // Promote existing results with title matches
+      for (const res of results) {
+        const tLower = (res.title || "").toLowerCase();
+        const cleanT = tLower.replace(/[^a-z0-9]/g, "");
+        const cleanNoArt = tLower.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
+
+        if (cleanT === cleanQ || cleanNoArt === cleanQ) {
+          res.relevance = 100;
+          res.score = Math.max(res.score || 0, 500);
+          res.matchedBy = Array.from(new Set(["exact title match", "AI prompt keyword", ...(res.matchedBy || [])]));
+        } else if (promptKeywords.length > 0 && promptKeywords.every(pw => tLower.includes(pw))) {
+          res.relevance = Math.max(res.relevance, 98);
+          res.score = Math.max(res.score || 0, 350);
+          res.matchedBy = Array.from(new Set(["title keyword match", "AI prompt keyword", ...(res.matchedBy || [])]));
+        }
+      }
+
+      // Guarantee any catalog book with exact or full-token title match is present and ranked at top
+      try {
+        const topCatalogMatches = searchCatalogByKeyword(queryText, 10);
+        for (const cb of topCatalogMatches) {
+          const tLower = (cb.title || "").toLowerCase();
+          const cleanT = tLower.replace(/[^a-z0-9]/g, "");
+          const cleanNoArt = tLower.replace(/^(the|a|an)\s+/i, "").replace(/[^a-z0-9]/g, "");
+          const isExact = cleanT === cleanQ || cleanNoArt === cleanQ;
+          const isAllWords = promptKeywords.length > 0 && promptKeywords.every(pw => tLower.includes(pw));
+
+          if (isExact || isAllWords) {
+            const existingIdx = results.findIndex(r => (r.title || "").toLowerCase().trim() === tLower.trim());
+            if (existingIdx >= 0) {
+              results[existingIdx].relevance = isExact ? 100 : Math.max(results[existingIdx].relevance, 98);
+              results[existingIdx].score = Math.max(results[existingIdx].score || 0, isExact ? 500 : 350);
+              results[existingIdx].matchedBy = Array.from(new Set([
+                isExact ? "exact title match" : "title keyword match",
+                "AI prompt keyword",
+                ...(results[existingIdx].matchedBy || [])
+              ]));
+            } else {
+              const fb = formatCatalogBook(cb);
+              results.push({
+                id: fb.id,
+                title: fb.title,
+                author: fb.author,
+                isbn: fb.isbn,
+                department: fb.department,
+                availability: fb.availability,
+                relevance: isExact ? 100 : 98,
+                summary: fb.summary,
+                matchedBy: [isExact ? "exact title match" : "title keyword match", "AI prompt keyword"],
+                genres: fb.genres,
+                language: fb.language,
+                rating: fb.rating,
+                coverImg: fb.cover_img,
+                score: isExact ? 500 : 350,
+              });
+            }
+          }
+        }
+      } catch (err) {}
+
+      // Final sort: 100% exact matches at top, then title keyword matches, then score
+      results.sort((a, b) => {
+        if (b.relevance !== a.relevance) return b.relevance - a.relevance;
+        return (b.score || 0) - (a.score || 0);
+      });
+      results = results.slice(0, 8);
 
       const cleanPrompt = (queryText || "Uploaded context search").trim();
       const actorName = input.actorName || "Staff";
