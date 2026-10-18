@@ -243,53 +243,6 @@ export default function ReservationDetailsScreen() {
           <Text style={[styles.currentBorrowDate, { color: theme.textPrimary }]}>{currentBorrowDueDate}</Text>
         </View>
 
-        <View style={[styles.notificationsCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          <Text style={[styles.sectionLabel, { color: theme.textPrimary }]}>Notification Settings</Text>
-          <View style={styles.notificationRow}>
-            <Text style={[styles.notificationText, { color: theme.textSecondary }]}>Notify me when available</Text>
-            <Switch
-              value={notifyAvailable}
-              onValueChange={setNotifyAvailable}
-              thumbColor={notifyAvailable ? (isDarkMode ? theme.accentGold : theme.accentBlue) : "#CBD5E1"}
-              trackColor={{ false: "#CBD5E1", true: isDarkMode ? "#3E3B1B" : "rgba(2, 116, 187, 0.25)" }}
-            />
-          </View>
-          <View style={styles.notificationRow}>
-            <Text style={[styles.notificationText, { color: theme.textSecondary }]}>Email notification</Text>
-            <Switch
-              value={notifyEmail}
-              onValueChange={setNotifyEmail}
-              thumbColor={notifyEmail ? (isDarkMode ? theme.accentGold : theme.accentBlue) : "#CBD5E1"}
-              trackColor={{ false: "#CBD5E1", true: isDarkMode ? "#3E3B1B" : "rgba(2, 116, 187, 0.25)" }}
-            />
-          </View>
-          <View style={styles.notificationRow}>
-            <Text style={[styles.notificationText, { color: theme.textSecondary }]}>SMS notification</Text>
-            <Switch
-              value={notifySMS}
-              onValueChange={setNotifySMS}
-              thumbColor={notifySMS ? (isDarkMode ? theme.accentGold : theme.accentBlue) : "#CBD5E1"}
-              trackColor={{ false: "#CBD5E1", true: isDarkMode ? "#3E3B1B" : "rgba(2, 116, 187, 0.25)" }}
-            />
-          </View>
-        </View>
-
-        <View style={[styles.qrCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          <View style={styles.qrHeader}>
-            <Text style={[styles.qrTitle, { color: theme.textPrimary }]}>Reservation QR Code</Text>
-            <MaterialCommunityIcons
-              name="qrcode-scan"
-              size={22}
-              color={isDarkMode ? theme.accentGold : theme.accentBlue}
-            />
-          </View>
-          <View style={[styles.qrPlaceholder, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}>
-            <Text style={[styles.qrPlaceholderText, { color: theme.textSecondary }]}>QR CODE</Text>
-          </View>
-          <Text style={[styles.qrDescription, { color: theme.textSecondary }]}>
-            Show this code to the librarian for faster verification and pickup.
-          </Text>
-        </View>
 
         <View style={styles.actionRow}>
           <TouchableOpacity

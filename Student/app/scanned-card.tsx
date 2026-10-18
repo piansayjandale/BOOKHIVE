@@ -386,7 +386,7 @@ export default function ScannedCardScreen() {
   }, [libraryCard]);
 
   const CARD_ROW_HEIGHT = 28;
-  const VISIBLE_CARD_ROWS = 13;
+  const VISIBLE_CARD_ROWS = 10;
   const TOTAL_CARD_ROWS = Math.max(VISIBLE_CARD_ROWS, approvedLibraryCard.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = approvedLibraryCard[index];

@@ -43,7 +43,16 @@ export default function NotificationsScreen() {
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<NotificationItem | null>(null);
 
   const isReceiptDue = Boolean(selectedReceipt?.returnDate && isDueToReturn(selectedReceipt.returnDate));
+  const isReservationReceipt = Boolean(
+    selectedReceipt?.isReservation ||
+    selectedReceipt?.status?.toLowerCase().includes("reservation") ||
+    selectedReceipt?.status?.toLowerCase().includes("queued") ||
+    selectedReceipt?.status?.toLowerCase().includes("waitlist") ||
+    (selectedReceipt as any)?.action === "Reserve" ||
+    (selectedReceipt as any)?.type === "Reservation"
+  );
   const isBorrowApproved = Boolean(
+    !isReservationReceipt &&
     selectedReceipt &&
     (
       selectedReceipt.status?.toLowerCase() === "approved" ||
@@ -311,6 +320,42 @@ export default function NotificationsScreen() {
         isAlert: false,
       };
     }
+    if (t.includes("declined") || t.includes("failed") || t.includes("cancel")) {
+      return {
+        icon: "close-circle-outline" as const,
+        color: isDarkMode ? "#F87171" : "#EF4444", // Rose Red
+        bgColor: isDarkMode ? "rgba(248, 113, 113, 0.12)" : "#FEF2F2",
+        borderColor: isDarkMode ? "rgba(248, 113, 113, 0.3)" : "#FECACA",
+        badge: "ALERT",
+        badgeBg: isDarkMode ? "rgba(248, 113, 113, 0.15)" : "#FEE2E2",
+        badgeText: isDarkMode ? "#F87171" : "#DC2626",
+        isAlert: true,
+      };
+    }
+    if (t.includes("reservation") || t.includes("queued") || t.includes("waitlist")) {
+      if (t.includes("ready") || t.includes("available")) {
+        return {
+          icon: "checkmark-circle-outline" as const,
+          color: isDarkMode ? "#34D399" : "#059669", // Emerald Green
+          bgColor: isDarkMode ? "rgba(52, 211, 153, 0.12)" : "#ECFDF5",
+          borderColor: isDarkMode ? "rgba(52, 211, 153, 0.3)" : "#A7F3D0",
+          badge: "READY FOR PICKUP",
+          badgeBg: isDarkMode ? "rgba(52, 211, 153, 0.15)" : "#D1FAE5",
+          badgeText: isDarkMode ? "#34D399" : "#047857",
+          isAlert: false,
+        };
+      }
+      return {
+        icon: "bookmark-outline" as const,
+        color: isDarkMode ? "#C084FC" : "#7C3AED", // Violet (Matches Library Card Reservation)
+        bgColor: isDarkMode ? "rgba(192, 132, 252, 0.12)" : "#F5F3FF",
+        borderColor: isDarkMode ? "rgba(192, 132, 252, 0.3)" : "#DDD6FE",
+        badge: "QUEUED RESERVATION",
+        badgeBg: isDarkMode ? "rgba(192, 132, 252, 0.15)" : "#EDE9FE",
+        badgeText: isDarkMode ? "#C084FC" : "#7C3AED",
+        isAlert: false,
+      };
+    }
     if (t.includes("returned") || t.includes("success") || t.includes("approved")) {
       return {
         icon: "checkmark-circle-outline" as const,
@@ -323,7 +368,7 @@ export default function NotificationsScreen() {
         isAlert: false,
       };
     }
-    if (t.includes("pending") || t.includes("request") || t.includes("reservation")) {
+    if (t.includes("pending") || t.includes("request")) {
       return {
         icon: "time-outline" as const,
         color: isDarkMode ? "#FCD34D" : "#0274BB", // STI Brand Accent (Pending)
@@ -344,18 +389,6 @@ export default function NotificationsScreen() {
         borderColor: isDarkMode ? "rgba(239, 68, 68, 0.3)" : "#FECACA",
         badge: isOverdueAlert ? "OVERDUE" : "DUE TODAY",
         badgeBg: isDarkMode ? "rgba(239, 68, 68, 0.15)" : "#FEE2E2",
-        badgeText: isDarkMode ? "#F87171" : "#DC2626",
-        isAlert: true,
-      };
-    }
-    if (t.includes("declined") || t.includes("failed") || t.includes("cancel")) {
-      return {
-        icon: "close-circle-outline" as const,
-        color: isDarkMode ? "#F87171" : "#EF4444", // Rose Red
-        bgColor: isDarkMode ? "rgba(248, 113, 113, 0.12)" : "#FEF2F2",
-        borderColor: isDarkMode ? "rgba(248, 113, 113, 0.3)" : "#FECACA",
-        badge: "ALERT",
-        badgeBg: isDarkMode ? "rgba(248, 113, 113, 0.15)" : "#FEE2E2",
         badgeText: isDarkMode ? "#F87171" : "#DC2626",
         isAlert: true,
       };
@@ -748,25 +781,31 @@ export default function NotificationsScreen() {
               {/* Receipt Title & Status Pill */}
               <View style={styles.receiptTitleBlock}>
                 <Text style={[styles.receiptDocumentTitle, { color: theme.textPrimary }]}>
-                  CIRCULATION LOAN SLIP
+                  {isReservationReceipt ? "RESERVATION QUEUE SLIP" : "CIRCULATION LOAN SLIP"}
                 </Text>
 
                 {/* Live Status Pill */}
                 <View style={[
                   styles.receiptBadge,
-                  isReceiptDue
+                  isReservationReceipt
+                    ? { backgroundColor: 'rgba(168, 85, 247, 0.12)', borderColor: 'rgba(168, 85, 247, 0.35)' }
+                    : isReceiptDue
                     ? { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)' }
                     : { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.35)' }
                 ]}>
                   <View style={[
                     styles.receiptStatusDot,
-                    { backgroundColor: isReceiptDue ? '#EF4444' : '#10B981' }
+                    { backgroundColor: isReservationReceipt ? '#A855F7' : isReceiptDue ? '#EF4444' : '#10B981' }
                   ]} />
                   <Text style={[
                     styles.receiptBadgeText,
-                    { color: isReceiptDue ? '#EF4444' : '#10B981' }
+                    { color: isReservationReceipt ? (isDarkMode ? '#C084FC' : '#7C3AED') : isReceiptDue ? '#EF4444' : '#10B981' }
                   ]}>
-                    {isReceiptDue ? "DUE FOR RETURN TODAY" : (selectedReceipt?.status?.toUpperCase() || "ACTIVE LOAN")}
+                    {isReservationReceipt
+                      ? `QUEUED RESERVATION (QUE #${selectedReceipt?.queuePosition || '1'})`
+                      : isReceiptDue
+                      ? "DUE FOR RETURN TODAY"
+                      : (selectedReceipt?.status?.toUpperCase() || "ACTIVE LOAN")}
                   </Text>
                 </View>
 
@@ -840,109 +879,200 @@ export default function NotificationsScreen() {
                 </View>
               </View>
 
-              {/* Circulation Timeline & Dates */}
-              <View style={styles.receiptSection}>
-                <View style={styles.sectionHeaderRow}>
-                  <Ionicons name="time-outline" size={13} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
-                  <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
-                    CIRCULATION TIMELINE
-                  </Text>
-                </View>
-
-                <View style={styles.receiptDateGrid}>
-                  <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
-                    <View style={styles.dateBoxHeader}>
-                      <Ionicons name="calendar-outline" size={12} color="#64748B" />
-                      <Text style={styles.receiptDateBoxLabel}>DATE BORROWED</Text>
-                    </View>
-                    <Text style={[styles.receiptDateBoxValue, { color: theme.textPrimary }]}>
-                      {selectedReceipt?.borrowDate}
+              {/* Circulation Timeline & Dates vs Reservation & Queue Details */}
+              {isReservationReceipt ? (
+                <View style={styles.receiptSection}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="bookmark-outline" size={13} color={isDarkMode ? '#C084FC' : '#7C3AED'} />
+                    <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#C084FC' : '#7C3AED' }]}>
+                      RESERVATION & QUEUE DETAILS
                     </Text>
                   </View>
 
-                  <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
-                    <View style={styles.dateBoxHeader}>
-                      <Ionicons name="checkmark-done-circle-outline" size={13} color="#10B981" />
-                      <Text style={[styles.receiptDateBoxLabel, { color: '#10B981' }]}>PICKED UP</Text>
+                  <View style={styles.receiptDateGrid}>
+                    <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <View style={styles.dateBoxHeader}>
+                        <Ionicons name="calendar-outline" size={12} color="#64748B" />
+                        <Text style={styles.receiptDateBoxLabel}>DATE RESERVED</Text>
+                      </View>
+                      <Text style={[styles.receiptDateBoxValue, { color: theme.textPrimary }]}>
+                        {selectedReceipt?.reservationDate || selectedReceipt?.borrowDate || "Today"}
+                      </Text>
                     </View>
-                    <Text style={[styles.receiptDateBoxValue, { color: '#10B981', fontWeight: '800' }]}>
-                      {selectedReceipt?.pickupDate}
-                    </Text>
-                  </View>
-                </View>
 
-                {/* Due Date Hero Card - Completely Prevents Overflow */}
-                <View style={[
-                  styles.receiptDueHeroCard,
-                  isReceiptDue
-                    ? {
-                        backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
-                        borderColor: isDarkMode ? '#EF4444' : '#F87171',
-                      }
-                    : {
-                        backgroundColor: isDarkMode ? 'rgba(2, 116, 187, 0.10)' : '#F0F9FF',
-                        borderColor: isDarkMode ? '#0284C7' : '#BAE6FD',
-                      }
-                ]}>
-                  <View style={styles.dueHeroTopRow}>
-                    <View style={styles.dueHeroLabelGroup}>
+                    <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <View style={styles.dateBoxHeader}>
+                        <Ionicons name="people-outline" size={13} color={isDarkMode ? '#C084FC' : '#7C3AED'} />
+                        <Text style={[styles.receiptDateBoxLabel, { color: isDarkMode ? '#C084FC' : '#7C3AED' }]}>QUEUE NUMBER</Text>
+                      </View>
+                      <Text style={[styles.receiptDateBoxValue, { color: isDarkMode ? '#C084FC' : '#7C3AED', fontWeight: '800' }]}>
+                        Que #{selectedReceipt?.queuePosition || "1"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Queue Status Box */}
+                  <View style={[
+                    styles.receiptDueHeroCard,
+                    {
+                      backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.10)' : '#F5F3FF',
+                      borderColor: isDarkMode ? 'rgba(168, 85, 247, 0.35)' : '#DDD6FE',
+                    }
+                  ]}>
+                    <View style={styles.dueHeroTopRow}>
+                      <View style={styles.dueHeroLabelGroup}>
+                        <Ionicons
+                          name="ribbon-outline"
+                          size={16}
+                          color={isDarkMode ? '#C084FC' : '#7C3AED'}
+                        />
+                        <Text style={[
+                          styles.dueHeroTitle,
+                          { color: isDarkMode ? '#C084FC' : '#7C3AED' }
+                        ]}>
+                          QUEUE STATUS: IN LINE
+                        </Text>
+                      </View>
+
+                      <View style={[
+                        styles.dueHeroStatusPill,
+                        { backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.2)' : '#EDE9FE' }
+                      ]}>
+                        <Text style={[
+                          styles.dueHeroStatusPillText,
+                          { color: isDarkMode ? '#C084FC' : '#7C3AED' }
+                        ]}>
+                          1ST-COME 1ST-SERVED
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={[
+                      styles.dueHeroDateValue,
+                      { color: isDarkMode ? '#C084FC' : '#6D28D9', fontSize: 16 }
+                    ]}>
+                      Waiting for Returned Copy
+                    </Text>
+
+                    <View style={styles.dueHeroNoticeRow}>
                       <Ionicons
-                        name={isReceiptDue ? "alert-circle" : "calendar"}
-                        size={16}
-                        color={isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7')}
+                        name="information-circle-outline"
+                        size={13}
+                        color={isDarkMode ? '#C084FC' : '#7C3AED'}
                       />
                       <Text style={[
-                        styles.dueHeroTitle,
-                        { color: isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7') }
+                        styles.dueHeroNoticeText,
+                        { color: isDarkMode ? '#94A3B8' : '#64748B' }
                       ]}>
-                        DUE RETURN DEADLINE
+                        When a physical copy is returned to the library, your reservation will automatically turn into an active borrow pass with a pickup QR code.
                       </Text>
                     </View>
-
-                    <View style={[
-                      styles.dueHeroStatusPill,
-                      { backgroundColor: isReceiptDue ? 'rgba(239, 68, 68, 0.2)' : 'rgba(2, 132, 199, 0.15)' }
-                    ]}>
-                      <Text style={[
-                        styles.dueHeroStatusPillText,
-                        { color: isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7') }
-                      ]}>
-                        {isReceiptDue ? "DUE TODAY" : "ON SCHEDULE"}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={[
-                    styles.dueHeroDateValue,
-                    { color: isReceiptDue ? (isDarkMode ? '#F87171' : '#DC2626') : (isDarkMode ? '#38BDF8' : '#0369A1') }
-                  ]}>
-                    {selectedReceipt?.returnDate}
-                  </Text>
-
-                  <View style={styles.dueHeroNoticeRow}>
-                    <Ionicons
-                      name="information-circle-outline"
-                      size={13}
-                      color={isReceiptDue ? (isDarkMode ? '#FCA5A5' : '#B91C1C') : (isDarkMode ? '#94A3B8' : '#64748B')}
-                    />
-                    <Text style={[
-                      styles.dueHeroNoticeText,
-                      { color: isReceiptDue ? (isDarkMode ? '#FCA5A5' : '#B91C1C') : (isDarkMode ? '#94A3B8' : '#64748B') }
-                    ]}>
-                      {isReceiptDue
-                        ? "Please return this copy to the circulation desk to avoid overdue penalties."
-                        : "Return book on or before the due date to keep your library account clear."}
-                    </Text>
                   </View>
                 </View>
-              </View>
+              ) : (
+                <View style={styles.receiptSection}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="time-outline" size={13} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
+                    <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
+                      CIRCULATION TIMELINE
+                    </Text>
+                  </View>
 
-              {/* Borrower Details Section */}
+                  <View style={styles.receiptDateGrid}>
+                    <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <View style={styles.dateBoxHeader}>
+                        <Ionicons name="calendar-outline" size={12} color="#64748B" />
+                        <Text style={styles.receiptDateBoxLabel}>DATE BORROWED</Text>
+                      </View>
+                      <Text style={[styles.receiptDateBoxValue, { color: theme.textPrimary }]}>
+                        {selectedReceipt?.borrowDate}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <View style={styles.dateBoxHeader}>
+                        <Ionicons name="checkmark-done-circle-outline" size={13} color="#10B981" />
+                        <Text style={[styles.receiptDateBoxLabel, { color: '#10B981' }]}>PICKED UP</Text>
+                      </View>
+                      <Text style={[styles.receiptDateBoxValue, { color: '#10B981', fontWeight: '800' }]}>
+                        {selectedReceipt?.pickupDate}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Due Date Hero Card - Completely Prevents Overflow */}
+                  <View style={[
+                    styles.receiptDueHeroCard,
+                    isReceiptDue
+                      ? {
+                          backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2',
+                          borderColor: isDarkMode ? '#EF4444' : '#F87171',
+                        }
+                      : {
+                          backgroundColor: isDarkMode ? 'rgba(2, 116, 187, 0.10)' : '#F0F9FF',
+                          borderColor: isDarkMode ? '#0284C7' : '#BAE6FD',
+                        }
+                  ]}>
+                    <View style={styles.dueHeroTopRow}>
+                      <View style={styles.dueHeroLabelGroup}>
+                        <Ionicons
+                          name={isReceiptDue ? "alert-circle" : "calendar"}
+                          size={16}
+                          color={isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0274BB')}
+                        />
+                        <Text style={[
+                          styles.dueHeroTitle,
+                          { color: isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7') }
+                        ]}>
+                          DUE RETURN DEADLINE
+                        </Text>
+                      </View>
+
+                      <View style={[
+                        styles.dueHeroStatusPill,
+                        { backgroundColor: isReceiptDue ? 'rgba(239, 68, 68, 0.2)' : 'rgba(2, 132, 199, 0.15)' }
+                      ]}>
+                        <Text style={[
+                          styles.dueHeroStatusPillText,
+                          { color: isReceiptDue ? '#EF4444' : (isDarkMode ? '#38BDF8' : '#0284C7') }
+                        ]}>
+                          {isReceiptDue ? "DUE TODAY" : "ON SCHEDULE"}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={[
+                      styles.dueHeroDateValue,
+                      { color: isReceiptDue ? (isDarkMode ? '#F87171' : '#DC2626') : (isDarkMode ? '#38BDF8' : '#0369A1') }
+                    ]}>
+                      {selectedReceipt?.returnDate}
+                    </Text>
+
+                    <View style={styles.dueHeroNoticeRow}>
+                      <Ionicons
+                        name="information-circle-outline"
+                        size={13}
+                        color={isReceiptDue ? (isDarkMode ? '#FCA5A5' : '#B91C1C') : (isDarkMode ? '#94A3B8' : '#64748B')}
+                      />
+                      <Text style={[
+                        styles.dueHeroNoticeText,
+                        { color: isReceiptDue ? (isDarkMode ? '#FCA5A5' : '#B91C1C') : (isDarkMode ? '#94A3B8' : '#64748B') }
+                      ]}>
+                        {isReceiptDue
+                          ? "Please return this copy to the circulation desk to avoid overdue penalties."
+                          : "Return book on or before the due date to keep your library account clear."}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              )}
+
+              {/* Borrower / Student Details Section */}
               <View style={styles.receiptSection}>
                 <View style={styles.sectionHeaderRow}>
-                  <Ionicons name="id-card-outline" size={13} color={isDarkMode ? '#38BDF8' : '#0274BB'} />
-                  <Text style={[styles.receiptSectionHeader, { color: isDarkMode ? '#38BDF8' : '#0274BB' }]}>
-                    BORROWER DETAILS
+                  <Ionicons name="id-card-outline" size={13} color={isReservationReceipt ? (isDarkMode ? '#C084FC' : '#7C3AED') : (isDarkMode ? '#38BDF8' : '#0274BB')} />
+                  <Text style={[styles.receiptSectionHeader, { color: isReservationReceipt ? (isDarkMode ? '#C084FC' : '#7C3AED') : (isDarkMode ? '#38BDF8' : '#0274BB') }]}>
+                    {isReservationReceipt ? "STUDENT DETAILS" : "BORROWER DETAILS"}
                   </Text>
                 </View>
 
@@ -1076,15 +1206,17 @@ export default function NotificationsScreen() {
                     ]}
                     onPress={() => {
                       Alert.alert(
-                        "Receipt Saved",
-                        `Circulation receipt #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
+                        isReservationReceipt ? "Reservation Slip Saved" : "Receipt Saved",
+                        isReservationReceipt
+                          ? `Reservation slip #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
+                          : `Circulation receipt #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
                       );
                     }}
                     activeOpacity={0.85}
                   >
                     <Ionicons name="download-outline" size={16} color={isDarkMode ? '#0F1D2B' : '#FFFFFF'} />
                     <Text style={[styles.receiptSaveBtnText, { color: isDarkMode ? '#0F1D2B' : '#FFFFFF' }]}>
-                      Save Receipt
+                      {isReservationReceipt ? "Save Slip" : "Save Receipt"}
                     </Text>
                   </TouchableOpacity>
 

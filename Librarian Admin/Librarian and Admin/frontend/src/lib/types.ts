@@ -141,6 +141,7 @@ export interface TransactionRecord {
   pickedUpAt?: string | null;
   isPickedUp?: boolean;
   comment?: string;
+  studentIdImage?: string | null;
 }
 
 export interface ActivityLog {

@@ -646,6 +646,7 @@ export function TransactionsModule() {
           resourceTitle: row.resourceTitle || row.resource_title || row.title || "Book",
           isbn: row.isbn || "N/A",
           type: (String(row.type || "").toLowerCase() === "reservation" ? "Reservation" : "Borrow") as TransactionType,
+          studentIdImage: row.studentIdImage || row.student_id_image || null,
           pickedUpAt: row.pickedUpAt || row.picked_up_at || null,
           isPickedUp: Boolean(row.pickedUpAt || row.picked_up_at || row.isPickedUp),
         }))
@@ -1004,6 +1005,7 @@ export function TransactionsModule() {
             expiresAt: data.expiresAt ?? existing?.expiresAt,
             pickedUpAt: data.pickedUpAt || existing?.pickedUpAt || null,
             isPickedUp: Boolean(data.isPickedUp || existing?.isPickedUp),
+            studentIdImage: data.studentIdImage || data.student_id_image || existing?.studentIdImage || null,
           };
 
           if (existing) {
@@ -1564,6 +1566,21 @@ export function TransactionsModule() {
               )
             );
           });
+        }
+
+        try {
+          dashboardSocket.emit("transaction:decided", {
+            id: serverTx?.id || id,
+            status: nextStatus,
+            comment: serverTx?.comment || comment,
+            resourceTitle,
+            isbn: targetTxn?.isbn,
+            studentId: targetTxn?.studentId,
+            studentName: targetTxn?.studentName,
+            type: targetTxn?.type,
+          });
+        } catch (sockErr) {
+          console.warn("Failed to emit socket transaction:decided:", sockErr);
         }
       } catch (err) {
         console.error(`Failed to update status to ${nextStatus}, rolling back:`, err);
@@ -2666,6 +2683,39 @@ export function TransactionsModule() {
                       Pickup Window:
                     </span>
                     <span className="font-bold text-amber-600 dark:text-amber-400">24-Hour Hold Limit</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Student ID / Attachment Photo Preview */}
+              <div className={cn("pt-2.5 border-t flex flex-col gap-2", isLight ? "border-slate-200" : "border-slate-800")}>
+                <div className="flex items-center justify-between">
+                  <span className={cn("text-xs font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Student ID Picture / Attachment
+                  </span>
+                  {Boolean(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image) ? (
+                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                      Photo Attached
+                    </span>
+                  ) : (
+                    <span className="text-[11px] font-medium text-slate-400">
+                      No Photo Attached
+                    </span>
+                  )}
+                </div>
+
+                {Boolean(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image) ? (
+                  <div className="relative aspect-[16/9] w-full max-h-48 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-black/10 flex items-center justify-center shadow-inner">
+                    <img
+                      src={confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image}
+                      alt="Student ID Verification"
+                      className="h-full w-full object-contain"
+                    />
+                  </div>
+                ) : (
+                  <div className={cn("h-20 w-full rounded-xl border border-dashed flex flex-col items-center justify-center gap-1 text-xs", isLight ? "border-slate-300 bg-slate-100/50 text-slate-400" : "border-slate-700 bg-white/5 text-slate-500")}>
+                    <AlertTriangle className="h-4 w-4 opacity-40 text-amber-500" />
+                    <span>No student ID image uploaded for this request</span>
                   </div>
                 )}
               </div>

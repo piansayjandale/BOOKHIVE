@@ -198,7 +198,7 @@ export default function ReservationsScreen() {
   }, [libraryCardBooks]);
 
   const CARD_ROW_HEIGHT = 28;
-  const VISIBLE_CARD_ROWS = 13;
+  const VISIBLE_CARD_ROWS = 10;
   const TOTAL_CARD_ROWS = Math.max(VISIBLE_CARD_ROWS, approvedLibraryCardBooks.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = approvedLibraryCardBooks[index];
@@ -314,11 +314,7 @@ export default function ReservationsScreen() {
         nestedScrollEnabled={true}
         bounces={false}
         overScrollMode="never"
-        scrollEnabled={
-          activeTab === 'card'
-            ? outerViewportHeight > 0 && outerContentHeight > outerViewportHeight + 4
-            : true
-        }
+        scrollEnabled={activeTab !== 'card'}
         onLayout={(e) => setOuterViewportHeight(e.nativeEvent.layout.height)}
         onContentSizeChange={(_w, h) => setOuterContentHeight(h)}
         contentContainerStyle={{

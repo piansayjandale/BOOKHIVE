@@ -60,6 +60,9 @@ export type ReceiptData = {
   bookData?: any;
   isPickedUp?: boolean;
   token?: string;
+  isReservation?: boolean;
+  queuePosition?: string | number;
+  reservationDate?: string;
 };
 
 export type NotificationItem = {
@@ -1346,6 +1349,10 @@ export const syncNotifications = async (force = false) => {
               } else if (tx.status === 'Cancelled') {
                 title = 'Reservation Cancelled';
                 body = `Your reservation for '${tx.resourceTitle || tx.title || "Unknown Book"}' has been cancelled.`;
+              } else if (tx.status === 'Declined') {
+                title = 'Reservation Declined';
+                const reasonSuffix = tx.comment ? ` Reason: ${tx.comment}` : "";
+                body = `Your reservation request for '${tx.resourceTitle || tx.title || "Unknown Book"}' was declined by the librarian.${reasonSuffix}`;
               } else {
                 title = 'Reservation Queued';
                 body = `You are on the 1st-come 1st-served waitlist for '${tx.resourceTitle || tx.title || "Unknown Book"}'. You will be automatically notified once a copy is returned.`;
@@ -2476,6 +2483,14 @@ export function getOrGenerateReceipt(item: NotificationItem): ReceiptData {
     verifiedBy: "BookHive Circulation Desk",
   });
 
+  const isReservation = Boolean(
+    (match?.action === "Reserve" || (match as any)?.type === "Reservation" || item.type === "reservation" || item.title.toLowerCase().includes("reservation")) &&
+    !(match?.status === "Approved" && (match?.action === "Borrow" || (match as any)?.type === "Borrow")) &&
+    !isPickedUp
+  );
+  const queuePosition = match?.queuePosition || (match as any)?.queue_position || "1";
+  const reservationDate = match?.dateReserved || match?.borrowDate || borrowDate;
+
   const generated: ReceiptData = {
     receiptNumber,
     transactionId: match?.id,
@@ -2494,6 +2509,9 @@ export function getOrGenerateReceipt(item: NotificationItem): ReceiptData {
     qrPayload,
     isPickedUp,
     token: uniqueToken,
+    isReservation,
+    queuePosition,
+    reservationDate,
     bookData: item.bookData || (match ? {
       id: match.isbn || match.id,
       title: match.title,

@@ -429,6 +429,15 @@ class DashboardSocketService {
     this.emitEvent("search:query", searchData);
   }
 
+  public emit(eventName: string, data: any) {
+    this.emitEvent(eventName, data);
+  }
+
+  public publishTransactionDecided(data: any) {
+    this.emitEvent("transaction:decided", data);
+    this.emitEvent("transaction:updated", data);
+  }
+
   public getConnected(): boolean {
     return this.isConnected;
   }
