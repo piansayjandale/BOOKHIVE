@@ -67,7 +67,7 @@ export const userSchema = z.object({
 
 export const loginSchema = z.object({
   identifier: z.string().min(3),
-  password: z.string().min(8),
+  password: z.string().min(1),
 });
 
 export const announcementSchema = z.object({
