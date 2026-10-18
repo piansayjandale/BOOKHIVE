@@ -81,6 +81,26 @@ export const reservationTimerService = {
         void adminModel.syncBookAvailability(tx.isbn || tx.resourceTitle);
         void eventDispatcher.dispatchTransactionDecision(tx);
 
+        if (tx.studentId) {
+          sendUserNotification(tx.studentId, {
+            event_type: "RESERVATION_PROMOTED_TO_BORROW",
+            id: tx.id,
+            entity_id: tx.id,
+            studentId: tx.studentId,
+            studentName: tx.studentName,
+            title: "Reserved Book Ready for Pickup",
+            message: `Good news! A copy of '${tx.resourceTitle}' has been returned and your reservation is now an active borrow! Please pick it up at the library.`,
+            body: `Good news! A copy of '${tx.resourceTitle}' has been returned and your reservation is now an active borrow! Please pick it up at the library.`,
+            transaction: tx,
+            timestamp: new Date().toISOString(),
+          });
+        }
+        broadcastCirculationQueue("reservation:promoted", {
+          transaction: tx,
+          title: "Reservation Converted to Borrow",
+          message: `Reservation for '${tx.resourceTitle}' converted to active borrow for ${tx.studentName}.`,
+        });
+
         try {
           await adminModel.addActivityLog(
             `Reservation for '${tx.resourceTitle}' by ${tx.studentName || tx.studentId} automatically converted to active Borrow transaction.`,
@@ -168,29 +188,39 @@ export const reservationTimerService = {
    */
   async promoteNextReservation(isbn, title) {
     try {
+      const cleanIsbn = String(isbn || "").trim();
+      const cleanTitle = String(title || "").trim();
+      if (!cleanIsbn && !cleanTitle) return null;
+
       const query = `
-        SELECT id, isbn, resource_title AS "resourceTitle", student_name AS "studentName", student_id AS "studentId"
+        SELECT 
+          id, 
+          user_id AS "userId", 
+          isbn, 
+          resource_title AS "resourceTitle", 
+          student_name AS "studentName", 
+          student_id AS "studentId", 
+          department
         FROM transactions
-        WHERE type = 'Reservation'
-          AND status = 'Approved'
-          AND (available_at IS NULL OR expires_at <= NOW())
+        WHERE LOWER(type::text) = 'reservation'
+          AND LOWER(status::text) IN ('approved', 'approved reservation', 'reserved')
           AND (
-            (isbn IS NOT NULL AND isbn != '' AND isbn != 'N/A' AND isbn = $1)
-            OR (resource_title IS NOT NULL AND lower(resource_title) = lower($2))
+            ($1::text != '' AND $1::text != 'N/A' AND (isbn = $1::text OR REPLACE(COALESCE(isbn, ''), '-', '') = REPLACE($1::text, '-', '')))
+            OR ($2::text != '' AND LOWER(TRIM(COALESCE(resource_title, ''))) = LOWER(TRIM($2::text)))
           )
         ORDER BY requested_at ASC
         LIMIT 1
       `;
-      const { rows } = await pool.query(query, [isbn || '', title || '']);
+      const { rows } = await pool.query(query, [cleanIsbn, cleanTitle]);
       if (rows.length > 0) {
         const nextTx = rows[0];
         console.log(`[ReservationTimer] Converting next waitlisted reservation ${nextTx.id} for '${nextTx.resourceTitle}' to active Borrow for ${nextTx.studentName}`);
         const promoted = await this.convertReservationToBorrow(nextTx.id, "System Automation (Returned Book Promotion)");
-        void adminModel.syncBookAvailability(isbn || title);
+        void adminModel.syncBookAvailability(cleanIsbn || cleanTitle);
         return promoted;
       } else {
-        console.log(`[ReservationTimer] No further waitlisted reservations for '${title || isbn}'. Copy released to circulation.`);
-        void adminModel.syncBookAvailability(isbn || title);
+        console.log(`[ReservationTimer] No further waitlisted reservations for '${cleanTitle || cleanIsbn}'. Copy released to circulation.`);
+        void adminModel.syncBookAvailability(cleanIsbn || cleanTitle);
       }
     } catch (error) {
       warnIfNotOffline("DB promoteNextReservation error:", error);

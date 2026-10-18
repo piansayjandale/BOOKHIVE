@@ -205,6 +205,8 @@ export default function ReservationsScreen() {
     const isReturned = !!(item?.isReturned || item?.status === 'Completed' || item?.status === 'Returned' || item?.date === 'Returned');
     const isReservation = !!(
       item &&
+      item.action !== 'Borrow' &&
+      (item as any).type !== 'Borrow' &&
       (item.action === 'Reserve' ||
         (item as any).type === 'Reservation' ||
         item.status === 'Reserved' ||

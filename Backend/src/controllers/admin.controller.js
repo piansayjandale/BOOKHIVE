@@ -852,15 +852,16 @@ export const adminController = {
 
     // Automated Return-to-Reservation Notification & 24h Timer:
     // If a book is returned or a pending borrow is declined (freeing up a copy), promote the next waitlisted reservation
+    let promotedTransaction = null;
     if (status === "Returned" || status === "Declined") {
       try {
-        await reservationTimerService.promoteNextReservation(transaction.isbn, transaction.resourceTitle);
+        promotedTransaction = await reservationTimerService.promoteNextReservation(transaction.isbn, transaction.resourceTitle);
       } catch (notifyErr) {
         console.warn("Automated reservation timer activation error on admin return/decline:", notifyErr.message);
       }
     }
 
-    return res.json({ transaction });
+    return res.json({ transaction, promotedTransaction, ok: true });
   },
 
 

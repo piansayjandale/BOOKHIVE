@@ -1022,21 +1022,55 @@ export function TransactionsModule() {
       if (data?.id || data?.transactionId) {
         const rawId = data.id || data.transactionId;
         const now = data.returnedAt || data.decidedAt || new Date().toISOString();
+        const bookTitle = data.resourceTitle || data.title || "";
+        const promotedTx = data.promotedTransaction;
 
         startTransition(() => {
-          setAllTransactions((prev) =>
-            prev.map((t) =>
-              t.id === rawId || t.id === data.id || t.id === data.transactionId
-                ? {
-                    ...t,
-                    status: "Returned" as TransactionStatus,
-                    type: "Borrow" as TransactionType,
-                    returnedAt: now,
-                    updatedAt: now,
-                  }
-                : t
-            )
-          );
+          setAllTransactions((prev) => {
+            let hasPromotedLocally = false;
+            return prev.map((t) => {
+              if (t.id === rawId || t.id === data.id || t.id === data.transactionId) {
+                return {
+                  ...t,
+                  status: "Returned" as TransactionStatus,
+                  type: "Borrow" as TransactionType,
+                  returnedAt: now,
+                  updatedAt: now,
+                };
+              }
+
+              const isTargetPromoted = promotedTx && String(t.id) === String(promotedTx.id);
+              const isMatchByBook =
+                !hasPromotedLocally &&
+                t.type === "Reservation" &&
+                t.status === "Approved" &&
+                ((t.isbn && (t.isbn === data.isbn || t.isbn === promotedTx?.isbn)) ||
+                 (bookTitle && t.resourceTitle && t.resourceTitle.toLowerCase().trim() === bookTitle.toLowerCase().trim()));
+
+              if (isTargetPromoted || isMatchByBook) {
+                hasPromotedLocally = true;
+                return {
+                  ...t,
+                  ...(promotedTx || {}),
+                  id: promotedTx?.id || t.id,
+                  studentName: promotedTx?.studentName || t.studentName,
+                  studentId: promotedTx?.studentId || t.studentId,
+                  resourceTitle: promotedTx?.resourceTitle || t.resourceTitle,
+                  type: "Borrow" as TransactionType,
+                  status: "Approved" as TransactionStatus,
+                  availableAt: now,
+                  expiresAt: promotedTx?.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                  dueDate: promotedTx?.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  pickedUpAt: null,
+                  isPickedUp: false,
+                  comment: "Automatically converted from reservation to active borrow upon previous copy return. 24-hour pickup window started.",
+                  updatedAt: now,
+                };
+              }
+
+              return t;
+            });
+          });
         });
 
         if (typeof window !== "undefined") {
@@ -1281,38 +1315,80 @@ export function TransactionsModule() {
 
         const data = await res.json();
         const serverTx = data?.transaction;
-        if (serverTx?.id) {
-          startTransition(() => {
-            setAllTransactions((prev) =>
-              prev.map((t) =>
-                t.id === id || t.id === serverTx.id
-                  ? {
-                      ...t,
-                      ...serverTx,
-                      id: serverTx.id,
-                      studentName:
-                        (serverTx.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
-                        serverTx.student_name ||
-                        t.studentName,
-                      studentId:
-                        (serverTx.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
-                        serverTx.student_id ||
-                        t.studentId,
-                      resourceTitle:
-                        (serverTx.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
-                        serverTx.resource_title ||
-                        t.resourceTitle,
-                      isbn:
-                        (serverTx.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
-                        t.isbn,
-                      status: "Returned" as TransactionStatus,
-                      returnedAt: now,
-                      updatedAt: now,
-                    }
-                  : t
-              )
-            );
+        const promotedTx = data?.promotedTransaction;
+
+        startTransition(() => {
+          setAllTransactions((prev) => {
+            let hasPromotedLocally = false;
+            return prev.map((t) => {
+              // 1. Update the returned book record
+              if (t.id === id || (serverTx?.id && t.id === serverTx.id)) {
+                return {
+                  ...t,
+                  ...serverTx,
+                  id: serverTx?.id || id,
+                  studentName:
+                    (serverTx?.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
+                    serverTx?.student_name ||
+                    t.studentName,
+                  studentId:
+                    (serverTx?.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
+                    serverTx?.student_id ||
+                    t.studentId,
+                  resourceTitle:
+                    (serverTx?.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
+                    serverTx?.resource_title ||
+                    t.resourceTitle,
+                  isbn:
+                    (serverTx?.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
+                    t.isbn,
+                  status: "Returned" as TransactionStatus,
+                  type: "Borrow" as TransactionType,
+                  returnedAt: now,
+                  updatedAt: now,
+                };
+              }
+
+              // 2. Automatically transform the first waitlisted reservation for this book into an active Borrow
+              const isTargetPromoted = promotedTx && (String(t.id) === String(promotedTx.id));
+              const isMatchByBook =
+                !hasPromotedLocally &&
+                t.type === "Reservation" &&
+                t.status === "Approved" &&
+                ((t.isbn && (t.isbn === targetTxn?.isbn || t.isbn === serverTx?.isbn)) ||
+                 (t.resourceTitle && t.resourceTitle.toLowerCase().trim() === resourceTitle.toLowerCase().trim()));
+
+              if (isTargetPromoted || isMatchByBook) {
+                hasPromotedLocally = true;
+                return {
+                  ...t,
+                  ...(promotedTx || {}),
+                  id: promotedTx?.id || t.id,
+                  studentName: promotedTx?.studentName || t.studentName,
+                  studentId: promotedTx?.studentId || t.studentId,
+                  resourceTitle: promotedTx?.resourceTitle || t.resourceTitle,
+                  type: "Borrow" as TransactionType,
+                  status: "Approved" as TransactionStatus,
+                  availableAt: now,
+                  expiresAt: promotedTx?.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                  dueDate: promotedTx?.dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  pickedUpAt: null,
+                  isPickedUp: false,
+                  comment: "Automatically converted from reservation to active borrow upon previous copy return. 24-hour pickup window started.",
+                  updatedAt: now,
+                };
+              }
+
+              return t;
+            });
           });
+        });
+
+        if (promotedTx) {
+          notify(
+            `Book "${resourceTitle}" returned! Waitlisted reservation for ${promotedTx.studentName} has automatically transformed into an active Borrow! Ready for pickup.`,
+            "success"
+          );
         }
 
         // Publish WebSocket event ONLY after successful server commitment
@@ -1324,6 +1400,7 @@ export function TransactionsModule() {
           resourceTitle,
           studentId: targetTxn?.studentId,
           studentName: targetTxn?.studentName,
+          promotedTransaction: promotedTx,
           returnedAt: now,
         });
       } catch (err) {

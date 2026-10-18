@@ -678,8 +678,9 @@ export const studentController = {
 
     // Automated Return-to-Reservation Notification & 24h Timer:
     // If a book is returned, promote the next waitlisted reservation and start their 24h timer
+    let promotedTransaction = null;
     try {
-      await reservationTimerService.promoteNextReservation(transaction.isbn, transaction.resourceTitle);
+      promotedTransaction = await reservationTimerService.promoteNextReservation(transaction.isbn, transaction.resourceTitle);
     } catch (notifyErr) {
       console.warn("Automated reservation timer activation error on student return:", notifyErr.message);
     }
@@ -687,6 +688,8 @@ export const studentController = {
     return res.json({
       message: "Book returned successfully.",
       transaction,
+      promotedTransaction,
+      ok: true,
     });
   },
 

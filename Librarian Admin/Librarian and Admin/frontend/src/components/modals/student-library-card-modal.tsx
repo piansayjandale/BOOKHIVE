@@ -284,7 +284,7 @@ export function StudentLibraryCardModal({
               {/* Data / Grid Rows (Scrollable at 13 rows) */}
               <div className="max-h-[390px] overflow-y-auto">
                 {rows.map((row, idx) => {
-                  const isReservation = row?.type === "Reservation" || (row as any)?.action === "Reserve";
+                  const isReservation = (row?.type === "Reservation" || (row as any)?.action === "Reserve") && row?.type !== "Borrow" && (row as any)?.action !== "Borrow";
                   const isReturned = row?.status === "Returned" || (row?.status as string) === "Completed";
                   const isNowAvailable = !!(
                     row && (

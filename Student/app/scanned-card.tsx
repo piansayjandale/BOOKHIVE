@@ -166,6 +166,12 @@ export default function ScannedCardScreen() {
     const unsubDecided = socketService.subscribeToTransactionDecided((payload: any) => {
       if (String(payload?.status || "").toLowerCase() === "returned") {
         onRemoteReturn(payload);
+      } else if (qrPayload) {
+        fetchStudentCardAndViolations(qrPayload).then((fresh) => {
+          if (fresh && fresh.student) {
+            setData(fresh);
+          }
+        }).catch(() => {});
       }
     });
 
@@ -385,12 +391,16 @@ export default function ScannedCardScreen() {
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = approvedLibraryCard[index];
     const isReturned = item?.status === "Returned" || item?.status === "Completed";
-    const isReservation =
-      (item as any)?.type === "Reservation" ||
-      (item as any)?.action === "Reserve" ||
-      item?.status === "Reserved" ||
-      item?.status === "Reservation" ||
-      item?.dueReturnDate === "Reservation";
+    const isReservation = !!(
+      item &&
+      (item as any)?.type !== "Borrow" &&
+      (item as any)?.action !== "Borrow" &&
+      ((item as any)?.type === "Reservation" ||
+        (item as any)?.action === "Reserve" ||
+        item?.status === "Reserved" ||
+        item?.status === "Reservation" ||
+        item?.dueReturnDate === "Reservation")
+    );
     const isNowAvailable = !!(
       item &&
       ((item as any).available === "true" ||

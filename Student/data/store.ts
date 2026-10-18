@@ -2123,8 +2123,10 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
   const isDeclined = status === "Declined";
   const isReturned = status === "Returned";
   const isDueReminder = incomingData?.event_type === "BOOK_DUE_REMINDER" || (incomingData?.title && incomingData.title.toLowerCase().includes("due"));
-  const type = txData.type || (localMatch?.action === "Reserve" ? "Reservation" : localMatch?.action) || "Borrow";
-  const isReservation = type === "Reservation" || type === "Reserve";
+  const isPromoEvent = incomingData?.event_type === "RESERVATION_PROMOTED_TO_BORROW" || incomingData?.eventName === "reservation:promoted";
+  const wasReservationPromoted = isPromoEvent || (((localMatch?.action === "Reserve" || (localMatch as any)?.type === "Reservation")) && (txData.type === "Borrow" || txData.type === "Borrowing") && isApproved);
+  const type = wasReservationPromoted ? "Borrow" : (txData.type || (localMatch?.action === "Reserve" ? "Reservation" : localMatch?.action) || "Borrow");
+  const isReservation = !wasReservationPromoted && (type === "Reservation" || type === "Reserve");
   const commentNote = txData.comment ? ` Librarian note: ${txData.comment}` : "";
 
   let notifTitle = `${type} Update`;
@@ -2138,6 +2140,9 @@ socketService.subscribeToTransactionDecided((incomingData: any) => {
     notifTitle = `Book Picked Up`;
     const dueDateFormatted = txData.dueDate ? new Date(txData.dueDate).toLocaleDateString() : "7 days";
     notifBody = `You have picked up "${title}". Due return date: ${dueDateFormatted}. Happy reading!`;
+  } else if (wasReservationPromoted) {
+    notifTitle = `Reserved Book Ready for Pickup`;
+    notifBody = `Good news! A copy of "${title}" has been returned and your reservation is now an active borrow! Please pick it up at the library.`;
   } else if (isReservation) {
     if (status === "Available" || status === "Ready" || txData.available === "true" || txData.available === true) {
       notifTitle = `Reserved Book Available`;
