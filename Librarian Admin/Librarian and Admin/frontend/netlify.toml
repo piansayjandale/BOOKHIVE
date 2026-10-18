@@ -8,3 +8,5 @@
 [build.environment]
   NODE_VERSION = "20"
   NEXT_PUBLIC_API_URL = "https://bookhive-backend-13kk.onrender.com/api"
+  JWT_SECRET = "development_jwt_secret_key_2026"
+  BOOKHIVE_JWT_SECRET = "development_jwt_secret_key_2026"

@@ -125,15 +125,20 @@ export async function POST(request: Request) {
 
     // First, try to authenticate against the database via the Express backend
     let account = null;
+    let backendErrorMessage = "";
+    let backendStatus = 401;
     try {
       const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier, password }),
       });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.user) {
         account = data.user;
+      } else if (data?.message) {
+        backendErrorMessage = data.message;
+        backendStatus = res.status;
       }
     } catch (dbError) {
       console.warn("Express backend authentication failed:", dbError);
@@ -149,7 +154,10 @@ export async function POST(request: Request) {
     }
 
     if (!account) {
-      return NextResponse.json({ message: "Invalid credentials." }, { status: 401 });
+      return NextResponse.json(
+        { message: backendErrorMessage || "Invalid credentials." },
+        { status: backendStatus || 401 }
+      );
     }
 
     const defaultPermissions = {
