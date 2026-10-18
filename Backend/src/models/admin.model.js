@@ -1202,19 +1202,31 @@ export const adminModel = {
       }
 
       const booksQuery = `
+        WITH paged_books AS (
+          SELECT b.*
+          FROM books b
+          ${whereClause}
+          ${orderClause}
+          LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
+        )
         SELECT
           b.*,
-          COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
-          COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
-        FROM books b
-        LEFT JOIN transactions t ON (
-          (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
-          OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
-        )
-        ${whereClause}
-        GROUP BY b.id
+          COALESCE((
+            SELECT COUNT(*)::int
+            FROM transactions t
+            WHERE t.type = 'Borrow' AND t.status IN ('Approved', 'Pending')
+              AND ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+                OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title)))
+          ), 0) AS "borrowedCount",
+          COALESCE((
+            SELECT COUNT(*)::int
+            FROM transactions t
+            WHERE t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW())
+              AND ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+                OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title)))
+          ), 0) AS "reservedCount"
+        FROM paged_books b
         ${orderClause}
-        LIMIT $${limitParamIndex} OFFSET $${offsetParamIndex}
       `;
       const { rows } = await pool.query(booksQuery, filters);
       return {
