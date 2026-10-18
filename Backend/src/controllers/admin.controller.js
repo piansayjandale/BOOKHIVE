@@ -26,6 +26,16 @@ import { emitBookAdded, emitBorrowRequest, emitTransactionDecided, emitBookRetur
 import { eventDispatcher } from "../services/event-dispatcher.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
 
+// High-speed in-memory dashboard caching
+let dashboardOverviewCache = null;
+let dashboardOverviewCacheExpiry = 0;
+const DASHBOARD_CACHE_TTL_MS = 20000; // 20 seconds cache for instant loads
+
+export function invalidateDashboardCache() {
+  dashboardOverviewCache = null;
+  dashboardOverviewCacheExpiry = 0;
+}
+
 
 const DEV_CREDENTIALS = {
   "superadmin@stiwnu.edu.ph": {
@@ -241,8 +251,12 @@ export const adminController = {
       },
     });
   },
-
   async getDashboard(_req, res) {
+    const now = Date.now();
+    if (dashboardOverviewCache && now < dashboardOverviewCacheExpiry) {
+      return res.json(dashboardOverviewCache);
+    }
+
     try {
       const [summary, monthlyBorrowTrends, departmentUsage, recentActivities, newUsers, latestTransactions, topBooks] =
         await Promise.all([
@@ -267,7 +281,7 @@ export const adminController = {
         storageTotal: 128,
       };
 
-      return res.json({
+      const responsePayload = {
         summary: summary || { totalUsers: 0, totalBooks: 0, activeBorrowedBooks: 0, pendingRequests: 0 },
         systemHealth,
         topBooks: topBooks || [],
@@ -276,7 +290,15 @@ export const adminController = {
         recentActivities: recentActivities || [],
         newUsers: newUsers || [],
         latestTransactions: latestTransactions || [],
-      });
+      };
+
+      // Cache when non-zero summary exists
+      if (responsePayload.summary?.totalBooks > 0 || responsePayload.summary?.totalUsers > 0) {
+        dashboardOverviewCache = responsePayload;
+        dashboardOverviewCacheExpiry = now + DASHBOARD_CACHE_TTL_MS;
+      }
+
+      return res.json(responsePayload);
     } catch (err) {
       console.warn("[adminController.getDashboard] Safe fallback:", err.message);
       return res.json({
@@ -450,6 +472,7 @@ export const adminController = {
     // Broadcast real-time WebSocket event to Student App and dashboards
     emitBookAdded(book);
     void eventDispatcher.dispatchCatalogMutation("added", book);
+    invalidateDashboardCache();
 
     return res.status(201).json({ book });
   },
@@ -836,6 +859,7 @@ export const adminController = {
       emitBookReturned(transaction);
     }
     void eventDispatcher.dispatchTransactionDecision(transaction);
+    invalidateDashboardCache();
 
     await adminModel.addHistoryLog({
       actor: actorLabel,
@@ -883,6 +907,7 @@ export const adminController = {
     void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
     emitBorrowRequest(transaction);
     void eventDispatcher.dispatchBorrowRequest(transaction);
+    invalidateDashboardCache();
     return res.status(201).json({ transaction });
   },
 

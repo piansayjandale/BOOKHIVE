@@ -89,13 +89,7 @@ async function queryDbTransactions(
       END as "queuePosition"
     FROM transactions t
     LEFT JOIN users u ON t.user_id = u.id
-    LEFT JOIN LATERAL (
-      SELECT department
-      FROM books
-      WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = books.isbn)
-         OR (LOWER(t.resource_title) = LOWER(books.title))
-      LIMIT 1
-    ) b ON true
+    LEFT JOIN books b ON (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
     ${whereClause}
     ORDER BY t.requested_at DESC
   `;

@@ -171,10 +171,20 @@ export async function runAutoMigrations() {
             OR latest_apk_url LIKE '%wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ%'
             OR latest_apk_url LIKE '%u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU%'
             OR latest_apk_url LIKE '%9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU%'
-          );
+        -- Essential performance indexes for high-speed queries across 48k+ books
+        CREATE INDEX IF NOT EXISTS idx_books_isbn ON books (isbn);
+        CREATE INDEX IF NOT EXISTS idx_books_lower_title ON books (LOWER(title));
+        CREATE INDEX IF NOT EXISTS idx_books_archived ON books (archived_at);
+        CREATE INDEX IF NOT EXISTS idx_books_borrow_count ON books (borrow_count DESC);
+        CREATE INDEX IF NOT EXISTS idx_books_category ON books (category);
+        CREATE INDEX IF NOT EXISTS idx_transactions_type_status ON transactions (type, status);
+        CREATE INDEX IF NOT EXISTS idx_transactions_requested_at ON transactions (requested_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_transactions_isbn ON transactions (isbn);
+        CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions (user_id);
+        CREATE INDEX IF NOT EXISTS idx_users_role_dept ON users (role, department);
       `);
     }
-    console.log("[Backend DB] System settings & maintenance mode verified.");
+    console.log("[Backend DB] System settings, performance indexes & maintenance mode verified.");
     await ensureEssentialBooksSeeded(pool);
   } catch (err) {
     console.warn("[Backend DB] Auto-migrations notice:", err.message);

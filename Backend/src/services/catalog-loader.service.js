@@ -281,19 +281,6 @@ export async function ensureEssentialBooksSeeded(pool) {
         console.log(`[Catalog Loader] Seeded canonical book: ${fb.title}`);
       }
     }
-
-    // 2. Check total book count; if low (< 40,000), backfill catalog books in background
-    const countRes = await pool.query("SELECT count(id)::int as count FROM books");
-    const totalCount = countRes.rows[0]?.count || 0;
-    if (totalCount < 40000) {
-      console.log(`[Catalog Loader] Database contains ${totalCount} books. Starting asynchronous catalog sync...`);
-      // Run background backfill in batches
-      setTimeout(() => {
-        backfillCatalogToDatabase(pool).catch((e) =>
-          console.warn("[Catalog Loader] Background backfill error:", e.message)
-        );
-      }, 2000);
-    }
   } catch (err) {
     console.warn("[Catalog Loader] ensureEssentialBooksSeeded warning:", err.message);
   }

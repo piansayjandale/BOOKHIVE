@@ -38,6 +38,7 @@ export async function proxyToBackend(path: string, request: Request, customBody?
       headers,
       body,
       cache: "no-store",
+      signal: AbortSignal.timeout(8000),
     });
 
     const rawText = await response.text();

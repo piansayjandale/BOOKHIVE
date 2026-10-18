@@ -22,6 +22,9 @@ import {
   formatCatalogBook,
 } from "../services/catalog-loader.service.js";
 
+let cachedGenres = null;
+let cachedGenresExpiry = 0;
+
 let mockDigitizedBooks = [
   {
     id: "digi-001",
@@ -257,59 +260,127 @@ export const adminModel = {
 
   async getTopBorrowedBooks(limit = 10) {
     try {
-      const query = `
-        WITH ranked_books AS (
-          SELECT
-            b.id::text AS id,
-            b.title,
-            b.author,
-            b.isbn,
-            b.department,
-            b.category,
-            b.genres,
-            b.shelf_location AS "shelfLocation",
-            b.shelf_location AS shelf,
-            COALESCE(b.availability, 'Available') AS availability,
-            COALESCE(b.availability, 'Available') AS status,
-            COALESCE(b.copies, 1)::int AS copies,
-            b.accession_number AS "accessionNumber",
-            COALESCE(b.volume, 'Vol. 1') AS volume,
-            COALESCE(b.edition, '1st Edition') AS edition,
-            b.summary,
-            b.publication_date AS "publicationDate",
-            b.apa_citation AS "apaCitation",
-            b.rating,
-            b.pages,
-            b.cover_img AS "coverImg",
-            COALESCE(tx.cnt, b.borrow_count, 0)::int AS "borrowCount",
-            ROW_NUMBER() OVER (
-              PARTITION BY LOWER(TRIM(b.title))
-              ORDER BY COALESCE(tx.cnt, b.borrow_count, 0) DESC, b.id ASC
-            ) as rn
-          FROM books b
-          LEFT JOIN (
-            SELECT
-              b2.id AS book_id,
-              COUNT(t.id)::int AS cnt
-            FROM transactions t
-            JOIN books b2 ON LOWER(TRIM(t.resource_title)) = LOWER(TRIM(b2.title)) OR (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn = b2.isbn)
-            WHERE t.type::text IN ('Borrow', 'borrow', 'Borrowing', 'borrowing')
-            GROUP BY b2.id
-          ) tx ON tx.book_id = b.id
-          WHERE b.archived_at IS NULL
-        )
+      // Fast path: aggregate directly from transactions (dozens/hundreds of rows max)
+      const txQuery = `
         SELECT 
-          id, title, author, isbn, department, category, genres,
-          "shelfLocation", shelf, availability, status, copies,
-          "accessionNumber", volume, edition, summary,
-          "publicationDate", "apaCitation", rating, pages, "coverImg",
-          "borrowCount"
-        FROM ranked_books
-        WHERE rn = 1
-        ORDER BY "borrowCount" DESC, title ASC
+          MAX(t.resource_title) AS title,
+          MAX(t.isbn) AS isbn,
+          MAX(t.department) AS department,
+          COUNT(*)::int AS "borrowCount"
+        FROM transactions t
+        WHERE t.type::text IN ('Borrow', 'borrow', 'Borrowing', 'borrowing')
+          AND t.resource_title IS NOT NULL AND TRIM(t.resource_title) != ''
+        GROUP BY LOWER(TRIM(t.resource_title))
+        ORDER BY "borrowCount" DESC
         LIMIT $1
       `;
-      const { rows } = await pool.query(query, [limit]);
+      const { rows: txRows } = await pool.query(txQuery, [limit]).catch(() => ({ rows: [] }));
+
+      if (txRows && txRows.length > 0) {
+        const titles = txRows.map((r) => (r.title || "").trim().toLowerCase()).filter(Boolean);
+        const isbns = txRows.map((r) => (r.isbn || "").trim()).filter(Boolean);
+
+        const booksQuery = `
+          SELECT 
+            id::text AS id, title, author, isbn, department, category, genres,
+            shelf_location AS "shelfLocation", shelf_location AS shelf,
+            COALESCE(availability, 'Available') AS availability,
+            COALESCE(availability, 'Available') AS status,
+            COALESCE(copies, 1)::int AS copies,
+            accession_number AS "accessionNumber",
+            COALESCE(volume, 'Vol. 1') AS volume,
+            COALESCE(edition, '1st Edition') AS edition,
+            summary, publication_date AS "publicationDate", apa_citation AS "apaCitation",
+            rating, pages, cover_img AS "coverImg",
+            COALESCE(borrow_count, 0)::int AS "borrowCount"
+          FROM books
+          WHERE archived_at IS NULL
+            AND (LOWER(TRIM(title)) = ANY($1::text[]) OR isbn = ANY($2::text[]))
+          LIMIT $3
+        `;
+        const { rows: bookDetails } = await pool.query(booksQuery, [titles, isbns, limit * 2]).catch(() => ({ rows: [] }));
+
+        const bookMap = new Map();
+        for (const b of bookDetails) {
+          if (b.title) bookMap.set(b.title.trim().toLowerCase(), b);
+          if (b.isbn) bookMap.set(b.isbn.trim(), b);
+        }
+
+        const merged = txRows.map((tx, idx) => {
+          const detail = bookMap.get((tx.title || "").trim().toLowerCase()) || (tx.isbn ? bookMap.get(tx.isbn.trim()) : null);
+          return {
+            id: detail?.id || `book-tx-${idx}`,
+            title: detail?.title || tx.title,
+            author: detail?.author || "STI Library",
+            isbn: detail?.isbn || tx.isbn || "",
+            department: detail?.department || tx.department || "Circulation",
+            category: detail?.category || "Circulation",
+            genres: detail?.genres || "",
+            shelfLocation: detail?.shelfLocation || "CIR-01A.1",
+            shelf: detail?.shelf || "CIR-01A.1",
+            availability: detail?.availability || "Available",
+            status: detail?.status || "Available",
+            copies: detail?.copies || 1,
+            accessionNumber: detail?.accessionNumber || "",
+            volume: detail?.volume || "Vol. 1",
+            edition: detail?.edition || "1st Edition",
+            summary: detail?.summary || "",
+            publicationDate: detail?.publicationDate || new Date().toISOString(),
+            apaCitation: detail?.apaCitation || "",
+            rating: detail?.rating || 4.5,
+            pages: detail?.pages || 250,
+            coverImg: detail?.coverImg || "",
+            borrowCount: tx.borrowCount,
+          };
+        });
+
+        if (merged.length >= limit) {
+          return merged.slice(0, limit);
+        }
+
+        const remainingLimit = limit - merged.length;
+        const fallbackQuery = `
+          SELECT 
+            id::text AS id, title, author, isbn, department, category, genres,
+            shelf_location AS "shelfLocation", shelf_location AS shelf,
+            COALESCE(availability, 'Available') AS availability,
+            COALESCE(availability, 'Available') AS status,
+            COALESCE(copies, 1)::int AS copies,
+            accession_number AS "accessionNumber",
+            COALESCE(volume, 'Vol. 1') AS volume,
+            COALESCE(edition, '1st Edition') AS edition,
+            summary, publication_date AS "publicationDate", apa_citation AS "apaCitation",
+            rating, pages, cover_img AS "coverImg",
+            COALESCE(borrow_count, 0)::int AS "borrowCount"
+          FROM books
+          WHERE archived_at IS NULL
+          ORDER BY borrow_count DESC, id ASC
+          LIMIT $1
+        `;
+        const { rows: fallbackBooks } = await pool.query(fallbackQuery, [remainingLimit]).catch(() => ({ rows: [] }));
+        return [...merged, ...fallbackBooks].slice(0, limit);
+      }
+
+      // If no transactions yet, fetch directly by borrow_count
+      const directQuery = `
+        SELECT 
+          id::text AS id, title, author, isbn, department, category, genres,
+          shelf_location AS "shelfLocation", shelf_location AS shelf,
+          COALESCE(availability, 'Available') AS availability,
+          COALESCE(availability, 'Available') AS status,
+          COALESCE(copies, 1)::int AS copies,
+          accession_number AS "accessionNumber",
+          COALESCE(volume, 'Vol. 1') AS volume,
+          COALESCE(edition, '1st Edition') AS edition,
+          summary, publication_date AS "publicationDate", apa_citation AS "apaCitation",
+          rating, pages, cover_img AS "coverImg",
+          COALESCE(borrow_count, 0)::int AS "borrowCount"
+        FROM books
+        WHERE archived_at IS NULL
+        ORDER BY borrow_count DESC, id ASC
+        LIMIT $1
+      `;
+      const { rows } = await pool.query(directQuery, [limit]);
       return rows;
     } catch (error) {
       warnIfNotOffline("DB getTopBorrowedBooks unavailable:", error.message);
@@ -318,6 +389,9 @@ export const adminModel = {
   },
 
   async getGenres() {
+    if (cachedGenres && Date.now() < cachedGenresExpiry) {
+      return cachedGenres;
+    }
     try {
       const query = `
         SELECT DISTINCT TRIM(category) AS genre
@@ -326,7 +400,12 @@ export const adminModel = {
         ORDER BY genre ASC
       `;
       const { rows } = await pool.query(query);
-      return rows.map((r) => r.genre).filter(Boolean);
+      const genres = rows.map((r) => r.genre).filter(Boolean);
+      if (genres.length > 0) {
+        cachedGenres = genres;
+        cachedGenresExpiry = Date.now() + 10 * 60 * 1000; // 10 minutes
+      }
+      return genres;
     } catch (error) {
       warnIfNotOffline("DB getGenres unavailable:", error.message);
       return [];
@@ -637,10 +716,7 @@ export const adminModel = {
             WHEN t.type = 'Reservation' AND (
               SELECT GREATEST(0, COALESCE(MAX(b_sub.copies), 1) - COUNT(CASE WHEN sub_t.type = 'Borrow' AND sub_t.status IN ('Approved', 'Pending') THEN 1 END))
               FROM transactions sub_t
-              LEFT JOIN books b_sub ON (
-                (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b_sub.isbn = sub_t.isbn)
-                OR (sub_t.resource_title IS NOT NULL AND LOWER(b_sub.title) = LOWER(sub_t.resource_title))
-              )
+              LEFT JOIN books b_sub ON (sub_t.isbn IS NOT NULL AND sub_t.isbn != '' AND sub_t.isbn != 'N/A' AND b_sub.isbn = sub_t.isbn)
               WHERE (sub_t.isbn = t.isbn OR LOWER(sub_t.resource_title) = LOWER(t.resource_title))
             ) > 0 THEN 'true'
             WHEN t.type = 'Reservation' THEN 'false'
@@ -648,13 +724,7 @@ export const adminModel = {
           END AS "available"
         FROM transactions t
         LEFT JOIN users u ON (t.user_id = u.id OR (t.student_id IS NOT NULL AND t.student_id != 'N/A' AND lower(t.student_id) = lower(u.id_number)))
-        LEFT JOIN LATERAL (
-          SELECT department
-          FROM books
-          WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = books.isbn)
-             OR (LOWER(t.resource_title) = LOWER(books.title))
-          LIMIT 1
-        ) b ON true
+        LEFT JOIN books b ON (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
         ${whereClause}
         ORDER BY t.requested_at DESC
       `;

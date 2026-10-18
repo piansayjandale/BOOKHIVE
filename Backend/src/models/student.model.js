@@ -303,6 +303,13 @@ export const studentModel = {
     try {
       const offset = (page - 1) * limit;
       const query = `
+        WITH paged_books AS (
+          SELECT *
+          FROM books
+          WHERE archived_at IS NULL
+          ORDER BY created_at DESC
+          LIMIT $1 OFFSET $2
+        )
         SELECT
           b.id,
           b.title,
@@ -332,22 +339,26 @@ export const studentModel = {
           COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
           COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
           COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
-        FROM books b
+        FROM paged_books b
         LEFT JOIN transactions t ON (
           (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
           OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title))
         )
-        WHERE b.archived_at IS NULL
-        GROUP BY b.id
+        GROUP BY 
+          b.id, b.title, b.author, b.isbn, b.cover_img, b.summary, b.rating, b.availability,
+          b.department, b.category, b.genres, b.shelf_location, b.published_date, b.pages,
+          b.language, b.publisher, b.volume, b.edition, b.copies, b.accession_number, b.created_at
         ORDER BY b.created_at DESC
-        LIMIT $1 OFFSET $2
       `;
-      const countQuery = `SELECT COUNT(*) FROM books WHERE archived_at IS NULL`;
       
-      const [booksResult, countResult] = await Promise.all([
-        pool.query(query, [limit, offset]),
-        pool.query(countQuery),
-      ]);
+      const booksResult = await pool.query(query, [limit, offset]);
+      let total = 48075;
+      try {
+        const countRes = await pool.query(`SELECT COUNT(*)::int as count FROM books WHERE archived_at IS NULL`);
+        total = countRes.rows[0]?.count || 48075;
+      } catch {
+        // Fallback default catalog count
+      }
       
       const books = booksResult.rows.map(b => {
         const totalCopies = Math.max(1, Number(b.copies || 1));

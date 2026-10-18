@@ -18,6 +18,7 @@ import { pool } from "../db/pool.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
 import { processPaperScan } from "../services/ocr.service.js";
 import { executeAiSearch } from "../services/ai-search.service.js";
+import { invalidateDashboardCache } from "./admin.controller.js";
 
 
 
@@ -481,6 +482,7 @@ export const studentController = {
       emitBorrowRequest(transaction);
       void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
       void eventDispatcher.dispatchBorrowRequest(transaction);
+      invalidateDashboardCache();
 
       try {
         await adminModel.addActivityLog(
@@ -544,6 +546,7 @@ export const studentController = {
       emitReservationRequest(transaction);
       void adminModel.syncBookAvailability(transaction.isbn || transaction.resourceTitle);
       void eventDispatcher.dispatchBorrowRequest(transaction);
+      invalidateDashboardCache();
 
       return res.status(201).json({
         message: "Reservation request submitted.",
@@ -596,6 +599,7 @@ export const studentController = {
       // Emit real-time WebSocket event for Circulation Librarian & Super Admin
       emitReservationCancelled(result.transaction);
       void eventDispatcher.dispatchReservationCancelled(result.transaction);
+      invalidateDashboardCache();
 
       // If a held copy or waitlist spot was cancelled, promote the next waitlisted reservation
       try {
@@ -660,6 +664,7 @@ export const studentController = {
       emitTransactionUpdated(transaction);
       emitBookReturned(transaction);
       void eventDispatcher.dispatchTransactionDecision(transaction);
+      invalidateDashboardCache();
 
       const actorLabel = req.user?.role ? `${req.user.role} ${req.user.name || "Mobile User"}` : "Mobile Return";
       await adminModel.addHistoryLog({
@@ -739,6 +744,7 @@ export const studentController = {
       emitTransactionUpdated(transaction);
       emitTransactionDecided(transaction);
       void eventDispatcher.dispatchTransactionDecision(transaction);
+      invalidateDashboardCache();
 
       await adminModel.addHistoryLog({
         actor: `Librarian: ${actorName}`,

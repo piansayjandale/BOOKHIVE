@@ -279,75 +279,87 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
 
   const fetchDashboardData = useCallback(async () => {
     try {
-      const [dashRes, txRes] = await Promise.all([
-        fetch("/api/dashboard"),
-        fetch("/api/transactions?status=All&type=All"),
-      ]);
+      // 1. Fetch dashboard metrics first so all cards & charts render without waiting on transactions
+      const dashPromise = fetch("/api/dashboard")
+        .then(async (dashRes) => {
+          if (!dashRes.ok) return null;
+          const data = await dashRes.json();
+          if (data.summary) {
+            setSummary({
+              totalBooks: Number(data.summary.totalBooks) || 0,
+              totalUsers: Number(data.summary.totalUsers) || 0,
+              pendingRequests: Number(data.summary.pendingRequests) || 0,
+              activeBorrowedBooks: Number(data.summary.activeBorrowedBooks) || 0,
+            });
+          }
+          if (Array.isArray(data.departmentUsage) && data.departmentUsage.length > 0) {
+            setDepartmentUsage(data.departmentUsage);
+          }
+          if (Array.isArray(data.topBooks) && data.topBooks.length > 0) {
+            setTopBooks(data.topBooks);
+          }
+          if (data.recentActivities) setRecentActivities(data.recentActivities);
+          if (data.newUsers) setNewUsers(data.newUsers);
+          if (data.latestTransactions) setLatestTransactions(data.latestTransactions);
+          if (data.systemHealth) setSystemHealth(data.systemHealth);
+          return data;
+        })
+        .catch((err) => {
+          console.warn("[DashboardFigma] dashboard fetch notice:", err);
+          return null;
+        });
 
-      let calculatedTopBooks: any[] = [];
-      if (txRes.ok) {
-        const txPayload = await txRes.json();
-        const txList: any[] = Array.isArray(txPayload?.transactions)
-          ? txPayload.transactions
-          : Array.isArray(txPayload)
-          ? txPayload
-          : [];
+      // 2. Concurrently fetch transactions to populate fallback top books if needed
+      const txPromise = fetch("/api/transactions?status=All&type=All")
+        .then(async (txRes) => {
+          if (!txRes.ok) return [];
+          const txPayload = await txRes.json();
+          return Array.isArray(txPayload?.transactions)
+            ? txPayload.transactions
+            : Array.isArray(txPayload)
+            ? txPayload
+            : [];
+        })
+        .catch(() => []);
 
-        if (txList.length > 0) {
-          const borrowMap = new Map<string, { title: string; count: number; author?: string; department?: string; isbn?: string }>();
-          for (const tx of txList) {
-            const typeStr = (tx.type || tx.action || "").toLowerCase();
-            if (typeStr === "borrow" || typeStr === "return") {
-              const titleKey = (tx.resourceTitle || tx.title || "").trim();
-              if (titleKey) {
-                const curr = borrowMap.get(titleKey) || {
-                  title: titleKey,
-                  count: 0,
-                  author: tx.author,
-                  department: tx.department,
-                  isbn: tx.isbn,
-                };
-                curr.count += 1;
-                borrowMap.set(titleKey, curr);
-              }
+      const [dashData, txList] = await Promise.all([dashPromise, txPromise]);
+
+      if (Array.isArray(txList) && txList.length > 0 && (!dashData?.topBooks || dashData.topBooks.length === 0)) {
+        const borrowMap = new Map<string, { title: string; count: number; author?: string; department?: string; isbn?: string }>();
+        for (const tx of txList) {
+          const typeStr = (tx.type || tx.action || "").toLowerCase();
+          if (typeStr === "borrow" || typeStr === "return") {
+            const titleKey = (tx.resourceTitle || tx.title || "").trim();
+            if (titleKey) {
+              const curr = borrowMap.get(titleKey) || {
+                title: titleKey,
+                count: 0,
+                author: tx.author,
+                department: tx.department,
+                isbn: tx.isbn,
+              };
+              curr.count += 1;
+              borrowMap.set(titleKey, curr);
             }
           }
-
-          calculatedTopBooks = Array.from(borrowMap.values())
-            .sort((a, b) => b.count - a.count)
-            .map((b, i) => ({
-              id: `book-tx-${i}`,
-              title: b.title,
-              author: b.author || "STI Library",
-              category: "Circulation",
-              department: b.department || "Circulation",
-              shelfLocation: "CIR-01A.1",
-              availability: "Available",
-              borrowCount: b.count,
-            }));
         }
-      }
 
-      if (dashRes.ok) {
-        const data = await dashRes.json();
-        if (data.summary) {
-          setSummary({
-            totalBooks: data.summary.totalBooks || 0,
-            totalUsers: data.summary.totalUsers || 0,
-            pendingRequests: data.summary.pendingRequests || 0,
-            activeBorrowedBooks: data.summary.activeBorrowedBooks || 0,
-          });
-        }
-        if (data.departmentUsage) setDepartmentUsage(data.departmentUsage);
-        if (data.topBooks && data.topBooks.length > 0) {
-          setTopBooks(data.topBooks);
-        } else if (calculatedTopBooks.length > 0) {
+        const calculatedTopBooks = Array.from(borrowMap.values())
+          .sort((a, b) => b.count - a.count)
+          .map((b, i) => ({
+            id: `book-tx-${i}`,
+            title: b.title,
+            author: b.author || "STI Library",
+            category: "Circulation",
+            department: b.department || "Circulation",
+            shelfLocation: "CIR-01A.1",
+            availability: "Available",
+            borrowCount: b.count,
+          }));
+
+        if (calculatedTopBooks.length > 0) {
           setTopBooks(calculatedTopBooks);
         }
-        if (data.recentActivities) setRecentActivities(data.recentActivities);
-        if (data.newUsers) setNewUsers(data.newUsers);
-        if (data.latestTransactions) setLatestTransactions(data.latestTransactions);
-        if (data.systemHealth) setSystemHealth(data.systemHealth);
       }
     } catch (err) {
       console.warn("Error fetching dashboard:", err);
