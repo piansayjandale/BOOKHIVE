@@ -39,7 +39,9 @@ export async function GET() {
   // 2. Attempt fallback to Express backend
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE)?.value;
+    const token =
+      cookieStore.get("bookhive_backend_token")?.value ||
+      cookieStore.get(SESSION_COOKIE)?.value;
 
     const res = await fetch(`${BACKEND_URL}/api/admin/profile`, {
       headers: {

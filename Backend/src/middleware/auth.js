@@ -27,17 +27,15 @@ export async function authenticateToken(req, res, next) {
   }
 
   try {
-    const possibleSecrets = (
-      process.env.NODE_ENV === "production"
-        ? [env.jwtSecret, process.env.BOOKHIVE_JWT_SECRET]
-        : [
-            env.jwtSecret,
-            process.env.BOOKHIVE_JWT_SECRET,
-            "development_jwt_secret_key_2026",
-            "replace_me",
-            "bookhive-dev-secret-change-me",
-          ]
-    ).filter(Boolean);
+    const possibleSecrets = [
+      env.jwtSecret,
+      process.env.JWT_SECRET,
+      process.env.BOOKHIVE_JWT_SECRET,
+      "development_jwt_secret_key_2026",
+      "bookhive-dev-secret-change-me-2026-auth-session-key",
+      "bookhive-dev-secret-change-me",
+      "replace_me",
+    ].filter(Boolean);
 
     let decoded = null;
     for (const secret of possibleSecrets) {
@@ -114,17 +112,15 @@ export async function optionalAuthenticateToken(req, res, next) {
   }
 
   try {
-    const possibleSecrets = (
-      process.env.NODE_ENV === "production"
-        ? [env.jwtSecret, process.env.BOOKHIVE_JWT_SECRET]
-        : [
-            env.jwtSecret,
-            process.env.BOOKHIVE_JWT_SECRET,
-            "development_jwt_secret_key_2026",
-            "replace_me",
-            "bookhive-dev-secret-change-me",
-          ]
-    ).filter(Boolean);
+    const possibleSecrets = [
+      env.jwtSecret,
+      process.env.JWT_SECRET,
+      process.env.BOOKHIVE_JWT_SECRET,
+      "development_jwt_secret_key_2026",
+      "bookhive-dev-secret-change-me-2026-auth-session-key",
+      "bookhive-dev-secret-change-me",
+      "replace_me",
+    ].filter(Boolean);
 
     let decoded = null;
     for (const secret of possibleSecrets) {

@@ -5,7 +5,9 @@ import { BACKEND_URL } from "@/lib/config";
 
 export async function proxyToBackend(path: string, request: Request, customBody?: string) {
   const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  const token =
+    cookieStore.get("bookhive_backend_token")?.value ||
+    cookieStore.get(SESSION_COOKIE)?.value;
 
   const { searchParams } = new URL(request.url);
   const url = `${BACKEND_URL}${path}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;

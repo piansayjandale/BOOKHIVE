@@ -14,5 +14,9 @@ export async function POST() {
     ...getSessionCookieOptions(),
     maxAge: 0,
   });
+  response.cookies.set("bookhive_backend_token", "", {
+    ...getSessionCookieOptions(),
+    maxAge: 0,
+  });
   return response;
 }

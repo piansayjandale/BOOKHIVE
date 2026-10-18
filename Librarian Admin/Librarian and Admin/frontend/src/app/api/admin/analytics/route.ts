@@ -9,7 +9,9 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE)?.value;
+    const token =
+      cookieStore.get("bookhive_backend_token")?.value ||
+      cookieStore.get(SESSION_COOKIE)?.value;
 
     const headers: HeadersInit = { "Content-Type": "application/json" };
     if (token) {

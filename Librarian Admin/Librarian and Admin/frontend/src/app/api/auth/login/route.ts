@@ -127,6 +127,7 @@ export async function POST(request: Request) {
     let account = null;
     let backendErrorMessage = "";
     let backendStatus = 401;
+    let backendToken = "";
     try {
       const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: "POST",
@@ -136,6 +137,9 @@ export async function POST(request: Request) {
       const data = await res.json().catch(() => null);
       if (res.ok && data?.user) {
         account = data.user;
+        if (data.token) {
+          backendToken = data.token;
+        }
       } else if (data?.message) {
         backendErrorMessage = data.message;
         backendStatus = res.status;
@@ -196,6 +200,9 @@ export async function POST(request: Request) {
       redirectPath: getDashboardPathForRole(session.role as any),
     });
     response.cookies.set(SESSION_COOKIE, await createSessionToken(session), getSessionCookieOptions());
+    if (backendToken) {
+      response.cookies.set("bookhive_backend_token", backendToken, getSessionCookieOptions());
+    }
 
     return response;
   } catch (error) {

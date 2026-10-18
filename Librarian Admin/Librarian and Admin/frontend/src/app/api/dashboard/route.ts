@@ -11,7 +11,10 @@ export async function GET() {
   try {
     // Get auth token from cookies
     const cookieStore = await cookies();
-    const token = cookieStore.get(SESSION_COOKIE)?.value || "";
+    const token =
+      cookieStore.get("bookhive_backend_token")?.value ||
+      cookieStore.get(SESSION_COOKIE)?.value ||
+      "";
     
     const response = await fetch(`${BACKEND_URL}/api/dashboard`, {
       method: "GET",
