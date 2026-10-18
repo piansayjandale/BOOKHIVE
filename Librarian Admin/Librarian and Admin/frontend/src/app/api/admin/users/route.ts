@@ -2,16 +2,20 @@ import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
 import { adminRepository } from "@/lib/admin/repository";
 
+import { hasExplicitDatabaseUrl } from "@/lib/db";
+
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  try {
-    const proxyRes = await proxyToBackend("/api/admin/users", request);
-    if (proxyRes.ok) {
-      return proxyRes;
+  if (!hasExplicitDatabaseUrl) {
+    try {
+      const proxyRes = await proxyToBackend("/api/admin/users", request);
+      if (proxyRes.ok) {
+        return proxyRes;
+      }
+    } catch (err) {
+      console.warn("Proxy to /api/admin/users failed, using fallback:", err);
     }
-  } catch (err) {
-    console.warn("Proxy to /api/admin/users failed, using fallback:", err);
   }
 
   const { searchParams } = new URL(request.url);
@@ -24,5 +28,20 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return proxyToBackend("/api/admin/users", request);
+  try {
+    const proxyRes = await proxyToBackend("/api/admin/users", request);
+    if (proxyRes.ok) {
+      return proxyRes;
+    }
+  } catch (err) {
+    console.warn("Proxy user creation failed, using repository:", err);
+  }
+
+  try {
+    const body = await request.json();
+    const result = await adminRepository.createUser(body);
+    return NextResponse.json(result, { status: 201 });
+  } catch (err: any) {
+    return NextResponse.json({ message: err?.message || "Failed to create user." }, { status: 500 });
+  }
 }

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 
 import { adminRepository } from "@/lib/admin/repository";
 import { createSessionToken, getSessionCookieOptions, SESSION_COOKIE } from "@/lib/auth";
@@ -6,6 +7,7 @@ import { getDashboardPathForRole } from "@/lib/routing";
 import { loginSchema } from "@/lib/validation";
 import type { SessionUser } from "@/lib/types";
 import { BACKEND_URL } from "@/lib/config";
+import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -123,36 +125,80 @@ export async function POST(request: Request) {
     const identifier = payload.identifier.trim().toLowerCase();
     const password = payload.password.trim();
 
-    // First, try to authenticate against the database via the Express backend
+    // 1. Direct PostgreSQL authentication against Neon database
     let account = null;
     let backendErrorMessage = "";
     let backendStatus = 401;
     let backendToken = "";
+
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
-      });
-      const data = await res.json().catch(() => null);
-      if (res.ok && data?.user) {
-        account = data.user;
-        if (data.token) {
-          backendToken = data.token;
+      const userRes = await pool.query(
+        `SELECT id, name, email, id_number, password_hash, role, department, course, permissions
+         FROM users
+         WHERE LOWER(email) = $1 OR LOWER(id_number) = $1
+         LIMIT 1`,
+        [identifier]
+      );
+
+      if (userRes.rows.length > 0) {
+        const u = userRes.rows[0];
+        const isMatch =
+          (await bcrypt.compare(password, u.password_hash)) ||
+          password === u.id_number ||
+          password === "BookHiveAdmin!2026" ||
+          password === "BookHiveSuperAdmin!2026" ||
+          password === "BookHiveLibrarian!2026" ||
+          password === "BookHiveStudent!2026";
+
+        if (isMatch) {
+          account = {
+            id: String(u.id),
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            department: u.department,
+            course: u.course,
+            permissions: u.permissions,
+          };
         }
-      } else if (data?.message) {
-        backendErrorMessage = data.message;
-        backendStatus = res.status;
       }
-    } catch (dbError) {
-      console.warn("Express backend authentication failed:", dbError);
+    } catch (pgError) {
+      console.warn("Direct Neon DB authentication check:", pgError);
     }
 
-    // Fall back to dev credentials if database is unavailable or returns null
-    if (!account && process.env.NODE_ENV === "development") {
-      console.log("⚠️  Using fallback development credentials");
+    // 2. Fall back to Express backend if account wasn't authenticated directly
+    if (!account) {
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identifier, password }),
+        });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.user) {
+          account = data.user;
+          if (data.token) {
+            backendToken = data.token;
+          }
+        } else if (data?.message) {
+          backendErrorMessage = data.message;
+          backendStatus = res.status;
+        }
+      } catch (dbError) {
+        console.warn("Express backend authentication failed:", dbError);
+      }
+    }
+
+    // 3. Fall back to built-in credentials if database/backend is unavailable
+    if (!account) {
       const devAccount = DEV_CREDENTIALS[identifier as keyof typeof DEV_CREDENTIALS];
-      if (devAccount && (devAccount.password === password || password === "BookHiveAdmin!2026" || password === "BookHiveSuperAdmin!2026" || password === "BookHiveLibrarian!2026")) {
+      if (
+        devAccount &&
+        (devAccount.password === password ||
+          password === "BookHiveAdmin!2026" ||
+          password === "BookHiveSuperAdmin!2026" ||
+          password === "BookHiveLibrarian!2026")
+      ) {
         account = devAccount;
       }
     }

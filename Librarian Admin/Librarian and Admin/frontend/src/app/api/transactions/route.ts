@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
-import { pool } from "@/lib/db";
+import { hasExplicitDatabaseUrl, pool } from "@/lib/db";
 import { store } from "@/lib/data/store";
 
 export const runtime = "nodejs";
@@ -109,14 +109,16 @@ export async function GET(request: Request) {
     console.warn("Proxy to /api/transactions failed:", err);
   }
 
-  // 2. Second attempt: proxy to Express /api/admin/transactions
-  try {
-    const proxyRes = await proxyToBackend("/api/admin/transactions", request);
-    if (proxyRes.ok) {
-      return proxyRes;
+  // 2. Second attempt: proxy to Express /api/admin/transactions if DB is not explicit
+  if (!hasExplicitDatabaseUrl) {
+    try {
+      const proxyRes = await proxyToBackend("/api/admin/transactions", request);
+      if (proxyRes.ok) {
+        return proxyRes;
+      }
+    } catch (err) {
+      console.warn("Proxy to /api/admin/transactions failed:", err);
     }
-  } catch (err) {
-    console.warn("Proxy to /api/admin/transactions failed:", err);
   }
 
   // 3. Fallback: Query PostgreSQL directly

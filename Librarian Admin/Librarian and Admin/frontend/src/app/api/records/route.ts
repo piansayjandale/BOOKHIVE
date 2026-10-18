@@ -1,17 +1,20 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
 import { adminRepository } from "@/lib/admin/repository";
+import { hasExplicitDatabaseUrl } from "@/lib/db";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  try {
-    const proxyRes = await proxyToBackend("/api/admin/books", request);
-    if (proxyRes.ok) {
-      return proxyRes;
+  if (!hasExplicitDatabaseUrl) {
+    try {
+      const proxyRes = await proxyToBackend("/api/admin/books", request);
+      if (proxyRes.ok) {
+        return proxyRes;
+      }
+    } catch (err) {
+      console.warn("Proxy to /api/admin/books failed, using repository fallback:", err);
     }
-  } catch (err) {
-    console.warn("Proxy to /api/admin/books failed, using repository fallback:", err);
   }
 
   try {
