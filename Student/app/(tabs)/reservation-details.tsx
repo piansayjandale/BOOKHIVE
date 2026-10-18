@@ -7,6 +7,9 @@ import {
   TouchableOpacity,
   Switch,
   BackHandler,
+  Modal,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
@@ -16,6 +19,7 @@ import {
 } from "@expo/vector-icons";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useThemeColors } from "../../hooks/useThemeColors";
+import { cancelReservation, getUpcomingReservations } from "../../data/store";
 
 const monthNames = [
   "Jan",
@@ -64,6 +68,46 @@ export default function ReservationDetailsScreen() {
   const [notifyAvailable, setNotifyAvailable] = useState(true);
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifySMS, setNotifySMS] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const reservationId =
+    (params.id as string) ||
+    (params.reservationId as string) ||
+    (params.transactionId as string) ||
+    "";
+
+  const handleCancelPress = () => {
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancel = async () => {
+    try {
+      setIsCancelling(true);
+      const allRes = getUpcomingReservations();
+      const matched = allRes.find(
+        (r) =>
+          (reservationId && String(r.id) === String(reservationId)) ||
+          (r.title && r.title.toLowerCase().trim() === title.toLowerCase().trim())
+      );
+      const targetId = reservationId || matched?.id || "";
+
+      if (targetId) {
+        await cancelReservation(targetId);
+      }
+      setIsCancelling(false);
+      setShowCancelModal(false);
+      if (params.from === "notifications" || String(params.from) === "notifications") {
+        router.replace("/notifications");
+      } else {
+        router.replace("/(tabs)/reservations");
+      }
+    } catch (error: any) {
+      setIsCancelling(false);
+      setShowCancelModal(false);
+      Alert.alert("Cancellation Notice", error?.message || "Failed to cancel reservation.");
+    }
+  };
 
   const progressSteps = [
     { label: "Reservation Submitted", completed: true },
@@ -247,7 +291,8 @@ export default function ReservationDetailsScreen() {
         <View style={styles.actionRow}>
           <TouchableOpacity
             style={[styles.actionButton, styles.cancelButton]}
-            onPress={() => router.push('/reservations')}
+            onPress={handleCancelPress}
+            activeOpacity={0.8}
           >
             <Text style={[styles.cancelButtonText, { color: "#FFFFFF" }]}>Cancel Reservation</Text>
           </TouchableOpacity>
@@ -260,6 +305,116 @@ export default function ReservationDetailsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* CANCEL CONFIRMATION POPUP MODAL */}
+      <Modal
+        visible={showCancelModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => {
+          if (!isCancelling) setShowCancelModal(false);
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <TouchableOpacity
+            style={StyleSheet.absoluteFill}
+            activeOpacity={1}
+            onPress={() => {
+              if (!isCancelling) setShowCancelModal(false);
+            }}
+          />
+
+          <View
+            style={[
+              styles.cancelModalCard,
+              {
+                backgroundColor: isDarkMode ? "#111A2E" : "#FFFFFF",
+                borderColor: isDarkMode ? "#24334C" : "#E2E8F0",
+              },
+            ]}
+          >
+            {/* Warning Icon Badge */}
+            <View style={styles.modalIconContainer}>
+              <View style={styles.modalIconCircle}>
+                <MaterialCommunityIcons
+                  name="calendar-remove-outline"
+                  size={32}
+                  color="#EF4444"
+                />
+              </View>
+            </View>
+
+            {/* Prompt Question */}
+            <Text
+              style={[
+                styles.modalQuestionText,
+                { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+              ]}
+            >
+              Are you sure to cancel this?
+            </Text>
+
+            {/* Book Title & Description */}
+            <Text
+              style={[
+                styles.modalBookTitle,
+                { color: isDarkMode ? theme.accentGold : theme.accentBlue },
+              ]}
+              numberOfLines={2}
+            >
+              {title}
+            </Text>
+
+            <Text
+              style={[
+                styles.modalWarningDesc,
+                { color: isDarkMode ? "#94A3B8" : "#64748B" },
+              ]}
+            >
+              This action will release your place in queue #{queuePosition} and cancel this reservation request.
+            </Text>
+
+            {/* Action Buttons: Keep vs Confirm Cancel */}
+            <View style={styles.modalActionsRow}>
+              <TouchableOpacity
+                style={[
+                  styles.modalBtn,
+                  styles.keepBtn,
+                  {
+                    backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9",
+                    borderColor: isDarkMode ? "#334155" : "#CBD5E1",
+                  },
+                ]}
+                disabled={isCancelling}
+                onPress={() => setShowCancelModal(false)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.keepBtnText,
+                    { color: isDarkMode ? "#E2E8F0" : "#475569" },
+                  ]}
+                >
+                  No, Keep It
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.confirmCancelBtn]}
+                disabled={isCancelling}
+                onPress={handleConfirmCancel}
+                activeOpacity={0.8}
+              >
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.confirmCancelBtnText}>Yes, Cancel</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </AnimatedScreen>
   );
 }
@@ -511,6 +666,87 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   secondaryButtonText: {
+    fontWeight: "800",
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.72)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 24,
+  },
+  cancelModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  modalIconContainer: {
+    marginBottom: 16,
+    alignItems: "center",
+  },
+  modalIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    borderWidth: 1.5,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalQuestionText: {
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalBookTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 8,
+  },
+  modalWarningDesc: {
+    fontSize: 13,
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 24,
+    paddingHorizontal: 6,
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  keepBtn: {
+    borderWidth: 1,
+  },
+  keepBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  confirmCancelBtn: {
+    backgroundColor: "#EF4444",
+  },
+  confirmCancelBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "800",
   },
 });
