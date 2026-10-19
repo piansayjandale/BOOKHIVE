@@ -1604,14 +1604,22 @@ export default function SearchScreen() {
                       activeOpacity={0.7}
                       style={[styles.bookCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
                       onPress={() => {
+                        const bookCopies = Math.max(1, Number(item.copies || item.totalCopies || 1));
+                        const isAvail = item.isAvailable !== undefined 
+                          ? Boolean(item.isAvailable) 
+                          : (item.availability ? (item.availability === 'Available' || item.availability === true) : (item.status ? item.status === 'Available' : true));
+                        const availCopies = item.availableCopies !== undefined 
+                          ? Number(item.availableCopies) 
+                          : (isAvail ? bookCopies : 0);
+
                         const bookObj = {
                           id: item.id || '',
                           title: info.title || '',
                           author: authorNames,
                           description: info.description || 'No description available.',
-                          available: item.local ? (item.status === 'Available' ? 'true' : 'false') : (item.available !== undefined ? String(item.available) : 'true'),
-                          status: item.status || item.availability || (item.availableCopies > 0 ? 'Available' : (item.reservedCount > 0 ? 'Reserved' : 'Unavailable')),
-                          availableCopies: String(item.availableCopies !== undefined ? item.availableCopies : (item.status === 'Available' ? 1 : 0)),
+                          available: String(isAvail),
+                          status: isAvail ? 'Available' : (item.status || item.availability || (item.reservedCount > 0 ? 'Reserved' : 'Unavailable')),
+                          availableCopies: String(availCopies),
                           reservedCount: String(item.reservedCount || 0),
                           borrowedCount: String(item.borrowedCount || 0),
                           department: item.department || classifiedDepartment,
@@ -1622,7 +1630,7 @@ export default function SearchScreen() {
                           publicationDate: info.publishedDate || '2026-09-01',
                           pages: String(info.pageCount || 320),
                           language: info.language || 'en',
-                          copies: String(item.copies !== undefined ? item.copies : 1),
+                          copies: String(bookCopies),
                           volume: item.volume || 'Single Volume / None',
                           edition: item.edition || 'Single Edition / None',
                           accessionNumber: item.accessionNumber || '',

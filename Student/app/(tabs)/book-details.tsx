@@ -178,12 +178,12 @@ export default function BookDetailsScreen() {
 
   const activeRequest =
     matchingRequests.find((r) => r.status === 'Approved' || r.status === 'Picked Up' || r.status === 'On Loan') ||
-    matchingRequests.find((r) => r.status === 'Pending' || r.status === 'Upcoming') ||
-    matchingRequests[0];
+    matchingRequests.find((r) => r.status === 'Pending' || r.status === 'Upcoming' || r.status === 'Waitlisted') ||
+    null;
 
   const isReserved = !!activeRequest;
   const requestStatus = activeRequest?.status; // 'Approved', 'Pending', 'Upcoming', etc.
-  const isReservationWaitlist = isReserved && (activeRequest?.action === 'Reserve' || (activeRequest as any)?.type === 'Reservation') && requestStatus !== 'Completed' && requestStatus !== 'Cancelled';
+  const isReservationWaitlist = isReserved && (activeRequest?.action === 'Reserve' || (activeRequest as any)?.type === 'Reservation') && requestStatus !== 'Completed' && requestStatus !== 'Cancelled' && requestStatus !== 'Returned';
   
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -256,9 +256,11 @@ export default function BookDetailsScreen() {
   const volume = (params.volume as string) || "Single Volume / None";
   const edition = (params.edition as string) || "Single Edition / None";
   const rawCopies =
-    liveBookData?.copies !== undefined && liveBookData.copies !== null
-      ? Number(liveBookData.copies)
-      : (params.copies !== undefined && params.copies !== null && params.copies !== "" ? Number(params.copies) : undefined);
+    liveBookData?.totalCopies !== undefined && liveBookData.totalCopies !== null
+      ? Number(liveBookData.totalCopies)
+      : (liveBookData?.copies !== undefined && liveBookData.copies !== null
+          ? Number(liveBookData.copies)
+          : (params.copies !== undefined && params.copies !== null && params.copies !== "" ? Number(params.copies) : undefined));
   const copies = rawCopies !== undefined && !isNaN(rawCopies) ? rawCopies : 1;
   const totalCopies = Math.max(1, copies);
   const accessionNumber =
@@ -276,11 +278,15 @@ export default function BookDetailsScreen() {
     ? Math.min(totalCopies - unavailableCopies, Math.max(Number(liveBookData.reservedCount), (isPendingBorrowApproval || isReservationWaitlist) ? 1 : 0))
     : ((isPendingBorrowApproval || isReservationWaitlist || rawStatus.toLowerCase() === "reserved" || rawAvailable.toLowerCase() === "reserved") ? Math.min(1, Math.max(0, totalCopies - unavailableCopies)) : (params.reservedCopies ? Number(params.reservedCopies) : (params.reservedCount ? Math.min(totalCopies - unavailableCopies, Number(params.reservedCount)) : 0)));
 
+  const computedAvailableFallback = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+
   const availableCopies = liveBookData?.availableCopies !== undefined
     ? Math.min(totalCopies, Math.max(0, Number(liveBookData.availableCopies)))
-    : (params.availableCopies !== undefined && !isNaN(Number(params.availableCopies))
-        ? Math.min(totalCopies, Math.max(0, Number(params.availableCopies)))
-        : Math.max(0, totalCopies - unavailableCopies - reservedCopies));
+    : (params.availableCopies !== undefined && !isNaN(Number(params.availableCopies)) && Number(params.availableCopies) > 0
+        ? Math.min(totalCopies, Number(params.availableCopies))
+        : (rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable"
+            ? 0
+            : computedAvailableFallback));
 
   // Book is available as long as physical copies are available for checkout
   const isAvailable = availableCopies > 0;

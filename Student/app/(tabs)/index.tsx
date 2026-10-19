@@ -1475,7 +1475,15 @@ export default function HomeScreen() {
                     key={idx}
                     activeOpacity={0.85}
                     style={[styles.carouselSlide, { width: Dimensions.get("window").width - 40 }]}
-                    onPress={() =>
+                    onPress={() => {
+                      const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+                      const isAvail = book.isAvailable !== undefined 
+                        ? Boolean(book.isAvailable) 
+                        : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
+                      const availCopies = book.availableCopies !== undefined 
+                        ? Number(book.availableCopies) 
+                        : (isAvail ? bookCopies : 0);
+
                       router.push({
                         pathname: "/book-details",
                         params: {
@@ -1491,19 +1499,19 @@ export default function HomeScreen() {
                           department: book.department,
                           rating: book.rating,
                           shelf: book.shelf,
-                          available: book.available,
-                          status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
-                          availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+                          available: String(isAvail),
+                          status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
+                          availableCopies: String(availCopies),
                           reservedCount: String(book.reservedCount || 0),
                           borrowedCount: String(book.borrowedCount || 0),
                           isbn: book.isbn,
-                          copies: book.copies,
+                          copies: String(bookCopies),
                           volume: book.volume,
                           edition: book.edition,
                           accessionNumber: book.accessionNumber,
                         },
-                      })
-                    }
+                      });
+                    }}
                   >
                     <BookCoverImage
                       uri={book.coverImage}
@@ -1704,7 +1712,15 @@ export default function HomeScreen() {
                         styles.categoryCard,
                         { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
                       ]}
-                      onPress={() =>
+                      onPress={() => {
+                        const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+                        const isAvail = book.isAvailable !== undefined 
+                          ? Boolean(book.isAvailable) 
+                          : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
+                        const availCopies = book.availableCopies !== undefined 
+                          ? Number(book.availableCopies) 
+                          : (isAvail ? bookCopies : 0);
+
                         router.push({
                           pathname: "/book-details",
                           params: {
@@ -1720,19 +1736,19 @@ export default function HomeScreen() {
                             department: book.department,
                             rating: book.rating,
                             shelf: book.shelf,
-                            available: book.available,
-                            status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
-                            availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+                            available: String(isAvail),
+                            status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
+                            availableCopies: String(availCopies),
                             reservedCount: String(book.reservedCount || 0),
                             borrowedCount: String(book.borrowedCount || 0),
                             isbn: book.isbn,
-                            copies: book.copies,
+                            copies: String(bookCopies),
                             volume: book.volume,
                             edition: book.edition,
                             accessionNumber: book.accessionNumber,
                           },
-                        })
-                      }
+                        });
+                      }}
                     >
                       <BookCoverImage
                         uri={book.coverImage}

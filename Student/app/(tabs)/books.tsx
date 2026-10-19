@@ -226,6 +226,14 @@ export default function BooksScreen() {
   };
 
   const handleBookPress = (book: any) => {
+    const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+    const isAvail = book.isAvailable !== undefined 
+      ? Boolean(book.isAvailable) 
+      : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
+    const availCopies = book.availableCopies !== undefined 
+      ? Number(book.availableCopies) 
+      : (isAvail ? bookCopies : 0);
+
     router.push({
       pathname: '/book-details',
       params: {
@@ -237,9 +245,9 @@ export default function BooksScreen() {
         department: book.department || 'Circulation',
         rating: book.rating || '4.8',
         description: book.description || book.summary || '',
-        available: book.available !== undefined ? String(book.available) : 'true',
-        status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
-        availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+        available: String(isAvail),
+        status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
+        availableCopies: String(availCopies),
         reservedCount: String(book.reservedCount || 0),
         borrowedCount: String(book.borrowedCount || 0),
         year: book.publicationDate ? String(book.publicationDate).substring(0, 4) : (book.year ? String(book.year) : '2026'),
@@ -248,7 +256,7 @@ export default function BooksScreen() {
         language: book.language || 'EN',
         shelf: book.shelfLocation || book.callNumber || book.shelf || 'General Shelf',
         isbn: book.isbn || '',
-        copies: String(book.copies !== undefined && book.copies !== null ? book.copies : 1),
+        copies: String(bookCopies),
         volume: book.volume || 'Single Volume / None',
         edition: book.edition || 'Single Edition / None',
         accessionNumber: book.accessionNumber || '',

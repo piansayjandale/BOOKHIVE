@@ -54,10 +54,27 @@ export async function GET(request: Request) {
 
     const { rows } = await pool.query(sql, params);
 
+    const mappedBooks = rows.map((b: any) => {
+      const totalCopies = Math.max(1, Number(b.copies || 1));
+      const isAvailable = b.availability === "Available";
+      const availableCopies = isAvailable ? totalCopies : 0;
+      return {
+        ...b,
+        totalCopies,
+        copies: totalCopies,
+        isAvailable,
+        availableCopies,
+        status: b.availability || "Available",
+        availability: b.availability || "Available",
+        borrowedCount: 0,
+        reservedCount: 0,
+      };
+    });
+
     return NextResponse.json(
       {
-        books: rows,
-        total: rows.length,
+        books: mappedBooks,
+        total: mappedBooks.length,
       },
       { status: 200, headers: corsHeaders }
     );

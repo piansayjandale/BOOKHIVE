@@ -348,6 +348,14 @@ export default function DepartmentBooksScreen() {
 
   const handleBookPress = (book: any) => {
     saveBookToViewHistory(book);
+    const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+    const isAvail = book.isAvailable !== undefined 
+      ? Boolean(book.isAvailable) 
+      : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
+    const availCopies = book.availableCopies !== undefined 
+      ? Number(book.availableCopies) 
+      : (isAvail ? bookCopies : 0);
+
     router.push({
       pathname: "/book-details",
       params: {
@@ -365,13 +373,13 @@ export default function DepartmentBooksScreen() {
         from: "department",
         rating: book.rating,
         shelf: book.shelf,
-        available: book.available,
-        status: book.status || book.availability || (book.isAvailable ? 'Available' : 'Unavailable'),
-        availableCopies: String(book.availableCopies !== undefined ? book.availableCopies : (book.isAvailable ? 1 : 0)),
+        available: String(isAvail),
+        status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
+        availableCopies: String(availCopies),
         reservedCount: String(book.reservedCount || 0),
         borrowedCount: String(book.borrowedCount || 0),
         isbn: book.isbn,
-        copies: book.copies,
+        copies: String(bookCopies),
         volume: book.volume,
         edition: book.edition,
         accessionNumber: book.accessionNumber,

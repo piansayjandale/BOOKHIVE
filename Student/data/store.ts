@@ -738,7 +738,7 @@ export const syncTransactionsWithBackend = async (force = false) => {
       // Filter active (non-returned/declined) reservations/borrows for getReservations/getUpcomingReservations
       // Unapproved (Pending) reservations must not show in the reservations tab or library card
       cachedReservations = uniqueMappedList.filter(item => {
-        if (item.status === 'Completed' || item.status === 'Declined' || item.status === 'Cancelled') return false;
+        if (item.status === 'Completed' || item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Returned' || item.isReturned) return false;
         const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation';
         if (isRes && (item.status === 'Pending' || item.status === 'Waitlisted')) return false;
         return true;

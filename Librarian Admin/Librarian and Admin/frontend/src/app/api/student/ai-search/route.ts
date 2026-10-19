@@ -94,20 +94,32 @@ export async function POST(request: Request) {
 
     const { rows } = await pool.query(sql, params);
 
-    const formatted = rows.map((r: any) => ({
-      id: r.id,
-      title: r.title,
-      author: r.author,
-      isbn: r.isbn,
-      department: r.department,
-      availability: r.availability !== "Unavailable" && r.availability !== "Borrowed",
-      summary: r.summary,
-      genres: r.genres,
-      rating: r.rating ? Number(r.rating) : 4.5,
-      coverImg: r.coverImg,
-      cover_img: r.cover_img,
-      relevance: (r.title || "").toLowerCase().includes(cleanQ) ? 95 : 85,
-    }));
+    const formatted = rows.map((r: any) => {
+      const isAvailable = r.availability !== "Unavailable" && r.availability !== "Borrowed";
+      const totalCopies = Math.max(1, Number(r.copies || 1));
+      const availableCopies = isAvailable ? totalCopies : 0;
+      return {
+        id: r.id,
+        title: r.title,
+        author: r.author,
+        isbn: r.isbn,
+        department: r.department,
+        totalCopies,
+        copies: totalCopies,
+        isAvailable,
+        availableCopies,
+        availability: isAvailable ? "Available" : "Unavailable",
+        status: isAvailable ? "Available" : "Unavailable",
+        borrowedCount: 0,
+        reservedCount: 0,
+        summary: r.summary,
+        genres: r.genres,
+        rating: r.rating ? Number(r.rating) : 4.5,
+        coverImg: r.coverImg,
+        cover_img: r.cover_img,
+        relevance: (r.title || "").toLowerCase().includes(cleanQ) ? 95 : 85,
+      };
+    });
 
     return NextResponse.json(
       {
