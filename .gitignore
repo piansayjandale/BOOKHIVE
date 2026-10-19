@@ -94,3 +94,6 @@ Desktop.ini
 # ------------------------------------------------------------------------------
 .git_backup/
 **/.git_backup/
+
+# Local Netlify folder
+.netlify

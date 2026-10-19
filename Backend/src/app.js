@@ -64,7 +64,7 @@ export function createApp() {
 
   const LATEST_EAS_APK_URL =
     process.env.LATEST_APK_URL ||
-    "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
+    "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk";
 
   // Redirect placeholder APK files in /downloads to the compiled EAS APK artifact
   app.get(["/downloads/bookhive-release.apk", "/downloads/app-release.apk"], (req, res, next) => {
@@ -122,7 +122,7 @@ export function createApp() {
         <key>bundle-identifier</key>
         <string>ph.edu.stiwnu.bookhive</string>
         <key>bundle-version</key>
-        <string>1.0.5</string>
+        <string>1.0.6</string>
         <key>kind</key>
         <string>software</string>
         <key>title</key>
@@ -167,7 +167,7 @@ export function createApp() {
           android: {
             downloadUrl: directApkUrl,
             filename: apkFileName,
-            version: "1.0.5",
+            version: "1.0.6",
             format: "APK",
             compatibility: "Android 8.0+",
           },

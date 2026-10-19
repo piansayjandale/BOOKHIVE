@@ -780,9 +780,115 @@ export const getReservationHistory = () => {
   return cachedHistory;
 };
 
-export const getBorrowedBooks = () => {
+export const getBorrowedBooks = (): ReservationBook[] => {
   syncTransactionsWithBackend();
-  return cachedReservations.filter((item) => item.status === "Approved" || item.status === "Picked Up" || item.status === "On Loan");
+  const libraryCardList = getLibraryCardHistory();
+  const allReservations = cachedReservations || [];
+  const allHistory = cachedHistory || [];
+
+  const seenIds = new Set<string>();
+  const list: ReservationBook[] = [];
+
+  const checkItem = (item: ReservationBook) => {
+    if (!item || !item.id || seenIds.has(item.id)) return;
+
+    const isReturned = !!(
+      item.isReturned === true ||
+      item.status === 'Completed' ||
+      item.status === 'Returned' ||
+      item.date === 'Returned' ||
+      (item as any).returnedAt
+    );
+    if (isReturned) return;
+
+    const isDeclined = item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected';
+    if (isDeclined) return;
+
+    const isReservation = !!(
+      item.action === 'Reserve' ||
+      (item as any).type === 'Reservation' ||
+      item.status === 'Reserved' ||
+      item.status === 'Reservation' ||
+      (item as any).dueReturnDate === 'Reservation' ||
+      item.status === 'Waitlisted'
+    );
+    if (isReservation) return;
+
+    const isBorrowType =
+      item.action === 'Borrow' ||
+      (item as any).type === 'Borrow' ||
+      (item as any).type === 'Borrowing' ||
+      (!item.action && !(item as any).type);
+
+    if (isBorrowType) {
+      const isActiveBorrowStatus =
+        item.status === 'Approved' ||
+        item.status === 'Picked Up' ||
+        item.status === 'On Loan' ||
+        item.status === 'Active' ||
+        item.status === 'Active Loan' ||
+        item.status === 'Due to Return' ||
+        item.status === 'Overdue' ||
+        item.status === 'Due' ||
+        Boolean(item.isPickedUp || item.pickedUpAt);
+
+      if (isActiveBorrowStatus) {
+        seenIds.add(item.id);
+        list.push(item);
+      }
+    }
+  };
+
+  libraryCardList.forEach(checkItem);
+  allReservations.forEach(checkItem);
+  allHistory.forEach(checkItem);
+
+  return list;
+};
+
+export const getReservedBooks = (): ReservationBook[] => {
+  syncTransactionsWithBackend();
+  const libraryCardList = getLibraryCardHistory();
+  const allReservations = cachedReservations || [];
+  const allHistory = cachedHistory || [];
+
+  const seenIds = new Set<string>();
+  const list: ReservationBook[] = [];
+
+  const checkItem = (item: ReservationBook) => {
+    if (!item || !item.id || seenIds.has(item.id)) return;
+
+    const isReturned = !!(
+      item.isReturned === true ||
+      item.status === 'Completed' ||
+      item.status === 'Returned' ||
+      item.date === 'Returned' ||
+      (item as any).returnedAt
+    );
+    if (isReturned) return;
+
+    const isDeclined = item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected';
+    if (isDeclined) return;
+
+    const isReservation = !!(
+      item.action === 'Reserve' ||
+      (item as any).type === 'Reservation' ||
+      item.status === 'Reserved' ||
+      item.status === 'Reservation' ||
+      (item as any).dueReturnDate === 'Reservation'
+    );
+
+    if (isReservation) {
+      seenIds.add(item.id);
+      list.push(item);
+    }
+  };
+
+  allReservations.forEach(checkItem);
+  libraryCardList.forEach(checkItem);
+  allHistory.forEach(checkItem);
+
+  return list;
 };
 
 // Returns complete library card records (active borrowed books, active reservations, and returned history) so books never disappear
@@ -972,6 +1078,63 @@ export const getActiveBorrowCount = (targetStudentId?: string): number => {
   libraryCardList.forEach(checkItem);
   allHistory.forEach(checkItem);
   allReservations.forEach(checkItem);
+
+  return count;
+};
+
+// Returns the student's current active reserved books count
+export const getActiveReservationCount = (targetStudentId?: string): number => {
+  syncTransactionsWithBackend();
+  const libraryCardList = getLibraryCardHistory();
+  const allHistory = cachedHistory || [];
+  const allReservations = cachedReservations || [];
+
+  const seenKeys = new Set<string>();
+  let count = 0;
+  const normalizedTarget = normalizeStudentId(targetStudentId);
+
+  const checkItem = (item: any) => {
+    if (!item) return;
+
+    if (normalizedTarget) {
+      const itemStudentId = normalizeStudentId(item.studentId || item.student_id);
+      if (itemStudentId && itemStudentId !== normalizedTarget) {
+        return;
+      }
+    }
+
+    const key = item.id ? `id:${item.id}` : `${item.title || ''}-${item.isbn || ''}`;
+    if (seenKeys.has(key)) return;
+
+    const isReturned = !!(
+      item.isReturned === true ||
+      item.status === 'Completed' ||
+      item.status === 'Returned' ||
+      item.date === 'Returned' ||
+      item.returnedAt
+    );
+    if (isReturned) return;
+
+    const isDeclined = item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected';
+    if (isDeclined) return;
+
+    const isReservation = !!(
+      item.action === 'Reserve' ||
+      item.type === 'Reservation' ||
+      item.status === 'Reserved' ||
+      item.status === 'Reservation' ||
+      item.dueReturnDate === 'Reservation'
+    );
+
+    if (isReservation) {
+      seenKeys.add(key);
+      count++;
+    }
+  };
+
+  libraryCardList.forEach(checkItem);
+  allReservations.forEach(checkItem);
+  allHistory.forEach(checkItem);
 
   return count;
 };

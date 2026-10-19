@@ -82,7 +82,46 @@ export default function ProfileScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const borrowedBooks = reservations.filter((book) => book.status === "Approved" || book.status === "Picked Up" || book.status === "On Loan");
+  const borrowedBooks = React.useMemo(() => {
+    return reservations.filter((book) => {
+      const isRes =
+        book.action === 'Reserve' ||
+        (book as any).type === 'Reservation' ||
+        book.status === 'Reserved' ||
+        book.status === 'Reservation';
+      if (isRes) return false;
+      const isReturned = !!(book.isReturned || book.status === 'Completed' || book.status === 'Returned' || book.date === 'Returned');
+      if (isReturned) return false;
+      if (book.status === 'Declined' || book.status === 'Cancelled' || book.status === 'Rejected') return false;
+      return (
+        book.status === 'Approved' ||
+        book.status === 'Picked Up' ||
+        book.status === 'On Loan' ||
+        book.status === 'Active' ||
+        book.status === 'Active Loan' ||
+        book.status === 'Due to Return' ||
+        book.status === 'Overdue' ||
+        book.status === 'Due' ||
+        Boolean(book.isPickedUp || book.pickedUpAt)
+      );
+    });
+  }, [reservations]);
+
+  const activeReservationsCount = React.useMemo(() => {
+    return reservations.filter((book) => {
+      const isRes =
+        book.action === 'Reserve' ||
+        (book as any).type === 'Reservation' ||
+        book.status === 'Reserved' ||
+        book.status === 'Reservation' ||
+        (book as any).dueReturnDate === 'Reservation';
+      if (!isRes) return false;
+      const isReturned = !!(book.isReturned || book.status === 'Completed' || book.status === 'Returned' || book.date === 'Returned');
+      if (isReturned) return false;
+      if (book.status === 'Declined' || book.status === 'Cancelled' || book.status === 'Rejected') return false;
+      return true;
+    }).length;
+  }, [reservations]);
 
   // Dynamic overdue loans / violations calculation
   const violations = borrowedBooks
@@ -496,7 +535,7 @@ export default function ProfileScreen() {
                 }
               ]}>
                 <Text style={[styles.statNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-                  {reservations.filter((book) => book.status === 'Pending' || book.status === 'Upcoming' || book.status === 'Reserved').length}
+                  {activeReservationsCount}
                 </Text>
 
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>
@@ -516,7 +555,7 @@ export default function ProfileScreen() {
                 }
               ]}>
                 <Text style={[styles.statNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-                  {reservations.filter((book) => book.status === 'Approved' || book.status === 'Picked Up' || book.status === 'On Loan').length}
+                  {borrowedBooks.length}
                 </Text>
 
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>

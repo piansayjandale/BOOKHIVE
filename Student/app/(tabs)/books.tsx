@@ -173,16 +173,30 @@ export default function BooksScreen() {
     const seenIds = new Set<string>();
     const list: ReservationBook[] = [];
 
-    // 1. Library card records (both active loans and returned books)
+    // 1. Library card records (strictly borrow records, excluding reservations)
     for (const item of libraryCardBooks) {
-      if (!seenIds.has(item.id)) {
+      const isRes =
+        item.action === 'Reserve' ||
+        (item as any).type === 'Reservation' ||
+        item.status === 'Reserved' ||
+        item.status === 'Reservation' ||
+        (item as any).dueReturnDate === 'Reservation';
+      if (!isRes && !seenIds.has(item.id)) {
         seenIds.add(item.id);
         list.push(item);
       }
     }
 
-    // 2. All history records with borrow status
+    // 2. All history records with borrow status (excluding reservations)
     for (const item of allHistory) {
+      const isRes =
+        item.action === 'Reserve' ||
+        (item as any).type === 'Reservation' ||
+        item.status === 'Reserved' ||
+        item.status === 'Reservation' ||
+        (item as any).dueReturnDate === 'Reservation';
+      if (isRes) continue;
+
       const isBorrowRecord =
         item.action === 'Borrow' ||
         (item as any).type === 'Borrow' ||

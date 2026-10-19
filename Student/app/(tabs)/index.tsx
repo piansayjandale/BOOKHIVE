@@ -44,6 +44,11 @@ import {
   setCachedAllBooks,
   getCachedAllBooks,
   getPersonalizedRecommendedBooks,
+  getLibraryCardHistory,
+  getActiveBorrowCount,
+  getActiveReservationCount,
+  getBorrowedBooks,
+  getReservedBooks,
 } from "../../data/store";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -324,6 +329,9 @@ export default function HomeScreen() {
   const [activeReservations, setActiveReservations] = React.useState<ReservationBook[]>(
     getUpcomingReservations()
   );
+  const [libraryCardBooks, setLibraryCardBooks] = React.useState<ReservationBook[]>(
+    getLibraryCardHistory()
+  );
   const [borrowHistory, setBorrowHistory] = React.useState<ReservationBook[]>(
     getReservationHistory()
   );
@@ -342,6 +350,7 @@ export default function HomeScreen() {
   React.useEffect(() => {
     setAnnouncements(getAnnouncements());
     setActiveReservations(getUpcomingReservations());
+    setLibraryCardBooks(getLibraryCardHistory());
     setBorrowHistory(getReservationHistory());
     setNotifications(getNotifications());
     setLibraryPoints(getLibraryPoints());
@@ -350,9 +359,20 @@ export default function HomeScreen() {
     const unsubscribe = subscribe(() => {
       setAnnouncements(getAnnouncements());
       setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
       setBorrowHistory(getReservationHistory());
       setNotifications(getNotifications());
       setLibraryPoints(getLibraryPoints());
+    });
+
+    const unsubReturn = socketService.subscribeToReturn(() => {
+      setLibraryCardBooks(getLibraryCardHistory());
+      setActiveReservations(getUpcomingReservations());
+    });
+
+    const unsubDecided = socketService.subscribeToTransactionDecided(() => {
+      setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
     });
 
     // Poll notifications & announcements every 10 seconds to sync in real-time
@@ -363,6 +383,8 @@ export default function HomeScreen() {
 
     return () => {
       unsubscribe();
+      unsubReturn();
+      unsubDecided();
       clearInterval(interval);
     };
   }, []);
@@ -913,6 +935,7 @@ export default function HomeScreen() {
     React.useCallback(() => {
       // Force sync state and backend when tab comes into focus
       setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
       setBorrowHistory(getReservationHistory());
       setNotifications(getNotifications());
       setLibraryPoints(getLibraryPoints());
@@ -920,6 +943,99 @@ export default function HomeScreen() {
       fetchBooksPayload();
     }, [fetchBooksPayload])
   );
+
+  // Unified active borrow count strictly matching Library Card active borrow ledger
+  const activeBorrowedCount = React.useMemo(() => {
+    const seenIds = new Set<string>();
+    let count = 0;
+
+    const checkItem = (item: ReservationBook) => {
+      if (!item || !item.id || seenIds.has(item.id)) return;
+      if (item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected') return;
+
+      const isReturned = !!(
+        item.isReturned === true ||
+        item.status === 'Completed' ||
+        item.status === 'Returned' ||
+        item.date === 'Returned' ||
+        (item as any).returnedAt
+      );
+      if (isReturned) return;
+
+      const isReservation = !!(
+        item.action === 'Reserve' ||
+        (item as any).type === 'Reservation' ||
+        item.status === 'Reserved' ||
+        item.status === 'Reservation' ||
+        (item as any).dueReturnDate === 'Reservation' ||
+        item.status === 'Waitlisted'
+      );
+      if (isReservation) return;
+
+      const isBorrow =
+        item.action === 'Borrow' ||
+        (item as any).type === 'Borrow' ||
+        (item as any).type === 'Borrowing' ||
+        (!item.action && !(item as any).type);
+
+      const isActiveStatus =
+        item.status === 'Approved' ||
+        item.status === 'Picked Up' ||
+        item.status === 'On Loan' ||
+        item.status === 'Active' ||
+        item.status === 'Active Loan' ||
+        item.status === 'Due to Return' ||
+        item.status === 'Overdue' ||
+        item.status === 'Due' ||
+        Boolean(item.isPickedUp || item.pickedUpAt);
+
+      if (isBorrow && isActiveStatus) {
+        seenIds.add(item.id);
+        count++;
+      }
+    };
+
+    libraryCardBooks.forEach(checkItem);
+    activeReservations.forEach(checkItem);
+    return count;
+  }, [libraryCardBooks, activeReservations]);
+
+  // Unified active reserved count strictly matching Library Card & Reservations tab
+  const activeReservedCount = React.useMemo(() => {
+    const seenIds = new Set<string>();
+    let count = 0;
+
+    const checkItem = (item: ReservationBook) => {
+      if (!item || !item.id || seenIds.has(item.id)) return;
+      if (item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected') return;
+
+      const isReturned = !!(
+        item.isReturned === true ||
+        item.status === 'Completed' ||
+        item.status === 'Returned' ||
+        item.date === 'Returned' ||
+        (item as any).returnedAt
+      );
+      if (isReturned) return;
+
+      const isReservation = !!(
+        item.action === 'Reserve' ||
+        (item as any).type === 'Reservation' ||
+        item.status === 'Reserved' ||
+        item.status === 'Reservation' ||
+        (item as any).dueReturnDate === 'Reservation'
+      );
+
+      if (isReservation) {
+        seenIds.add(item.id);
+        count++;
+      }
+    };
+
+    libraryCardBooks.forEach(checkItem);
+    activeReservations.forEach(checkItem);
+    return count;
+  }, [libraryCardBooks, activeReservations]);
 
   React.useEffect(() => {
     const unsubscribe = socketService.subscribeToBookAdded((newBook: any) => {
@@ -1202,15 +1318,19 @@ export default function HomeScreen() {
 
         {/* STATS (Reordered directly underneath search bar) */}
         <View style={styles.newStatsRow}>
-          <View style={[
-            styles.newStatCard,
-            {
-              backgroundColor: theme.cardBg,
-              borderColor: theme.cardBorder,
-              borderTopColor: isDarkMode ? theme.cardBorder : theme.accentBlue,
-              borderTopWidth: isDarkMode ? 1 : 2.5,
-            }
-          ]}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push("/reservations")}
+            style={[
+              styles.newStatCard,
+              {
+                backgroundColor: theme.cardBg,
+                borderColor: theme.cardBorder,
+                borderTopColor: isDarkMode ? theme.cardBorder : theme.accentBlue,
+                borderTopWidth: isDarkMode ? 1 : 2.5,
+              }
+            ]}
+          >
             <View style={styles.newStatHeader}>
               <View style={[
                 styles.statIconBadge,
@@ -1221,19 +1341,23 @@ export default function HomeScreen() {
               <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>BOOKS BORROWED</Text>
             </View>
             <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-              {activeReservations.filter((book) => book.status === "Approved").length}
+              {activeBorrowedCount}
             </Text>
-          </View>
+          </TouchableOpacity>
 
-          <View style={[
-            styles.newStatCard,
-            {
-              backgroundColor: theme.cardBg,
-              borderColor: theme.cardBorder,
-              borderTopColor: isDarkMode ? theme.cardBorder : theme.accentGold,
-              borderTopWidth: isDarkMode ? 1 : 2.5,
-            }
-          ]}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push("/reservations")}
+            style={[
+              styles.newStatCard,
+              {
+                backgroundColor: theme.cardBg,
+                borderColor: theme.cardBorder,
+                borderTopColor: isDarkMode ? theme.cardBorder : theme.accentGold,
+                borderTopWidth: isDarkMode ? 1 : 2.5,
+              }
+            ]}
+          >
             <View style={styles.newStatHeader}>
               <View style={[
                 styles.statIconBadge,
@@ -1244,9 +1368,9 @@ export default function HomeScreen() {
               <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>BOOKS RESERVED</Text>
             </View>
             <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-              {activeReservations.filter((book) => book.status === "Pending" || book.status === "Upcoming" || book.status === "Reserved").length}
+              {activeReservedCount}
             </Text>
-          </View>
+          </TouchableOpacity>
         </View>
 
         {/* ANNOUNCEMENTS */}

@@ -562,9 +562,10 @@ export const superAdminModel = {
       const settings = res.rows[0] || {};
       const syncLogs = await pool.query("SELECT * FROM institutional_sync_logs ORDER BY synced_at DESC LIMIT 5");
 
-      const latestEasApk = "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
+      const latestEasApk = "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk";
       const isStaleApk =
         !settings.latest_apk_url ||
+        settings.latest_apk_url.includes("XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8") ||
         settings.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
         settings.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
         settings.latest_apk_url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
@@ -572,7 +573,7 @@ export const superAdminModel = {
         settings.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
       const isStaleVersion =
         !settings.min_app_version ||
-        ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4"].includes(String(settings.min_app_version).trim());
+        ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5"].includes(String(settings.min_app_version).trim());
 
       return {
         settings: {
@@ -590,7 +591,7 @@ export const superAdminModel = {
           maintenanceTitle: settings.maintenance_title || "System Maintenance & Update",
           maintenanceMessage: settings.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
           maintenanceUntil: settings.maintenance_until || null,
-          minAppVersion: isStaleVersion ? "1.0.5" : settings.min_app_version,
+          minAppVersion: isStaleVersion ? "1.0.6" : settings.min_app_version,
           latestApkUrl: isStaleApk ? latestEasApk : settings.latest_apk_url,
         },
         institutionalSync: {
@@ -617,8 +618,8 @@ export const superAdminModel = {
           maintenanceTitle: "System Maintenance & Update",
           maintenanceMessage: "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
           maintenanceUntil: null,
-          minAppVersion: "1.0.5",
-          latestApkUrl: "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk",
+          minAppVersion: "1.0.6",
+          latestApkUrl: "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk",
         },
         institutionalSync: {
           provider: "STI WNU Active Directory & Academic Ecosystem",
@@ -648,9 +649,10 @@ export const superAdminModel = {
         }
       }
 
-      const latestEasApk = "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk";
+      const latestEasApk = "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk";
       const isStaleApk =
         !s.latest_apk_url ||
+        s.latest_apk_url.includes("XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8") ||
         s.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
         s.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
         s.latest_apk_url.includes("wq4OYzJNpymhY6ysiXCuUri2xPkuZwsavxKd1eAqaoQ") ||
@@ -658,7 +660,7 @@ export const superAdminModel = {
         s.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
       const isStaleVersion =
         !s.min_app_version ||
-        ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4"].includes(String(s.min_app_version).trim());
+        ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5"].includes(String(s.min_app_version).trim());
 
       return {
         inMaintenance,
@@ -666,7 +668,7 @@ export const superAdminModel = {
         message: s.maintenance_message || "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
         until,
         remainingSeconds,
-        minVersion: isStaleVersion ? "1.0.5" : s.min_app_version,
+        minVersion: isStaleVersion ? "1.0.6" : s.min_app_version,
         latestApkUrl: isStaleApk ? latestEasApk : s.latest_apk_url,
       };
     } catch (err) {
@@ -677,8 +679,8 @@ export const superAdminModel = {
         message: "BookHive is currently undergoing scheduled maintenance and updates.",
         until: null,
         remainingSeconds: 0,
-        minVersion: "1.0.5",
-        latestApkUrl: "https://expo.dev/artifacts/eas/XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8.apk",
+        minVersion: "1.0.6",
+        latestApkUrl: "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk",
       };
     }
   },
