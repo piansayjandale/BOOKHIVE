@@ -9,11 +9,12 @@ export const metadata: Metadata = {
 };
 
 const EAS_APK_URL =
-  "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk";
+  "https://expo.dev/artifacts/eas/X9oVsAt4oAvIWYiAg2Lj3eO7pUsuz_f1XhCDlM_uytg.apk";
 
 const rawEnvDownloadUrl = process.env.NEXT_PUBLIC_APP_DOWNLOAD_URL;
 const isStaleDownloadUrl =
   !rawEnvDownloadUrl ||
+  rawEnvDownloadUrl.includes("xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8") ||
   rawEnvDownloadUrl.includes("XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8") ||
   rawEnvDownloadUrl.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
   rawEnvDownloadUrl.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
