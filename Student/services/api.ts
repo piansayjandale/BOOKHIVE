@@ -9,11 +9,11 @@ import backendConfig from "../data/backendConfig.json";
 // =============================================================================
 
 /**
- * Live Render Production Backend URL.
- * Used for compiled standalone Android APKs and production builds.
+ * Live Production Backend URL.
+ * Points to official BookHive cloud deployment on Netlify with direct Neon DB integration.
  */
 export const PRODUCTION_API_URL =
-  process.env.EXPO_PUBLIC_API_URL || "https://bookhive-backend-13kk.onrender.com";
+  process.env.EXPO_PUBLIC_API_URL || "https://bookhive01.netlify.app";
 
 /**
  * Android Emulator loopback alias pointing to the development host machine.
@@ -188,7 +188,20 @@ export const showServerWakeupNotification = (
 // Interceptors & Error Handlers
 // =============================================================================
 
-const handleResponseError = (error: AxiosError | any) => {
+const handleResponseError = async (error: AxiosError | any) => {
+  const config = error.config;
+  if (config && !config._retriedWithNetlify && typeof config.url === "string") {
+    if (config.url.includes("onrender.com")) {
+      config._retriedWithNetlify = true;
+      config.url = config.url.replace(/https?:\/\/[^/]+/, "https://bookhive01.netlify.app");
+      try {
+        return await axios(config);
+      } catch (retryErr) {
+        return Promise.reject(retryErr);
+      }
+    }
+  }
+
   const isTimeout =
     error.code === "ECONNABORTED" ||
     (error.message && error.message.toLowerCase().includes("timeout")) ||

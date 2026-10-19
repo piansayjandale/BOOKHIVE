@@ -16,7 +16,7 @@
         "simulator": true
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://bookhive01.netlify.app"
       }
     },
     "preview-device": {
@@ -28,7 +28,7 @@
         "distribution": "internal"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://bookhive01.netlify.app"
       }
     },
     "production": {
@@ -39,7 +39,7 @@
         "distribution": "store"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://bookhive-backend-13kk.onrender.com"
+        "EXPO_PUBLIC_API_URL": "https://bookhive01.netlify.app"
       }
     }
   },
