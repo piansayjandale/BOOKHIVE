@@ -778,41 +778,60 @@ export const store = {
       percentage: fallbackBorrowsTotal > 0 ? Math.round(((deptBorrowMap[dept] || 0) / fallbackBorrowsTotal) * 100) : 0,
     }));
 
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const d = new Date();
+    const dynamicMonthly = [];
+    for (let i = 5; i >= 0; i--) {
+      const targetDate = new Date(d.getFullYear(), d.getMonth() - i, 1);
+      const mIdx = targetDate.getMonth();
+      const y = targetDate.getFullYear();
+      const mName = monthNames[mIdx];
+      
+      const inMonth = state.transactions.filter((tx) => {
+        const txDate = new Date(tx.requestedAt || tx.dueDate || Date.now());
+        return txDate.getMonth() === mIdx && txDate.getFullYear() === y;
+      });
+
+      const borrows = inMonth.filter((tx) => (tx.type || "").toLowerCase() === "borrow" && (tx.status === "Approved" || tx.status === "Returned")).length;
+      const reservations = inMonth.filter((tx) => (tx.type || "").toLowerCase() === "reservation").length;
+      const returns = inMonth.filter((tx) => (tx.type || "").toLowerCase() === "borrow" && tx.status === "Returned").length;
+
+      dynamicMonthly.push({
+        month: mName,
+        borrows,
+        reservations,
+        returns,
+      });
+    }
+
+    const pendingCount = state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow" && item.status === "Pending").length;
+    const approvedCount = state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow" && item.status === "Approved").length;
+    const declinedCount = state.transactions.filter((item) => item.status === "Declined").length;
+    const returnedCount = state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow" && item.status === "Returned").length;
+    const reservationsCount = state.transactions.filter((item) => (item.type || "").toLowerCase() === "reservation" && ["Pending", "Approved", "Active", "Waitlisted"].includes(item.status)).length;
+    const totalBorrowsCount = approvedCount + returnedCount;
+
     return {
-      monthlyBorrowing: [
-        { month: "Jan", borrows: 340, reservations: 112 },
-        { month: "Feb", borrows: 396, reservations: 128 },
-        { month: "Mar", borrows: 441, reservations: 165 },
-        { month: "Apr", borrows: 489, reservations: 180 },
-        { month: "May", borrows: 521, reservations: 191 },
-        { month: "Jun", borrows: 548, reservations: 205 },
-      ],
+      monthlyBorrowing: dynamicMonthly,
       departmentUsage,
       departmentLoans: fallbackDeptLoans,
       collegeLoans: fallbackCollegeLoans,
       topBorrowed: topTrending.map((book) => ({ title: book.title, borrows: book.borrowCount })),
       statusBreakdown: [
-        {
-          status: "Pending",
-          count: state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow" && item.status === "Pending").length,
-        },
-        {
-          status: "Approved",
-          count: state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow" && item.status === "Approved").length,
-        },
-        {
-          status: "Declined",
-          count: state.transactions.filter((item) => item.status === "Declined").length,
-        },
-        {
-          status: "Returned",
-          count: state.transactions.filter((item) => (item.type || "").toLowerCase() === "borrow" && item.status === "Returned").length,
-        },
-        {
-          status: "Reservations",
-          count: state.transactions.filter((item) => (item.type || "").toLowerCase() === "reservation" && ["Pending", "Approved", "Active", "Waitlisted"].includes(item.status)).length,
-        },
+        { status: "Pending", count: pendingCount },
+        { status: "Approved", count: approvedCount },
+        { status: "Declined", count: declinedCount },
+        { status: "Returned", count: returnedCount },
+        { status: "Reservations", count: reservationsCount },
       ],
+      velocityMetrics: {
+        totalCirculationActions: pendingCount + approvedCount + declinedCount + returnedCount + reservationsCount,
+        totalBorrows: totalBorrowsCount,
+        totalReturns: returnedCount,
+        totalReservations: reservationsCount,
+        returnRatePercent: totalBorrowsCount > 0 ? Math.min(100, Math.round((returnedCount / totalBorrowsCount) * 100)) : 100,
+        totalCatalogBooks: await catalogRepository.countBooks(),
+      },
     };
   },
 

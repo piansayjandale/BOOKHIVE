@@ -1527,47 +1527,46 @@ export function TransactionsModule() {
         }
 
         const data = await res.json();
-        const serverTx = data?.transaction;
-        if (serverTx?.id) {
-          startTransition(() => {
-            setAllTransactions((prev) =>
-              prev.map((t) =>
-                t.id === id || t.id === serverTx.id
-                  ? {
-                      ...t,
-                      ...serverTx,
-                      id: serverTx.id,
-                      studentName:
-                        (serverTx.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
-                        serverTx.student_name ||
-                        t.studentName,
-                      studentId:
-                        (serverTx.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
-                        serverTx.student_id ||
-                        t.studentId,
-                      resourceTitle:
-                        (serverTx.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
-                        serverTx.resource_title ||
-                        t.resourceTitle,
-                      isbn:
-                        (serverTx.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
-                        t.isbn,
-                      type:
-                        String(serverTx.type || t.type || "").toLowerCase() === "reservation"
-                          ? "Reservation"
-                          : "Borrow",
-                      status: serverTx.status || nextStatus,
-                      availableAt: serverTx.availableAt ?? serverTx.available_at ?? t.availableAt,
-                      expiresAt: serverTx.expiresAt ?? serverTx.expires_at ?? t.expiresAt,
-                      dueDate: serverTx.dueDate || serverTx.due_date || t.dueDate,
-                      comment: serverTx.comment ?? comment ?? t.comment,
-                      updatedAt: now,
-                    }
-                  : t
-              )
-            );
-          });
-        }
+        const serverTx = data?.transaction?.transaction || data?.transaction || data;
+        const finalId = serverTx?.id || id;
+        startTransition(() => {
+          setAllTransactions((prev) =>
+            prev.map((t) =>
+              t.id === id || (targetTxn && t.id === targetTxn.id) || (serverTx?.id && t.id === serverTx.id)
+                ? {
+                    ...t,
+                    ...(serverTx && typeof serverTx === "object" ? serverTx : {}),
+                    id: finalId,
+                    studentName:
+                      (serverTx?.studentName && serverTx.studentName !== "Student" ? serverTx.studentName : null) ||
+                      serverTx?.student_name ||
+                      t.studentName,
+                    studentId:
+                      (serverTx?.studentId && serverTx.studentId !== "N/A" ? serverTx.studentId : null) ||
+                      serverTx?.student_id ||
+                      t.studentId,
+                    resourceTitle:
+                      (serverTx?.resourceTitle && serverTx.resourceTitle !== "Book" ? serverTx.resourceTitle : null) ||
+                      serverTx?.resource_title ||
+                      t.resourceTitle,
+                    isbn:
+                      (serverTx?.isbn && serverTx.isbn !== "N/A" ? serverTx.isbn : null) ||
+                      t.isbn,
+                    type:
+                      String(serverTx?.type || t.type || "").toLowerCase() === "reservation"
+                        ? "Reservation"
+                        : "Borrow",
+                    status: serverTx?.status || nextStatus,
+                    availableAt: serverTx?.availableAt ?? serverTx?.available_at ?? t.availableAt,
+                    expiresAt: serverTx?.expiresAt ?? serverTx?.expires_at ?? t.expiresAt,
+                    dueDate: serverTx?.dueDate || serverTx?.due_date || t.dueDate,
+                    comment: serverTx?.comment ?? comment ?? t.comment,
+                    updatedAt: now,
+                  }
+                : t
+            )
+          );
+        });
 
         try {
           dashboardSocket.emit("transaction:decided", {

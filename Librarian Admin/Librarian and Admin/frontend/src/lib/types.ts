@@ -233,6 +233,7 @@ export interface ReportsPayload {
     totalCirculationActions: number;
     totalBorrows: number;
     totalReturns: number;
+    totalReservations?: number;
     returnRatePercent: number;
     totalCatalogBooks: number;
   };

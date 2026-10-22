@@ -179,16 +179,26 @@ export function RemindersModule() {
 
   /* ── Tab Filtering ───────────────────────────────────────────────────── */
 
+  const isActiveBorrow = useCallback((t: TransactionRecord) => {
+    const s = String(t.status || "").toLowerCase();
+    const tp = String(t.type || "").toLowerCase();
+    return (s === "approved" || s === "picked up" || s === "borrowed") && tp !== "return";
+  }, []);
+
+  const activeTransactions = useMemo(() => {
+    return transactions.filter(isActiveBorrow);
+  }, [transactions, isActiveBorrow]);
+
   const filteredByTab = useMemo(() => {
     if (activeTab === "violators") {
-      return transactions.filter((t) => isOverdue(t.dueDate));
+      return activeTransactions.filter((t) => isOverdue(t.dueDate));
     }
     if (activeTab === "dueToday") {
-      return transactions.filter((t) => isToday(t.dueDate));
+      return activeTransactions.filter((t) => isToday(t.dueDate));
     }
     // "due" tab (All active return schedules)
-    return transactions;
-  }, [transactions, activeTab]);
+    return activeTransactions;
+  }, [activeTransactions, activeTab]);
 
   /* ── Search Filtering ────────────────────────────────────────────────── */
 
@@ -239,14 +249,14 @@ export function RemindersModule() {
   /* ── Summary statistics ──────────────────────────────────────────────── */
 
   const stats = useMemo(() => {
-    const violatorsCount = transactions.filter((t) => isOverdue(t.dueDate)).length;
-    const dueTodayCount = transactions.filter((t) => isToday(t.dueDate)).length;
+    const violatorsCount = activeTransactions.filter((t) => isOverdue(t.dueDate)).length;
+    const dueTodayCount = activeTransactions.filter((t) => isToday(t.dueDate)).length;
     return {
       violators: violatorsCount,
-      activeBorrows: transactions.length,
+      activeBorrows: activeTransactions.length,
       dueToday: dueTodayCount,
     };
-  }, [transactions]);
+  }, [activeTransactions]);
 
   /* ── Actions ─────────────────────────────────────────────────────────── */
 

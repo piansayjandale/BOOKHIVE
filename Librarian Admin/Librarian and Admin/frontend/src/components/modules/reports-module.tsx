@@ -1365,19 +1365,34 @@ export function ReportsModule() {
     return statusPieData.reduce((acc, curr) => acc + curr.count, 0);
   }, [statusPieData]);
 
-  const totalBorrows = useMemo(() => {
-    if (!reports?.monthlyBorrowing) return 0;
-    return reports.monthlyBorrowing.reduce((sum, item) => sum + (item.borrows || 0), 0);
-  }, [reports]);
-
   const totalReservations = useMemo(() => {
-    if (!reports?.monthlyBorrowing) return 0;
-    return reports.monthlyBorrowing.reduce((sum, item) => sum + (item.reservations || 0), 0);
+    const fromStatus = reports?.statusBreakdown?.find((s) => s.status === "Reservations")?.count;
+    if (typeof fromStatus === "number") return fromStatus;
+    if (typeof (reports as any)?.velocityMetrics?.totalReservations === "number") {
+      return (reports as any).velocityMetrics.totalReservations;
+    }
+    return 0;
   }, [reports]);
 
   const totalReturns = useMemo(() => {
-    if (!reports?.monthlyBorrowing) return 0;
-    return reports.monthlyBorrowing.reduce((sum, item) => sum + (item.returns || 0), 0);
+    const fromStatus = reports?.statusBreakdown?.find((s) => s.status === "Returned")?.count;
+    if (typeof fromStatus === "number") return fromStatus;
+    if (typeof (reports as any)?.velocityMetrics?.totalReturns === "number") {
+      return (reports as any).velocityMetrics.totalReturns;
+    }
+    return 0;
+  }, [reports]);
+
+  const totalBorrows = useMemo(() => {
+    if (typeof (reports as any)?.velocityMetrics?.totalBorrows === "number" && (reports as any).velocityMetrics.totalBorrows > 0) {
+      return (reports as any).velocityMetrics.totalBorrows;
+    }
+    const approvedCount = reports?.statusBreakdown?.find((s) => s.status === "Approved")?.count ?? 0;
+    const returnedCount = reports?.statusBreakdown?.find((s) => s.status === "Returned")?.count ?? 0;
+    const borrowTotal = approvedCount + returnedCount;
+    if (borrowTotal > 0) return borrowTotal;
+    const pendingCount = reports?.statusBreakdown?.find((s) => s.status === "Pending")?.count ?? 0;
+    return borrowTotal + pendingCount;
   }, [reports]);
 
   const returnCompliance = useMemo(() => {
@@ -2702,8 +2717,8 @@ export function ReportsModule() {
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
                             <span
-                              className="inline-block px-2 py-0.5 text-xs font-black rounded-md text-white shadow-xs"
-                              style={{ backgroundColor: item.fill || "#3B82F6" }}
+                              className="inline-block px-2.5 py-0.5 text-xs font-black rounded-md !text-white shadow-xs"
+                              style={{ backgroundColor: item.fill || "#3B82F6", color: "#ffffff" }}
                             >
                               {item.course}
                             </span>

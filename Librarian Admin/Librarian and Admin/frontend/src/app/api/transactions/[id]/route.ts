@@ -160,7 +160,24 @@ export async function PATCH(
       params = [id, nextStatus, validDecidedBy, comment];
     }
 
-    let { rows } = await pool.query(query, params);
+    let rows: any[] = [];
+    try {
+      const res = await pool.query(query, params);
+      rows = res.rows;
+    } catch (queryErr: any) {
+      if (validDecidedBy) {
+        console.warn("DB PATCH foreign key retry with null decided_by:", queryErr?.message);
+        const retryParams = params.map((p) => (p === validDecidedBy ? null : p));
+        try {
+          const res = await pool.query(query, retryParams);
+          rows = res.rows;
+        } catch (retryErr) {
+          console.warn("DB PATCH retry also failed:", retryErr);
+        }
+      } else {
+        console.warn("DB PATCH query error:", queryErr?.message);
+      }
+    }
 
     // If ID was not matched directly (e.g. temporary client ID or desynced socket ID),
     // recover by matching record by book and student details
@@ -197,6 +214,42 @@ export async function PATCH(
         `;
         fallbackParams = [
           validDecidedBy,
+          body?.isbn || "",
+          body?.resourceTitle || "",
+          body?.studentId || "",
+          body?.studentName || "",
+        ];
+      } else if (nextStatus === "Declined") {
+        fallbackQuery = `
+          UPDATE transactions
+          SET
+            status = $1,
+            due_date = NULL,
+            available_at = NULL,
+            expires_at = NULL,
+            picked_up_at = NULL,
+            decided_by = $2,
+            decided_at = NOW(),
+            comment = COALESCE($3, comment)
+          WHERE id IN (
+            SELECT id FROM transactions
+            WHERE (
+              ($4::text != '' AND $4::text != 'N/A' AND isbn = $4::text)
+              OR ($5::text != '' AND LOWER(resource_title) = LOWER($5::text))
+            )
+            AND (
+              ($6::text != '' AND LOWER(student_id) = LOWER($6::text))
+              OR ($7::text != '' AND LOWER(student_name) = LOWER($7::text))
+            )
+            ORDER BY requested_at DESC
+            LIMIT 1
+          )
+          RETURNING *
+        `;
+        fallbackParams = [
+          nextStatus,
+          validDecidedBy,
+          comment,
           body?.isbn || "",
           body?.resourceTitle || "",
           body?.studentId || "",
@@ -239,8 +292,18 @@ export async function PATCH(
           body?.studentName || "",
         ];
       }
-      const fallbackRes = await pool.query(fallbackQuery, fallbackParams);
-      rows = fallbackRes.rows;
+      try {
+        const fallbackRes = await pool.query(fallbackQuery, fallbackParams);
+        rows = fallbackRes.rows;
+      } catch (fbErr: any) {
+        if (validDecidedBy) {
+          const retryFbParams = fallbackParams.map((p) => (p === validDecidedBy ? null : p));
+          try {
+            const fallbackRes = await pool.query(fallbackQuery, retryFbParams);
+            rows = fallbackRes.rows;
+          } catch {}
+        }
+      }
     }
 
     if (rows.length > 0) {
@@ -367,13 +430,25 @@ export async function PATCH(
     try {
       const memoryTx = store.updateTransactionStatus(id, nextStatus as any);
       if (memoryTx) {
-        return NextResponse.json({ transaction: memoryTx, ok: true });
+        const actualTx = (memoryTx as any)?.transaction || memoryTx;
+        if (actualTx && !actualTx.error) {
+          return NextResponse.json({ transaction: actualTx, ok: true });
+        }
       }
     } catch {}
 
     return NextResponse.json({ message: "Transaction not found." }, { status: 404 });
   } catch (dbError) {
     console.error("Direct DB transaction PATCH error:", dbError);
+    try {
+      const memoryTx = store.updateTransactionStatus(id, (body?.status ?? "Approved") as any);
+      if (memoryTx) {
+        const actualTx = (memoryTx as any)?.transaction || memoryTx;
+        if (actualTx && !actualTx.error) {
+          return NextResponse.json({ transaction: actualTx, ok: true });
+        }
+      }
+    } catch {}
     return NextResponse.json({ message: "Failed to update transaction status." }, { status: 500 });
   }
 }

@@ -824,7 +824,7 @@ export const adminModel = {
           decided_by = $3,
           decided_at = NOW(),
           comment = $4,
-          due_date = COALESCE($5::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7)))
+          due_date = CASE WHEN $2 = 'Declined' THEN NULL ELSE COALESCE($5::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7))) END
           ${extraConversionSql}
           ${approvalPickupSql}
         WHERE id::text = $1::text
@@ -876,7 +876,7 @@ export const adminModel = {
               decided_by = $2,
               decided_at = NOW(),
               comment = $3,
-              due_date = COALESCE($4::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7)))
+              due_date = CASE WHEN $1 = 'Declined' THEN NULL ELSE COALESCE($4::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7))) END
               ${extraConversionSql}
               ${approvalPickupSql}
             WHERE id IN (

@@ -158,15 +158,26 @@ export async function GET(request: Request) {
       allowAdminControl: true,
     });
   } catch (dbError) {
-    const transactions = store.listTransactions();
-    const borrowRequests = transactions.filter((t: any) => String(t.type || "").toLowerCase() === "borrow");
-    const returnRecords = transactions.filter((t: any) => String(t.type || "").toLowerCase() === "return" || t.status === "Returned");
-    const reservations = transactions.filter((t: any) => String(t.type || "").toLowerCase() === "reservation");
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search") ?? "";
+    const status = searchParams.get("status") ?? "All";
+    const type = searchParams.get("type") ?? "All";
+    const studentId = searchParams.get("studentId");
+
+    const allTx = store.listTransactions();
+    let transactions = store.listTransactions(search, status, type);
+    if (studentId) {
+      transactions = transactions.filter((t: any) => String(t.studentId).toLowerCase() === studentId.toLowerCase());
+    }
+
+    const borrowRequests = allTx.filter((t: any) => String(t.type || "").toLowerCase() === "borrow");
+    const returnRecords = allTx.filter((t: any) => String(t.type || "").toLowerCase() === "return" || t.status === "Returned");
+    const reservations = allTx.filter((t: any) => String(t.type || "").toLowerCase() === "reservation");
     const summary = {
-      pending: transactions.filter((t: any) => t.status === "Pending").length,
-      approved: transactions.filter((t: any) => t.status === "Approved").length,
-      declined: transactions.filter((t: any) => t.status === "Declined").length,
-      returned: transactions.filter((t: any) => t.status === "Returned").length,
+      pending: allTx.filter((t: any) => t.status === "Pending").length,
+      approved: allTx.filter((t: any) => t.status === "Approved").length,
+      declined: allTx.filter((t: any) => t.status === "Declined").length,
+      returned: allTx.filter((t: any) => t.status === "Returned").length,
     };
     return NextResponse.json({
       transactions,
