@@ -62,6 +62,7 @@ const withNetworkSecurityConfig = (config) => {
       }
       app.$["android:networkSecurityConfig"] =
         "@xml/network_security_config";
+      app.$["android:allowBackup"] = "false";
     }
 
     return modConfig;

@@ -74,6 +74,7 @@ export default function ProfileScreen() {
   const [idCardsChecked, setIdCardsChecked] = useState(false);
   const [idUploadModalVisible, setIdUploadModalVisible] = useState(false);
   const [idViewerModalVisible, setIdViewerModalVisible] = useState(false);
+  const [showIdCards, setShowIdCards] = useState(false);
   const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{ title: string; uri: string } | null>(null);
   const [savingIdCards, setSavingIdCards] = useState(false);
 
@@ -963,36 +964,62 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               ) : hasUploadedAllFour ? (
                 <TouchableOpacity
-                  onPress={() => setIdViewerModalVisible(true)}
+                  onPress={() => setShowIdCards((prev) => !prev)}
                   activeOpacity={0.8}
                   style={[
                     styles.idIconButtonBelowAvatar,
                     {
-                      backgroundColor: isDarkMode
+                      backgroundColor: showIdCards
+                        ? isDarkMode
+                          ? "rgba(255, 200, 0, 0.18)"
+                          : "rgba(2, 116, 187, 0.16)"
+                        : isDarkMode
                         ? "rgba(16, 185, 129, 0.14)"
                         : "rgba(2, 116, 187, 0.1)",
-                      borderColor: isDarkMode ? "#10B981" : "#0274BB",
+                      borderColor: showIdCards
+                        ? isDarkMode
+                          ? "#FFC800"
+                          : "#0274BB"
+                        : isDarkMode
+                        ? "#10B981"
+                        : "#0274BB",
                     },
                   ]}
                   accessibilityRole="button"
-                  accessibilityLabel="View School ID and Library ID Photos"
+                  accessibilityLabel="Toggle School ID and Library ID Photos"
                 >
                   <View
                     style={[
                       styles.idIconCircle,
                       {
-                        backgroundColor: isDarkMode ? "#10B981" : "#0274BB",
+                        backgroundColor: showIdCards
+                          ? isDarkMode
+                            ? "#FFC800"
+                            : "#0274BB"
+                          : isDarkMode
+                          ? "#10B981"
+                          : "#0274BB",
                       },
                     ]}
                   >
-                    <Ionicons name="id-card" size={18} color="#FFFFFF" />
+                    <Ionicons
+                      name="id-card"
+                      size={18}
+                      color={showIdCards && isDarkMode ? "#080F1E" : "#FFFFFF"}
+                    />
                   </View>
-                  <View style={{ marginLeft: 8, marginRight: 4 }}>
+                  <View style={{ marginLeft: 8, marginRight: 6 }}>
                     <Text
                       style={{
                         fontSize: 12,
                         fontWeight: "800",
-                        color: isDarkMode ? "#10B981" : "#0274BB",
+                        color: showIdCards
+                          ? isDarkMode
+                            ? "#FFC800"
+                            : "#0274BB"
+                          : isDarkMode
+                          ? "#10B981"
+                          : "#0274BB",
                       }}
                     >
                       Student & Library IDs
@@ -1004,13 +1031,21 @@ export default function ProfileScreen() {
                         color: theme.textSecondary,
                       }}
                     >
-                      Tap ID icon to view 4 photos
+                      {showIdCards
+                        ? "Click to hide ID cards"
+                        : "Click ID icon to view 4 cards"}
                     </Text>
                   </View>
                   <Ionicons
-                    name="checkmark-circle"
-                    size={16}
-                    color="#10B981"
+                    name={showIdCards ? "chevron-up-circle" : "chevron-down-circle"}
+                    size={18}
+                    color={
+                      showIdCards
+                        ? isDarkMode
+                          ? "#FFC800"
+                          : "#0274BB"
+                        : "#10B981"
+                    }
                   />
                 </TouchableOpacity>
               ) : null}
@@ -1028,6 +1063,246 @@ export default function ProfileScreen() {
                   STUDENT ID: {studentIdNumber}
                 </Text>
               </View>
+
+              {/* COLLAPSIBLE 4-ID DISPLAY SECTION (SHOWS WHEN ID ICON CLICKED, DISAPPEARS WHEN CLICKED AGAIN) */}
+              {showIdCards && (
+                <View
+                  style={[
+                    styles.inlineIdSection,
+                    {
+                      backgroundColor: isDarkMode ? "#0B132B" : "#F8FAFC",
+                      borderColor: isDarkMode ? "#1E2A42" : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.inlineIdHeader}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Ionicons
+                        name="id-card"
+                        size={19}
+                        color={isDarkMode ? theme.accentGold : "#0274BB"}
+                      />
+                      <Text style={[styles.inlineIdTitle, { color: theme.textPrimary }]}>
+                        Official Student & Library IDs
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => setShowIdCards(false)}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      accessibilityLabel="Close ID section"
+                    >
+                      <Ionicons name="close-circle" size={22} color={theme.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={[styles.inlineIdSubtext, { color: theme.textSecondary }]}>
+                    Tap any ID photo to view full size. Click the ID icon above or the close button to hide this section.
+                  </Text>
+
+                  {/* 1. SCHOOL ID (FRONT & BACK) */}
+                  <View style={styles.inlineIdGroup}>
+                    <View style={styles.inlineIdGroupHeader}>
+                      <Ionicons
+                        name="school"
+                        size={15}
+                        color={isDarkMode ? theme.accentGold : "#0274BB"}
+                      />
+                      <Text
+                        style={[
+                          styles.inlineIdGroupTitle,
+                          { color: isDarkMode ? theme.accentGold : "#0274BB" },
+                        ]}
+                      >
+                        SCHOOL ID (FRONT & BACK)
+                      </Text>
+                    </View>
+
+                    <View style={styles.inlineIdPhotosRow}>
+                      {/* School ID Front */}
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineIdPhotoCard,
+                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
+                        ]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          if (uploadedIdCards?.schoolIdFront) {
+                            setEnlargedIdPhoto({
+                              title: "School ID — Front",
+                              uri: uploadedIdCards.schoolIdFront,
+                            });
+                          }
+                        }}
+                      >
+                        {uploadedIdCards?.schoolIdFront ? (
+                          <Image
+                            source={{ uri: uploadedIdCards.schoolIdFront }}
+                            style={styles.inlineIdImage}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.inlineIdEmptySlot}>
+                            <Ionicons name="image-outline" size={24} color="#94A3B8" />
+                            <Text style={styles.inlineIdEmptyText}>Front Missing</Text>
+                          </View>
+                        )}
+                        <View style={styles.inlineIdBadgePill}>
+                          <Text style={styles.inlineIdBadgeText}>FRONT</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* School ID Back */}
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineIdPhotoCard,
+                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
+                        ]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          if (uploadedIdCards?.schoolIdBack) {
+                            setEnlargedIdPhoto({
+                              title: "School ID — Back",
+                              uri: uploadedIdCards.schoolIdBack,
+                            });
+                          }
+                        }}
+                      >
+                        {uploadedIdCards?.schoolIdBack ? (
+                          <Image
+                            source={{ uri: uploadedIdCards.schoolIdBack }}
+                            style={styles.inlineIdImage}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.inlineIdEmptySlot}>
+                            <Ionicons name="image-outline" size={24} color="#94A3B8" />
+                            <Text style={styles.inlineIdEmptyText}>Back Missing</Text>
+                          </View>
+                        )}
+                        <View style={styles.inlineIdBadgePill}>
+                          <Text style={styles.inlineIdBadgeText}>BACK</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* 2. LIBRARY ID (FRONT & BACK) */}
+                  <View style={styles.inlineIdGroup}>
+                    <View style={styles.inlineIdGroupHeader}>
+                      <Ionicons
+                        name="card"
+                        size={15}
+                        color={isDarkMode ? theme.accentGold : "#0274BB"}
+                      />
+                      <Text
+                        style={[
+                          styles.inlineIdGroupTitle,
+                          { color: isDarkMode ? theme.accentGold : "#0274BB" },
+                        ]}
+                      >
+                        LIBRARY ID (FRONT & BACK)
+                      </Text>
+                    </View>
+
+                    <View style={styles.inlineIdPhotosRow}>
+                      {/* Library ID Front */}
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineIdPhotoCard,
+                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
+                        ]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          if (uploadedIdCards?.libraryIdFront) {
+                            setEnlargedIdPhoto({
+                              title: "Library ID — Front",
+                              uri: uploadedIdCards.libraryIdFront,
+                            });
+                          }
+                        }}
+                      >
+                        {uploadedIdCards?.libraryIdFront ? (
+                          <Image
+                            source={{ uri: uploadedIdCards.libraryIdFront }}
+                            style={styles.inlineIdImage}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.inlineIdEmptySlot}>
+                            <Ionicons name="image-outline" size={24} color="#94A3B8" />
+                            <Text style={styles.inlineIdEmptyText}>Front Missing</Text>
+                          </View>
+                        )}
+                        <View style={styles.inlineIdBadgePill}>
+                          <Text style={styles.inlineIdBadgeText}>FRONT</Text>
+                        </View>
+                      </TouchableOpacity>
+
+                      {/* Library ID Back */}
+                      <TouchableOpacity
+                        style={[
+                          styles.inlineIdPhotoCard,
+                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
+                        ]}
+                        activeOpacity={0.85}
+                        onPress={() => {
+                          if (uploadedIdCards?.libraryIdBack) {
+                            setEnlargedIdPhoto({
+                              title: "Library ID — Back",
+                              uri: uploadedIdCards.libraryIdBack,
+                            });
+                          }
+                        }}
+                      >
+                        {uploadedIdCards?.libraryIdBack ? (
+                          <Image
+                            source={{ uri: uploadedIdCards.libraryIdBack }}
+                            style={styles.inlineIdImage}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.inlineIdEmptySlot}>
+                            <Ionicons name="image-outline" size={24} color="#94A3B8" />
+                            <Text style={styles.inlineIdEmptyText}>Back Missing</Text>
+                          </View>
+                        )}
+                        <View style={styles.inlineIdBadgePill}>
+                          <Text style={styles.inlineIdBadgeText}>BACK</Text>
+                        </View>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* ACTION BUTTON TO RETAKE / UPDATE */}
+                  <TouchableOpacity
+                    style={[
+                      styles.inlineIdRetakeBtn,
+                      {
+                        backgroundColor: isDarkMode
+                          ? "rgba(255, 200, 0, 0.12)"
+                          : "rgba(2, 116, 187, 0.08)",
+                        borderColor: isDarkMode ? theme.accentGold : "#0274BB",
+                      },
+                    ]}
+                    onPress={openIdUploadModal}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="refresh"
+                      size={15}
+                      color={isDarkMode ? theme.accentGold : "#0274BB"}
+                    />
+                    <Text
+                      style={[
+                        styles.inlineIdRetakeText,
+                        { color: isDarkMode ? theme.accentGold : "#0274BB" },
+                      ]}
+                    >
+                      Update / Retake ID Photos
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
 
             {/* STATS SUMMARY CARDS */}
@@ -3919,6 +4194,106 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  /* Inline Collapsible ID Display Section */
+  inlineIdSection: {
+    width: "100%",
+    marginTop: 18,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 16,
+  },
+  inlineIdHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  inlineIdTitle: {
+    fontSize: 14.5,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
+  inlineIdSubtext: {
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginBottom: 14,
+  },
+  inlineIdGroup: {
+    marginBottom: 14,
+  },
+  inlineIdGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  inlineIdGroupTitle: {
+    fontSize: 11.5,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+  },
+  inlineIdPhotosRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  inlineIdPhotoCard: {
+    flex: 1,
+    height: 125,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    overflow: "hidden",
+    backgroundColor: "#0A101D",
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  inlineIdImage: {
+    width: "100%",
+    height: "100%",
+  },
+  inlineIdBadgePill: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "rgba(10, 16, 29, 0.85)",
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  inlineIdBadgeText: {
+    fontSize: 9,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+  },
+  inlineIdEmptySlot: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inlineIdEmptyText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#94A3B8",
+    marginTop: 4,
+  },
+  inlineIdRetakeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 4,
+  },
+  inlineIdRetakeText: {
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.3,
   },
 
   /* ID Upload & Viewer Modals */

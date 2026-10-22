@@ -17,7 +17,9 @@ export default function Index() {
           const isStaff = userRole === "librarian" || userRole === "admin" || userRole === "super admin" || userRole === "staff";
 
           if (isStaff) {
-            router.replace("/librarian");
+            // Opening the app must never automatically jump to the librarian dashboard on cold launch
+            // Staff members sign in explicitly via the login screen
+            router.replace("/login");
             return;
           }
 

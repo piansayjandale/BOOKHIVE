@@ -38,7 +38,8 @@
     },
     "android": {
       "package": "ph.edu.stiwnu.bookhive",
-      "versionCode": 9,
+      "versionCode": 10,
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"

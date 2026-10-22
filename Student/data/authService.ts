@@ -299,6 +299,7 @@ export const authService = {
     studentId: string,
     email: string,
     password: string
+  ) => {
     return {
       success: false,
       message:

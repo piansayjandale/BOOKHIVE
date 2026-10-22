@@ -442,6 +442,61 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     textAlign: "center",
   },
+  heroUploadAllButton: {
+    backgroundColor: "#FFC800",
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 18,
+    elevation: 4,
+    shadowColor: "#FFC800",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+  },
+  heroUploadAllIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: "rgba(0, 0, 0, 0.12)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heroUploadAllTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#080F1E",
+    letterSpacing: 0.3,
+  },
+  heroUploadAllSub: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#1E293B",
+    marginTop: 2,
+  },
+  heroUploadAllBadge: {
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: "#080F1E",
+  },
+  heroUploadAllBadgeComplete: {
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    borderColor: "#10B981",
+    borderWidth: 1,
+  },
+  heroUploadAllBadgePending: {
+    backgroundColor: "#080F1E",
+  },
+  heroUploadAllBadgeText: {
+    fontSize: 10,
+    fontWeight: "900",
+    color: "#FFC800",
+    letterSpacing: 0.5,
+  },
   doneButton: {
     backgroundColor: "#FFC800",
     height: 56,
@@ -838,6 +893,223 @@ export default function CompleteProfileScreen() {
     }
   };
 
+  const startGuidedScanSequence = async () => {
+    const hasPerm = await requestCameraPermission();
+    if (!hasPerm) return;
+
+    const cropAspect: [number, number] =
+      idCaptureOrientation === "portrait" ? [10, 16] : [16, 10];
+
+    Alert.alert(
+      "Step 1 of 4: School ID (Front)",
+      `Point camera at the FRONT of your School ID (${
+        idCaptureOrientation === "portrait" ? "Portrait / Vertical" : "Landscape / Horizontal"
+      }).`,
+      [
+        {
+          text: "Open Camera",
+          onPress: async () => {
+            const res1 = await ImagePicker.launchCameraAsync({
+              allowsEditing: true,
+              aspect: cropAspect,
+              quality: 0.45,
+              base64: true,
+            });
+            if (!res1.canceled && res1.assets?.[0]) {
+              const a1 = res1.assets[0];
+              setSchoolIdFront({
+                uri: a1.uri,
+                base64: a1.base64 ? `data:image/jpeg;base64,${a1.base64}` : a1.uri,
+              });
+
+              setTimeout(() => {
+                Alert.alert(
+                  "Step 2 of 4: School ID (Back)",
+                  "Flip your School ID and capture the BACK side.",
+                  [
+                    {
+                      text: "Capture Back",
+                      onPress: async () => {
+                        const res2 = await ImagePicker.launchCameraAsync({
+                          allowsEditing: true,
+                          aspect: cropAspect,
+                          quality: 0.45,
+                          base64: true,
+                        });
+                        if (!res2.canceled && res2.assets?.[0]) {
+                          const a2 = res2.assets[0];
+                          setSchoolIdBack({
+                            uri: a2.uri,
+                            base64: a2.base64 ? `data:image/jpeg;base64,${a2.base64}` : a2.uri,
+                          });
+
+                          setTimeout(() => {
+                            Alert.alert(
+                              "Step 3 of 4: Library ID (Front)",
+                              "Now position the FRONT side of your Library ID.",
+                              [
+                                {
+                                  text: "Capture Front",
+                                  onPress: async () => {
+                                    const res3 = await ImagePicker.launchCameraAsync({
+                                      allowsEditing: true,
+                                      aspect: cropAspect,
+                                      quality: 0.45,
+                                      base64: true,
+                                    });
+                                    if (!res3.canceled && res3.assets?.[0]) {
+                                      const a3 = res3.assets[0];
+                                      setLibraryIdFront({
+                                        uri: a3.uri,
+                                        base64: a3.base64 ? `data:image/jpeg;base64,${a3.base64}` : a3.uri,
+                                      });
+
+                                      setTimeout(() => {
+                                        Alert.alert(
+                                          "Step 4 of 4: Library ID (Back)",
+                                          "Finally, capture the BACK side of your Library ID.",
+                                          [
+                                            {
+                                              text: "Capture Back",
+                                              onPress: async () => {
+                                                const res4 = await ImagePicker.launchCameraAsync({
+                                                  allowsEditing: true,
+                                                  aspect: cropAspect,
+                                                  quality: 0.45,
+                                                  base64: true,
+                                                });
+                                                if (!res4.canceled && res4.assets?.[0]) {
+                                                  const a4 = res4.assets[0];
+                                                  setLibraryIdBack({
+                                                    uri: a4.uri,
+                                                    base64: a4.base64 ? `data:image/jpeg;base64,${a4.base64}` : a4.uri,
+                                                  });
+                                                  setOcrError("");
+                                                  setOcrVerified(false);
+                                                  Alert.alert(
+                                                    "All 4 IDs Captured!",
+                                                    "All 4 sides have been captured successfully. You can now tap Finish Setup."
+                                                  );
+                                                }
+                                              },
+                                            },
+                                            { text: "Later", style: "cancel" },
+                                          ]
+                                        );
+                                      }, 400);
+                                    }
+                                  },
+                                },
+                                { text: "Later", style: "cancel" },
+                              ]
+                            );
+                          }, 400);
+                        }
+                      },
+                    },
+                    { text: "Later", style: "cancel" },
+                  ]
+                );
+              }, 400);
+            }
+          },
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  };
+
+  const handlePickAllFromGallery = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert("Permission Required", "Photo library access is needed to upload your ID cards.");
+        return;
+      }
+
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        selectionLimit: 4,
+        quality: 0.45,
+        base64: true,
+      });
+
+      if (!res.canceled && res.assets && res.assets.length > 0) {
+        const assets = res.assets;
+        if (assets.length >= 4) {
+          setSchoolIdFront({
+            uri: assets[0].uri,
+            base64: assets[0].base64 ? `data:image/jpeg;base64,${assets[0].base64}` : assets[0].uri,
+          });
+          setSchoolIdBack({
+            uri: assets[1].uri,
+            base64: assets[1].base64 ? `data:image/jpeg;base64,${assets[1].base64}` : assets[1].uri,
+          });
+          setLibraryIdFront({
+            uri: assets[2].uri,
+            base64: assets[2].base64 ? `data:image/jpeg;base64,${assets[2].base64}` : assets[2].uri,
+          });
+          setLibraryIdBack({
+            uri: assets[3].uri,
+            base64: assets[3].base64 ? `data:image/jpeg;base64,${assets[3].base64}` : assets[3].uri,
+          });
+          Alert.alert("All 4 Photos Uploaded!", "School ID and Library ID (Front & Back) successfully loaded. Review the previews below.");
+        } else {
+          const currentMissing: Array<"schoolFront" | "schoolBack" | "libraryFront" | "libraryBack"> = [];
+          if (!schoolIdFront) currentMissing.push("schoolFront");
+          if (!schoolIdBack) currentMissing.push("schoolBack");
+          if (!libraryIdFront) currentMissing.push("libraryFront");
+          if (!libraryIdBack) currentMissing.push("libraryBack");
+
+          assets.forEach((asset, idx) => {
+            const targetSlot = currentMissing[idx] || (idx === 0 ? "schoolFront" : idx === 1 ? "schoolBack" : idx === 2 ? "libraryFront" : "libraryBack");
+            const photo: IdPhoto = {
+              uri: asset.uri,
+              base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri,
+            };
+            if (targetSlot === "schoolFront") setSchoolIdFront(photo);
+            else if (targetSlot === "schoolBack") setSchoolIdBack(photo);
+            else if (targetSlot === "libraryFront") setLibraryIdFront(photo);
+            else if (targetSlot === "libraryBack") setLibraryIdBack(photo);
+          });
+
+          Alert.alert("Photos Uploaded", `Added ${assets.length} ID photo(s). Please verify all 4 sides (School ID Front & Back, Library ID Front & Back) are uploaded.`);
+        }
+        setOcrError("");
+        setOcrVerified(false);
+      }
+    } catch (err) {
+      console.warn("Gallery pick error:", err);
+      Alert.alert("Gallery Error", "Could not pick photos from library. Please try again.");
+    }
+  };
+
+  const handleUploadAllFourIds = () => {
+    Alert.alert(
+      "Upload 4 Required ID Photos",
+      "Upload both Front & Back of your School ID and Library ID (4 photos total).\n\nSelect an option below:",
+      [
+        {
+          text: "Guided Camera Scan (All 4)",
+          onPress: () => {
+            void startGuidedScanSequence();
+          },
+        },
+        {
+          text: "Upload from Gallery",
+          onPress: () => {
+            void handlePickAllFromGallery();
+          },
+        },
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ]
+    );
+  };
+
   const handleDone = async () => {
     try {
       setErrorMessage("");
@@ -1009,6 +1281,7 @@ export default function CompleteProfileScreen() {
 
   const libraryComplete = Boolean(libraryIdFront && libraryIdBack);
   const libraryPartial = Boolean(libraryIdFront || libraryIdBack) && !libraryComplete;
+  const uploadedCount = [schoolIdFront, schoolIdBack, libraryIdFront, libraryIdBack].filter(Boolean).length;
 
   return (
     <AnimatedScreen style={{ flex: 1 }}>
@@ -1158,6 +1431,44 @@ export default function CompleteProfileScreen() {
               {/* ID VERIFICATION SECTION (SCHOOL ID & LIBRARY ID) */}
               {/* ======================================================== */}
               <View style={styles.idSectionContainer}>
+                {/* 4 ID UPLOAD ACTION BUTTON */}
+                <TouchableOpacity
+                  style={styles.heroUploadAllButton}
+                  activeOpacity={0.85}
+                  onPress={handleUploadAllFourIds}
+                  accessibilityRole="button"
+                  accessibilityLabel="Upload 4 Required ID Photos"
+                >
+                  <View style={styles.heroUploadAllIconWrap}>
+                    <Ionicons name="images" size={24} color="#080F1E" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.heroUploadAllTitle}>
+                      Upload 4 Required ID Photos
+                    </Text>
+                    <Text style={styles.heroUploadAllSub}>
+                      School ID & Library ID • Front & Back
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.heroUploadAllBadge,
+                      uploadedCount === 4
+                        ? styles.heroUploadAllBadgeComplete
+                        : styles.heroUploadAllBadgePending,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.heroUploadAllBadgeText,
+                        uploadedCount === 4 && { color: "#10B981" },
+                      ]}
+                    >
+                      {uploadedCount === 4 ? "4/4 READY ✓" : `${uploadedCount}/4 UPLOADED`}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
                 <View style={styles.sectionTitleRow}>
                   <Ionicons name="shield-checkmark" size={18} color="#FFC800" />
                   <Text style={styles.sectionTitle}>REQUIRED ID VERIFICATION</Text>
