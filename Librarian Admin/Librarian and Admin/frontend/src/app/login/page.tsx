@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { ArrowLeft } from 'lucide-react';
 import './Login.css';
 
 const LoginPage: React.FC = () => {
@@ -87,35 +88,36 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className="login-page" data-theme="light" suppressHydrationWarning>
-      {/* Back to Intro / Home Link */}
+      {/* Back to Intro / Home Link - Icon only, no container or text */}
       <a
         href="/intro"
         className="login-back-home-btn"
-        title="Back to BookHive Intro &amp; Features"
+        title="Back to BookHive Intro & Features"
+        aria-label="Back to BookHive Intro"
         style={{
           position: "fixed",
-          top: "18px",
-          left: "18px",
+          top: "22px",
+          left: "22px",
           zIndex: 100,
           display: "inline-flex",
           alignItems: "center",
-          gap: "8px",
-          padding: "8px 16px",
-          borderRadius: "9999px",
-          backgroundColor: "rgba(11, 28, 44, 0.85)",
-          color: "#FFF200",
+          justifyContent: "center",
+          color: "#0B1C2C",
           textDecoration: "none",
-          fontSize: "12px",
-          fontWeight: 700,
-          letterSpacing: "0.5px",
-          border: "1px solid rgba(255, 242, 0, 0.4)",
-          backdropFilter: "blur(10px)",
-          boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
-          transition: "all 0.2s ease",
+          transition: "transform 0.2s ease, opacity 0.2s ease, color 0.2s ease",
+          cursor: "pointer",
+          filter: "drop-shadow(0 2px 4px rgba(255, 255, 255, 0.85)) drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35))",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.transform = "scale(1.2)";
+          e.currentTarget.style.color = "#0274BB";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "scale(1)";
+          e.currentTarget.style.color = "#0B1C2C";
         }}
       >
-        <span style={{ fontSize: "14px" }}>←</span>
-        <span>About BookHive</span>
+        <ArrowLeft size={32} strokeWidth={2.6} />
       </a>
 
       <img 
