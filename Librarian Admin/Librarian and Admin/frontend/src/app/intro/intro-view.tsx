@@ -79,16 +79,7 @@ export function IntroView() {  const [stats, setStats] = useState<{
   const [showFaqModal, setShowFaqModal] = useState(false);
 
   useEffect(() => {
-    // If accessed on mobile screen or mobile device, skip intro and redirect to /login
-    if (typeof window !== "undefined") {
-      const isMobileDevice =
-        window.innerWidth <= 768 ||
-        /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-      if (isMobileDevice) {
-        window.location.replace("/login");
-        return;
-      }
-    }    document.documentElement.classList.add("login-scroll-enabled");
+    document.documentElement.classList.add("login-scroll-enabled");
     document.body.classList.add("login-scroll-enabled");
 
     const prevTheme = document.documentElement.getAttribute("data-theme");

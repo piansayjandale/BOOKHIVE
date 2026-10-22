@@ -1,1 +1,2 @@
-export { GET, POST, runtime } from "@/app/api/records/digitized/route";
+export const runtime = "nodejs";
+export { GET, POST } from "@/app/api/records/digitized/route";

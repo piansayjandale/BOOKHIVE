@@ -87,6 +87,37 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className="login-page" data-theme="light" suppressHydrationWarning>
+      {/* Back to Intro / Home Link */}
+      <a
+        href="/intro"
+        className="login-back-home-btn"
+        title="Back to BookHive Intro &amp; Features"
+        style={{
+          position: "fixed",
+          top: "18px",
+          left: "18px",
+          zIndex: 100,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "8px",
+          padding: "8px 16px",
+          borderRadius: "9999px",
+          backgroundColor: "rgba(11, 28, 44, 0.85)",
+          color: "#FFF200",
+          textDecoration: "none",
+          fontSize: "12px",
+          fontWeight: 700,
+          letterSpacing: "0.5px",
+          border: "1px solid rgba(255, 242, 0, 0.4)",
+          backdropFilter: "blur(10px)",
+          boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+          transition: "all 0.2s ease",
+        }}
+      >
+        <span style={{ fontSize: "14px" }}>←</span>
+        <span>About BookHive</span>
+      </a>
+
       <img 
         src="/login-building.jpg" 
         alt="Background" 

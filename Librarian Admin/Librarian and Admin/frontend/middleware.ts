@@ -89,14 +89,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Mobile device detection: remove intro page on mobile devices and send directly to login
-  const userAgent = request.headers.get("user-agent") || "";
-  const isMobileClient = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(userAgent);
-
-  if (isMobileClient && (pathname === "/intro" || pathname === "/")) {
-    return NextResponse.redirect(new URL("/login", request.url));
-  }
-
   // --- Web Page Route Protection ---
   if (!isAuthenticated && !isPublicPath(pathname)) {
     if (pathname === "/") {
