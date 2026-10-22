@@ -299,68 +299,11 @@ export const authService = {
     studentId: string,
     email: string,
     password: string
-  ) => {
-    try {
-      const trimmedEmail = email.trim().toLowerCase();
-      const trimmedFullName = fullName.trim();
-      const trimmedStudentId = studentId.trim();
-      const trimmedPassword = password.trim();
-
-      if (!trimmedFullName || !trimmedStudentId) {
-        return {
-          success: false,
-          message: "Full name and student ID are required.",
-        };
-      }
-
-      if (trimmedPassword.length < 6) {
-        return {
-          success: false,
-          message: "Password must be at least 6 characters long.",
-        };
-      }
-
-      if (!isValidEmail(trimmedEmail)) {
-        return {
-          success: false,
-          message: "Invalid email format.",
-        };
-      }
-
-      if (!isSchoolEmail(trimmedEmail)) {
-        return {
-          success: false,
-          message: "Please use a school email (e.g., @sti.edu.ph or @wnu.sti.edu.ph).",
-        };
-      }
-
-      // Call Express registration API
-      const response = await axios.post(`${API_URL}/api/student/register`, {
-        email: trimmedEmail,
-        password: trimmedPassword,
-        name: trimmedFullName,
-        idNumber: trimmedStudentId,
-      });
-
-      if (response.status === 201) {
-        return {
-          success: true,
-          message: "Account created successfully.",
-        };
-      }
-
-      return {
-        success: false,
-        message: "Signup failed.",
-      };
-    } catch (error: any) {
-      console.log("Signup Error:", error);
-      const msg = error.response?.data?.message || "Signup failed.";
-      return {
-        success: false,
-        message: msg,
-      };
-    }
+    return {
+      success: false,
+      message:
+        "Only the Super Administrator can officially create accounts. Please log in directly using your STI school email to complete your profile.",
+    };
   },
 
   login: async (identifierInput: string, password: string) => {
