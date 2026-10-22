@@ -1,31 +1,9 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
 import { catalogRepository } from "@/lib/catalog/repository";
+import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
-
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  const { id } = await params;
-  try {
-    const proxyRes = await proxyToBackend(`/api/admin/digitized-books/${id}/approve`, request);
-    if (proxyRes.ok) {
-      return proxyRes;
-    }
-  } catch (err) {
-    // try direct
-  }
-
-  try {
-    const proxyDirect = await proxyToBackend(`/api/digitized-books/${id}/approve`, request);
-    if (proxyDirect.ok) {
-      return proxyDirect;
-    }
-  } catch (err) {
-    console.warn(`Proxy POST to /api/digitized-books/${id}/approve failed, falling back:`, err);
-  }
 
 function sanitizeIsbn(val?: string | null): string {
   if (!val) return "";
@@ -36,26 +14,79 @@ function sanitizeIsbn(val?: string | null): string {
     .trim();
 }
 
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  let rawBodyText = "";
+  let body: any = {};
   try {
-    const body = await request.json();
+    rawBodyText = await request.text();
+    if (rawBodyText && rawBodyText.trim().length > 0) {
+      body = JSON.parse(rawBodyText);
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const proxyRes = await proxyToBackend(
+      `/api/admin/digitized-books/${id}/approve`,
+      request,
+      rawBodyText
+    );
+    if (proxyRes.ok) {
+      return proxyRes;
+    }
+  } catch {
+    // fallback to direct DB
+  }
+
+  try {
+    let existing: any = null;
+    try {
+      const { rows } = await pool.query(
+        "SELECT * FROM digitized_books WHERE id::text = $1::text LIMIT 1",
+        [id]
+      );
+      if (rows[0]) existing = rows[0];
+    } catch {}
+
     const created = await catalogRepository.addBook({
-      title: body.title,
-      author: body.author,
-      isbn: sanitizeIsbn(body.isbn) || `CAT-${Date.now().toString().slice(-6)}`,
-      department: body.department || "Circulation",
-      category: body.category || body.genre || "General",
-      genres: body.genres || body.genre || "General",
-      shelfLocation: body.shelfLocation || "Circulation Desk",
-      accessionNumber: body.accessionNumber || undefined,
-      copies: Number(body.copies || 1),
-      edition: body.edition || "1st Edition",
-      volume: body.volume || "Vol. 1",
-      publisher: body.publisher || "",
-      publishedDate: body.publishedDate || body.publicationDate || new Date().toISOString().split("T")[0],
-      summary: body.summary || "",
+      title: body.title || existing?.title || "Untitled Book",
+      author: body.author || existing?.author || "Unknown Author",
+      isbn:
+        sanitizeIsbn(body.isbn || existing?.isbn) ||
+        `CAT-${Date.now().toString().slice(-6)}`,
+      department: body.department || existing?.department || "Circulation",
+      category: body.category || body.genre || existing?.genre || "General",
+      genres: body.genres || body.genre || existing?.genre || "General",
+      shelfLocation:
+        body.shelfLocation || existing?.shelf_location || "Circulation Desk",
+      accessionNumber:
+        body.accessionNumber || existing?.accession_number || undefined,
+      copies: Number(body.copies ?? existing?.copies ?? 1),
+      edition: body.edition || existing?.edition || "1st Edition",
+      volume: body.volume || existing?.volume || "Vol. 1",
+      publisher: body.publisher || existing?.publisher || "",
+      publishedDate:
+        body.publishedDate ||
+        body.publicationDate ||
+        (existing?.publication_date
+          ? new Date(existing.publication_date).toISOString().split("T")[0]
+          : new Date().toISOString().split("T")[0]),
+      summary: body.summary || existing?.summary || "",
       availability: "Available",
       coverImg: "",
     } as any);
+
+    try {
+      await pool.query(
+        "UPDATE digitized_books SET status = 'Cataloged', updated_at = NOW() WHERE id::text = $1::text",
+        [id]
+      );
+    } catch {}
 
     return NextResponse.json({
       book: created,

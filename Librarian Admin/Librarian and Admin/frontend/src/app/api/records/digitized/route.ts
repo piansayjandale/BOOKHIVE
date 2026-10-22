@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
+import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -12,62 +13,37 @@ function sanitizeIsbn(val?: string | null): string {
     .trim();
 }
 
-const fallbackDigitizedBooks: any[] = [
-  {
-    id: "digi-001",
-    title: "The Struggle",
-    author: "Betty",
-    isbn: "978-0-123456-78-9",
-    genre: "Action and Adventure",
-    category: "Action and Adventure",
-    department: "General Reference",
-    shelfLocation: "GEN-ACT-002",
-    accessionNumber: "ACC-2026-0042",
-    copies: 2,
-    edition: "1st Edition",
-    volume: "Vol. 1",
-    publisher: "Scholastic Press",
-    publishedDate: "2018-06-15",
-    year: "2018",
-    pages: 320,
-    summary: "A thrilling adventure highlighting personal struggles, resilience and courage in the face of adversity.",
-    docType: "Catalog Intake Slip",
-    ocrEngine: "Tesseract Neural OCR",
-    confidence: 96.4,
-    rawText: "Title: The Struggle\nAuthor: Betty\nGenre: Action and Adventure\nDepartment: General Reference\nCopies: 2\nYear: 2018",
-    scannedBy: "Librarian Mobile App (Scanner)",
-    status: "Pending Review",
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    id: "digi-002",
-    title: "Philippine Folk Literature: The Epics",
-    author: "Damiana L. Eugenio",
-    isbn: "978-971-542-294-9",
-    genre: "Folklore & Literature",
-    category: "Filipiniana",
-    department: "Filipiniana",
-    shelfLocation: "FIL-EUG-014",
-    accessionNumber: "ACC-2026-0089",
-    copies: 3,
-    edition: "2nd Edition",
-    volume: "Vol. 3",
-    publisher: "University of the Philippines Press",
-    publishedDate: "2001-08-20",
-    year: "2001",
-    pages: 450,
-    summary: "Comprehensive collection and analysis of indigenous Philippine oral epics with English translations.",
-    docType: "Title Page Scan",
-    ocrEngine: "Tesseract Neural OCR",
-    confidence: 98.2,
-    rawText: "Philippine Folk Literature: The Epics\nDamiana L. Eugenio\nUP Press 2001\nISBN 978-971-542-294-9",
-    scannedBy: "Librarian Mobile App (Scanner)",
-    status: "Pending Review",
-    createdAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 8).toISOString(),
-  }
-];
+function mapDigitizedRow(row: any) {
+  return {
+    id: String(row.id),
+    title: row.title || "Untitled Book",
+    author: row.author || "Unknown Author",
+    isbn: row.isbn || "",
+    genre: row.genre || row.category || "General",
+    category: row.category || row.genre || "General",
+    department: row.department || "Circulation",
+    shelfLocation: row.shelf_location || row.shelfLocation || "",
+    accessionNumber: row.accession_number || row.accessionNumber || "",
+    copies: Number(row.copies ?? 1),
+    edition: row.edition || "1st Edition",
+    volume: row.volume || "Vol. 1",
+    publisher: row.publisher || "",
+    publishedDate: row.publication_date
+      ? new Date(row.publication_date).toISOString().split("T")[0]
+      : row.publishedDate || "",
+    year: row.year || "",
+    pages: Number(row.pages ?? 1),
+    summary: row.summary || "",
+    docType: row.doc_type || row.docType || "Catalog Intake Slip",
+    ocrEngine: row.ocr_engine || row.ocrEngine || "Tesseract Neural OCR",
+    confidence: Number(row.confidence ?? 95.0),
+    rawText: row.raw_text || row.rawText || "",
+    scannedBy: row.scanned_by || row.scannedBy || "Librarian Mobile App",
+    status: row.status || "Pending Review",
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || new Date().toISOString(),
+  };
+}
 
 export async function GET(request: Request) {
   try {
@@ -75,70 +51,122 @@ export async function GET(request: Request) {
     if (proxyRes.ok) {
       return proxyRes;
     }
-  } catch (err) {
-    // try direct
+  } catch {
+    // fallback to direct DB
   }
 
   try {
-    const proxyDirect = await proxyToBackend("/api/digitized-books", request);
-    if (proxyDirect.ok) {
-      return proxyDirect;
+    const { searchParams } = new URL(request.url);
+    const search = searchParams.get("search")?.trim().toLowerCase() || "";
+    const department = searchParams.get("department") || "All";
+
+    const filters: any[] = [];
+    const whereClauses: string[] = ["status = 'Pending Review'"];
+
+    if (department !== "All") {
+      filters.push(department);
+      whereClauses.push(`department = $${filters.length}`);
     }
-  } catch (err) {
-    console.warn("Proxy to /api/digitized-books failed, using fallback:", err);
-  }
 
-  const { searchParams } = new URL(request.url);
-  const search = searchParams.get("search")?.toLowerCase() || "";
-  const department = searchParams.get("department") || "All";
-
-  const filtered = fallbackDigitizedBooks.filter((book) => {
-    if (department !== "All" && book.department !== department) return false;
     if (search) {
-      const match =
-        book.title.toLowerCase().includes(search) ||
-        book.author.toLowerCase().includes(search) ||
-        book.isbn.toLowerCase().includes(search) ||
-        book.rawText.toLowerCase().includes(search);
-      if (!match) return false;
+      filters.push(`%${search}%`);
+      const idx = filters.length;
+      whereClauses.push(
+        `(LOWER(title) LIKE $${idx} OR LOWER(author) LIKE $${idx} OR LOWER(isbn) LIKE $${idx} OR LOWER(raw_text) LIKE $${idx})`
+      );
     }
-    return true;
-  });
 
-  return NextResponse.json({ books: filtered, total: filtered.length });
+    const where = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
+    const { rows } = await pool.query(
+      `SELECT * FROM digitized_books ${where} ORDER BY created_at DESC`,
+      filters
+    );
+    const books = rows.map(mapDigitizedRow);
+    return NextResponse.json({ books, total: books.length });
+  } catch (err) {
+    console.warn("Direct DB digitized_books GET fallback:", err);
+    return NextResponse.json({ books: [], total: 0 });
+  }
 }
 
 export async function POST(request: Request) {
+  let rawBodyText = "";
+  let body: any = {};
   try {
-    const proxyRes = await proxyToBackend("/api/admin/digitized-books", request);
+    rawBodyText = await request.text();
+    if (rawBodyText && rawBodyText.trim().length > 0) {
+      body = JSON.parse(rawBodyText);
+    }
+  } catch {
+    return NextResponse.json({ message: "Failed to parse body" }, { status: 400 });
+  }
+
+  try {
+    const proxyRes = await proxyToBackend(
+      "/api/admin/digitized-books",
+      request,
+      rawBodyText
+    );
     if (proxyRes.ok) {
       return proxyRes;
     }
-  } catch (err) {
-    // try direct
+  } catch {
+    // fallback to direct DB
   }
 
   try {
-    const proxyDirect = await proxyToBackend("/api/digitized-books", request);
-    if (proxyDirect.ok) {
-      return proxyDirect;
-    }
-  } catch (err) {
-    console.warn("Proxy POST to /api/digitized-books failed:", err);
-  }
+    const cleanIsbn =
+      sanitizeIsbn(body.isbn) || `SCAN-${Date.now().toString().slice(-6)}`;
+    const pubDate =
+      body.publicationDate ||
+      body.publishedDate ||
+      new Date().toISOString().split("T")[0];
 
-  try {
-    const body = await request.json();
-    const newBook = {
-      ...body,
-      id: `digi-${Date.now()}`,
-      isbn: sanitizeIsbn(body.isbn) || `SCAN-${Date.now().toString().slice(-6)}`,
-      createdAt: new Date().toISOString(),
-      status: "Pending Review",
-    };
-    fallbackDigitizedBooks.unshift(newBook);
-    return NextResponse.json({ book: newBook, success: true }, { status: 201 });
-  } catch (error) {
-    return NextResponse.json({ message: "Failed to parse body" }, { status: 400 });
+    const { rows } = await pool.query(
+      `INSERT INTO digitized_books (
+        title, author, isbn, genre, category, department, shelf_location,
+        accession_number, copies, edition, volume, publisher, publication_date,
+        year, pages, summary, doc_type, ocr_engine, confidence, raw_text,
+        scanned_by, status
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $12, COALESCE($13::date, NOW()::date),
+        $14, $15, $16, $17, $18, $19, $20,
+        $21, 'Pending Review'
+      )
+      RETURNING *`,
+      [
+        body.title || "Untitled Book",
+        body.author || "Unknown Author",
+        cleanIsbn,
+        body.genre || body.category || "General",
+        body.category || body.genre || "General",
+        body.department || "Circulation",
+        body.shelfLocation || body.shelf || "",
+        body.accessionNumber || "",
+        Math.max(1, Number(body.copies ?? 1)),
+        body.edition || "1st Edition",
+        body.volume || "Vol. 1",
+        body.publisher || "",
+        pubDate,
+        body.year || String(new Date().getFullYear()),
+        Number(body.pages ?? 1),
+        body.summary || body.description || "",
+        body.docType || "Catalog Intake Slip",
+        body.ocrEngine || "Tesseract Neural OCR",
+        Number(body.confidence ?? 95.0),
+        body.rawText || "",
+        body.scannedBy || "Librarian Mobile App",
+      ]
+    );
+
+    const book = rows[0] ? mapDigitizedRow(rows[0]) : { ...body, isbn: cleanIsbn };
+    return NextResponse.json({ book, success: true }, { status: 201 });
+  } catch (error: any) {
+    console.error("Direct DB digitized_books POST error:", error);
+    return NextResponse.json(
+      { message: error.message || "Failed to save digitized book" },
+      { status: 500 }
+    );
   }
 }
