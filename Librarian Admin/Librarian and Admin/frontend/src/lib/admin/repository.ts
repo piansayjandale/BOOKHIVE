@@ -652,6 +652,12 @@ export const adminRepository = {
         { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", code: "CHTM", mascot: "Pink Vikings", usage: counts.CHTM, count: counts.CHTM, color: "#EC4899" },
         { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", code: "CCJE", mascot: "Purple Wizards", usage: counts.CCJE, count: counts.CCJE, color: "#8B5CF6" },
       ];
+
+      const totalDeptStudents = Object.values(counts).reduce((a, b) => a + b, 0);
+      if (totalDeptStudents > 0) {
+        totalUsers = Math.max(totalUsers, totalDeptStudents);
+      }
+      summary.totalUsers = totalUsers;
     }
 
     // 2. Live Top Borrowed Books from database transactions + catalog metadata
@@ -805,6 +811,8 @@ export const adminRepository = {
       storageUsed: 84.2,
       storageTotal: 128,
     };
+
+    summary.totalUsers = Math.max(summary.totalUsers || 0, totalUsers || 0);
 
     return {
       summary,

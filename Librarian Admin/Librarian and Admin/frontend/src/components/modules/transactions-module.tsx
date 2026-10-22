@@ -2125,8 +2125,8 @@ export function TransactionsModule() {
           ? "border border-[#0274BB]/15 bg-white shadow-sm"
           : "border border-white/8 bg-[#0F1D29]/80"
       )}>
-        <div className="overflow-auto min-h-[580px] max-h-[640px]">
-          <table className="min-w-full text-base">
+        <div className="overflow-x-auto overflow-y-auto min-h-[520px] max-h-[720px] scrollbar-thin scrollbar-thumb-slate-300 hover:scrollbar-thumb-slate-400 dark:scrollbar-thumb-slate-700">
+          <table className="w-full min-w-full text-base">
             <thead>
               <tr className={cn(
                 "sticky top-0 z-10 backdrop-blur",
@@ -2135,12 +2135,12 @@ export function TransactionsModule() {
                   : "border-b border-white/8 bg-[#152E47]/60 text-slate-300"
               )}>
                 {[
-                  { key: "studentName" as SortKey, label: "STUDENT", minW: "min-w-[200px]" },
-                  { key: "resourceTitle" as SortKey, label: "RESOURCE", minW: "min-w-[240px]" },
-                  { key: null, label: "TYPE", minW: "min-w-[95px]" },
-                  { key: null, label: "STATUS", minW: "min-w-[120px]" },
-                  { key: "requestedAt" as SortKey, label: "REQUESTED", minW: "min-w-[140px]" },
-                  { key: null, label: "ACTIONS", minW: "min-w-[110px]" },
+                  { key: "studentName" as SortKey, label: "STUDENT", minW: "min-w-[220px]" },
+                  { key: "resourceTitle" as SortKey, label: "RESOURCE", minW: "min-w-[280px]" },
+                  { key: null, label: "TYPE", minW: "min-w-[110px]" },
+                  { key: null, label: "STATUS", minW: "min-w-[190px]" },
+                  { key: "requestedAt" as SortKey, label: "REQUESTED", minW: "min-w-[170px]" },
+                  { key: null, label: "ACTIONS", minW: "min-w-[210px]" },
                 ].map((col) => (
                   <th
                     key={col.label}
@@ -2188,7 +2188,7 @@ export function TransactionsModule() {
                   )}
                 >
                   {/* Student */}
-                  <td className="px-5 py-3.5 align-middle min-w-[210px]">
+                  <td className="px-5 py-3.5 align-middle min-w-[220px]">
                     <button
                       type="button"
                       onClick={() =>
@@ -2240,7 +2240,7 @@ export function TransactionsModule() {
                   </td>
 
                   {/* Resource */}
-                  <td className="px-5 py-3.5 align-middle min-w-[240px]">
+                  <td className="px-5 py-3.5 align-middle min-w-[280px]">
                     <button
                       type="button"
                       onClick={() => handleOpenBookModal(txn)}
@@ -2395,8 +2395,8 @@ export function TransactionsModule() {
                   </td>
 
                   {/* Actions */}
-                  <td className="px-5 py-4 whitespace-nowrap">
-                    <div className="flex gap-2 items-center">
+                  <td className="px-5 py-4 whitespace-nowrap min-w-[210px]">
+                    <div className="flex gap-2 items-center flex-nowrap">
                       {txn.status === "Pending" ? (
                         <>
                           <button
