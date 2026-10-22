@@ -40,30 +40,51 @@ export async function GET(request: Request) {
 
     let user: any = null;
     if (target) {
-      const { rows } = await pool.query(
-        `SELECT 
-          id::text AS "id",
-          name,
-          email,
-          role,
-          id_number AS "idNumber",
-          id_number AS "studentId",
-          department,
-          course,
-          year_level AS "yearLevel",
-          avatar,
-          qr_code AS "qrCode",
-          status,
-          school_id_front AS "schoolIdFront",
-          school_id_back AS "schoolIdBack",
-          library_id_front AS "libraryIdFront",
-          library_id_back AS "libraryIdBack"
-        FROM users
-        WHERE LOWER(id_number) = LOWER($1) OR LOWER(email) = LOWER($1) OR id::text = $1
-        LIMIT 1`,
-        [target]
-      );
-      if (rows.length > 0) user = rows[0];
+      try {
+        const { rows } = await pool.query(
+          `SELECT 
+            id::text AS "id",
+            name,
+            email,
+            role,
+            id_number AS "idNumber",
+            id_number AS "studentId",
+            department,
+            course,
+            year_level AS "yearLevel",
+            avatar,
+            qr_code AS "qrCode",
+            status,
+            school_id_front AS "schoolIdFront",
+            school_id_back AS "schoolIdBack",
+            library_id_front AS "libraryIdFront",
+            library_id_back AS "libraryIdBack"
+          FROM users
+          WHERE LOWER(id_number) = LOWER($1) OR LOWER(email) = LOWER($1) OR id::text = $1
+          LIMIT 1`,
+          [target]
+        );
+        if (rows.length > 0) user = rows[0];
+      } catch (dbErr: any) {
+        console.warn("[Student Profile API] Cloud DB notice, checking local roster:", dbErr.message);
+      }
+
+      if (!user) {
+        const { FALLBACK_USERS_ROSTER } = await import("@/lib/data/users-roster");
+        const low = target.toLowerCase();
+        const match = FALLBACK_USERS_ROSTER.find(
+          (u) =>
+            u.id === target ||
+            (u.idNumber && u.idNumber.toLowerCase() === low) ||
+            u.email.toLowerCase() === low
+        );
+        if (match) {
+          user = {
+            ...match,
+            studentId: match.idNumber,
+          };
+        }
+      }
     }
 
     if (!user) {

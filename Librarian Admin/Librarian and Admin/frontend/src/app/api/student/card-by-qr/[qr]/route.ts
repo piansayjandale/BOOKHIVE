@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
+import { FALLBACK_USERS_ROSTER } from "@/lib/data/users-roster";
 
 export const runtime = "nodejs";
 
@@ -21,75 +22,112 @@ export async function GET(
     const { qr } = await params;
     const cleanId = decodeURIComponent(qr).trim();
 
-    const { rows } = await pool.query(
-      `SELECT 
-        id::text AS "id",
-        name,
-        name AS "fullName",
-        email,
-        role,
-        id_number AS "idNumber",
-        id_number AS "studentId",
-        department,
-        course,
-        year_level AS "yearLevel",
-        avatar,
-        qr_code AS "qrCode",
-        status,
-        school_id_front AS "schoolIdFront",
-        school_id_back AS "schoolIdBack",
-        library_id_front AS "libraryIdFront",
-        library_id_back AS "libraryIdBack"
-      FROM users
-      WHERE LOWER(id_number) = LOWER($1)
-         OR LOWER(email) = LOWER($1)
-         OR LOWER(name) = LOWER($1)
-         OR id::text = $1
-         OR qr_code::text = $1
-      LIMIT 1`,
-      [cleanId]
-    );
+    let student: any = null;
 
-    if (rows.length === 0) {
+    try {
+      const { rows } = await pool.query(
+        `SELECT 
+          id::text AS "id",
+          name,
+          name AS "fullName",
+          email,
+          role,
+          id_number AS "idNumber",
+          id_number AS "studentId",
+          department,
+          course,
+          year_level AS "yearLevel",
+          avatar,
+          qr_code AS "qrCode",
+          status,
+          school_id_front AS "schoolIdFront",
+          school_id_back AS "schoolIdBack",
+          library_id_front AS "libraryIdFront",
+          library_id_back AS "libraryIdBack"
+        FROM users
+        WHERE LOWER(id_number) = LOWER($1)
+           OR LOWER(email) = LOWER($1)
+           OR LOWER(name) = LOWER($1)
+           OR id::text = $1
+           OR qr_code::text = $1
+        LIMIT 1`,
+        [cleanId]
+      );
+      if (rows && rows.length > 0) {
+        student = rows[0];
+      }
+    } catch (dbErr: any) {
+      console.warn("[Card By QR API] Database notice, checking local roster:", dbErr.message);
+    }
+
+    if (!student) {
+      const low = cleanId.toLowerCase();
+      const match = FALLBACK_USERS_ROSTER.find(
+        (u) =>
+          u.id === cleanId ||
+          (u.qrCode && u.qrCode === cleanId) ||
+          (u.idNumber && u.idNumber.toLowerCase() === low) ||
+          u.email.toLowerCase() === low ||
+          u.name.toLowerCase() === low
+      );
+      if (match) {
+        student = {
+          ...match,
+          fullName: match.name,
+          studentId: match.idNumber,
+        };
+      }
+    }
+
+    if (!student) {
       return NextResponse.json(
         { message: "Student card not found." },
         { status: 404, headers: corsHeaders }
       );
     }
 
-    const student = rows[0];
-
     // Fetch student's active loans & history
-    const txRes = await pool.query(
-      `SELECT
-        t.id::text AS "id",
-        t.user_id::text AS "userId",
-        t.student_name AS "studentName",
-        t.student_id AS "studentId",
-        t.department,
-        t.isbn,
-        t.resource_title AS "resourceTitle",
-        t.resource_title AS "title",
-        t.type::text AS "type",
-        t.status::text AS "status",
-        t.requested_at::text AS "requestedAt",
-        t.due_date::text AS "dueDate",
-        t.available_at::text AS "availableAt",
-        t.expires_at::text AS "expiresAt",
-        t.picked_up_at::text AS "pickedUpAt",
-        t.created_at::text AS "createdAt"
-       FROM transactions t
-       WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2) OR LOWER(t.student_name) = LOWER($3))
-         AND (
-           (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed'))
-           OR (t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved'))
-         )
-       ORDER BY t.requested_at DESC
-       LIMIT 50`,
-      [student.id, student.idNumber, student.name]
-    );
+    let txRows: any[] = [];
+    try {
+      const txRes = await pool.query(
+        `SELECT
+          t.id::text AS "id",
+          t.user_id::text AS "userId",
+          t.student_name AS "studentName",
+          t.student_id AS "studentId",
+          t.department,
+          t.isbn,
+          t.resource_title AS "resourceTitle",
+          t.resource_title AS "title",
+          t.type::text AS "type",
+          t.status::text AS "status",
+          t.requested_at::text AS "requestedAt",
+          t.due_date::text AS "dueDate",
+          t.available_at::text AS "availableAt",
+          t.expires_at::text AS "expiresAt",
+          t.picked_up_at::text AS "pickedUpAt",
+          t.created_at::text AS "createdAt"
+         FROM transactions t
+         WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2) OR LOWER(t.student_name) = LOWER($3))
+           AND (
+             (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed'))
+             OR (t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved'))
+           )
+         ORDER BY t.requested_at DESC
+         LIMIT 50`,
+        [student.id, student.idNumber, student.name]
+      );
+      txRows = txRes.rows;
+    } catch (dbErr: any) {
+      console.warn("[Card By QR API] Cloud DB notice, using seedTransactions fallback:", dbErr.message);
+      const { seedTransactions } = await import("@/lib/data/seed");
+      txRows = (seedTransactions || []).filter((t: any) =>
+        (t.studentId && t.studentId.toLowerCase() === (student.idNumber || "").toLowerCase()) ||
+        (t.studentName && t.studentName.toLowerCase() === (student.name || "").toLowerCase())
+      );
+    }
 
-    const libraryCard = txRes.rows.map((tx: any) => {
+    const libraryCard = txRows.map((tx: any) => {
       const isReservation = tx.type === "Reservation";
       const isReturned = tx.status === "Returned" || tx.status === "Completed";
       const isNowAvailable = isReservation && Boolean(tx.availableAt && (!tx.expiresAt || new Date(tx.expiresAt) > new Date()));
@@ -144,31 +182,44 @@ export async function GET(
     });
 
     // Fetch strictly active Reservations (excluding any Borrow transactions or picked-up items)
-    const resQuery = await pool.query(
-      `SELECT
-        t.id::text AS "id",
-        t.resource_title AS "bookTitle",
-        t.requested_at AS "reserveDate",
-        t.status::text AS "status",
-        t.type::text AS "type",
-        t.available_at AS "availableAt"
-       FROM transactions t
-       WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2))
-         AND t.type::text = 'Reservation'
-         AND t.status::text IN ('Approved', 'Pending', 'Reserved')
-         AND t.picked_up_at IS NULL
-       ORDER BY t.requested_at DESC`,
-      [student.id, student.idNumber]
-    );
-
-    const reservedBooks = resQuery.rows.map((r: any) => ({
-      id: r.id,
-      bookTitle: r.bookTitle || "Reserved Book",
-      reserveDate: r.reserveDate ? new Date(r.reserveDate).toISOString().split("T")[0] : "—",
-      status: r.status,
-      type: "Reservation",
-      available: Boolean(r.availableAt),
-    }));
+    let reservedBooks: any[] = [];
+    try {
+      const resQuery = await pool.query(
+        `SELECT
+          t.id::text AS "id",
+          t.resource_title AS "bookTitle",
+          t.requested_at AS "reserveDate",
+          t.status::text AS "status",
+          t.type::text AS "type",
+          t.available_at AS "availableAt"
+         FROM transactions t
+         WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2))
+           AND t.type::text = 'Reservation'
+           AND t.status::text IN ('Approved', 'Pending', 'Reserved')
+           AND t.picked_up_at IS NULL
+         ORDER BY t.requested_at DESC`,
+        [student.id, student.idNumber]
+      );
+      reservedBooks = resQuery.rows.map((r: any) => ({
+        id: r.id,
+        bookTitle: r.bookTitle || "Reserved Book",
+        reserveDate: r.reserveDate ? new Date(r.reserveDate).toISOString().split("T")[0] : "—",
+        status: r.status,
+        type: "Reservation",
+        available: Boolean(r.availableAt),
+      }));
+    } catch {
+      reservedBooks = libraryCard
+        .filter((c: any) => c.type === "Reservation" && c.status !== "Returned")
+        .map((r: any) => ({
+          id: r.id,
+          bookTitle: r.bookTitle || "Reserved Book",
+          reserveDate: r.borrowDate || "—",
+          status: r.status,
+          type: "Reservation",
+          available: Boolean(r.available),
+        }));
+    }
 
     return NextResponse.json(
       {
@@ -176,8 +227,8 @@ export async function GET(
         libraryCard,
         reservedBooks,
         violations: [],
-        transactions: txRes.rows,
-        borrowHistory: txRes.rows,
+        transactions: txRows,
+        borrowHistory: txRows,
       },
       { status: 200, headers: corsHeaders }
     );
