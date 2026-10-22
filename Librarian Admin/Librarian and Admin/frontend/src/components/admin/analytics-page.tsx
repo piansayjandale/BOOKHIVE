@@ -288,6 +288,7 @@ function ExcelSheetHeader({
     "3. Monthly Trends",
     "4. Course Distribution",
     "5. Most Searched Books",
+    "6. Top Student Borrowers",
   ];
 
   return (
@@ -367,7 +368,8 @@ function exportAnalyticsToExcel(
   monthlyTrends: any[],
   monthlyStats: any,
   courseStats: any,
-  searchStats: any
+  searchStats: any,
+  topStudents: any[] = []
 ) {
   const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   
@@ -938,6 +940,39 @@ function exportAnalyticsToExcel(
    </Row>
   </Table>
  </Worksheet>
+
+ <!-- 6. TOP STUDENT BORROWERS -->
+ <Worksheet ss:Name="6. Top Student Borrowers">
+  <Table ss:DefaultColumnWidth="120" ss:DefaultRowHeight="20">
+   <Column ss:Width="60"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="100"/>
+   <Row ss:Height="28">
+    <Cell ss:MergeAcross="4" ss:StyleID="TitleStyle"><Data ss:Type="String"> BOOKHIVE — TOP STUDENT BORROWERS RANKINGS</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:MergeAcross="4" ss:StyleID="MetaStyle"><Data ss:Type="String"> Generated: ${dateStr} | Status: Live Sync | Top Scholars: ${(topStudents || []).length}</Data></Cell>
+   </Row>
+   <Row ss:Height="8"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Rank</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Student Name</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Student ID</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Course</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Loans</Data></Cell>
+   </Row>
+   ${(topStudents || []).map((s: any, idx: number) => `
+   <Row ss:Height="20">
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">#${idx + 1}</Data></Cell>
+    <Cell ss:StyleID="CellLeft"><Data ss:Type="String">${escape(s.name)}</Data></Cell>
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escape(s.studentId)}</Data></Cell>
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escape(s.course)}</Data></Cell>
+    <Cell ss:StyleID="CellRight"><Data ss:Type="Number">${Number(s.borrowCount || 0)}</Data></Cell>
+   </Row>`).join("")}
+  </Table>
+ </Worksheet>
 </Workbook>`;
 
   const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
@@ -1243,6 +1278,17 @@ export function AnalyticsPage() {
       topCourseTheme,
     };
   }, [payload?.mostCourseBorrowed]);
+
+  const topStudents = useMemo(() => {
+    const raw = (payload as any)?.topStudentBorrowers || [
+      { rank: 1, name: "Jan Dale Piansay", studentId: "23-1653-705", course: "BSIT", borrowCount: 19, badge: "Gold Scholar" },
+      { rank: 2, name: "Hello", studentId: "123456", course: "BSIT", borrowCount: 7, badge: "Silver Scholar" },
+      { rank: 3, name: "Hi", studentId: "23-1234-567", course: "BSTM", borrowCount: 7, badge: "Bronze Scholar" },
+      { rank: 4, name: "Yana Brich Palmares", studentId: "23-1531-502", course: "BSIT", borrowCount: 4, badge: "Active Borrower" },
+      { rank: 5, name: "Shem", studentId: "23-1521-502", course: "BSIT", borrowCount: 1, badge: "Active Borrower" },
+    ];
+    return raw;
+  }, [payload?.topStudentBorrowers]);
 
   const searchStats = useMemo(() => {
     const defaultData = {
@@ -2765,6 +2811,181 @@ export function AnalyticsPage() {
 
           {/* Excel Footer for Print */}
           <ExcelSheetFooter sheetNumber={5} sheetTitle="Most Searched Books" />
+        </motion.section>
+
+        {/* Card 6: Top Student Borrowers Ranking */}
+        <motion.section
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.45 }}
+          className="flex flex-col justify-between rounded-2xl border border-[var(--line)] bg-[var(--card-bg)] p-6 shadow-sm analytics-print-sheet sheet-6"
+        >
+          {/* Excel Header Banner for Print */}
+          <ExcelSheetHeader sheetNumber={6} sheetTitle="Top Student Borrowers" printDate={printDate} />
+
+          <div>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className={cn("text-[22px] font-bold tracking-wide", isLight ? "text-slate-800" : "text-white")}>
+                  Top Student Borrowers Ranking
+                </h2>
+                <p className={cn("mt-1 text-[13px] font-normal", isLight ? "text-slate-500" : "text-slate-300")}>
+                  Individual student rankings with the highest book checkout count across all degree programs.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 print:hidden">
+                <div className={cn("rounded-full border px-3 py-1 text-xs font-bold shadow-xs whitespace-nowrap", isLight ? "border-purple-200 bg-purple-50 text-purple-700" : "border-white/10 bg-[#132337] text-purple-400")}>
+                  {topStudents.length} Top Scholars Tracked
+                </div>
+              </div>
+            </div>
+
+            {/* Top Student Cards Grid */}
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 print:hidden">
+              {topStudents.map((student: any, idx: number) => {
+                const rank = idx + 1;
+                const initials = student.name
+                  ? student.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()
+                  : "ST";
+                return (
+                  <div
+                    key={student.studentId || idx}
+                    className={cn(
+                      "flex items-center justify-between p-3.5 rounded-xl border transition-all",
+                      isLight
+                        ? "border-slate-200 bg-white shadow-xs hover:border-slate-300 hover:shadow-sm"
+                        : "border-white/5 bg-[#122335]/60 hover:bg-[#122335] hover:border-white/10"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={cn(
+                          "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-black shadow-xs",
+                          rank === 1
+                            ? "bg-[#FCD400] text-[#0B1A2C]"
+                            : rank === 2
+                            ? "bg-slate-300 text-[#0B1A2C]"
+                            : rank === 3
+                            ? "bg-amber-600 text-white"
+                            : isLight
+                            ? "bg-slate-200 text-slate-700"
+                            : "bg-white/10 text-slate-300"
+                        )}
+                      >
+                        #{rank}
+                      </div>
+
+                      <div className={cn(
+                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold text-xs shadow-inner",
+                        rank === 1
+                          ? "bg-amber-100 text-amber-900 border border-amber-300"
+                          : rank === 2
+                          ? "bg-slate-200 text-slate-800 border border-slate-300"
+                          : rank === 3
+                          ? "bg-orange-100 text-orange-900 border border-orange-300"
+                          : isLight
+                          ? "bg-blue-50 text-blue-800 border border-blue-200"
+                          : "bg-white/10 text-white border border-white/20"
+                      )}>
+                        {initials}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={cn("text-xs font-bold truncate max-w-[110px] sm:max-w-[140px]", isLight ? "text-slate-900" : "text-white")}>
+                            {student.name}
+                          </span>
+                          <span className={cn(
+                            "px-1.5 py-0.2 rounded text-[10px] font-bold font-mono",
+                            isLight ? "bg-slate-100 text-slate-700" : "bg-white/10 text-slate-300"
+                          )}>
+                            {student.course}
+                          </span>
+                        </div>
+                        <div className={cn("text-[10px] font-mono", isLight ? "text-slate-500" : "text-slate-400")}>
+                          {student.studentId}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <div className={cn("font-mono text-sm font-black", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                        {student.borrowCount} <span className="text-[10px] font-medium opacity-80">{student.borrowCount === 1 ? "loan" : "loans"}</span>
+                      </div>
+                      <span className={cn(
+                        "inline-block text-[9.5px] font-bold px-1.5 py-0.5 rounded-full",
+                        rank === 1
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                          : rank === 2
+                          ? "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                          : rank === 3
+                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                          : isLight
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-white/5 text-slate-300"
+                      )}>
+                        {student.badge || "Active Borrower"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Excel Data Grid Table (visible in print) */}
+            <div className="hidden print:flex print:flex-col print:justify-center mt-6 print:mt-auto print:mb-3 w-full flex-1">
+              <div className="text-sm print:text-base font-black text-slate-900 mb-2.5 flex items-center justify-between">
+                <span>Table 6.1: Top Student Borrowers Leaderboard &amp; Honors</span>
+                <span className="font-mono text-xs text-slate-700 font-bold bg-slate-100 px-2.5 py-1 rounded border border-slate-300">Range: A1:E{topStudents.length + 2}</span>
+              </div>
+              <table className="w-full border-collapse border-2 border-[#107C41] text-xs print:text-sm">
+                <thead>
+                  <tr className="bg-[#107C41] text-white">
+                    <th className="border border-[#0d6334] px-4 py-2.5 print:py-3.5 text-center font-black w-20">Col A<br/><span className="text-[11px] print:text-xs font-semibold opacity-95">Rank</span></th>
+                    <th className="border border-[#0d6334] px-4 py-2.5 print:py-3.5 text-left font-black">Col B<br/><span className="text-[11px] print:text-xs font-semibold opacity-95">Student Name</span></th>
+                    <th className="border border-[#0d6334] px-4 py-2.5 print:py-3.5 text-center font-black w-36">Col C<br/><span className="text-[11px] print:text-xs font-semibold opacity-95">Student ID</span></th>
+                    <th className="border border-[#0d6334] px-4 py-2.5 print:py-3.5 text-center font-black w-28">Col D<br/><span className="text-[11px] print:text-xs font-semibold opacity-95">Degree Program</span></th>
+                    <th className="border border-[#0d6334] px-4 py-2.5 print:py-3.5 text-right font-black w-32">Col E<br/><span className="text-[11px] print:text-xs font-semibold opacity-95">Borrowed Books</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topStudents.map((s: any, idx: number) => (
+                    <tr key={s.studentId || idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/90"}>
+                      <td className="border border-slate-300 px-4 py-2.5 print:py-3.5 text-center font-bold font-mono print:text-base">#{idx + 1}</td>
+                      <td className="border border-slate-300 px-4 py-2.5 print:py-3.5 font-bold print:text-base text-slate-900">{s.name}</td>
+                      <td className="border border-slate-300 px-4 py-2.5 print:py-3.5 text-center font-mono print:text-sm">{s.studentId}</td>
+                      <td className="border border-slate-300 px-4 py-2.5 print:py-3.5 text-center font-mono font-bold text-[#107C41] print:text-base">{s.course}</td>
+                      <td className="border border-slate-300 px-4 py-2.5 print:py-3.5 text-right font-mono font-bold text-slate-900 print:text-base">{s.borrowCount}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-[#e2efda] font-black border-t-2 border-[#107C41]">
+                    <td className="border border-slate-300 px-4 py-3 print:py-4 text-center font-mono print:text-base">TOTAL</td>
+                    <td className="border border-slate-300 px-4 py-3 print:py-4 print:text-base" colSpan={3}>Top Ranked Student Borrowers Tracked ({topStudents.length})</td>
+                    <td className="border border-slate-300 px-4 py-3 print:py-4 text-right font-mono text-[#107C41] font-black print:text-lg">
+                      {topStudents.reduce((acc: number, cur: any) => acc + (cur.borrowCount || 0), 0)} loans
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            {/* Bottom Telemetry Bar */}
+            <div className={cn("flex items-center justify-between text-[11px] px-1 pt-2.5 mt-2 border-t print:hidden", isLight ? "border-slate-100" : "border-white/5")}>
+              <div className={cn("flex items-center gap-1.5 font-semibold", isLight ? "text-purple-600" : "text-purple-400")}>
+                <span className="h-2 w-2 rounded-full bg-purple-500 animate-pulse" />
+                Student Circulation Honors Active • Institutional Recognition Enabled
+              </div>
+              <div className={cn("font-mono text-[11px]", isLight ? "text-slate-500" : "text-slate-300")}>
+                <span className={cn("font-bold", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>{topStudents.reduce((acc: number, cur: any) => acc + (cur.borrowCount || 0), 0)}</span> Total Borrows by Top Readers
+              </div>
+            </div>
+          </div>
+
+          {/* Excel Footer for Print */}
+          <ExcelSheetFooter sheetNumber={6} sheetTitle="Top Student Borrowers" />
         </motion.section>
       </div>
 

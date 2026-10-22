@@ -10,12 +10,14 @@ import {
   Platform,
   Modal,
   Dimensions,
+  ActivityIndicator,
+  Switch,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../data/AuthContext";
 import { useThemeColors } from "../../hooks/useThemeColors";
@@ -30,6 +32,10 @@ import {
   getCourseLabel,
   saveStudentProfile,
   fetchStudentCardAndViolations,
+  hasAllFourIdPhotos,
+  loadStudentIdCardsForUser,
+  saveStudentIdCardsToStorage,
+  StudentIdCardsData,
 } from "../../data/store";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -49,9 +55,11 @@ const getCourseDisplay = (courseCode?: string) => {
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ requireIdUpload?: string }>();
   const insets = useSafeAreaInsets();
-  const { isDarkMode, theme } = useThemeColors();
+  const { isDarkMode, toggleTheme, theme } = useThemeColors();
   const { user, logout, updateUser } = useAuth();
+  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const [imageLoadError, setImageLoadError] = useState(false);
   const [photoOptionsVisible, setPhotoOptionsVisible] = useState(false);
@@ -61,23 +69,78 @@ export default function ProfileScreen() {
   const [profile, setProfile] = useState(getStudentProfile());
   const [notifications, setNotifications] = useState<NotificationItem[]>(getNotifications());
 
+  // 4 ID Cards state (School ID Front & Back, Library ID Front & Back)
+  const [uploadedIdCards, setUploadedIdCards] = useState<StudentIdCardsData | null>(null);
+  const [idCardsChecked, setIdCardsChecked] = useState(false);
+  const [idUploadModalVisible, setIdUploadModalVisible] = useState(false);
+  const [idViewerModalVisible, setIdViewerModalVisible] = useState(false);
+  const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{ title: string; uri: string } | null>(null);
+  const [savingIdCards, setSavingIdCards] = useState(false);
+
+  // Draft slots for uploading the 4 ID photos
+  const [draftSchoolFront, setDraftSchoolFront] = useState<string>("");
+  const [draftSchoolBack, setDraftSchoolBack] = useState<string>("");
+  const [draftLibraryFront, setDraftLibraryFront] = useState<string>("");
+  const [draftLibraryBack, setDraftLibraryBack] = useState<string>("");
+  const [idCaptureOrientation, setIdCaptureOrientation] = useState<"portrait" | "landscape">("portrait");
+  const draftBase64Ref = React.useRef<{
+    schoolFront?: string;
+    schoolBack?: string;
+    libraryFront?: string;
+    libraryBack?: string;
+  }>({});
+
+  const refreshIdCardsState = React.useCallback(async () => {
+    const currentProf = getStudentProfile();
+    if (hasAllFourIdPhotos(user)) {
+      setUploadedIdCards({
+        schoolIdFront: String(user!.schoolIdFront),
+        schoolIdBack: String(user!.schoolIdBack),
+        libraryIdFront: String(user!.libraryIdFront),
+        libraryIdBack: String(user!.libraryIdBack),
+        ownerEmail: user?.email,
+        ownerStudentId: user?.studentId,
+      });
+      setIdCardsChecked(true);
+      return;
+    }
+    if (hasAllFourIdPhotos(currentProf)) {
+      setUploadedIdCards({
+        schoolIdFront: String(currentProf.schoolIdFront),
+        schoolIdBack: String(currentProf.schoolIdBack),
+        libraryIdFront: String(currentProf.libraryIdFront),
+        libraryIdBack: String(currentProf.libraryIdBack),
+        ownerEmail: currentProf.email,
+        ownerStudentId: currentProf.studentId,
+      });
+      setIdCardsChecked(true);
+      return;
+    }
+    const stored = await loadStudentIdCardsForUser(user || currentProf);
+    setUploadedIdCards(stored);
+    setIdCardsChecked(true);
+  }, [user]);
+
   useEffect(() => {
     setReservations(getReservations());
     setProfile(getStudentProfile());
     setNotifications(getNotifications());
+    void refreshIdCardsState();
     return subscribe(() => {
       setReservations(getReservations());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
+      void refreshIdCardsState();
     });
-  }, []);
+  }, [refreshIdCardsState]);
 
   useFocusEffect(
     React.useCallback(() => {
       setReservations(getReservations());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
-    }, [])
+      void refreshIdCardsState();
+    }, [refreshIdCardsState])
   );
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -305,6 +368,234 @@ export default function ProfileScreen() {
     setPhotoOptionsVisible(true);
   };
 
+  const hasUploadedAllFour = hasAllFourIdPhotos(uploadedIdCards);
+
+  const openIdUploadModal = () => {
+    setDraftSchoolFront(uploadedIdCards?.schoolIdFront || "");
+    setDraftSchoolBack(uploadedIdCards?.schoolIdBack || "");
+    setDraftLibraryFront(uploadedIdCards?.libraryIdFront || "");
+    setDraftLibraryBack(uploadedIdCards?.libraryIdBack || "");
+    draftBase64Ref.current = {
+      schoolFront: uploadedIdCards?.schoolIdFront || "",
+      schoolBack: uploadedIdCards?.schoolIdBack || "",
+      libraryFront: uploadedIdCards?.libraryIdFront || "",
+      libraryBack: uploadedIdCards?.libraryIdBack || "",
+    };
+    setIdUploadModalVisible(true);
+  };
+
+  const pickSingleIdImage = async (
+    mode: "camera" | "gallery",
+    slotLabel: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    orientationOverride?: "portrait" | "landscape",
+    slotKey?: "schoolFront" | "schoolBack" | "libraryFront" | "libraryBack"
+  ): Promise<boolean> => {
+    const activeOrientation = orientationOverride || idCaptureOrientation;
+    const cropAspect: [number, number] =
+      activeOrientation === "portrait" ? [10, 16] : [16, 10];
+
+    try {
+      if (mode === "camera") {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Camera Permission Required",
+            `Please enable camera access to capture your ${slotLabel}.`
+          );
+          return false;
+        }
+        const res = await ImagePicker.launchCameraAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: cropAspect,
+          quality: 0.35,
+          base64: true,
+        });
+        if (!res.canceled && res.assets && res.assets.length > 0) {
+          const asset = res.assets[0];
+          const base64Uri = asset.base64
+            ? `data:image/jpeg;base64,${asset.base64}`
+            : asset.uri;
+          const localUri =
+            Platform.OS === "web" ? base64Uri : asset.uri || base64Uri;
+          if (slotKey) {
+            draftBase64Ref.current[slotKey] = base64Uri;
+          }
+          setter(localUri);
+          return true;
+        }
+        return false;
+      } else {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert(
+            "Gallery Permission Required",
+            `Please enable gallery access to upload your ${slotLabel}.`
+          );
+          return false;
+        }
+        const res = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: cropAspect,
+          quality: 0.35,
+          base64: true,
+        });
+        if (!res.canceled && res.assets && res.assets.length > 0) {
+          const asset = res.assets[0];
+          const base64Uri = asset.base64
+            ? `data:image/jpeg;base64,${asset.base64}`
+            : asset.uri;
+          const localUri =
+            Platform.OS === "web" ? base64Uri : asset.uri || base64Uri;
+          if (slotKey) {
+            draftBase64Ref.current[slotKey] = base64Uri;
+          }
+          setter(localUri);
+          return true;
+        }
+        return false;
+      }
+    } catch (err) {
+      console.warn(`Failed to pick ${slotLabel}:`, err);
+      Alert.alert("Upload Error", `Could not load ${slotLabel}. Please try again.`);
+      return false;
+    }
+  };
+
+  const promptOrientationAndPick = (
+    mode: "camera" | "gallery",
+    slotLabel: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    slotKey: "schoolFront" | "schoolBack" | "libraryFront" | "libraryBack"
+  ) => {
+    if (Platform.OS === "web") {
+      void pickSingleIdImage(mode, slotLabel, setter, idCaptureOrientation, slotKey);
+      return;
+    }
+    Alert.alert(
+      `${slotLabel} Orientation`,
+      `Choose Portrait (vertical ID) or Landscape (horizontal ID) before ${
+        mode === "camera" ? "capturing" : "cropping"
+      }:`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Portrait (Vertical)",
+          onPress: () => {
+            setIdCaptureOrientation("portrait");
+            void pickSingleIdImage(mode, slotLabel, setter, "portrait", slotKey);
+          },
+        },
+        {
+          text: "Landscape (Horizontal)",
+          onPress: () => {
+            setIdCaptureOrientation("landscape");
+            void pickSingleIdImage(mode, slotLabel, setter, "landscape", slotKey);
+          },
+        },
+      ]
+    );
+  };
+
+  const promptSlotSource = (
+    slotLabel: string,
+    setter: React.Dispatch<React.SetStateAction<string>>,
+    slotKey: "schoolFront" | "schoolBack" | "libraryFront" | "libraryBack"
+  ) => {
+    if (Platform.OS === "web") {
+      void pickSingleIdImage("gallery", slotLabel, setter, idCaptureOrientation, slotKey);
+      return;
+    }
+    Alert.alert(
+      slotLabel,
+      `How would you like to provide your ${slotLabel}?`,
+      [
+        {
+          text: "Take Photo (Camera)",
+          onPress: () => promptOrientationAndPick("camera", slotLabel, setter, slotKey),
+        },
+        {
+          text: "Choose from Gallery",
+          onPress: () => promptOrientationAndPick("gallery", slotLabel, setter, slotKey),
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  };
+
+  const handleSaveFourIdPhotos = async () => {
+    if (!draftSchoolFront || !draftSchoolBack || !draftLibraryFront || !draftLibraryBack) {
+      Alert.alert(
+        "All 4 ID Pictures Required",
+        "Please upload all 4 required ID pictures:\n• School ID (Front)\n• School ID (Back)\n• Library ID (Front)\n• Library ID (Back)"
+      );
+      return;
+    }
+
+    try {
+      setSavingIdCards(true);
+
+      const targetEmail = studentEmail !== "N/A" ? studentEmail : user?.email;
+      const targetStudentId = studentIdNumber !== "N/A" ? studentIdNumber : user?.studentId;
+
+      // Local payload uses lightweight file:// URIs on native devices to prevent Android SQLite_FULL
+      const cardsPayload: StudentIdCardsData = {
+        schoolIdFront: draftSchoolFront,
+        schoolIdBack: draftSchoolBack,
+        libraryIdFront: draftLibraryFront,
+        libraryIdBack: draftLibraryBack,
+        verifiedAt: new Date().toISOString(),
+        ownerEmail: targetEmail,
+        ownerStudentId: targetStudentId,
+      };
+
+      await saveStudentIdCardsToStorage(
+        cardsPayload,
+        targetEmail,
+        targetStudentId
+      );
+
+      setUploadedIdCards(cardsPayload);
+
+      if (updateUser) {
+        updateUser({
+          schoolIdFront: draftSchoolFront,
+          schoolIdBack: draftSchoolBack,
+          libraryIdFront: draftLibraryFront,
+          libraryIdBack: draftLibraryBack,
+        });
+      }
+
+      // Sync to backend using compressed base64 when available
+      await saveStudentProfile({
+        ...profile,
+        name: studentFullName,
+        studentId: studentIdNumber,
+        email: studentEmail !== "N/A" ? studentEmail : profile.email,
+        department: studentDepartment,
+        course: studentCourse,
+        schoolIdFront: draftBase64Ref.current.schoolFront || draftSchoolFront,
+        schoolIdBack: draftBase64Ref.current.schoolBack || draftSchoolBack,
+        libraryIdFront: draftBase64Ref.current.libraryFront || draftLibraryFront,
+        libraryIdBack: draftBase64Ref.current.libraryBack || draftLibraryBack,
+      });
+
+      setIdUploadModalVisible(false);
+
+      Alert.alert(
+        "ID Cards Uploaded!",
+        "Your School ID (Front & Back) and Library ID (Front & Back) have been saved. The upload button below your profile picture has now transformed into an ID icon—tap it anytime to view your 4 ID pictures!"
+      );
+    } catch (err) {
+      console.warn("Error saving 4 ID cards:", err);
+      Alert.alert("Error", "Could not save your ID pictures. Please try again.");
+    } finally {
+      setSavingIdCards(false);
+    }
+  };
+
   const TOTAL_CARD_ROWS = Math.max(14, borrowedBooks.length);
   const cardTableRows = Array.from({ length: TOTAL_CARD_ROWS }, (_, index) => {
     const item = borrowedBooks[index];
@@ -354,6 +645,67 @@ export default function ProfileScreen() {
     );
   };
 
+  const handleGuardedHeaderNav = (
+    targetRoute:
+      | "/notifications"
+      | "/privacy-security"
+      | "/terms-agreement"
+      | "/help"
+      | "/(tabs)"
+  ) => {
+    if (idCardsChecked && !hasUploadedAllFour) {
+      Alert.alert(
+        "ID Upload Required",
+        "Please click the button below your profile picture to upload your School ID (Front & Back) and Library ID (Front & Back) first.",
+        [
+          {
+            text: "Upload IDs Now",
+            onPress: openIdUploadModal,
+          },
+          {
+            text: "Sign Out",
+            style: "destructive",
+            onPress: handleLogout,
+          },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+      return;
+    }
+    router.push(targetRoute as any);
+  };
+
+  const systemSettingsOptions = [
+    {
+      id: "opt-1",
+      title: "Notifications",
+      detail: "Manage alerts and reminders",
+      icon: "bell-outline",
+      onPress: () => handleGuardedHeaderNav("/notifications"),
+    },
+    {
+      id: "opt-2",
+      title: "Privacy & Security",
+      detail: "Library account privacy controls",
+      icon: "lock-outline",
+      onPress: () => handleGuardedHeaderNav("/privacy-security"),
+    },
+    {
+      id: "opt-3",
+      title: "Terms & Agreement",
+      detail: "Policies, library rules & obligations",
+      icon: "file-document-outline",
+      onPress: () => handleGuardedHeaderNav("/terms-agreement"),
+    },
+    {
+      id: "opt-4",
+      title: "Help & Support",
+      detail: "FAQs, user guides & assistant contact",
+      icon: "help-circle-outline",
+      onPress: () => handleGuardedHeaderNav("/help"),
+    },
+  ];
+
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
       <ScrollView
@@ -364,27 +716,28 @@ export default function ProfileScreen() {
       >
         {/* HEADER */}
         <View style={[styles.header, { paddingTop: 20 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
-          <Text style={[styles.headerTitle, { color: theme.headerTitle }]}>
-            BOOKHIVE PROFILE
-          </Text>
-
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <TouchableOpacity
               style={styles.notificationButtonRelative}
-              onPress={() => router.push("/settings")}
+              onPress={() => handleGuardedHeaderNav("/(tabs)")}
               activeOpacity={0.7}
-              accessibilityLabel="Settings"
+              accessibilityLabel="Back to Home"
             >
               <Ionicons
-                name="settings-outline"
+                name="arrow-back"
                 size={22}
                 color={isDarkMode ? theme.accentGold : theme.accentBlue}
               />
             </TouchableOpacity>
+            <Text style={[styles.headerTitle, { color: theme.headerTitle }]}>
+              BOOKHIVE PROFILE
+            </Text>
+          </View>
 
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
             <TouchableOpacity
               style={styles.notificationButtonRelative}
-              onPress={() => router.push("/notifications")}
+              onPress={() => handleGuardedHeaderNav("/notifications")}
               activeOpacity={0.7}
             >
               <Ionicons
@@ -402,6 +755,45 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* REQUIRED ID UPLOAD NOTICE FOR EXISTING ACCOUNTS WITHOUT THE 4 ID PHOTOS */}
+        {idCardsChecked && !hasUploadedAllFour && (
+          <View
+            style={[
+              styles.requiredIdBanner,
+              {
+                backgroundColor: isDarkMode ? "rgba(234, 179, 8, 0.14)" : "#FEF9C3",
+                borderColor: isDarkMode ? "#FACC15" : "#EAB308",
+              },
+            ]}
+          >
+            <View style={styles.requiredIdBannerIconWrap}>
+              <Ionicons
+                name="alert-circle"
+                size={22}
+                color={isDarkMode ? "#FACC15" : "#B45309"}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  styles.requiredIdBannerTitle,
+                  { color: isDarkMode ? "#FACC15" : "#92400E" },
+                ]}
+              >
+                Action Required: Upload Your School & Library IDs
+              </Text>
+              <Text
+                style={[
+                  styles.requiredIdBannerSub,
+                  { color: isDarkMode ? "#E2E8F0" : "#78350F" },
+                ]}
+              >
+                Your existing student account does not have your 4 ID pictures on file yet. Please click the button below your profile picture to upload your School ID (Front & Back) and Library ID (Front & Back).
+              </Text>
+            </View>
+          </View>
+        )}
 
             {/* PROFILE CARD */}
             <View style={[
@@ -505,6 +897,123 @@ export default function ProfileScreen() {
                   {hasValidAvatar ? "Change Photo" : "Add Profile Photo"}
                 </Text>
               </TouchableOpacity>
+
+              {/* BUTTON BELOW PROFILE PICTURE:
+                  - For existing student accounts without the 4 ID pictures: Upload School & Library ID (Front & Back) button
+                  - After uploading (and for new sign-in student accounts): Transforms into an ID Icon button that opens the 4 ID pictures */}
+              {idCardsChecked && !hasUploadedAllFour ? (
+                <TouchableOpacity
+                  onPress={openIdUploadModal}
+                  activeOpacity={0.85}
+                  style={[
+                    styles.uploadIdButtonBelowAvatar,
+                    {
+                      backgroundColor: isDarkMode ? "#FACC15" : "#0274BB",
+                      shadowColor: isDarkMode ? "#FACC15" : "#0274BB",
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Upload School ID and Library ID Front and Back"
+                >
+                  <Ionicons
+                    name="cloud-upload"
+                    size={18}
+                    color={isDarkMode ? "#080F1E" : "#FFFFFF"}
+                  />
+                  <View style={{ marginLeft: 8, alignItems: "flex-start" }}>
+                    <Text
+                      style={[
+                        styles.uploadIdButtonText,
+                        { color: isDarkMode ? "#080F1E" : "#FFFFFF" },
+                      ]}
+                    >
+                      Upload School & Library ID
+                    </Text>
+                    <Text
+                      style={[
+                        styles.uploadIdButtonSubtext,
+                        {
+                          color: isDarkMode
+                            ? "rgba(8, 15, 30, 0.78)"
+                            : "rgba(255, 255, 255, 0.88)",
+                        },
+                      ]}
+                    >
+                      Required • Front & Back (4 Photos)
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.uploadIdReqBadge,
+                      {
+                        backgroundColor: isDarkMode ? "#080F1E" : "#FACC15",
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 9.5,
+                        fontWeight: "900",
+                        color: isDarkMode ? "#FACC15" : "#080F1E",
+                      }}
+                    >
+                      REQUIRED
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ) : hasUploadedAllFour ? (
+                <TouchableOpacity
+                  onPress={() => setIdViewerModalVisible(true)}
+                  activeOpacity={0.8}
+                  style={[
+                    styles.idIconButtonBelowAvatar,
+                    {
+                      backgroundColor: isDarkMode
+                        ? "rgba(16, 185, 129, 0.14)"
+                        : "rgba(2, 116, 187, 0.1)",
+                      borderColor: isDarkMode ? "#10B981" : "#0274BB",
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="View School ID and Library ID Photos"
+                >
+                  <View
+                    style={[
+                      styles.idIconCircle,
+                      {
+                        backgroundColor: isDarkMode ? "#10B981" : "#0274BB",
+                      },
+                    ]}
+                  >
+                    <Ionicons name="id-card" size={18} color="#FFFFFF" />
+                  </View>
+                  <View style={{ marginLeft: 8, marginRight: 4 }}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "800",
+                        color: isDarkMode ? "#10B981" : "#0274BB",
+                      }}
+                    >
+                      Student & Library IDs
+                    </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: "600",
+                        color: theme.textSecondary,
+                      }}
+                    >
+                      Tap ID icon to view 4 photos
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color="#10B981"
+                  />
+                </TouchableOpacity>
+              ) : null}
 
               <Text style={[styles.name, { color: theme.textPrimary }]}>
                 {studentFullName}
@@ -905,6 +1414,190 @@ export default function ProfileScreen() {
                 </View>
               )}
             </View>
+
+            {/* SYSTEM SETTINGS SECTION (Moved from settings.tsx into Profile Page) */}
+            <View style={styles.settingsSectionWrap}>
+              <Text style={[styles.settingsGroupTitle, { color: theme.textSecondary }]}>
+                GENERAL SETTINGS
+              </Text>
+
+              {systemSettingsOptions.map((option, idx) => (
+                <TouchableOpacity
+                  key={`opt-${option.id}-${idx}`}
+                  style={[
+                    styles.sysSettingsCard,
+                    { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+                  ]}
+                  onPress={option.onPress}
+                  activeOpacity={0.85}
+                >
+                  <View style={styles.settingsCardLeft}>
+                    <View
+                      style={[
+                        styles.settingsIconWrapper,
+                        { backgroundColor: theme.background, borderColor: theme.cardBorder },
+                      ]}
+                    >
+                      <MaterialCommunityIcons
+                        name={option.icon as any}
+                        size={20}
+                        color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                      />
+                    </View>
+                    <View style={styles.settingsCardTexts}>
+                      <Text style={[styles.settingsCardTitle, { color: theme.textPrimary }]}>
+                        {option.title}
+                      </Text>
+                      <Text style={[styles.settingsCardDetail, { color: theme.textSecondary }]}>
+                        {option.detail}
+                      </Text>
+                    </View>
+                  </View>
+                  <MaterialCommunityIcons
+                    name="chevron-right"
+                    size={20}
+                    color={theme.textSecondary}
+                  />
+                </TouchableOpacity>
+              ))}
+
+              {/* TOGGLE ROW: PUSH NOTIFICATIONS */}
+              <View
+                style={[
+                  styles.settingsToggleCard,
+                  { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+                ]}
+              >
+                <View style={styles.settingsCardLeft}>
+                  <View
+                    style={[
+                      styles.settingsIconWrapper,
+                      { backgroundColor: theme.background, borderColor: theme.cardBorder },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="bell-ring-outline"
+                      size={20}
+                      color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                    />
+                  </View>
+                  <View style={styles.settingsCardTexts}>
+                    <Text style={[styles.settingsCardTitle, { color: theme.textPrimary }]}>
+                      Push Notifications
+                    </Text>
+                    <Text style={[styles.settingsCardDetail, { color: theme.textSecondary }]}>
+                      Receive real-time reservation updates
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={notificationsEnabled}
+                  onValueChange={setNotificationsEnabled}
+                  trackColor={{
+                    false: theme.cardBorder,
+                    true: isDarkMode ? theme.accentGold : theme.accentBlue,
+                  }}
+                  thumbColor={
+                    notificationsEnabled
+                      ? isDarkMode
+                        ? theme.accentGold
+                        : theme.accentBlue
+                      : "#64748B"
+                  }
+                  ios_backgroundColor={theme.cardBorder}
+                />
+              </View>
+
+              {/* TOGGLE ROW: SYSTEM THEME (DARK MODE) */}
+              <View
+                style={[
+                  styles.settingsToggleCard,
+                  { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+                ]}
+              >
+                <View style={styles.settingsCardLeft}>
+                  <View
+                    style={[
+                      styles.settingsIconWrapper,
+                      { backgroundColor: theme.background, borderColor: theme.cardBorder },
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="theme-light-dark"
+                      size={20}
+                      color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                    />
+                  </View>
+                  <View style={styles.settingsCardTexts}>
+                    <Text style={[styles.settingsCardTitle, { color: theme.textPrimary }]}>
+                      Dark Mode
+                    </Text>
+                    <Text style={[styles.settingsCardDetail, { color: theme.textSecondary }]}>
+                      Toggle dark / light display appearance
+                    </Text>
+                  </View>
+                </View>
+                <Switch
+                  value={isDarkMode}
+                  onValueChange={toggleTheme}
+                  trackColor={{
+                    false: theme.cardBorder,
+                    true: isDarkMode ? theme.accentGold : theme.accentBlue,
+                  }}
+                  thumbColor={isDarkMode ? theme.accentGold : "#64748B"}
+                  ios_backgroundColor={theme.cardBorder}
+                />
+              </View>
+
+              {/* ACCOUNT & SESSION GROUP */}
+              <Text
+                style={[
+                  styles.settingsGroupTitle,
+                  { color: theme.textSecondary, marginTop: 12 },
+                ]}
+              >
+                ACCOUNT & SESSION
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.sysSettingsCard,
+                  {
+                    backgroundColor: theme.cardBg,
+                    borderColor: isDarkMode ? "rgba(239, 68, 68, 0.35)" : "#FEE2E2",
+                  },
+                ]}
+                onPress={handleLogout}
+                activeOpacity={0.85}
+              >
+                <View style={styles.settingsCardLeft}>
+                  <View
+                    style={[
+                      styles.settingsIconWrapper,
+                      {
+                        backgroundColor: isDarkMode
+                          ? "rgba(239, 68, 68, 0.15)"
+                          : "#FEF2F2",
+                        borderColor: isDarkMode
+                          ? "rgba(239, 68, 68, 0.3)"
+                          : "#FCA5A5",
+                      },
+                    ]}
+                  >
+                    <MaterialCommunityIcons name="logout" size={20} color="#EF4444" />
+                  </View>
+                  <View style={styles.settingsCardTexts}>
+                    <Text style={[styles.settingsCardTitle, { color: "#EF4444" }]}>
+                      Sign Out
+                    </Text>
+                    <Text style={[styles.settingsCardDetail, { color: theme.textSecondary }]}>
+                      Log out of your student account session
+                    </Text>
+                  </View>
+                </View>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#EF4444" />
+              </TouchableOpacity>
+            </View>
       </ScrollView>
 
       {/* 1. WHITE CONTAINER: PROFILE PICTURE OPTIONS MODAL */}
@@ -1100,6 +1793,1299 @@ export default function ProfileScreen() {
             >
               <Ionicons name="arrow-back" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
               <Text style={styles.viewerBottomCloseText}>Back to Profile</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 3. UPLOAD SCHOOL ID (FRONT & BACK) & LIBRARY ID (FRONT & BACK) MODAL */}
+      <Modal
+        visible={idUploadModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setIdUploadModalVisible(false)}
+      >
+        <View style={styles.idModalOverlay}>
+          <View
+            style={[
+              styles.idModalContainer,
+              {
+                backgroundColor: isDarkMode ? "#0F172A" : "#FFFFFF",
+                borderColor: isDarkMode ? "#1E293B" : "#E2E8F0",
+                paddingBottom: Math.max(20, insets.bottom + 12),
+              },
+            ]}
+          >
+            {/* Modal Header */}
+            <View
+              style={[
+                styles.idModalHeader,
+                { borderBottomColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+              ]}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                <View
+                  style={[
+                    styles.idModalHeaderIcon,
+                    { backgroundColor: isDarkMode ? "rgba(250, 204, 21, 0.15)" : "rgba(2, 116, 187, 0.1)" },
+                  ]}
+                >
+                  <Ionicons
+                    name="id-card"
+                    size={22}
+                    color={isDarkMode ? "#FACC15" : "#0274BB"}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.idModalTitle,
+                      { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                    ]}
+                  >
+                    Upload School & Library ID
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: isDarkMode ? "#94A3B8" : "#64748B",
+                      marginTop: 2,
+                    }}
+                  >
+                    Upload Front & Back of both IDs (4 pictures total)
+                  </Text>
+                </View>
+              </View>
+
+              <View
+                style={[
+                  styles.idProgressPill,
+                  {
+                    backgroundColor:
+                      [draftSchoolFront, draftSchoolBack, draftLibraryFront, draftLibraryBack].filter(Boolean)
+                        .length === 4
+                        ? "rgba(16, 185, 129, 0.16)"
+                        : isDarkMode
+                        ? "rgba(250, 204, 21, 0.15)"
+                        : "rgba(2, 116, 187, 0.1)",
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    fontSize: 11.5,
+                    fontWeight: "800",
+                    color:
+                      [draftSchoolFront, draftSchoolBack, draftLibraryFront, draftLibraryBack].filter(Boolean)
+                        .length === 4
+                        ? "#10B981"
+                        : isDarkMode
+                        ? "#FACC15"
+                        : "#0274BB",
+                  }}
+                >
+                  {[draftSchoolFront, draftSchoolBack, draftLibraryFront, draftLibraryBack].filter(Boolean).length}/4 Ready
+                </Text>
+              </View>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ padding: 18, paddingBottom: 24 }}
+            >
+              {/* PORTRAIT / LANDSCAPE ORIENTATION SELECTOR */}
+              <View
+                style={{
+                  backgroundColor: isDarkMode ? "#111C33" : "#F1F5F9",
+                  borderRadius: 14,
+                  padding: 10,
+                  marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: isDarkMode ? "#263554" : "#CBD5E1",
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    marginBottom: 8,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons
+                      name="crop-outline"
+                      size={15}
+                      color={isDarkMode ? "#FACC15" : "#0274BB"}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "800",
+                        color: isDarkMode ? "#F8FAFC" : "#0F172A",
+                      }}
+                    >
+                      ID Capture Orientation
+                    </Text>
+                  </View>
+                  <Text
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: "600",
+                      color: isDarkMode ? "#94A3B8" : "#64748B",
+                    }}
+                  >
+                    {idCaptureOrientation === "portrait"
+                      ? "Vertical (10:16)"
+                      : "Horizontal (16:10)"}
+                  </Text>
+                </View>
+
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setIdCaptureOrientation("portrait")}
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      paddingVertical: 9,
+                      borderRadius: 10,
+                      borderWidth: 1.5,
+                      backgroundColor:
+                        idCaptureOrientation === "portrait"
+                          ? isDarkMode
+                            ? "rgba(250, 204, 21, 0.16)"
+                            : "rgba(2, 116, 187, 0.12)"
+                          : isDarkMode
+                          ? "#1E293B"
+                          : "#FFFFFF",
+                      borderColor:
+                        idCaptureOrientation === "portrait"
+                          ? isDarkMode
+                            ? "#FACC15"
+                            : "#0274BB"
+                          : isDarkMode
+                          ? "#334155"
+                          : "#CBD5E1",
+                    }}
+                  >
+                    <Ionicons
+                      name="phone-portrait-outline"
+                      size={15}
+                      color={
+                        idCaptureOrientation === "portrait"
+                          ? isDarkMode
+                            ? "#FACC15"
+                            : "#0274BB"
+                          : isDarkMode
+                          ? "#94A3B8"
+                          : "#64748B"
+                      }
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "800",
+                        color:
+                          idCaptureOrientation === "portrait"
+                            ? isDarkMode
+                              ? "#FACC15"
+                              : "#0274BB"
+                            : isDarkMode
+                            ? "#CBD5E1"
+                            : "#475569",
+                      }}
+                    >
+                      Portrait (Vertical)
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => setIdCaptureOrientation("landscape")}
+                    style={{
+                      flex: 1,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      paddingVertical: 9,
+                      borderRadius: 10,
+                      borderWidth: 1.5,
+                      backgroundColor:
+                        idCaptureOrientation === "landscape"
+                          ? isDarkMode
+                            ? "rgba(250, 204, 21, 0.16)"
+                            : "rgba(2, 116, 187, 0.12)"
+                          : isDarkMode
+                          ? "#1E293B"
+                          : "#FFFFFF",
+                      borderColor:
+                        idCaptureOrientation === "landscape"
+                          ? isDarkMode
+                            ? "#FACC15"
+                            : "#0274BB"
+                          : isDarkMode
+                          ? "#334155"
+                          : "#CBD5E1",
+                    }}
+                  >
+                    <Ionicons
+                      name="phone-landscape-outline"
+                      size={15}
+                      color={
+                        idCaptureOrientation === "landscape"
+                          ? isDarkMode
+                            ? "#FACC15"
+                            : "#0274BB"
+                          : isDarkMode
+                          ? "#94A3B8"
+                          : "#64748B"
+                      }
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: "800",
+                        color:
+                          idCaptureOrientation === "landscape"
+                            ? isDarkMode
+                              ? "#FACC15"
+                              : "#0274BB"
+                            : isDarkMode
+                            ? "#CBD5E1"
+                            : "#475569",
+                      }}
+                    >
+                      Landscape (Horizontal)
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* SECTION 1: SCHOOL ID */}
+              <View style={styles.idSectionHeaderRow}>
+                <Ionicons
+                  name="school-outline"
+                  size={17}
+                  color={isDarkMode ? "#FACC15" : "#0274BB"}
+                />
+                <Text
+                  style={[
+                    styles.idSectionHeading,
+                    { color: isDarkMode ? "#FACC15" : "#0274BB" },
+                  ]}
+                >
+                  1. School ID (Front & Back)
+                </Text>
+              </View>
+
+              <View style={styles.idSlotsGrid}>
+                {/* School ID Front */}
+                <View
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: draftSchoolFront
+                        ? "#10B981"
+                        : isDarkMode
+                        ? "#263554"
+                        : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      School ID • Front
+                    </Text>
+                    {draftSchoolFront ? (
+                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    ) : null}
+                  </View>
+
+                  {draftSchoolFront ? (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        promptSlotSource("School ID (Front)", setDraftSchoolFront, "schoolFront")
+                      }
+                      style={styles.idPreviewWrap}
+                    >
+                      <Image
+                        source={{ uri: draftSchoolFront }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.idRetakeOverlay}>
+                        <Ionicons name="camera-reverse-outline" size={14} color="#FFFFFF" />
+                        <Text style={styles.idRetakeText}>Change</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.idEmptySlotBody}>
+                      <Ionicons
+                        name="id-card-outline"
+                        size={28}
+                        color={isDarkMode ? "#64748B" : "#94A3B8"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: isDarkMode ? "#94A3B8" : "#64748B",
+                          marginTop: 4,
+                          marginBottom: 8,
+                        }}
+                      >
+                        Front Side
+                      </Text>
+                      <View style={styles.idActionMiniRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "camera",
+                              "School ID (Front)",
+                              setDraftSchoolFront,
+                              "schoolFront"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Camera
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "gallery",
+                              "School ID (Front)",
+                              setDraftSchoolFront,
+                              "schoolFront"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="images-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Gallery
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* School ID Back */}
+                <View
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: draftSchoolBack
+                        ? "#10B981"
+                        : isDarkMode
+                        ? "#263554"
+                        : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      School ID • Back
+                    </Text>
+                    {draftSchoolBack ? (
+                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    ) : null}
+                  </View>
+
+                  {draftSchoolBack ? (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        promptSlotSource("School ID (Back)", setDraftSchoolBack, "schoolBack")
+                      }
+                      style={styles.idPreviewWrap}
+                    >
+                      <Image
+                        source={{ uri: draftSchoolBack }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.idRetakeOverlay}>
+                        <Ionicons name="camera-reverse-outline" size={14} color="#FFFFFF" />
+                        <Text style={styles.idRetakeText}>Change</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.idEmptySlotBody}>
+                      <Ionicons
+                        name="card-outline"
+                        size={28}
+                        color={isDarkMode ? "#64748B" : "#94A3B8"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: isDarkMode ? "#94A3B8" : "#64748B",
+                          marginTop: 4,
+                          marginBottom: 8,
+                        }}
+                      >
+                        Back Side
+                      </Text>
+                      <View style={styles.idActionMiniRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "camera",
+                              "School ID (Back)",
+                              setDraftSchoolBack,
+                              "schoolBack"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Camera
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "gallery",
+                              "School ID (Back)",
+                              setDraftSchoolBack,
+                              "schoolBack"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="images-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Gallery
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+
+              {/* SECTION 2: LIBRARY ID */}
+              <View style={[styles.idSectionHeaderRow, { marginTop: 18 }]}>
+                <Ionicons
+                  name="library-outline"
+                  size={17}
+                  color={isDarkMode ? "#FACC15" : "#0274BB"}
+                />
+                <Text
+                  style={[
+                    styles.idSectionHeading,
+                    { color: isDarkMode ? "#FACC15" : "#0274BB" },
+                  ]}
+                >
+                  2. Library ID (Front & Back)
+                </Text>
+              </View>
+
+              <View style={styles.idSlotsGrid}>
+                {/* Library ID Front */}
+                <View
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: draftLibraryFront
+                        ? "#10B981"
+                        : isDarkMode
+                        ? "#263554"
+                        : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      Library ID • Front
+                    </Text>
+                    {draftLibraryFront ? (
+                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    ) : null}
+                  </View>
+
+                  {draftLibraryFront ? (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        promptSlotSource(
+                          "Library ID (Front)",
+                          setDraftLibraryFront,
+                          "libraryFront"
+                        )
+                      }
+                      style={styles.idPreviewWrap}
+                    >
+                      <Image
+                        source={{ uri: draftLibraryFront }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.idRetakeOverlay}>
+                        <Ionicons name="camera-reverse-outline" size={14} color="#FFFFFF" />
+                        <Text style={styles.idRetakeText}>Change</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.idEmptySlotBody}>
+                      <Ionicons
+                        name="id-card-outline"
+                        size={28}
+                        color={isDarkMode ? "#64748B" : "#94A3B8"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: isDarkMode ? "#94A3B8" : "#64748B",
+                          marginTop: 4,
+                          marginBottom: 8,
+                        }}
+                      >
+                        Front Side
+                      </Text>
+                      <View style={styles.idActionMiniRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "camera",
+                              "Library ID (Front)",
+                              setDraftLibraryFront,
+                              "libraryFront"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Camera
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "gallery",
+                              "Library ID (Front)",
+                              setDraftLibraryFront,
+                              "libraryFront"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="images-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Gallery
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+
+                {/* Library ID Back */}
+                <View
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: draftLibraryBack
+                        ? "#10B981"
+                        : isDarkMode
+                        ? "#263554"
+                        : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      Library ID • Back
+                    </Text>
+                    {draftLibraryBack ? (
+                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
+                    ) : null}
+                  </View>
+
+                  {draftLibraryBack ? (
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() =>
+                        promptSlotSource(
+                          "Library ID (Back)",
+                          setDraftLibraryBack,
+                          "libraryBack"
+                        )
+                      }
+                      style={styles.idPreviewWrap}
+                    >
+                      <Image
+                        source={{ uri: draftLibraryBack }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.idRetakeOverlay}>
+                        <Ionicons name="camera-reverse-outline" size={14} color="#FFFFFF" />
+                        <Text style={styles.idRetakeText}>Change</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={styles.idEmptySlotBody}>
+                      <Ionicons
+                        name="card-outline"
+                        size={28}
+                        color={isDarkMode ? "#64748B" : "#94A3B8"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: isDarkMode ? "#94A3B8" : "#64748B",
+                          marginTop: 4,
+                          marginBottom: 8,
+                        }}
+                      >
+                        Back Side
+                      </Text>
+                      <View style={styles.idActionMiniRow}>
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "camera",
+                              "Library ID (Back)",
+                              setDraftLibraryBack,
+                              "libraryBack"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="camera-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Camera
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.idMiniBtn,
+                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+                          ]}
+                          onPress={() =>
+                            promptOrientationAndPick(
+                              "gallery",
+                              "Library ID (Back)",
+                              setDraftLibraryBack,
+                              "libraryBack"
+                            )
+                          }
+                        >
+                          <Ionicons
+                            name="images-outline"
+                            size={14}
+                            color={isDarkMode ? "#FACC15" : "#0274BB"}
+                          />
+                          <Text
+                            style={[
+                              styles.idMiniBtnText,
+                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                            ]}
+                          >
+                            Gallery
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Footer Buttons */}
+            <View
+              style={[
+                styles.idModalFooter,
+                { borderTopColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.idCancelBtn,
+                  {
+                    borderColor: isDarkMode ? "#334155" : "#CBD5E1",
+                    backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9",
+                  },
+                ]}
+                onPress={() => setIdUploadModalVisible(false)}
+                disabled={savingIdCards}
+              >
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "700",
+                    color: isDarkMode ? "#E2E8F0" : "#475569",
+                  }}
+                >
+                  Close
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.idSubmitBtn,
+                  {
+                    backgroundColor:
+                      draftSchoolFront && draftSchoolBack && draftLibraryFront && draftLibraryBack
+                        ? isDarkMode
+                          ? "#FACC15"
+                          : "#0274BB"
+                        : isDarkMode
+                        ? "#334155"
+                        : "#94A3B8",
+                  },
+                ]}
+                onPress={handleSaveFourIdPhotos}
+                disabled={savingIdCards}
+              >
+                {savingIdCards ? (
+                  <ActivityIndicator
+                    size="small"
+                    color={isDarkMode ? "#080F1E" : "#FFFFFF"}
+                  />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="checkmark-done-circle"
+                      size={18}
+                      color={
+                        draftSchoolFront && draftSchoolBack && draftLibraryFront && draftLibraryBack
+                          ? isDarkMode
+                            ? "#080F1E"
+                            : "#FFFFFF"
+                          : "#CBD5E1"
+                      }
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text
+                      style={{
+                        fontSize: 14,
+                        fontWeight: "800",
+                        color:
+                          draftSchoolFront && draftSchoolBack && draftLibraryFront && draftLibraryBack
+                            ? isDarkMode
+                              ? "#080F1E"
+                              : "#FFFFFF"
+                            : "#CBD5E1",
+                      }}
+                    >
+                      Save All 4 ID Photos
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 4. VIEW 4 ID PICTURES MODAL (OPENED BY CLICKING THE ID ICON BELOW PROFILE PICTURE) */}
+      <Modal
+        visible={idViewerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIdViewerModalVisible(false)}
+      >
+        <View style={styles.idModalOverlay}>
+          <View
+            style={[
+              styles.idModalContainer,
+              {
+                backgroundColor: isDarkMode ? "#0F172A" : "#FFFFFF",
+                borderColor: isDarkMode ? "#1E293B" : "#E2E8F0",
+                paddingBottom: Math.max(20, insets.bottom + 12),
+              },
+            ]}
+          >
+            {/* Header */}
+            <View
+              style={[
+                styles.idModalHeader,
+                { borderBottomColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+              ]}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                <View
+                  style={[
+                    styles.idModalHeaderIcon,
+                    { backgroundColor: "rgba(16, 185, 129, 0.15)" },
+                  ]}
+                >
+                  <Ionicons name="id-card" size={22} color="#10B981" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.idModalTitle,
+                      { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
+                    ]}
+                  >
+                    Verified Student & Library IDs
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      color: isDarkMode ? "#94A3B8" : "#64748B",
+                      marginTop: 2,
+                    }}
+                  >
+                    {studentFullName} • {studentIdNumber}
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                onPress={() => setIdViewerModalVisible(false)}
+                style={styles.whiteContainerCloseIcon}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
+                <Ionicons
+                  name="close"
+                  size={22}
+                  color={isDarkMode ? "#94A3B8" : "#64748B"}
+                />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ padding: 18, paddingBottom: 24 }}
+            >
+              {/* School ID Front & Back */}
+              <View style={styles.idSectionHeaderRow}>
+                <Ionicons
+                  name="school-outline"
+                  size={17}
+                  color={isDarkMode ? "#FACC15" : "#0274BB"}
+                />
+                <Text
+                  style={[
+                    styles.idSectionHeading,
+                    { color: isDarkMode ? "#FACC15" : "#0274BB" },
+                  ]}
+                >
+                  School ID (Front & Back)
+                </Text>
+              </View>
+
+              <View style={styles.idSlotsGrid}>
+                {/* 1. School ID Front */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    uploadedIdCards?.schoolIdFront &&
+                    setEnlargedIdPhoto({
+                      title: "School ID • Front",
+                      uri: uploadedIdCards.schoolIdFront,
+                    })
+                  }
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: isDarkMode ? "#263554" : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      School ID • Front
+                    </Text>
+                    <Ionicons
+                      name="expand-outline"
+                      size={14}
+                      color={isDarkMode ? "#94A3B8" : "#64748B"}
+                    />
+                  </View>
+                  {uploadedIdCards?.schoolIdFront ? (
+                    <View style={styles.idPreviewWrap}>
+                      <Image
+                        source={{ uri: uploadedIdCards.schoolIdFront }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+
+                {/* 2. School ID Back */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    uploadedIdCards?.schoolIdBack &&
+                    setEnlargedIdPhoto({
+                      title: "School ID • Back",
+                      uri: uploadedIdCards.schoolIdBack,
+                    })
+                  }
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: isDarkMode ? "#263554" : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      School ID • Back
+                    </Text>
+                    <Ionicons
+                      name="expand-outline"
+                      size={14}
+                      color={isDarkMode ? "#94A3B8" : "#64748B"}
+                    />
+                  </View>
+                  {uploadedIdCards?.schoolIdBack ? (
+                    <View style={styles.idPreviewWrap}>
+                      <Image
+                        source={{ uri: uploadedIdCards.schoolIdBack }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              </View>
+
+              {/* Library ID Front & Back */}
+              <View style={[styles.idSectionHeaderRow, { marginTop: 18 }]}>
+                <Ionicons
+                  name="library-outline"
+                  size={17}
+                  color={isDarkMode ? "#FACC15" : "#0274BB"}
+                />
+                <Text
+                  style={[
+                    styles.idSectionHeading,
+                    { color: isDarkMode ? "#FACC15" : "#0274BB" },
+                  ]}
+                >
+                  Library ID (Front & Back)
+                </Text>
+              </View>
+
+              <View style={styles.idSlotsGrid}>
+                {/* 3. Library ID Front */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    uploadedIdCards?.libraryIdFront &&
+                    setEnlargedIdPhoto({
+                      title: "Library ID • Front",
+                      uri: uploadedIdCards.libraryIdFront,
+                    })
+                  }
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: isDarkMode ? "#263554" : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      Library ID • Front
+                    </Text>
+                    <Ionicons
+                      name="expand-outline"
+                      size={14}
+                      color={isDarkMode ? "#94A3B8" : "#64748B"}
+                    />
+                  </View>
+                  {uploadedIdCards?.libraryIdFront ? (
+                    <View style={styles.idPreviewWrap}>
+                      <Image
+                        source={{ uri: uploadedIdCards.libraryIdFront }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+
+                {/* 4. Library ID Back */}
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={() =>
+                    uploadedIdCards?.libraryIdBack &&
+                    setEnlargedIdPhoto({
+                      title: "Library ID • Back",
+                      uri: uploadedIdCards.libraryIdBack,
+                    })
+                  }
+                  style={[
+                    styles.idSlotCard,
+                    {
+                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
+                      borderColor: isDarkMode ? "#263554" : "#CBD5E1",
+                    },
+                  ]}
+                >
+                  <View style={styles.idSlotLabelRow}>
+                    <Text
+                      style={[
+                        styles.idSlotLabel,
+                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
+                      ]}
+                    >
+                      Library ID • Back
+                    </Text>
+                    <Ionicons
+                      name="expand-outline"
+                      size={14}
+                      color={isDarkMode ? "#94A3B8" : "#64748B"}
+                    />
+                  </View>
+                  {uploadedIdCards?.libraryIdBack ? (
+                    <View style={styles.idPreviewWrap}>
+                      <Image
+                        source={{ uri: uploadedIdCards.libraryIdBack }}
+                        style={styles.idPreviewImage}
+                        resizeMode="contain"
+                      />
+                    </View>
+                  ) : null}
+                </TouchableOpacity>
+              </View>
+
+              <Text
+                style={{
+                  fontSize: 11.5,
+                  color: isDarkMode ? "#94A3B8" : "#64748B",
+                  textAlign: "center",
+                  marginTop: 14,
+                }}
+              >
+                Tap any of the 4 ID pictures above to view full screen.
+              </Text>
+            </ScrollView>
+
+            {/* Footer */}
+            <View
+              style={[
+                styles.idModalFooter,
+                { borderTopColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
+              ]}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.idSubmitBtn,
+                  {
+                    backgroundColor: isDarkMode ? "#FACC15" : "#0274BB",
+                  },
+                ]}
+                onPress={() => setIdViewerModalVisible(false)}
+              >
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={isDarkMode ? "#080F1E" : "#FFFFFF"}
+                  style={{ marginRight: 6 }}
+                />
+                <Text
+                  style={{
+                    fontSize: 14,
+                    fontWeight: "800",
+                    color: isDarkMode ? "#080F1E" : "#FFFFFF",
+                  }}
+                >
+                  Done
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 5. FULL-SCREEN SINGLE ID CARD ZOOM MODAL */}
+      <Modal
+        visible={Boolean(enlargedIdPhoto)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEnlargedIdPhoto(null)}
+      >
+        <View style={styles.viewerBackdrop}>
+          <View style={[styles.viewerHeader, { paddingTop: insets.top + 10 }]}>
+            <TouchableOpacity
+              onPress={() => setEnlargedIdPhoto(null)}
+              style={styles.viewerBackBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+              <Text style={styles.viewerBackBtnText}>Back</Text>
+            </TouchableOpacity>
+            <Text style={styles.viewerHeaderTitle}>
+              {enlargedIdPhoto?.title || "ID Card"}
+            </Text>
+            <View style={{ width: 48 }} />
+          </View>
+
+          <View style={styles.viewerBody}>
+            {enlargedIdPhoto?.uri ? (
+              <Image
+                source={{ uri: enlargedIdPhoto.uri }}
+                style={{
+                  width: SCREEN_WIDTH - 32,
+                  height: (SCREEN_WIDTH - 32) * 0.65,
+                  borderRadius: 16,
+                  borderWidth: 2,
+                  borderColor: "#FACC15",
+                }}
+                resizeMode="contain"
+              />
+            ) : null}
+          </View>
+
+          <View style={[styles.viewerBottomContainer, { paddingBottom: insets.bottom + 20 }]}>
+            <TouchableOpacity
+              style={styles.viewerBottomCloseBtn}
+              onPress={() => setEnlargedIdPhoto(null)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={18} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.viewerBottomCloseText}>Close Preview</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1865,5 +3851,289 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "700",
+  },
+
+  /* Required ID Upload Banner & Button/ID Icon Below Profile Picture */
+  requiredIdBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginHorizontal: 20,
+    marginTop: 16,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    gap: 10,
+  },
+  requiredIdBannerIconWrap: {
+    marginTop: 1,
+  },
+  requiredIdBannerTitle: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    marginBottom: 3,
+  },
+  requiredIdBannerSub: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "500",
+  },
+  uploadIdButtonBelowAvatar: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 16,
+    elevation: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+  },
+  uploadIdButtonText: {
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
+  uploadIdButtonSubtext: {
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  uploadIdReqBadge: {
+    marginLeft: 10,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  idIconButtonBelowAvatar: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 18,
+    borderWidth: 1.5,
+  },
+  idIconCircle: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  /* ID Upload & Viewer Modals */
+  idModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(4, 8, 18, 0.82)",
+    justifyContent: "flex-end",
+  },
+  idModalContainer: {
+    maxHeight: "90%",
+    borderTopLeftRadius: 26,
+    borderTopRightRadius: 26,
+    borderTopWidth: 1,
+    overflow: "hidden",
+  },
+  idModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+  },
+  idModalHeaderIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 12,
+  },
+  idModalTitle: {
+    fontSize: 16.5,
+    fontWeight: "800",
+  },
+  idProgressPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginLeft: 8,
+  },
+  idSectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  idSectionHeading: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 0.2,
+  },
+  idSlotsGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  idSlotCard: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 10,
+  },
+  idSlotLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  idSlotLabel: {
+    fontSize: 11.5,
+    fontWeight: "800",
+  },
+  idPreviewWrap: {
+    width: "100%",
+    height: 104,
+    borderRadius: 10,
+    overflow: "hidden",
+    position: "relative",
+    backgroundColor: "#080F1E",
+  },
+  idPreviewImage: {
+    width: "100%",
+    height: "100%",
+  },
+  idRetakeOverlay: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(8, 15, 30, 0.8)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  idRetakeText: {
+    color: "#FFFFFF",
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+  idEmptySlotBody: {
+    height: 104,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "rgba(148, 163, 184, 0.35)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 6,
+  },
+  idActionMiniRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  idMiniBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  idMiniBtnText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+  idModalFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+  },
+  idCancelBtn: {
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  idSubmitBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  settingsSectionWrap: {
+    marginHorizontal: 20,
+    marginTop: 22,
+  },
+  settingsGroupTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 1.5,
+    marginBottom: 12,
+    paddingLeft: 4,
+  },
+  sysSettingsCard: {
+    backgroundColor: "#111A2E",
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#1E293B",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  settingsToggleCard: {
+    backgroundColor: "#111A2E",
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#1E293B",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  settingsCardLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    paddingRight: 8,
+  },
+  settingsIconWrapper: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#080F1E",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 14,
+    borderWidth: 1,
+    borderColor: "#1E293B",
+  },
+  settingsCardTexts: {
+    flex: 1,
+  },
+  settingsCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#F8FAFC",
+  },
+  settingsCardDetail: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
   },
 });

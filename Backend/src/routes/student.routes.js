@@ -29,6 +29,7 @@ studentRouter.post("/resolve-receipt", optionalAuthenticateToken, asyncHandler(s
 
 // OCR Paper / Words Scanner Route (Primary for Librarian Catalog)
 studentRouter.post("/ocr/scan-paper", optionalAuthenticateToken, asyncHandler(studentController.scanPaperOcr));
+studentRouter.post("/ocr/verify-id", optionalAuthenticateToken, asyncHandler(studentController.verifyStudentIdOcr));
 
 // AI Semantic Prompt & Document Search Route
 studentRouter.post("/ai-search", optionalAuthenticateToken, asyncHandler(studentController.aiSearch));

@@ -29,7 +29,23 @@ export async function POST(request: Request) {
     }
 
     const { rows } = await pool.query(
-      `SELECT id, name, email, id_number AS "idNumber", password_hash, role, department, course, year_level AS "yearLevel", avatar, qr_code AS "qrCode", status
+      `SELECT
+        id,
+        name,
+        email,
+        id_number AS "idNumber",
+        password_hash,
+        role,
+        department,
+        course,
+        year_level AS "yearLevel",
+        avatar,
+        qr_code AS "qrCode",
+        status,
+        school_id_front AS "schoolIdFront",
+        school_id_back AS "schoolIdBack",
+        library_id_front AS "libraryIdFront",
+        library_id_back AS "libraryIdBack"
        FROM users
        WHERE LOWER(email) = $1 OR LOWER(id_number) = $1
        LIMIT 1`,
@@ -77,6 +93,10 @@ export async function POST(request: Request) {
       avatar: user.avatar,
       qrCode: user.qrCode,
       status: user.status,
+      schoolIdFront: user.schoolIdFront || "",
+      schoolIdBack: user.schoolIdBack || "",
+      libraryIdFront: user.libraryIdFront || "",
+      libraryIdBack: user.libraryIdBack || "",
     };
 
     return NextResponse.json(

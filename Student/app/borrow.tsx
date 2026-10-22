@@ -53,7 +53,13 @@ export default function BorrowScreen() {
   const profile = getStudentProfile();
 
   const resolvedName = user?.fullName || profile?.name || 'Student';
-  const resolvedStudentId = user?.studentId || profile?.studentId || '';
+  const resolvedStudentId =
+    user?.studentId ||
+    user?.qrCode ||
+    profile?.studentId ||
+    profile?.qrCode ||
+    user?.id ||
+    '';
   const resolvedDept = user?.course || user?.department || profile?.course || profile?.department || (departmentParam ? String(departmentParam) : 'General Program');
 
   const [name, setName] = useState(resolvedName);

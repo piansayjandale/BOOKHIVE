@@ -27,6 +27,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useNotice } from "@/components/providers/notice-provider";
 import { AdminPageHeader, AdminSection } from "@/components/admin/shared";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { DepartmentBadge } from "@/components/ui/department-badge";
 import { requestJson } from "@/lib/admin/client";
 import type { PromptSearchPayload, PromptSearchLog } from "@/lib/admin/types";
 import { formatDateTime, cn } from "@/lib/utils";
@@ -516,15 +517,15 @@ export function AiSearchPage() {
 
               <div className="flex items-center gap-2.5">
                 {/* View Mode Toggle: List vs Table */}
-                <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 p-0.5">
+                <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800/80 p-0.5">
                   <button
                     type="button"
                     onClick={() => setResultsViewMode("list")}
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer select-none",
                       resultsViewMode === "list"
-                        ? "bg-white text-[#0274BB] shadow-sm"
-                        : "text-slate-600 hover:text-slate-900",
+                        ? "bg-white dark:bg-slate-700 text-[#0274BB] dark:text-white shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white",
                     )}
                     title="Card List view"
                   >
@@ -537,8 +538,8 @@ export function AiSearchPage() {
                     className={cn(
                       "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition cursor-pointer select-none",
                       resultsViewMode === "table"
-                        ? "bg-white text-[#0274BB] shadow-sm"
-                        : "text-slate-600 hover:text-slate-900",
+                        ? "bg-white dark:bg-slate-700 text-[#0274BB] dark:text-white shadow-sm"
+                        : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white",
                     )}
                     title="Dense Table view"
                   >
@@ -562,62 +563,59 @@ export function AiSearchPage() {
             </div>
           )}
 
-          {/* Lightmode Results: Table vs List */}
+          {/* Results: Table vs List */}
           {visibleResults.length > 0 ? (
             resultsViewMode === "table" ? (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm w-full">
+              <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c182b] shadow-sm w-full">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 bg-slate-50/80">
-                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500">Book Details</th>
-                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 whitespace-nowrap">Department</th>
-                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 whitespace-nowrap">Relevance</th>
-                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 whitespace-nowrap">ISBN & Language</th>
-                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500">Matched Reasons</th>
-                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 text-right whitespace-nowrap">Actions</th>
+                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-800/80">
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Book Details</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 whitespace-nowrap">Department</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 whitespace-nowrap">Relevance</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 whitespace-nowrap">ISBN & Language</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400">Matched Reasons</th>
+                      <th className="px-5 py-3.5 font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 text-right whitespace-nowrap">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {visibleResults.map((result) => {
                       const relevance = result.relevance;
                       const isHigh = relevance >= 90;
                       const isMedium = relevance >= 75;
 
                       const relevanceBadgeClass = isHigh
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
                         : isMedium
-                        ? "bg-amber-50 text-amber-700 border border-amber-200 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
-                        : "bg-sky-50 text-sky-700 border border-sky-200 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs";
+                        ? "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                        : "bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs";
 
                       return (
                         <tr
                           key={result.id}
                           onClick={() => setSelectedBook(result)}
-                          className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                          className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
                         >
                           <td className="px-5 py-3.5 max-w-[280px]">
-                            <div className="font-bold text-sm text-slate-900 group-hover:text-[#0274BB] transition-colors truncate">
+                            <div className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors truncate">
                               {result.title}
                             </div>
-                            <div className="mt-0.5 text-xs text-slate-500 truncate">
-                              By <span className="font-semibold text-slate-800">{result.author}</span>
+                            <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                              By <span className="font-semibold text-slate-800 dark:text-slate-200">{result.author}</span>
                             </div>
                           </td>
                           <td className="px-5 py-3.5 whitespace-nowrap">
-                            <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-800 border border-slate-200 px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase">
-                              <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" />
-                              {result.department}
-                            </span>
+                            <DepartmentBadge department={result.department} />
                           </td>
                           <td className="px-5 py-3.5 whitespace-nowrap">
                             <span className={relevanceBadgeClass}>
                               {relevance}% MATCH
                             </span>
                           </td>
-                          <td className="px-5 py-3.5 whitespace-nowrap font-mono text-[11px] text-slate-600">
+                          <td className="px-5 py-3.5 whitespace-nowrap font-mono text-[11px] text-slate-600 dark:text-slate-400">
                             <div>ISBN: {result.isbn}</div>
                             {result.language && (
-                              <div className="text-[10px] text-slate-500 font-sans mt-0.5">
+                              <div className="text-[10px] text-slate-500 dark:text-slate-400 font-sans mt-0.5">
                                 🌐 {result.language.toUpperCase()}
                               </div>
                             )}
@@ -628,15 +626,15 @@ export function AiSearchPage() {
                                 {result.matchedBy.map((match) => (
                                   <span
                                     key={match}
-                                    className="inline-flex items-center gap-1 text-[9px] font-bold uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full shadow-xs"
+                                    className="inline-flex items-center gap-1 text-[9px] font-bold uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-full shadow-xs"
                                   >
-                                    <Sparkles className="h-2.5 w-2.5 text-emerald-600" />
+                                    <Sparkles className="h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400" />
                                     {match}
                                   </span>
                                 ))}
                               </div>
                             ) : (
-                              <span className="text-slate-400 text-xs italic">Catalog Match</span>
+                              <span className="text-slate-400 dark:text-slate-500 text-xs italic">Catalog Match</span>
                             )}
                           </td>
                           <td className="px-5 py-3.5 text-right whitespace-nowrap">
@@ -646,7 +644,7 @@ export function AiSearchPage() {
                                 e.stopPropagation();
                                 setSelectedBook(result);
                               }}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-[#FFD600] hover:text-[#0A1624] hover:border-[#FFD600] transition cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 hover:bg-[#FFD600] dark:hover:bg-[#FFD600] hover:text-[#0A1624] dark:hover:text-[#0A1624] hover:border-[#FFD600] transition cursor-pointer"
                             >
                               <Eye className="h-3.5 w-3.5" />
                               <span>Details</span>
@@ -685,15 +683,12 @@ export function AiSearchPage() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: idx * 0.04 }}
                     whileHover={{ y: -4 }}
-                    className="flex flex-col justify-between w-full text-left p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-amber-400 transition-all duration-200 group cursor-pointer relative"
+                    className="flex flex-col justify-between w-full text-left p-6 bg-white dark:bg-[#0c182b] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:border-amber-400 dark:hover:border-amber-400/80 transition-all duration-200 group cursor-pointer relative"
                   >
                     <div className="space-y-4">
                       {/* Top bar with category & relevance */}
                       <div className="flex items-center justify-between gap-3 w-full">
-                        <span className="inline-flex items-center rounded-full bg-slate-100 text-slate-800 border border-slate-200 px-3 py-0.5 text-[10px] font-bold tracking-wider uppercase">
-                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-2" />
-                          {result.department}
-                        </span>
+                        <DepartmentBadge department={result.department} />
                         <span className={relevanceBadgeClass}>
                           {relevance}% MATCH
                         </span>
@@ -701,26 +696,26 @@ export function AiSearchPage() {
 
                       {/* Title & Metadata */}
                       <div>
-                        <h3 className="text-lg font-bold tracking-tight text-slate-900 group-hover:text-[#0274BB] transition-colors duration-200 line-clamp-2 leading-snug text-left">
+                        <h3 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors duration-200 line-clamp-2 leading-snug text-left">
                           {result.title}
                         </h3>
                         <div className="mt-3 space-y-2 text-left">
-                          <p className="flex items-center gap-2 text-xs text-slate-600">
-                            <User className="h-4 w-4 text-slate-400" />
-                            By <span className="font-semibold text-slate-900">{result.author}</span>
+                          <p className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                            <User className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                            By <span className="font-semibold text-slate-900 dark:text-slate-200">{result.author}</span>
                           </p>
 
                           <div className="flex items-center flex-wrap gap-2 text-[11px]">
-                            <span className="font-mono bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-0.5 rounded-md">
+                            <span className="font-mono bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2.5 py-0.5 rounded-md">
                               ISBN: {result.isbn}
                             </span>
                             {result.language && (
-                              <span className="bg-slate-100 text-slate-700 border border-slate-200 px-2 py-0.5 rounded-md uppercase font-bold text-[10px]">
+                              <span className="bg-slate-100 dark:bg-slate-800/80 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md uppercase font-bold text-[10px]">
                                 🌐 {result.language}
                               </span>
                             )}
                             {typeof result.rating === "number" && result.rating > 0 && (
-                              <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md font-bold">
+                              <span className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800/60 px-2 py-0.5 rounded-md font-bold">
                                 ⭐ {result.rating.toFixed(1)}
                               </span>
                             )}
@@ -729,8 +724,8 @@ export function AiSearchPage() {
                                 className={cn(
                                   "px-2 py-0.5 rounded-md font-semibold text-[11px] border",
                                   result.availability === "Available"
-                                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                    : "bg-rose-50 text-rose-700 border-rose-200",
+                                    ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60"
+                                    : "bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60",
                                 )}
                               >
                                 {result.availability}
@@ -742,13 +737,13 @@ export function AiSearchPage() {
 
                       {/* Visual Relevance Meter */}
                       <div className="space-y-1.5 w-full">
-                        <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-slate-500">
+                        <div className="flex items-center justify-between text-[10px] uppercase font-bold tracking-wider text-slate-500 dark:text-slate-400">
                           <span>Relevance Meter</span>
-                          <span className={isHigh ? "text-emerald-600 font-extrabold" : isMedium ? "text-amber-600 font-extrabold" : "text-sky-600 font-extrabold"}>
+                          <span className={isHigh ? "text-emerald-600 dark:text-emerald-400 font-extrabold" : isMedium ? "text-amber-600 dark:text-amber-400 font-extrabold" : "text-sky-600 dark:text-sky-400 font-extrabold"}>
                             {relevance}%
                           </span>
                         </div>
-                        <div className="h-2 w-full rounded-full bg-slate-100 border border-slate-200 overflow-hidden">
+                        <div className="h-2 w-full rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 overflow-hidden">
                           <motion.div
                             initial={{ width: 0 }}
                             animate={{ width: `${relevance}%` }}
@@ -759,8 +754,8 @@ export function AiSearchPage() {
                       </div>
 
                       {/* Book Summary */}
-                      <div className="bg-slate-50 border-l-4 border-amber-400 p-3 rounded-r-xl text-left">
-                        <p className="text-xs text-slate-700 leading-relaxed line-clamp-3 italic">
+                      <div className="bg-slate-50 dark:bg-slate-800/60 border-l-4 border-amber-400 p-3 rounded-r-xl text-left">
+                        <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed line-clamp-3 italic">
                           "{result.summary || "No description available for this catalog entry."}"
                         </p>
                       </div>
@@ -768,20 +763,20 @@ export function AiSearchPage() {
 
                     {/* Matched explanation details */}
                     {result.matchedBy && result.matchedBy.length > 0 && (
-                      <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-slate-100 justify-start w-full">
+                      <div className="mt-4 flex flex-wrap gap-1.5 pt-3 border-t border-slate-100 dark:border-slate-800 justify-start w-full">
                         {result.matchedBy.map((match) => (
                           <span
                             key={match}
-                            className="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-wide uppercase text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full shadow-sm"
+                            className="inline-flex items-center gap-1.5 text-[10px] font-bold tracking-wide uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 px-2.5 py-0.5 rounded-full shadow-sm"
                           >
-                            <Sparkles className="h-2.5 w-2.5 text-emerald-600" />
+                            <Sparkles className="h-2.5 w-2.5 text-emerald-600 dark:text-emerald-400" />
                             {match}
                           </span>
                         ))}
                       </div>
                     )}
 
-                    <div className="mt-3 flex items-center justify-end text-xs font-semibold text-[#0274BB] group-hover:underline">
+                    <div className="mt-3 flex items-center justify-end text-xs font-semibold text-[#0274BB] dark:text-sky-400 group-hover:underline dark:group-hover:text-amber-300">
                       <span>View Details →</span>
                     </div>
                   </motion.div>
@@ -790,27 +785,27 @@ export function AiSearchPage() {
             </div>
             )
           ) : payload !== null ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-8 text-center text-sm text-amber-900 shadow-sm w-full">
+            <div className="rounded-2xl border border-amber-200 dark:border-amber-800/40 bg-amber-50/70 dark:bg-amber-950/20 p-8 text-center text-sm text-amber-900 dark:text-amber-200 shadow-sm w-full">
               <p className="font-semibold text-base mb-1">No matching catalog records found.</p>
-              <p className="text-xs text-slate-600">
+              <p className="text-xs text-slate-600 dark:text-slate-400">
                 {isPrefixFilter
                   ? `No books start with "${query}". Try typing fewer letters or switch FILTER to OFF to try AI Prompt matching.`
                   : "Try rephrasing your prompt or selecting a different department."}
               </p>
             </div>
           ) : (
-            <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center shadow-sm w-full">
-              <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 mb-3">
+            <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c182b] p-10 text-center shadow-sm w-full">
+              <div className="mx-auto w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-500 dark:text-slate-400 mb-3">
                 {isPrefixFilter ? (
-                  <Filter className="h-6 w-6 text-[#0274BB]" />
+                  <Filter className="h-6 w-6 text-[#0274BB] dark:text-[#FFD600]" />
                 ) : (
-                  <Sparkles className="h-6 w-6 text-purple-600" />
+                  <Sparkles className="h-6 w-6 text-purple-600 dark:text-[#FFD600]" />
                 )}
               </div>
-              <h3 className="text-base font-bold text-slate-800">
+              <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
                 {isPrefixFilter ? "Prefix & Title Filter Search" : "AI Prompt Search"}
               </h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-md mx-auto">
                 {isPrefixFilter
                   ? "Enter letters or title keywords above (e.g. Yana, B, Algorithm) to filter books by title prefix."
                   : "Enter a natural language prompt or upload documents above to see semantic recommendations."}
@@ -820,12 +815,12 @@ export function AiSearchPage() {
 
           {/* Pagination Controls */}
           {results.length > 0 && (
-            <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl border border-slate-200 bg-white shadow-sm w-full">
+            <div className="mt-8 flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c182b] shadow-sm w-full">
               {/* Pagination Info */}
-              <div className="text-xs font-semibold text-slate-600 text-left">
-                Showing <span className="font-bold text-slate-900">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
-                <span className="font-bold text-slate-900">{Math.min(currentPage * PAGE_SIZE, results.length)}</span> of{" "}
-                <span className="font-bold text-[#0274BB]">{results.length}</span> matches found
+              <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 text-left">
+                Showing <span className="font-bold text-slate-900 dark:text-white">{(currentPage - 1) * PAGE_SIZE + 1}</span> to{" "}
+                <span className="font-bold text-slate-900 dark:text-white">{Math.min(currentPage * PAGE_SIZE, results.length)}</span> of{" "}
+                <span className="font-bold text-[#0274BB] dark:text-sky-400">{results.length}</span> matches found
               </div>
 
               {/* Prev, Box with page selector, Next */}
@@ -834,7 +829,7 @@ export function AiSearchPage() {
                   type="button"
                   disabled={currentPage <= 1}
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-xs select-none"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-xs select-none"
                 >
                   <ChevronLeft className="h-3.5 w-3.5" /> Previous
                 </button>
@@ -874,11 +869,11 @@ export function AiSearchPage() {
                       height: "32px",
                       padding: "0 4px",
                     }}
-                    className="h-8 w-[52px] min-w-[52px] max-w-[52px] shrink-0 rounded-xl border border-slate-200 bg-white text-center font-mono text-xs font-bold text-slate-900 shadow-xs transition outline-none cursor-pointer focus:cursor-text focus:border-[#0274BB] focus:ring-2 focus:ring-[#0274BB]/20"
+                    className="h-8 w-[52px] min-w-[52px] max-w-[52px] shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-center font-mono text-xs font-bold text-slate-900 dark:text-white shadow-xs transition outline-none cursor-pointer focus:cursor-text focus:border-[#0274BB] dark:focus:border-amber-400 focus:ring-2 focus:ring-[#0274BB]/20"
                     title={`Page ${currentPage} of ${totalPages} - Click to enter page number and press Enter`}
                     aria-label="Current page number"
                   />
-                  <span className="text-xs font-bold text-slate-500">
+                  <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
                     / {totalPages}
                   </span>
                 </div>
@@ -887,7 +882,7 @@ export function AiSearchPage() {
                   type="button"
                   disabled={currentPage >= totalPages}
                   onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 hover:border-slate-300 disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-xs select-none"
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-300 transition hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-600 disabled:opacity-30 disabled:pointer-events-none cursor-pointer shadow-xs select-none"
                 >
                   Next <ChevronRight className="h-3.5 w-3.5" />
                 </button>

@@ -70,11 +70,6 @@ const DEPARTMENT_FALLBACK = [
   { code: "CTHM", name: "College of Hospitality & Tourism", count: 1, color: "#EC4899" },
 ];
 
-const STATIC_DEFAULT_ALERTS: AuditLogItem[] = [
-  { id: 1, action: "User Account Provisioned", actor: "Super Admin", module: "System Management", createdAt: "2026-09-14T06:00:00.000Z" },
-  { id: 2, action: "Permissions Matrix Modified", actor: "Super Admin", module: "Governance", createdAt: "2026-09-14T05:45:00.000Z" },
-  { id: 3, action: "Neural Catalog Sync Verified", actor: "System Daemon", module: "Search Engine", createdAt: "2026-09-14T05:30:00.000Z" },
-];
 
 const STATIC_DEFAULT_LOGS: AuditLogItem[] = [
   { id: "log-1", actor: "System", action: "Neural index health verification nominal", createdAt: "2026-09-14T06:45:00.000Z" },
@@ -1082,97 +1077,6 @@ export function SuperAdminHomePage() {
                 <span className={cn("text-[10px] uppercase font-bold tracking-wider", isLight ? "text-slate-500" : "text-slate-400")}>STI WNU Sync</span>
                 <p className={cn("font-semibold mt-1", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>Connected</p>
               </div>
-            </div>
-          </motion.section>
-
-          {/* Security & Audit Alerts (Trending Records Style) */}
-          <motion.section
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5, delay: 0.5 }}
-          >
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke={isLight ? "#0274BB" : "#FCD400"}
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
-                  <polyline points="16 7 22 7 22 13" />
-                </svg>
-                <h2 className={cn("text-base font-black tracking-wide uppercase", isLight ? "text-slate-900" : "text-white")}>
-                  SECURITY & AUDIT ALERTS
-                </h2>
-              </div>
-              <Link
-                href="/super-admin/audit-logs"
-                className={cn("text-[11px] font-bold hover:underline", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}
-              >
-                View All
-              </Link>
-            </div>
-
-            <div className="flex flex-col gap-2.5">
-              {(auditLogs.length > 0 ? auditLogs.slice(0, 3) : STATIC_DEFAULT_ALERTS).map((alert, idx) => (
-                <div
-                  key={alert.id || idx}
-                  onClick={() => router.push("/super-admin/audit-logs")}
-                  className={cn(
-                    "group flex cursor-pointer items-center justify-between overflow-hidden rounded-2xl border px-4 py-3.5 backdrop-blur-md transition-all hover:-translate-y-1",
-                    isLight
-                      ? idx === 0
-                        ? "border-slate-200 border-r-[6px] border-r-amber-500 bg-amber-50/60 shadow-xs hover:bg-amber-50"
-                        : "border-slate-200 border-r-[6px] border-r-transparent bg-white shadow-xs hover:bg-slate-50"
-                      : idx === 0
-                        ? "border-white/10 border-r-[6px] border-r-[#FCD400] bg-[#152E47]/80 shadow-lg hover:bg-[#1E3445]"
-                        : "border-white/10 border-r-[6px] border-r-transparent bg-[#152E47]/60 shadow-md hover:bg-[#1E3445]"
-                  )}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span
-                      className={cn(
-                        "text-xs font-black shrink-0",
-                        idx === 0
-                          ? isLight
-                            ? "text-amber-800"
-                            : "text-slate-400 group-hover:text-[#FCD400]"
-                          : isLight
-                            ? "text-slate-400 group-hover:text-slate-700"
-                            : "text-slate-500 group-hover:text-slate-300"
-                      )}
-                    >
-                      0{idx + 1}
-                    </span>
-                    <div className="min-w-0">
-                      <span className={cn("text-xs font-bold truncate block", isLight ? "text-slate-900" : "text-white")}>{alert.action}</span>
-                      <span className={cn("text-[10px] truncate block mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>
-                        By {alert.actor} • <span className={isLight ? "text-[#0274BB] font-semibold" : "text-[#FCD400]/80"}>{alert.module || "System"}</span>
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    className={cn(
-                      "rounded-full px-2.5 py-1 text-[9px] font-bold tracking-wider uppercase shrink-0 border",
-                      isLight
-                        ? idx === 0
-                          ? "border-amber-200 bg-amber-100 text-amber-800"
-                          : "border-slate-200 bg-slate-100 text-slate-600 group-hover:text-slate-900"
-                        : idx === 0
-                          ? "border-white/5 bg-[#0F1D29] text-[#FCD400] group-hover:bg-[#FCD400]/10"
-                          : "border-white/5 bg-[#0F1D29] text-slate-400 group-hover:text-white"
-                    )}
-                  >
-                    AUDIT
-                  </div>
-                </div>
-              ))}
             </div>
           </motion.section>
 

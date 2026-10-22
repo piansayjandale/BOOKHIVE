@@ -9,13 +9,14 @@ import {
   Platform,
   Alert,
   Image,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../components/AnimatedScreen';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '../hooks/useThemeColors';
-import { fetchStudentCardAndViolations, ScannedStudentCardData, isDueToReturn } from '../data/store';
+import { fetchStudentCardAndViolations, ScannedStudentCardData, isDueToReturn, loadStudentIdCardsForUser } from '../data/store';
 import { API_URL, getAuthHeaders } from '../data/authService';
 import socketService from '../services/socketService';
 import axios from 'axios';
@@ -50,6 +51,14 @@ export default function ScannedCardScreen() {
   });
   const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
   const [isReturning, setIsReturning] = useState(false);
+  const [showIdCards, setShowIdCards] = useState(false);
+  const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{ title: string; uri: string } | null>(null);
+  const [loadedIdCards, setLoadedIdCards] = useState<{
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
+  } | null>(null);
 
   // Automatically adjust activeTab if return is restricted
   useEffect(() => {
@@ -78,6 +87,25 @@ export default function ScannedCardScreen() {
           if (result && result.student) {
             setData(result);
             setSelectedBookIds([]);
+
+            let cards: any = {
+              schoolIdFront: result.student.schoolIdFront,
+              schoolIdBack: result.student.schoolIdBack,
+              libraryIdFront: result.student.libraryIdFront,
+              libraryIdBack: result.student.libraryIdBack,
+            };
+
+            // If not present in API payload, check user profile storage
+            if (!cards.schoolIdFront && !cards.libraryIdFront) {
+              try {
+                const localCards = await loadStudentIdCardsForUser(result.student);
+                if (localCards) {
+                  cards = localCards;
+                }
+              } catch {}
+            }
+
+            setLoadedIdCards(cards);
           } else {
             setError("No student account found matching this QR code.");
           }
@@ -102,7 +130,12 @@ export default function ScannedCardScreen() {
 
   const student = data?.student;
   const libraryCard = data?.libraryCard || [];
-  const reservedBooks = (data?.reservedBooks || []).filter((item: any) => item?.status !== 'Pending' && item?.status !== 'Waitlisted' && item?.status !== 'Declined');
+  const reservedBooks = (data?.reservedBooks || []).filter((item: any) => {
+    if (!item) return false;
+    if (item?.type === 'Borrow' || item?.action === 'Borrow' || item?.isPickedUp || item?.pickedUpAt) return false;
+    if (item?.status === 'Pending' || item?.status === 'Waitlisted' || item?.status === 'Declined' || item?.status === 'Cancelled' || item?.status === 'Returned' || item?.status === 'Completed' || item?.status === 'Picked Up') return false;
+    return true;
+  });
   const violations = data?.violations || [];
 
   const studentFullName = student?.fullName || student?.name || "Student";
@@ -409,25 +442,49 @@ export default function ScannedCardScreen() {
         !!(item as any).availableAt)
     );
 
+    const resolveItemDueDate = (book: any): string => {
+      if (!book) return "";
+      const candidate = book.dueDate || book.due_date || (book.returnDate && book.returnDate !== "Returned" && book.returnDate !== "Reservation" ? book.returnDate : undefined);
+      if (candidate && candidate !== "Returned" && candidate !== "Reservation" && candidate !== "7 days" && candidate !== "Pending") {
+        try {
+          const d = new Date(candidate);
+          if (!isNaN(d.getTime())) {
+            return d.toISOString().split("T")[0];
+          }
+          if (typeof candidate === "string" && candidate.includes("-")) {
+            return candidate.split("T")[0];
+          }
+        } catch {}
+      }
+      const startCandidate = book.borrowDate || book.pickupDate || book.dateReserved || (book.date && book.date !== "Returned" && book.date !== "Pending" ? book.date : undefined) || book.requestedAt;
+      if (startCandidate) {
+        try {
+          const d = new Date(startCandidate);
+          if (!isNaN(d.getTime())) {
+            d.setDate(d.getDate() + 7);
+            return d.toISOString().split("T")[0];
+          }
+        } catch {}
+      }
+      const fallback = new Date();
+      fallback.setDate(fallback.getDate() + 7);
+      return fallback.toISOString().split("T")[0];
+    };
+
     let dueReturnText = "";
     let highlightType: "none" | "green" | "violet" | "red" = "none";
 
     if (item) {
+      // Due return date always shows the due date for every book regardless of status
+      dueReturnText = resolveItemDueDate(item);
+
       if (isReturned) {
-        dueReturnText = "Returned";
         highlightType = "none";
       } else if (isReservation) {
         // Active reservations appear in VIOLET indicating reservation status
-        dueReturnText = "Reservation";
         highlightType = "violet";
       } else {
-        const rawDue = (item as any)?.dueDate || item?.dueReturnDate;
-        if (rawDue && rawDue !== "—" && rawDue !== "Returned" && rawDue !== "Reservation") {
-          dueReturnText = typeof rawDue === 'string' ? rawDue.split('T')[0] : new Date(rawDue).toISOString().split('T')[0];
-        } else {
-          dueReturnText = "7 days";
-        }
-        if (isDueToReturn((item as any)?.dueDate || rawDue || dueReturnText)) {
+        if (isDueToReturn((item as any)?.dueDate || (item as any)?.due_date || dueReturnText)) {
           highlightType = "red";
         } else {
           highlightType = "green";
@@ -472,7 +529,7 @@ export default function ScannedCardScreen() {
         bounces={false}
         overScrollMode="never"
         contentContainerStyle={{
-          paddingBottom: activeTab === 'libraryCard' ? 24 : 120,
+          paddingBottom: Math.max(insets.bottom + 36, activeTab === 'libraryCard' ? 48 : 120),
         }}
       >
         {loading ? (
@@ -499,11 +556,49 @@ export default function ScannedCardScreen() {
           <>
             {/* SECTION 1: STUDENT INFORMATION CARD */}
             <View style={styles.sectionBlock}>
-              <View style={styles.sectionHeaderRow}>
-                <Ionicons name="person-circle" size={22} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
-                <Text style={[styles.sectionHeadingText, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-                  STUDENT INFORMATION
-                </Text>
+              <View style={[styles.sectionHeaderRow, { justifyContent: 'space-between' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Ionicons name="person-circle" size={22} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
+                  <Text style={[styles.sectionHeadingText, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
+                    STUDENT INFORMATION
+                  </Text>
+                </View>
+
+                {/* ID Toggle Icon Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.idToggleBtn,
+                    {
+                      backgroundColor: showIdCards
+                        ? (isDarkMode ? 'rgba(250, 204, 21, 0.16)' : 'rgba(2, 116, 187, 0.12)')
+                        : (isDarkMode ? '#1E2D4A' : '#E2E8F0'),
+                      borderColor: showIdCards
+                        ? (isDarkMode ? theme.accentGold : theme.accentBlue)
+                        : (isDarkMode ? '#2D405F' : '#CBD5E1'),
+                    },
+                  ]}
+                  onPress={() => setShowIdCards(prev => !prev)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={showIdCards ? "card" : "card-outline"}
+                    size={15}
+                    color={showIdCards ? (isDarkMode ? theme.accentGold : theme.accentBlue) : theme.textPrimary}
+                  />
+                  <Text
+                    style={[
+                      styles.idToggleBtnText,
+                      { color: showIdCards ? (isDarkMode ? theme.accentGold : theme.accentBlue) : theme.textPrimary },
+                    ]}
+                  >
+                    {showIdCards ? "Hide IDs" : "Show IDs"}
+                  </Text>
+                  <Ionicons
+                    name={showIdCards ? "chevron-up" : "chevron-down"}
+                    size={13}
+                    color={showIdCards ? (isDarkMode ? theme.accentGold : theme.accentBlue) : theme.textPrimary}
+                  />
+                </TouchableOpacity>
               </View>
 
               <View style={[styles.studentInfoCard, { backgroundColor: isDarkMode ? '#131E33' : '#F8FAFC', borderColor: isDarkMode ? '#24334C' : '#CBD5E1' }]}>
@@ -572,6 +667,134 @@ export default function ScannedCardScreen() {
                     </Text>
                   </View>
                 </View>
+
+                {/* Collapsible Student ID Cards Section */}
+                {showIdCards && (
+                  <View style={[styles.idCardsContainer, { borderTopColor: isDarkMode ? '#24334C' : '#CBD5E1' }]}>
+                    <View style={styles.idSubHeadingRow}>
+                      <Ionicons name="shield-checkmark" size={15} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
+                      <Text style={[styles.idSubHeadingText, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
+                        VERIFIED STUDENT IDENTIFICATION
+                      </Text>
+                    </View>
+
+                    {/* School ID Section */}
+                    <Text style={[styles.idGroupTitle, { color: theme.textPrimary }]}>School ID (Front & Back)</Text>
+                    <View style={styles.idCardsGrid}>
+                      {/* School ID Front */}
+                      <TouchableOpacity
+                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          const uri = loadedIdCards?.schoolIdFront || student?.schoolIdFront;
+                          if (uri) setEnlargedIdPhoto({ title: "School ID • Front", uri });
+                        }}
+                      >
+                        <View style={styles.idCardBoxHeader}>
+                          <Text style={[styles.idCardBoxTitle, { color: theme.textSecondary }]}>Front</Text>
+                          <Ionicons name="expand-outline" size={13} color={theme.textMuted} />
+                        </View>
+                        {(loadedIdCards?.schoolIdFront || student?.schoolIdFront) ? (
+                          <Image
+                            source={{ uri: loadedIdCards?.schoolIdFront || student?.schoolIdFront }}
+                            style={styles.idCardThumbnail}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.idPlaceholderBox}>
+                            <Ionicons name="image-outline" size={24} color={theme.textMuted} />
+                            <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+
+                      {/* School ID Back */}
+                      <TouchableOpacity
+                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          const uri = loadedIdCards?.schoolIdBack || student?.schoolIdBack;
+                          if (uri) setEnlargedIdPhoto({ title: "School ID • Back", uri });
+                        }}
+                      >
+                        <View style={styles.idCardBoxHeader}>
+                          <Text style={[styles.idCardBoxTitle, { color: theme.textSecondary }]}>Back</Text>
+                          <Ionicons name="expand-outline" size={13} color={theme.textMuted} />
+                        </View>
+                        {(loadedIdCards?.schoolIdBack || student?.schoolIdBack) ? (
+                          <Image
+                            source={{ uri: loadedIdCards?.schoolIdBack || student?.schoolIdBack }}
+                            style={styles.idCardThumbnail}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.idPlaceholderBox}>
+                            <Ionicons name="image-outline" size={24} color={theme.textMuted} />
+                            <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Library ID Section */}
+                    <Text style={[styles.idGroupTitle, { color: theme.textPrimary, marginTop: 12 }]}>Library ID (Front & Back)</Text>
+                    <View style={styles.idCardsGrid}>
+                      {/* Library ID Front */}
+                      <TouchableOpacity
+                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          const uri = loadedIdCards?.libraryIdFront || student?.libraryIdFront;
+                          if (uri) setEnlargedIdPhoto({ title: "Library ID • Front", uri });
+                        }}
+                      >
+                        <View style={styles.idCardBoxHeader}>
+                          <Text style={[styles.idCardBoxTitle, { color: theme.textSecondary }]}>Front</Text>
+                          <Ionicons name="expand-outline" size={13} color={theme.textMuted} />
+                        </View>
+                        {(loadedIdCards?.libraryIdFront || student?.libraryIdFront) ? (
+                          <Image
+                            source={{ uri: loadedIdCards?.libraryIdFront || student?.libraryIdFront }}
+                            style={styles.idCardThumbnail}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.idPlaceholderBox}>
+                            <Ionicons name="image-outline" size={24} color={theme.textMuted} />
+                            <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+
+                      {/* Library ID Back */}
+                      <TouchableOpacity
+                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        activeOpacity={0.8}
+                        onPress={() => {
+                          const uri = loadedIdCards?.libraryIdBack || student?.libraryIdBack;
+                          if (uri) setEnlargedIdPhoto({ title: "Library ID • Back", uri });
+                        }}
+                      >
+                        <View style={styles.idCardBoxHeader}>
+                          <Text style={[styles.idCardBoxTitle, { color: theme.textSecondary }]}>Back</Text>
+                          <Ionicons name="expand-outline" size={13} color={theme.textMuted} />
+                        </View>
+                        {(loadedIdCards?.libraryIdBack || student?.libraryIdBack) ? (
+                          <Image
+                            source={{ uri: loadedIdCards?.libraryIdBack || student?.libraryIdBack }}
+                            style={styles.idCardThumbnail}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.idPlaceholderBox}>
+                            <Ionicons name="image-outline" size={24} color={theme.textMuted} />
+                            <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -998,18 +1221,26 @@ export default function ScannedCardScreen() {
                     </View>
 
                     {/* Visual Status Legend */}
-                    <View style={styles.legendContainer}>
+                    <View
+                      style={[
+                        styles.legendContainer,
+                        {
+                          backgroundColor: isDarkMode ? 'rgba(30, 41, 59, 0.55)' : '#FFFFFF',
+                          borderColor: isDarkMode ? '#1E293B' : '#CBD5E1',
+                        },
+                      ]}
+                    >
                       <View style={styles.legendItem}>
                         <View style={[styles.legendBox, { backgroundColor: isDarkMode ? 'rgba(74, 222, 128, 0.35)' : '#86EFAC' }]} />
-                        <Text style={[styles.legendText, { color: theme.textSecondary }]}>Borrow (Active)</Text>
+                        <Text style={[styles.legendText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]}>Borrow (Active)</Text>
                       </View>
                       <View style={styles.legendItem}>
                         <View style={[styles.legendBox, { backgroundColor: '#F87171' }]} />
-                        <Text style={[styles.legendText, { color: theme.textSecondary }]}>Due to Return</Text>
+                        <Text style={[styles.legendText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]}>Due to Return</Text>
                       </View>
                       <View style={styles.legendItem}>
                         <View style={[styles.legendBox, { backgroundColor: isDarkMode ? 'rgba(168, 85, 247, 0.35)' : '#E9D5FF' }]} />
-                        <Text style={[styles.legendText, { color: theme.textSecondary }]}>Reservation</Text>
+                        <Text style={[styles.legendText, { color: isDarkMode ? '#CBD5E1' : '#334155' }]}>Reservation</Text>
                       </View>
                     </View>
                   </View>
@@ -1148,14 +1379,45 @@ export default function ScannedCardScreen() {
             </View>
 
             {/* FOOTER NOTICE */}
-            <View style={styles.footerNotice}>
-              <Text style={[styles.footerNoticeText, { color: theme.textMuted }]}>
+            <View style={[styles.footerNotice, { paddingBottom: Math.max(insets.bottom + 24, 40) }]}>
+              <Text style={[styles.footerNoticeText, { color: isDarkMode ? '#94A3B8' : '#475569' }]}>
                 OFFICIAL BOOKHIVE VERIFICATION SYSTEM • ALL RIGHTS RESERVED
               </Text>
             </View>
           </>
         )}
       </ScrollView>
+
+      {/* Enlarged Photo Preview Modal */}
+      <Modal
+        visible={!!enlargedIdPhoto}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setEnlargedIdPhoto(null)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.enlargedModalCard, { backgroundColor: isDarkMode ? '#0B132B' : '#FFFFFF', borderColor: isDarkMode ? '#22324D' : '#E2E8F0', borderWidth: 1 }]}>
+            <View style={styles.enlargedModalHeader}>
+              <Text style={[styles.enlargedModalTitle, { color: theme.textPrimary }]}>
+                {enlargedIdPhoto?.title}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setEnlargedIdPhoto(null)}
+                style={[styles.enlargedCloseBtn, { backgroundColor: isDarkMode ? '#1A2942' : '#F1F5F9' }]}
+              >
+                <Ionicons name="close" size={20} color={theme.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            {enlargedIdPhoto?.uri && (
+              <Image
+                source={{ uri: enlargedIdPhoto.uri }}
+                style={styles.enlargedImage}
+                resizeMode="contain"
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </AnimatedScreen>
   );
 }
@@ -1227,6 +1489,113 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 1.1,
+  },
+  idToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  idToggleBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  idCardsContainer: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+  },
+  idSubHeadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 10,
+  },
+  idSubHeadingText: {
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.6,
+  },
+  idGroupTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  idCardsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  idCardBox: {
+    flex: 1,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 8,
+    alignItems: 'center',
+    minHeight: 115,
+  },
+  idCardBoxHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 6,
+    paddingHorizontal: 2,
+  },
+  idCardBoxTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  idCardThumbnail: {
+    width: '100%',
+    height: 90,
+    borderRadius: 8,
+  },
+  idPlaceholderBox: {
+    width: '100%',
+    height: 90,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  idPlaceholderText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  enlargedModalCard: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 20,
+    overflow: 'hidden',
+    padding: 16,
+  },
+  enlargedModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  enlargedModalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  enlargedCloseBtn: {
+    padding: 6,
+    borderRadius: 16,
+  },
+  enlargedImage: {
+    width: '100%',
+    height: 320,
+    borderRadius: 12,
   },
 
   /* STUDENT INFORMATION CARD */
@@ -1704,12 +2073,10 @@ const styles = StyleSheet.create({
     gap: 12,
     rowGap: 8,
     marginTop: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(30, 41, 59, 0.45)',
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#1E293B',
     width: '100%',
     alignSelf: 'center',
   },
@@ -1725,15 +2092,15 @@ const styles = StyleSheet.create({
   },
   legendText: {
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   footerNotice: {
-    marginTop: 32,
+    marginTop: 24,
     alignItems: 'center',
     paddingHorizontal: 20,
   },
   footerNoticeText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
     textAlign: 'center',

@@ -33,11 +33,14 @@ export default function TermsAgreementModal({
 
   const [visible, setVisible] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const accountId = user?.studentId || user?.email || user?.id || "";
 
   useEffect(() => {
+    setHasScrolledToBottom(false);
+    setAgreed(false);
     if (controlledVisible !== undefined) {
       setVisible(controlledVisible);
       return;
@@ -139,6 +142,19 @@ export default function TermsAgreementModal({
             style={styles.scrollArea}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={true}
+            scrollEventThrottle={16}
+            onScroll={({ nativeEvent }) => {
+              if (hasScrolledToBottom) return;
+              const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+              if (layoutMeasurement.height + contentOffset.y >= contentSize.height - 35) {
+                setHasScrolledToBottom(true);
+              }
+            }}
+            onContentSizeChange={(_w, contentHeight) => {
+              if (contentHeight > 0 && contentHeight <= 420) {
+                setHasScrolledToBottom(true);
+              }
+            }}
           >
             <View style={[styles.introBox, { backgroundColor: isDarkMode ? "#0A1224" : "#F0F7FF", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.20)" }]}>
               <Ionicons name="information-circle-outline" size={18} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
@@ -180,15 +196,43 @@ export default function TermsAgreementModal({
           <View style={[styles.footerContainer, { borderTopColor: theme.cardBorder }]}>
             {!isViewOnly ? (
               <>
+                {!hasScrolledToBottom && (
+                  <View style={[styles.scrollNoticeBanner, { backgroundColor: isDarkMode ? "#172338" : "#FEF3C7", borderColor: isDarkMode ? "#2D3E5E" : "#FDE68A" }]}>
+                    <Ionicons name="arrow-down-circle" size={16} color={isDarkMode ? theme.accentGold : "#D97706"} />
+                    <Text style={[styles.scrollNoticeText, { color: isDarkMode ? theme.accentGold : "#92400E" }]}>
+                      Scroll down to the bottom of the terms to unlock the agreement checkbox
+                    </Text>
+                  </View>
+                )}
+
                 <TouchableOpacity
-                  style={styles.checkboxRow}
-                  activeOpacity={0.8}
-                  onPress={() => setAgreed(!agreed)}
+                  style={[styles.checkboxRow, !hasScrolledToBottom && { opacity: 0.45 }]}
+                  activeOpacity={hasScrolledToBottom ? 0.8 : 1}
+                  disabled={!hasScrolledToBottom}
+                  onPress={() => {
+                    if (!hasScrolledToBottom) {
+                      Alert.alert("Scroll Required", "Please scroll down to the bottom of the terms and regulations before checking the agreement.");
+                      return;
+                    }
+                    setAgreed(!agreed);
+                  }}
                 >
-                  <View style={[styles.checkbox, agreed && { backgroundColor: isDarkMode ? theme.accentGold : "#FCD400", borderColor: isDarkMode ? theme.accentGold : "#EAB308" }]}>
+                  <View
+                    style={[
+                      styles.checkbox,
+                      !hasScrolledToBottom && {
+                        backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9",
+                        borderColor: isDarkMode ? "#475569" : "#CBD5E1",
+                      },
+                      hasScrolledToBottom && agreed && {
+                        backgroundColor: isDarkMode ? theme.accentGold : "#FCD400",
+                        borderColor: isDarkMode ? theme.accentGold : "#EAB308",
+                      },
+                    ]}
+                  >
                     {agreed && <Ionicons name="checkmark" size={16} color={isDarkMode ? "#000000" : "#0B1A2C"} />}
                   </View>
-                  <Text style={[styles.checkboxLabel, { color: theme.textPrimary }]}>
+                  <Text style={[styles.checkboxLabel, { color: hasScrolledToBottom ? theme.textPrimary : (isDarkMode ? "#64748B" : "#94A3B8") }]}>
                     I have read, understood, and accept all terms, library regulations, and penalty policies.
                   </Text>
                 </TouchableOpacity>
@@ -377,6 +421,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 16,
     borderTopWidth: 1,
+  },
+  scrollNoticeBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  scrollNoticeText: {
+    flex: 1,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
   },
   checkboxRow: {
     flexDirection: "row",

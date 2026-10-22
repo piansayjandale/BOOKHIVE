@@ -229,7 +229,13 @@ export default function BookDetailsScreen() {
     !isMyActiveLoan &&
     ((liveBookData?.borrowedCount !== undefined ? liveBookData.borrowedCount > 0 : false) || !!liveBookData?.activeLoan);
 
-  const studentIdentifier = user?.studentId || getStudentProfile()?.studentId || "";
+  const studentIdentifier =
+    user?.studentId ||
+    user?.qrCode ||
+    getStudentProfile()?.studentId ||
+    getStudentProfile()?.qrCode ||
+    user?.id ||
+    "";
   const [systemSettings, setSystemSettings] = useState(() => getSystemSettings());
   const [activeBorrowCount, setActiveBorrowCount] = useState(() => getActiveBorrowCount(studentIdentifier));
   const [overdueBooks, setOverdueBooks] = useState(() => getOverdueBooks(studentIdentifier));

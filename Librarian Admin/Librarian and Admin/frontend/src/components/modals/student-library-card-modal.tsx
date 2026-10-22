@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import { X, CreditCard, BookOpen, Clock, CheckCircle2, QrCode } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { X, CreditCard, BookOpen, Clock, CheckCircle2, QrCode, ChevronDown, ChevronUp } from "lucide-react";
 import type { TransactionRecord } from "@/lib/types";
 import { formatDate, cn, formatCourseShortcut } from "@/lib/utils";
 import { useTheme } from "@/components/providers/theme-provider";
@@ -16,6 +16,10 @@ interface StudentLibraryCardModalProps {
     course?: string;
     qrCode?: string;
     avatar?: string;
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
   } | null;
   transactions: TransactionRecord[];
 }
@@ -66,16 +70,58 @@ export function StudentLibraryCardModal({
 }: StudentLibraryCardModalProps) {
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const [showIdCards, setShowIdCards] = useState(false);
+  const [idCards, setIdCards] = useState<{
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
+  } | null>(null);
+  const [enlargedPhoto, setEnlargedPhoto] = useState<{ label: string; src: string } | null>(null);
+
+  useEffect(() => {
+    if (!open || !student) {
+      setShowIdCards(false);
+      setEnlargedPhoto(null);
+      return;
+    }
+    setIdCards({
+      schoolIdFront: student.schoolIdFront,
+      schoolIdBack: student.schoolIdBack,
+      libraryIdFront: student.libraryIdFront,
+      libraryIdBack: student.libraryIdBack,
+    });
+    const targetKey = student.studentId || student.qrCode || student.name;
+    if (targetKey && !student.schoolIdFront && !student.libraryIdFront) {
+      fetch(`/api/student/card-by-qr/${encodeURIComponent(targetKey)}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.student) {
+            setIdCards({
+              schoolIdFront: data.student.schoolIdFront || "",
+              schoolIdBack: data.student.schoolIdBack || "",
+              libraryIdFront: data.student.libraryIdFront || "",
+              libraryIdBack: data.student.libraryIdBack || "",
+            });
+          }
+        })
+        .catch(() => {});
+    }
+  }, [open, student]);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape" && open) {
-        onClose();
+        if (enlargedPhoto) {
+          setEnlargedPhoto(null);
+        } else {
+          onClose();
+        }
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose]);
+  }, [open, onClose, enlargedPhoto]);
 
   const studentBorrows = useMemo(() => {
     if (!student) return [];
@@ -181,20 +227,97 @@ export function StudentLibraryCardModal({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer",
-              isLight ? "border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800" : "border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
-            )}
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowIdCards((prev) => !prev)}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-extrabold transition cursor-pointer",
+                showIdCards
+                  ? isLight
+                    ? "border-[#0274BB] bg-blue-50 text-[#0274BB]"
+                    : "border-[#FCD400] bg-[#FCD400]/15 text-[#FCD400]"
+                  : isLight
+                  ? "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200"
+                  : "border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+              )}
+            >
+              <CreditCard className="h-3.5 w-3.5" />
+              <span>{showIdCards ? "Hide IDs" : "Show IDs"}</span>
+              {showIdCards ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-lg border transition cursor-pointer",
+                isLight ? "border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800" : "border-white/10 text-slate-400 hover:bg-white/10 hover:text-white"
+              )}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto space-y-5 py-4 pr-1">
+          {/* Collapsible Student School & Library ID Cards */}
+          {showIdCards && (
+            <div className={cn(
+              "rounded-2xl border p-4",
+              isLight ? "border-2 border-slate-200 bg-slate-50" : "border border-[#263650] bg-[#15233A]"
+            )}>
+              <div className="flex items-center justify-between mb-3">
+                <span className={cn("text-xs font-black tracking-wider uppercase", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                  Verified Student Identification Cards
+                </span>
+                <span className={cn("text-[11px]", isLight ? "text-slate-500" : "text-slate-400")}>
+                  Click any card to enlarge
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "School ID (Front)", src: idCards?.schoolIdFront || student.schoolIdFront },
+                  { label: "School ID (Back)", src: idCards?.schoolIdBack || student.schoolIdBack },
+                  { label: "Library ID (Front)", src: idCards?.libraryIdFront || student.libraryIdFront },
+                  { label: "Library ID (Back)", src: idCards?.libraryIdBack || student.libraryIdBack },
+                ].map((card) => (
+                  <div
+                    key={card.label}
+                    className={cn(
+                      "rounded-xl border p-2.5 flex flex-col",
+                      isLight ? "border-slate-200 bg-white" : "border-[#2E3F5C] bg-[#111A2E]"
+                    )}
+                  >
+                    <span className={cn("text-[11px] font-bold mb-2", isLight ? "text-slate-700" : "text-slate-200")}>
+                      {card.label}
+                    </span>
+                    {card.src ? (
+                      <button
+                        type="button"
+                        onClick={() => setEnlargedPhoto({ label: card.label, src: card.src! })}
+                        className="relative group overflow-hidden rounded-lg border border-slate-200/30 h-28 w-full cursor-pointer"
+                      >
+                        <img
+                          src={card.src}
+                          alt={card.label}
+                          className="h-full w-full object-cover transition group-hover:scale-105"
+                        />
+                      </button>
+                    ) : (
+                      <div className={cn(
+                        "h-28 w-full rounded-lg border border-dashed flex items-center justify-center text-[11px] font-medium",
+                        isLight ? "border-slate-300 bg-slate-50 text-slate-400" : "border-slate-700 bg-slate-900/40 text-slate-500"
+                      )}>
+                        No image uploaded
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Quick Metrics */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className={cn(
@@ -295,21 +418,46 @@ export function StudentLibraryCardModal({
                     )
                   );
 
+                  const resolveRowDueDate = (r: any): string => {
+                    if (!r) return "";
+                    const candidate = r.dueDate || r.due_date || (r.returnDate && r.returnDate !== "Returned" && r.returnDate !== "Reservation" ? r.returnDate : undefined);
+                    if (candidate && candidate !== "Returned" && candidate !== "Reservation" && candidate !== "7 days" && candidate !== "Pending") {
+                      try {
+                        const d = new Date(candidate);
+                        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+                        if (typeof candidate === "string" && candidate.includes("-")) return candidate.split("T")[0];
+                      } catch {}
+                    }
+                    const startCandidate = r.borrowDate || r.pickupDate || r.dateReserved || (r.date && r.date !== "Returned" && r.date !== "Pending" ? r.date : undefined) || r.requestedAt;
+                    if (startCandidate) {
+                      try {
+                        const d = new Date(startCandidate);
+                        if (!isNaN(d.getTime())) {
+                          d.setDate(d.getDate() + 7);
+                          return d.toISOString().split("T")[0];
+                        }
+                      } catch {}
+                    }
+                    const fallback = new Date();
+                    fallback.setDate(fallback.getDate() + 7);
+                    return fallback.toISOString().split("T")[0];
+                  };
+
                   let dueReturnText = "";
                   let highlightClass = "";
 
                   if (row) {
+                    // Due return date always shows the due date for every book regardless of status
+                    dueReturnText = resolveRowDueDate(row);
+
                     if (isReturned) {
-                      dueReturnText = "Returned";
                       highlightClass = "";
                     } else if (isReservation) {
-                      dueReturnText = "Reservation";
                       highlightClass = isLight
                         ? "bg-purple-100 text-purple-800 font-bold"
                         : "bg-purple-500/28 text-[#D8B4FE] font-bold";
                     } else {
-                      dueReturnText = row.dueDate ? formatDueDate(row.dueDate) : "7 days";
-                      if (isDueToReturn(row.dueDate)) {
+                      if (isDueToReturn(row.dueDate || dueReturnText)) {
                         highlightClass = isLight
                           ? "bg-red-100 text-red-800 font-bold border border-red-300"
                           : "bg-red-500/28 text-[#F87171] font-bold";
@@ -403,6 +551,39 @@ export function StudentLibraryCardModal({
           </button>
         </div>
       </div>
+
+      {/* Enlarged ID Card Lightbox */}
+      {enlargedPhoto && (
+        <div
+          className="fixed inset-0 z-[120] flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-md"
+          onClick={() => setEnlargedPhoto(null)}
+        >
+          <div
+            className="relative max-w-2xl w-full flex flex-col items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full px-2">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-[#FCD400]">
+                {enlargedPhoto.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => setEnlargedPhoto(null)}
+                className="rounded-lg bg-white/10 p-1.5 text-white hover:bg-white/20 transition cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={enlargedPhoto.src}
+              alt={enlargedPhoto.label}
+              className="max-h-[75vh] w-auto rounded-2xl border border-white/20 object-contain shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+

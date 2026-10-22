@@ -38,6 +38,7 @@ import {
 } from "lucide-react";
 
 import { AdminModal, AdminPageHeader, AdminSection, AdminTable, FieldLabel } from "@/components/admin/shared";
+import { DepartmentBadge } from "@/components/ui/department-badge";
 import { useNotice } from "@/components/providers/notice-provider";
 import { useTheme } from "@/components/providers/theme-provider";
 import { requestJson } from "@/lib/admin/client";
@@ -67,8 +68,6 @@ export const ACADEMIC_DEPARTMENTS: CollegeDepartment[] = [
     programs: [
       "BS Information Technology",
       "BS Computer Science",
-      "Bachelor of Library & Information Science",
-      "Associate in Computer Technology",
     ],
   },
   {
@@ -167,15 +166,27 @@ export function ModernDropdown({
   options,
   placeholder = "-- Select --",
   icon,
+  disabled = false,
+  disabledLabel,
+  isLight = false,
 }: {
   value: string;
   onChange: (val: string) => void;
   options: (string | ModernDropdownOption)[];
   placeholder?: string;
   icon?: React.ReactNode;
+  disabled?: boolean;
+  disabledLabel?: string;
+  isLight?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -201,7 +212,11 @@ export function ModernDropdown({
   );
 
   const selectedOption = normalizedOptions.find((opt) => opt.value === value);
-  const displayLabel = selectedOption ? selectedOption.label : value || placeholder;
+  const displayLabel = disabled
+    ? disabledLabel || (value && value !== "None" ? value : "None (Not Applicable)")
+    : selectedOption
+    ? selectedOption.label
+    : value || placeholder;
 
   const grouped: { [group: string]: ModernDropdownOption[] } = {};
   const ungrouped: ModernDropdownOption[] = [];
@@ -216,44 +231,81 @@ export function ModernDropdown({
   });
 
   return (
-    <div ref={containerRef} className={cn("relative w-full", open ? "z-50" : "z-10")}>
+    <div ref={containerRef} className={cn("relative w-full", open && !disabled ? "z-50" : "z-10")}>
       {icon && (
-        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 z-10">
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 z-10 transition-colors",
+            disabled ? (isLight ? "text-slate-300" : "text-slate-600") : "text-slate-400"
+          )}
+        >
           {icon}
         </div>
       )}
       <button
         type="button"
-        onClick={() => setOpen((prev) => !prev)}
+        disabled={disabled}
+        aria-disabled={disabled}
+        onClick={() => {
+          if (!disabled) {
+            setOpen((prev) => !prev);
+          }
+        }}
+        style={{ paddingLeft: icon ? "2.75rem" : "0.875rem" }}
         className={cn(
-          "glass-input w-full flex items-center justify-between pr-3.5 py-2.5 text-xs text-white bg-[#101D2D] rounded-xl transition-all cursor-pointer text-left select-none",
-          icon ? "pl-10" : "pl-3.5",
-          open
-            ? "border-[#FCD400] ring-1 ring-[#FCD400]/30 shadow-lg shadow-[#FCD400]/10"
-            : "hover:border-white/20"
+          "w-full flex items-center justify-between pr-3.5 py-2.5 text-xs rounded-xl border transition-all text-left select-none outline-none",
+          icon ? "!pl-11" : "!pl-3.5",
+          disabled
+            ? isLight
+              ? "cursor-not-allowed border-dashed border-slate-300 bg-slate-100/80 text-slate-400 shadow-none"
+              : "cursor-not-allowed border-dashed border-white/10 bg-[#0B1521]/70 text-slate-500 shadow-none"
+            : isLight
+              ? "cursor-pointer border-slate-300 bg-white text-slate-900 shadow-xs hover:border-[#FCD400]"
+              : "cursor-pointer border-white/10 bg-[#101D2D] text-white hover:border-white/20",
+          open && !disabled && (
+            isLight
+              ? "border-[#FCD400] ring-2 ring-[#FCD400]/25 shadow-md shadow-[#FCD400]/10"
+              : "border-[#FCD400] ring-1 ring-[#FCD400]/30 shadow-lg shadow-[#FCD400]/10"
+          )
         )}
       >
-        <span className={cn("truncate pr-2", !value && "text-slate-400")}>
+        <span className={cn("truncate pr-2", !value && !disabled && "text-slate-400", disabled && "font-medium opacity-90")}>
           {displayLabel}
         </span>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200",
-            open && "rotate-180 text-[#FCD400]"
-          )}
-        />
+        {disabled ? (
+          <Lock className={cn("h-3.5 w-3.5 shrink-0", isLight ? "text-slate-400" : "text-slate-500")} />
+        ) : (
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200",
+              open && "rotate-180 text-[#FCD400]"
+            )}
+          />
+        )}
       </button>
 
-      {open && (
+      {open && !disabled && (
         <div
-          className="absolute top-full left-0 mt-1.5 w-full max-h-56 overflow-y-auto rounded-xl border border-[#2E3F5C] bg-[#0E1A26] p-1.5 shadow-2xl shadow-black/90 backdrop-blur-md"
+          className={cn(
+            "absolute top-full left-0 mt-1.5 w-full max-h-56 overflow-y-auto rounded-xl border p-1.5 shadow-2xl backdrop-blur-md z-50",
+            isLight
+              ? "border-slate-200 bg-white text-slate-800 shadow-slate-900/15"
+              : "border-[#2E3F5C] bg-[#0E1A26] text-slate-200 shadow-black/90"
+          )}
           style={{ transformOrigin: "top" }}
         >
           {Object.keys(grouped).length > 0 ? (
             <>
               {Object.entries(grouped).map(([grp, items]) => (
                 <div key={grp} className="mb-2 last:mb-0">
-                  <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-[#FCD400]/90 border-b border-white/5 mb-1">
+                  <div
+                    className={cn(
+                      "px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider mb-1 border-b",
+                      isLight
+                        ? "text-amber-800 bg-amber-50/50 border-slate-100"
+                        : "text-[#FCD400]/90 border-white/5"
+                    )}
+                  >
                     {grp}
                   </div>
                   {items.map((opt) => {
@@ -270,7 +322,9 @@ export function ModernDropdown({
                           "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs transition cursor-pointer text-left",
                           isSelected
                             ? "bg-[#FCD400] text-[#0F1D29] font-bold shadow-sm"
-                            : "text-slate-200 hover:bg-white/10 hover:text-white"
+                            : isLight
+                              ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                              : "text-slate-200 hover:bg-white/10 hover:text-white"
                         )}
                       >
                         <span className="truncate">{opt.label}</span>
@@ -296,7 +350,9 @@ export function ModernDropdown({
                           "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs transition cursor-pointer text-left",
                           isSelected
                             ? "bg-[#FCD400] text-[#0F1D29] font-bold shadow-sm"
-                            : "text-slate-200 hover:bg-white/10 hover:text-white"
+                            : isLight
+                              ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                              : "text-slate-200 hover:bg-white/10 hover:text-white"
                         )}
                       >
                         <span className="truncate">{opt.label}</span>
@@ -322,7 +378,9 @@ export function ModernDropdown({
                     "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs transition cursor-pointer text-left",
                     isSelected
                       ? "bg-[#FCD400] text-[#0F1D29] font-bold shadow-sm"
-                      : "text-slate-200 hover:bg-white/10 hover:text-white"
+                      : isLight
+                        ? "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                        : "text-slate-200 hover:bg-white/10 hover:text-white"
                   )}
                 >
                   <span className="truncate">{opt.label}</span>
@@ -710,8 +768,6 @@ export function SystemManagementPage() {
       void fetchUsers();
       void fetchVitals();
       void fetchArchivedUsers();
-      setActiveTab("archived");
-      setArchiveSubTab("accounts");
     } catch (err: any) {
       notify(err.message || "Failed to archive user.", "error");
     }
@@ -747,8 +803,6 @@ export function SystemManagementPage() {
       setArchiveConfirmBook(null);
       void fetchActiveBooks();
       void fetchArchivedBooks();
-      setActiveTab("archived");
-      setArchiveSubTab("books");
     } catch (err: any) {
       notify(err.message || "Failed to archive book.", "error");
     }
@@ -920,12 +974,14 @@ export function SystemManagementPage() {
           <span>Accounts Management</span>
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-mono font-bold transition-colors",
+              "rounded-full px-2.5 py-0.5 text-xs sm:text-sm font-extrabold tracking-tight shadow-xs transition-colors",
               isLight
                 ? activeTab === "accounts"
-                  ? "bg-slate-200/90 text-slate-900 border border-slate-300"
-                  : "bg-slate-100 text-slate-700 border border-slate-300/60"
-                : "bg-white/10 text-slate-300"
+                  ? "bg-blue-100 text-blue-900 border border-blue-300"
+                  : "bg-slate-200 text-slate-900 border border-slate-300"
+                : activeTab === "accounts"
+                  ? "bg-[#FCD400]/25 text-[#FCD400] border border-[#FCD400]/40"
+                  : "bg-white/15 text-slate-100 border border-white/20"
             )}
           >
             {vitals?.totalUsers ?? totalUsers}
@@ -951,12 +1007,14 @@ export function SystemManagementPage() {
           <span>Books Catalog</span>
           <span
             className={cn(
-              "rounded-full px-2 py-0.5 text-[10px] font-mono font-bold transition-colors",
+              "rounded-full px-2.5 py-0.5 text-xs sm:text-sm font-extrabold tracking-tight shadow-xs transition-colors",
               isLight
                 ? activeTab === "books"
-                  ? "bg-slate-200/90 text-slate-900 border border-slate-300"
-                  : "bg-slate-100 text-slate-700 border border-slate-300/60"
-                : "bg-white/10 text-slate-300"
+                  ? "bg-amber-100 text-amber-950 border border-amber-300"
+                  : "bg-slate-200 text-slate-900 border border-slate-300"
+                : activeTab === "books"
+                  ? "bg-[#FCD400]/25 text-[#FCD400] border border-[#FCD400]/40"
+                  : "bg-white/15 text-slate-100 border border-white/20"
             )}
           >
             {totalBooks}
@@ -983,10 +1041,10 @@ export function SystemManagementPage() {
           {(totalArchivedBooks + archivedUsers.length) > 0 && (
             <span
               className={cn(
-                "rounded-full px-2 py-0.5 text-[10px] font-mono font-bold",
+                "rounded-full px-2.5 py-0.5 text-xs sm:text-sm font-extrabold tracking-tight shadow-xs transition-colors",
                 isLight
-                  ? "bg-orange-100 text-orange-900 border border-orange-300"
-                  : "bg-orange-500/20 text-orange-400 border border-orange-500/30"
+                  ? "bg-orange-100 text-orange-950 border border-orange-300"
+                  : "bg-orange-500/25 text-orange-300 border border-orange-500/40"
               )}
             >
               {totalArchivedBooks + archivedUsers.length}
@@ -1228,8 +1286,10 @@ export function SystemManagementPage() {
                         </span>
                       </td>
                       <td className="px-4 py-4 text-slate-300">
-                        <div className="truncate max-w-[240px] font-bold text-[14px]">{user.department}</div>
-                        <div className="text-[13px] text-slate-400 truncate max-w-[240px] mt-1">{user.course}</div>
+                        <DepartmentBadge department={user.department} isLight={isLight} />
+                        {user.course && user.course !== "None" && user.course !== "-" && (
+                          <div className="text-[13px] text-slate-400 truncate max-w-[240px] mt-1">{user.course}</div>
+                        )}
                       </td>
                       <td className="px-4 py-4">
                         <span
@@ -1491,9 +1551,7 @@ export function SystemManagementPage() {
                         <div className="font-mono text-slate-400 text-[13px] mt-1">{book.shelfLocation || "—"}</div>
                       </td>
                       <td className="px-4 py-4">
-                        <span className="rounded-lg bg-white/5 border border-white/10 px-3 py-1 text-[12px] text-slate-300 font-medium">
-                          {book.department || "Circulation"}
-                        </span>
+                        <DepartmentBadge department={book.department || "Circulation"} isLight={isLight} />
                       </td>
                       <td className="px-4 py-4 text-slate-300 text-[14px]">
                         <span className="font-bold text-white">{book.copies ?? 1}</span> copies
@@ -1717,9 +1775,7 @@ export function SystemManagementPage() {
                           <div className="font-mono text-slate-400 text-[13px] mt-1">{book.shelfLocation || "—"}</div>
                         </td>
                         <td className="px-4 py-4">
-                          <span className="rounded-lg bg-white/5 border border-white/10 px-3 py-1 text-[12px] text-slate-300 font-medium">
-                            {book.department || "Circulation"}
-                          </span>
+                          <DepartmentBadge department={book.department || "Circulation"} isLight={isLight} />
                         </td>
                         <td className="px-4 py-4 text-slate-300 text-[14px] font-medium">
                           {book.archivedAt ? formatDate(book.archivedAt) : "Archived"}
@@ -1882,7 +1938,9 @@ export function SystemManagementPage() {
                             {user.role}
                           </span>
                         </td>
-                        <td className="px-4 py-4 text-slate-300 font-bold text-[14px]">{user.department}</td>
+                        <td className="px-4 py-4">
+                          <DepartmentBadge department={user.department} isLight={isLight} />
+                        </td>
                         <td className="px-4 py-4">
                           <span
                             className={cn(
@@ -1941,8 +1999,8 @@ export function SystemManagementPage() {
                 <AlertTriangle className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white">Permanent Data Retention & Pruning Controls</h3>
-                <p className="text-xs text-rose-200/80">Irreversible maintenance procedures to purge dormant or obsolete records.</p>
+                <h3 className={cn("text-base font-bold", isLight ? "text-black" : "text-white")}>Permanent Data Retention & Pruning Controls</h3>
+                <p className={cn("text-xs font-medium", isLight ? "text-black" : "text-rose-200/80")}>Irreversible maintenance procedures to purge dormant or obsolete records.</p>
               </div>
             </div>
 
@@ -2088,164 +2146,479 @@ export function SystemManagementPage() {
             : "Provision a new user account with role-based access control."
         }
       >
-        <form onSubmit={handleSaveUser} className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <FieldLabel required>Full Name</FieldLabel>
-              <input
-                required
-                value={userForm.name}
-                onChange={(e) => setUserForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. Maria Santos"
-                className="glass-input w-full px-3 py-2.5 text-xs text-white"
-              />
-            </div>
+        {(() => {
+          const isAcademicDisabled =
+            userForm.role === "Librarian" ||
+            userForm.role === "Circulation Librarian" ||
+            userForm.role === "Technical Librarian" ||
+            userForm.role === "Admin" ||
+            userForm.role === "Super Admin" ||
+            userForm.role !== "Student";
 
-            <div>
-              <FieldLabel required>Email Address</FieldLabel>
-              <input
-                required
-                type="email"
-                value={userForm.email}
-                onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
-                placeholder="user@stiwnu.edu.ph"
-                className="glass-input w-full px-3 py-2.5 text-xs text-white"
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <FieldLabel required>ID Number</FieldLabel>
-              <input
-                required
-                value={userForm.idNumber}
-                onChange={(e) => setUserForm((prev) => ({ ...prev, idNumber: e.target.value }))}
-                placeholder="e.g. 2026-00123"
-                className="glass-input w-full px-3 py-2.5 text-xs text-white font-mono"
-              />
-            </div>
-
-            <div>
-              <FieldLabel required>Authority Role</FieldLabel>
-              <ModernDropdown
-                value={userForm.role}
-                onChange={handleRoleChange}
-                options={ALL_ROLES}
-              />
-            </div>
-          </div>
-
-          {/* Academic Department */}
-          <div>
-            <FieldLabel required={userForm.role === "Student"}>Academic College / Department</FieldLabel>
-            <ModernDropdown
-              value={userForm.department}
-              onChange={handleDepartmentChange}
-              options={ACADEMIC_DEPARTMENTS.map((d) => ({
-                label: d.name,
-                value: d.name,
-                group: d.category,
-              }))}
-            />
-          </div>
-
-          {/* Course / Program */}
-          <div>
-            <FieldLabel required={userForm.role === "Student"}>Academic Program / Course</FieldLabel>
-            <ModernDropdown
-              value={userForm.course}
-              onChange={(val) => setUserForm((prev) => ({ ...prev, course: val }))}
-              options={getDepartmentPrograms(userForm.department)}
-            />
-          </div>
-
-          {/* Student Specific Fields: Year Level & Section */}
-          {userForm.role === "Student" && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <FieldLabel required>Year Level</FieldLabel>
-                <select
-                  value={userForm.yearLevel}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, yearLevel: e.target.value }))}
-                  className="glass-input w-full px-3 py-2.5 text-xs text-white bg-[#101D2D]"
-                >
-                  <option value="1ST" className="bg-[#101D2D] text-white">1st Year</option>
-                  <option value="2ND" className="bg-[#101D2D] text-white">2nd Year</option>
-                  <option value="3RD" className="bg-[#101D2D] text-white">3rd Year</option>
-                  <option value="4TH" className="bg-[#101D2D] text-white">4th Year</option>
-                </select>
-              </div>
-              <div>
-                <FieldLabel required>Section</FieldLabel>
-                <input
-                  required
-                  value={userForm.section}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, section: e.target.value.toUpperCase() }))}
-                  placeholder="e.g. A, B, H..."
-                  maxLength={5}
-                  className="glass-input w-full px-3 py-2.5 text-xs text-white font-mono uppercase"
-                />
-              </div>
-            </div>
-          )}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <FieldLabel>Status</FieldLabel>
-              <select
-                value={userForm.status}
-                onChange={(e) =>
-                  setUserForm((prev) => ({ ...prev, status: e.target.value as "Active" | "Suspended" | "Archived" }))
-                }
-                className="glass-input w-full px-3 py-2.5 text-xs text-white bg-[#101D2D]"
+          return (
+            <form onSubmit={handleSaveUser} className="space-y-5">
+              {/* Top Provisioning Accent Banner */}
+              <div
+                className={cn(
+                  "flex items-center justify-between rounded-xl px-4 py-2.5 text-xs border transition-all",
+                  isLight
+                    ? "bg-slate-100/80 border-slate-200 text-slate-700"
+                    : "bg-white/[0.03] border-white/10 text-slate-300"
+                )}
               >
-                <option value="Active" className="bg-[#101D2D] text-white">Active</option>
-                <option value="Suspended" className="bg-[#101D2D] text-white">Suspended</option>
-                <option value="Archived" className="bg-[#101D2D] text-white">Archived</option>
-              </select>
-            </div>
-
-            <div>
-              <FieldLabel required={!editingUser}>
-                {editingUser ? "Change Password (optional)" : "Password"}
-              </FieldLabel>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={userForm.password}
-                  onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
-                  placeholder={editingUser ? "Leave blank to keep current" : "Enter account password"}
-                  className="glass-input w-full pr-9 pl-3 py-2.5 text-xs text-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+                <div className="flex items-center gap-2 font-medium">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#FCD400]/20 text-amber-600 dark:text-[#FCD400]">
+                    {editingUser ? <Edit2 className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+                  </div>
+                  <span>
+                    {editingUser
+                      ? `Modifying Record for ${editingUser.name || "User"}`
+                      : "Institutional Role-Based Access Provisioning"}
+                  </span>
+                </div>
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#FCD400]/15 text-[#9e8200] dark:text-[#FCD400] border border-[#FCD400]/30">
+                  <Sparkles className="w-3 h-3" /> RBAC Governance
+                </span>
               </div>
-            </div>
-          </div>
 
-          <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-            <button
-              type="button"
-              onClick={() => setUserModalOpen(false)}
-              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSavingUser}
-              className="rounded-xl bg-[#FCD400] px-5 py-2 text-xs font-bold text-[#0A1624] hover:brightness-110 shadow-lg shadow-[#FCD400]/20 disabled:opacity-50"
-            >
-              {isSavingUser ? "Saving..." : editingUser ? "Update Account" : "Create Account"}
-            </button>
-          </div>
-        </form>
+              {/* ── CARD 1: Identity & Institutional Contact ── */}
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 sm:p-5 transition-all shadow-xs",
+                  isLight ? "bg-slate-50/70 border-slate-200/90" : "bg-white/[0.02] border-white/10"
+                )}
+              >
+                <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-200/60 dark:border-white/5">
+                  <div className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                    <User className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      Identity & Contact Details
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Official account holder name, university email, and identification number
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-1">
+                    <FieldLabel required>Full Name</FieldLabel>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                        <User className="h-4 w-4" />
+                      </div>
+                      <input
+                        required
+                        value={userForm.name}
+                        onChange={(e) => setUserForm((prev) => ({ ...prev, name: e.target.value }))}
+                        placeholder="e.g. Maria Santos"
+                        style={{ paddingLeft: "2.75rem" }}
+                        className={cn(
+                          "w-full !pl-11 pr-3.5 py-2.5 text-xs rounded-xl border transition-all outline-none",
+                          isLight
+                            ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25 shadow-xs"
+                            : "border-white/10 bg-[#101D2D] text-white placeholder:text-slate-500 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-1">
+                    <FieldLabel required>Email Address</FieldLabel>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                        <Mail className="h-4 w-4" />
+                      </div>
+                      <input
+                        required
+                        type="email"
+                        value={userForm.email}
+                        onChange={(e) => setUserForm((prev) => ({ ...prev, email: e.target.value }))}
+                        placeholder="user@stiwnu.edu.ph"
+                        style={{ paddingLeft: "2.75rem" }}
+                        className={cn(
+                          "w-full !pl-11 pr-3.5 py-2.5 text-xs rounded-xl border transition-all outline-none",
+                          isLight
+                            ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25 shadow-xs"
+                            : "border-white/10 bg-[#101D2D] text-white placeholder:text-slate-500 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <FieldLabel required>ID Number</FieldLabel>
+                    <div className="relative">
+                      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                        <Tag className="h-4 w-4" />
+                      </div>
+                      <input
+                        required
+                        value={userForm.idNumber}
+                        onChange={(e) => setUserForm((prev) => ({ ...prev, idNumber: e.target.value }))}
+                        placeholder="e.g. 2026-00123"
+                        style={{ paddingLeft: "2.75rem" }}
+                        className={cn(
+                          "w-full !pl-11 pr-3.5 py-2.5 text-xs rounded-xl border transition-all font-mono outline-none",
+                          isLight
+                            ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25 shadow-xs"
+                            : "border-white/10 bg-[#101D2D] text-white placeholder:text-slate-500 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+                        )}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── CARD 2: Role & Security Governance ── */}
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 sm:p-5 transition-all shadow-xs",
+                  isLight ? "bg-slate-50/70 border-slate-200/90" : "bg-white/[0.02] border-white/10"
+                )}
+              >
+                <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-200/60 dark:border-white/5">
+                  <div className="p-1.5 rounded-lg bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                    <Shield className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      Authority Role & Status
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Determines system access tier, catalog management privileges, and circulation rights
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <FieldLabel required>Authority Role</FieldLabel>
+                    <ModernDropdown
+                      value={userForm.role}
+                      onChange={handleRoleChange}
+                      options={ALL_ROLES}
+                      icon={<Shield className="h-4 w-4" />}
+                      isLight={isLight}
+                    />
+                  </div>
+
+                  <div>
+                    <FieldLabel required>Account Status</FieldLabel>
+                    <ModernDropdown
+                      value={userForm.status}
+                      onChange={(val) =>
+                        setUserForm((prev) => ({
+                          ...prev,
+                          status: val as "Active" | "Suspended" | "Archived",
+                        }))
+                      }
+                      options={[
+                        { label: "Active", value: "Active" },
+                        { label: "Suspended", value: "Suspended" },
+                        { label: "Archived", value: "Archived" },
+                      ]}
+                      icon={
+                        <span
+                          className={cn(
+                            "h-2.5 w-2.5 rounded-full inline-block shrink-0",
+                            userForm.status === "Active"
+                              ? "bg-emerald-500 shadow-xs shadow-emerald-500/50"
+                              : userForm.status === "Suspended"
+                              ? "bg-amber-500 shadow-xs shadow-amber-500/50"
+                              : "bg-slate-400"
+                          )}
+                        />
+                      }
+                      isLight={isLight}
+                    />
+                  </div>
+                </div>
+
+                {/* Dynamic Role Privilege Banner */}
+                <div
+                  className={cn(
+                    "mt-3.5 flex items-start gap-2.5 rounded-xl p-3 text-xs border transition-all",
+                    userForm.role === "Super Admin"
+                      ? "bg-rose-500/10 border-rose-500/25 text-rose-800 dark:text-rose-200"
+                      : userForm.role === "Admin"
+                      ? "bg-indigo-500/10 border-indigo-500/25 text-indigo-800 dark:text-indigo-200"
+                      : userForm.role === "Librarian"
+                      ? "bg-amber-500/10 border-amber-500/25 text-amber-900 dark:text-amber-200"
+                      : "bg-blue-500/10 border-blue-500/25 text-blue-800 dark:text-blue-200"
+                  )}
+                >
+                  <div className="mt-0.5 shrink-0">
+                    {userForm.role === "Super Admin" && <ShieldAlert className="h-4 w-4 text-rose-600 dark:text-rose-400" />}
+                    {userForm.role === "Admin" && <ShieldCheck className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />}
+                    {userForm.role === "Librarian" && <BookOpen className="h-4 w-4 text-amber-600 dark:text-amber-400" />}
+                    {userForm.role === "Student" && <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                  </div>
+                  <div className="text-[11px] leading-relaxed">
+                    <strong className="font-bold">{userForm.role} Permissions: </strong>
+                    {userForm.role === "Super Admin" &&
+                      "Root system authority with unrestricted control over database pruning, user provisioning, infrastructure telemetry, and security policies."}
+                    {userForm.role === "Admin" &&
+                      "Campus administrative oversight with full access to collection auditing, user records management, and circulation reporting."}
+                    {userForm.role === "Librarian" &&
+                      "Operational library privileges for issue and return processing, physical shelf cataloging, and patron circulation management."}
+                    {userForm.role === "Student" &&
+                      "Standard patron account eligible for online book reservation, digital catalog browsing, and personal borrowing history."}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── CARD 3: Academic Affiliation (Only for Students / Disabled for Staff) ── */}
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 sm:p-5 transition-all shadow-xs",
+                  isLight ? "bg-slate-50/70 border-slate-200/90" : "bg-white/[0.02] border-white/10"
+                )}
+              >
+                <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-200/60 dark:border-white/5">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                      <Building2 className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                        Academic Affiliation
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Institutional college department and designated degree program
+                      </p>
+                    </div>
+                  </div>
+
+                  {isAcademicDisabled ? (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-200/80 dark:bg-white/10 text-slate-600 dark:text-slate-300 border border-slate-300/80 dark:border-white/10">
+                      <Lock className="h-3 w-3" /> Disabled for {userForm.role}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300/80 dark:border-emerald-700/50">
+                      <Sparkles className="h-3 w-3" /> Required for Students
+                    </span>
+                  )}
+                </div>
+
+                {/* Explanatory banner when disabled */}
+                {isAcademicDisabled && (
+                  <div
+                    className={cn(
+                      "mb-4 flex items-start gap-3 rounded-xl p-3.5 text-xs border transition-all",
+                      isLight
+                        ? "bg-amber-50/90 border-amber-200/90 text-amber-900"
+                        : "bg-amber-950/20 border-amber-500/20 text-amber-200"
+                    )}
+                  >
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 mt-0.5">
+                      <Lock className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="font-bold text-xs">
+                        Academic Department & Program Locked
+                      </p>
+                      <p className="text-[11px] opacity-85 mt-0.5 leading-relaxed">
+                        Accounts with the <strong>{userForm.role}</strong> role possess institution-wide privileges across all departments. Academic college, program, year level, and section fields are disabled and restricted to student accounts.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  {/* Academic Department Dropdown */}
+                  <div>
+                    <FieldLabel required={!isAcademicDisabled}>Academic College / Department</FieldLabel>
+                    <ModernDropdown
+                      value={userForm.department}
+                      onChange={handleDepartmentChange}
+                      options={ACADEMIC_DEPARTMENTS.map((d) => ({
+                        label: d.name,
+                        value: d.name,
+                        group: d.category,
+                      }))}
+                      disabled={isAcademicDisabled}
+                      disabledLabel="None (Not Applicable for Administrative Roles)"
+                      icon={<Building2 className="h-4 w-4" />}
+                      isLight={isLight}
+                    />
+                  </div>
+
+                  {/* Academic Program / Course Dropdown */}
+                  <div>
+                    <FieldLabel required={!isAcademicDisabled}>Academic Program / Course</FieldLabel>
+                    <ModernDropdown
+                      value={userForm.course}
+                      onChange={(val) => setUserForm((prev) => ({ ...prev, course: val }))}
+                      options={getDepartmentPrograms(userForm.department)}
+                      disabled={isAcademicDisabled}
+                      disabledLabel="None (Not Applicable for Administrative Roles)"
+                      icon={<BookOpen className="h-4 w-4" />}
+                      isLight={isLight}
+                    />
+                  </div>
+
+                  {/* Student Specific Fields: Year Level & Section */}
+                  {!isAcademicDisabled && (
+                    <div className="grid gap-4 sm:grid-cols-2 pt-1 border-t border-slate-200/60 dark:border-white/5 animate-in fade-in duration-200">
+                      <div>
+                        <FieldLabel required>Year Level</FieldLabel>
+                        <div className="relative">
+                          <select
+                            value={userForm.yearLevel}
+                            onChange={(e) => setUserForm((prev) => ({ ...prev, yearLevel: e.target.value }))}
+                            className={cn(
+                              "w-full appearance-none px-3.5 py-2.5 text-xs rounded-xl border transition-all outline-none font-medium cursor-pointer",
+                              isLight
+                                ? "border-slate-300 bg-white text-slate-900 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25 shadow-xs"
+                                : "border-white/10 bg-[#101D2D] text-white focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+                            )}
+                          >
+                            <option value="1ST">1st Year</option>
+                            <option value="2ND">2nd Year</option>
+                            <option value="3RD">3rd Year</option>
+                            <option value="4TH">4th Year</option>
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        </div>
+                      </div>
+
+                      <div>
+                        <FieldLabel required>Section</FieldLabel>
+                        <input
+                          required
+                          value={userForm.section}
+                          onChange={(e) =>
+                            setUserForm((prev) => ({ ...prev, section: e.target.value.toUpperCase() }))
+                          }
+                          placeholder="e.g. A, B, H..."
+                          maxLength={5}
+                          className={cn(
+                            "w-full px-3.5 py-2.5 text-xs rounded-xl border transition-all font-mono uppercase outline-none",
+                            isLight
+                              ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25 shadow-xs"
+                              : "border-white/10 bg-[#101D2D] text-white placeholder:text-slate-500 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+                          )}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── CARD 4: Security & Authentication ── */}
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 sm:p-5 transition-all shadow-xs",
+                  isLight ? "bg-slate-50/70 border-slate-200/90" : "bg-white/[0.02] border-white/10"
+                )}
+              >
+                <div className="flex items-center gap-2.5 mb-4 pb-3 border-b border-slate-200/60 dark:border-white/5">
+                  <div className="p-1.5 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                    <Lock className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                      Security & Password
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      {editingUser
+                        ? "Enter a new password to update, or leave blank to keep existing password"
+                        : "Define authentication password for platform login"}
+                    </p>
+                  </div>
+                </div>
+
+                <div>
+                  <FieldLabel required={!editingUser}>
+                    {editingUser ? "Change Password (optional)" : "Account Password"}
+                  </FieldLabel>
+                  <div className="relative">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
+                      <Lock className="h-4 w-4" />
+                    </div>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={userForm.password}
+                      onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
+                      placeholder={editingUser ? "Leave blank to keep current password" : "Enter account password (min. 6 chars)"}
+                      style={{ paddingLeft: "2.75rem", paddingRight: "2.75rem" }}
+                      className={cn(
+                        "w-full !pl-11 !pr-11 py-2.5 text-xs rounded-xl border transition-all outline-none",
+                        isLight
+                          ? "border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25 shadow-xs"
+                          : "border-white/10 bg-[#101D2D] text-white placeholder:text-slate-500 focus:border-[#FCD400] focus:ring-2 focus:ring-[#FCD400]/25"
+                      )}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((prev) => !prev)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-white transition p-1 cursor-pointer"
+                      title={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    {editingUser
+                      ? "Keep this field empty unless you wish to reset or change the user's password."
+                      : "Password must be at least 6 characters long."}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── Modal Footer Controls ── */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-white/10">
+                <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                  <span>Changes are recorded in institutional security logs.</span>
+                </div>
+
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUserModalOpen(false);
+                      setEditingUser(null);
+                    }}
+                    className={cn(
+                      "rounded-xl border px-4 py-2.5 text-xs font-semibold transition cursor-pointer",
+                      isLight
+                        ? "border-slate-300 text-slate-700 hover:bg-slate-100"
+                        : "border-white/10 text-slate-300 hover:bg-white/5"
+                    )}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingUser}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-[#FCD400] px-5 py-2.5 text-xs font-bold text-[#0A1624] hover:brightness-110 shadow-lg shadow-[#FCD400]/25 transition cursor-pointer disabled:opacity-50"
+                  >
+                    {isSavingUser ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        <span>Saving...</span>
+                      </>
+                    ) : editingUser ? (
+                      <>
+                        <UserCheck className="h-4 w-4" />
+                        <span>Update Account</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="h-4 w-4" />
+                        <span>Create Account</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
+          );
+        })()}
       </AdminModal>
 
       {/* 2. Archive User Confirmation Modal */}
@@ -2256,24 +2629,25 @@ export function SystemManagementPage() {
         description="Safely move this user account to the archived records."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-xs text-amber-200">
-            Archiving <strong>{archiveConfirmUser?.name}</strong> ({archiveConfirmUser?.email}) will suspend their platform access while preserving all circulation records and borrow history. You can restore this account anytime from the Archived Records tab.
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/15 p-4 text-xs font-medium text-black">
+            Archiving <strong className="font-bold text-black">{archiveConfirmUser?.name}</strong> ({archiveConfirmUser?.email}) will suspend their platform access while preserving all circulation records and borrow history. You can restore this account anytime from the Archived Records tab.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={() => setArchiveConfirmUser(null)}
-              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+              className="rounded-xl border border-slate-300 dark:border-white/10 px-4 py-2 text-xs font-semibold text-black dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleArchiveUser}
-              className="rounded-xl bg-orange-500 text-white px-4 py-2 text-xs font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/25 transition"
+              className="btn-confirm-archive rounded-xl bg-orange-500 !text-white px-4 py-2 text-xs font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/25 transition cursor-pointer"
+              style={{ color: "#ffffff" }}
             >
-              Confirm Archive
+              <span style={{ color: "#ffffff" }}>Confirm Archive</span>
             </button>
           </div>
         </div>
@@ -2287,24 +2661,25 @@ export function SystemManagementPage() {
         description="Move this book into the Archived Records vault."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-orange-500/20 bg-orange-500/10 p-4 text-xs text-orange-200">
-            Archiving <strong>"{archiveConfirmBook?.title}"</strong> will remove it from active student catalog search and borrow requests. You can restore it anytime from the Archived Records tab.
+          <div className="rounded-xl border border-orange-500/30 bg-orange-500/15 p-4 text-xs font-medium text-black">
+            Archiving <strong className="font-bold text-black">&ldquo;{archiveConfirmBook?.title}&rdquo;</strong> will remove it from active student catalog search and borrow requests. You can restore it anytime from the Archived Records tab.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
               onClick={() => setArchiveConfirmBook(null)}
-              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+              className="rounded-xl border border-slate-300 dark:border-white/10 px-4 py-2 text-xs font-semibold text-black dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={handleArchiveBook}
-              className="rounded-xl bg-orange-500 text-white px-4 py-2 text-xs font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/25 transition"
+              className="btn-confirm-archive rounded-xl bg-orange-500 !text-white px-4 py-2 text-xs font-bold hover:bg-orange-600 shadow-lg shadow-orange-500/25 transition cursor-pointer"
+              style={{ color: "#ffffff" }}
             >
-              Confirm Archive
+              <span style={{ color: "#ffffff" }}>Confirm Archive</span>
             </button>
           </div>
         </div>
@@ -2318,8 +2693,8 @@ export function SystemManagementPage() {
         description="This will permanently delete this catalog record from PostgreSQL database."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs text-rose-200">
-            Are you sure you want to permanently delete <strong>"{purgeConfirmBook?.title}"</strong>? This action cannot be reversed.
+          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs font-medium text-black">
+            Are you sure you want to permanently delete <strong className="font-bold text-black">&ldquo;{purgeConfirmBook?.title}&rdquo;</strong>? This action cannot be reversed.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
@@ -2350,9 +2725,9 @@ export function SystemManagementPage() {
         description="Irreversible bulk deletion of all decommissioned books."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 p-4 text-xs text-rose-200 leading-relaxed">
-            <strong className="block text-sm font-bold text-white mb-1">CRITICAL WARNING</strong>
-            This will permanently delete all <strong className="text-white">{totalArchivedBooks} archived books</strong> from PostgreSQL. This will permanently clear storage space and cannot be undone.
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 p-4 text-xs font-medium text-black leading-relaxed">
+            <strong className="block text-sm font-bold text-black mb-1">CRITICAL WARNING</strong>
+            This will permanently delete all <strong className="font-bold text-black">{totalArchivedBooks} archived books</strong> from PostgreSQL. This will permanently clear storage space and cannot be undone.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">

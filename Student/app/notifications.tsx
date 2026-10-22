@@ -10,6 +10,7 @@ import {
   BackHandler,
   Modal,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -35,6 +36,8 @@ export default function NotificationsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { isDarkMode, theme } = useThemeColors();
+  const { width: windowWidth } = useWindowDimensions();
+  const qrPassSize = Math.min(Math.max(Math.round(windowWidth * 0.64), 220), 260);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState<'all' | 'unread' | 'books' | 'updates' | 'general'>('all');
@@ -1124,14 +1127,13 @@ export default function NotificationsScreen() {
                     {
                       backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC',
                       borderColor: isDarkMode ? '#FCD34D' : '#0274BB',
+                      padding: 12,
+                      justifyContent: 'center',
+                      alignItems: 'center',
                     }
                   ]}>
-                    <Text style={[styles.qrPassInstructions, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
-                      Present this unique QR code to the developmental librarian upon claiming your physical book copy at the circulation desk.
-                    </Text>
-
-                    <View style={styles.qrCodeWrapper}>
-                      <View style={styles.qrCodeBox}>
+                    <View style={[styles.qrCodeWrapper, { marginBottom: 0 }]}>
+                      <View style={[styles.qrCodeBox, { padding: 8, borderRadius: 14 }]}>
                         <QRCode
                           value={selectedReceipt?.qrPayload || JSON.stringify({
                             type: "PICKUP_PASS",
@@ -1151,23 +1153,11 @@ export default function NotificationsScreen() {
                             status: selectedReceipt?.status,
                             qrCode: selectedReceipt?.studentId,
                           })}
-                          size={155}
+                          size={qrPassSize}
                           color="#0F172A"
                           backgroundColor="#FFFFFF"
                         />
                       </View>
-                    </View>
-
-                    <View style={styles.qrPassFooter}>
-                      <View style={[styles.qrPassBadge, { backgroundColor: isDarkMode ? 'rgba(252, 211, 77, 0.15)' : '#FEF3C7' }]}>
-                        <Ionicons name="shield-checkmark" size={12} color={isDarkMode ? '#FCD34D' : '#B45309'} />
-                        <Text style={[styles.qrPassBadgeText, { color: isDarkMode ? '#FCD34D' : '#B45309' }]}>
-                          PASS NO: {selectedReceipt?.receiptNumber}
-                        </Text>
-                      </View>
-                      <Text style={[styles.qrPassSubNotice, { color: isDarkMode ? '#64748B' : '#94A3B8' }]}>
-                        Unique verification token for librarian pickup scanning
-                      </Text>
                     </View>
                   </View>
                 </View>

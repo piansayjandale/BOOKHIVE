@@ -354,8 +354,8 @@ export function createApp() {
 </html>`);
   });
 
-  app.use(express.json({ limit: "25mb" }));
-  app.use(express.urlencoded({ extended: true, limit: "25mb" }));
+  app.use(express.json({ limit: "50mb" }));
+  app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
   // Dedicated health-check endpoint for Render / Vercel uptime monitoring
   // Always returns 200 OK so health probes succeed even if DB is in fallback/offline mode

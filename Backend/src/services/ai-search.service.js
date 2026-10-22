@@ -403,12 +403,12 @@ export function computeAccurateMatchPercentage(row, analysis) {
 
   const promptWords = Array.isArray(analysis.promptWords) ? analysis.promptWords : [];
 
-  // 2. Full query phrase contained directly in the book title -> 94% - 99%
+  // 2. Full query phrase contained directly in the book title -> 88% - 96%
   if (cleanQuery.length >= 2 && cleanTitle.includes(cleanQuery)) {
     const wholeWordMatch = titleWords.includes(cleanQuery) || cleanTitle.startsWith(cleanQuery);
     const lengthRatio = Math.min(1, cleanQuery.length / Math.max(1, cleanTitle.length));
-    const base = wholeWordMatch ? 94 : 90;
-    return Math.min(99, Math.round(base + lengthRatio * 5));
+    const base = wholeWordMatch ? 88 : 82;
+    return Math.min(96, Math.round(base + lengthRatio * 8));
   }
 
   // 3. Evaluate word-by-word matches against the Book Title, Author, Category, and Summary
@@ -454,12 +454,12 @@ export function computeAccurateMatchPercentage(row, analysis) {
       effectiveTitleWords.length > 0 ? matchedBookTitleWords / effectiveTitleWords.length : 0;
     const promptTitleRatio = partialTitleWordHits / promptWords.length;
 
-    // All prompt words found in the book title -> 94% - 100%
+    // All prompt words found in the book title -> 86% - 97%
     if (partialTitleWordHits === promptWords.length) {
       if (exactTitleWordHits === promptWords.length && bookTitleCoverage >= 0.85) {
-        return 100;
+        return 98;
       }
-      return Math.min(99, Math.max(94, 93 + Math.round(bookTitleCoverage * 6)));
+      return Math.min(96, Math.max(86, 86 + Math.round(bookTitleCoverage * 10)));
     }
 
     // Partial prompt words found in the book title

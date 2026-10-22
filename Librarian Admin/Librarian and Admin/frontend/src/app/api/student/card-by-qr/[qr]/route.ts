@@ -25,6 +25,7 @@ export async function GET(
       `SELECT 
         id::text AS "id",
         name,
+        name AS "fullName",
         email,
         role,
         id_number AS "idNumber",
@@ -34,12 +35,17 @@ export async function GET(
         year_level AS "yearLevel",
         avatar,
         qr_code AS "qrCode",
-        status
+        status,
+        school_id_front AS "schoolIdFront",
+        school_id_back AS "schoolIdBack",
+        library_id_front AS "libraryIdFront",
+        library_id_back AS "libraryIdBack"
       FROM users
       WHERE LOWER(id_number) = LOWER($1)
          OR LOWER(email) = LOWER($1)
+         OR LOWER(name) = LOWER($1)
          OR id::text = $1
-         OR qr_code = $1
+         OR qr_code::text = $1
       LIMIT 1`,
       [cleanId]
     );
@@ -68,18 +74,108 @@ export async function GET(
         t.status::text AS "status",
         t.requested_at::text AS "requestedAt",
         t.due_date::text AS "dueDate",
+        t.available_at::text AS "availableAt",
+        t.expires_at::text AS "expiresAt",
         t.picked_up_at::text AS "pickedUpAt",
         t.created_at::text AS "createdAt"
        FROM transactions t
-       WHERE (LOWER(t.student_id) = LOWER($1) OR LOWER(t.student_name) = LOWER($2))
+       WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2) OR LOWER(t.student_name) = LOWER($3))
+         AND (
+           (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed'))
+           OR (t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved'))
+         )
        ORDER BY t.requested_at DESC
        LIMIT 50`,
-      [student.idNumber, student.name]
+      [student.id, student.idNumber, student.name]
     );
+
+    const libraryCard = txRes.rows.map((tx: any) => {
+      const isReservation = tx.type === "Reservation";
+      const isReturned = tx.status === "Returned" || tx.status === "Completed";
+      const isNowAvailable = isReservation && Boolean(tx.availableAt && (!tx.expiresAt || new Date(tx.expiresAt) > new Date()));
+
+      let dueReturnDate = tx.dueDate ? new Date(tx.dueDate).toISOString().split("T")[0] : "—";
+      let highlightType: "none" | "green" | "violet" | "red" = "none";
+
+      if (!isReturned) {
+        if (isReservation) {
+          dueReturnDate = "Reservation";
+          highlightType = "violet";
+        } else {
+          const isDue = tx.dueDate && (() => {
+            const d = new Date(tx.dueDate);
+            if (isNaN(d.getTime())) return false;
+            const now = new Date();
+            const dueDayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0).getTime();
+            const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0).getTime();
+            return dueDayStart <= todayStart;
+          })();
+          highlightType = isDue ? "red" : "green";
+        }
+      } else {
+        dueReturnDate = "Returned";
+        highlightType = "none";
+      }
+
+      let resolvedStatus = tx.status || "Approved";
+      if (isReturned) {
+        resolvedStatus = tx.status || "Returned";
+      } else if (isReservation) {
+        resolvedStatus = isNowAvailable ? "Borrow" : "Reservation";
+      } else if (tx.pickedUpAt) {
+        resolvedStatus = "Picked Up";
+      }
+
+      return {
+        id: tx.id,
+        bookTitle: tx.resourceTitle || tx.title || "Unknown Book",
+        borrowDate: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split("T")[0] : "—",
+        dueReturnDate,
+        status: resolvedStatus,
+        type: tx.type,
+        action: isReservation ? "Reserve" : "Borrow",
+        available: isNowAvailable,
+        availableAt: tx.availableAt,
+        expiresAt: tx.expiresAt,
+        pickedUpAt: tx.pickedUpAt,
+        isPickedUp: !isReturned && Boolean(tx.pickedUpAt),
+        highlightType,
+      };
+    });
+
+    // Fetch strictly active Reservations (excluding any Borrow transactions or picked-up items)
+    const resQuery = await pool.query(
+      `SELECT
+        t.id::text AS "id",
+        t.resource_title AS "bookTitle",
+        t.requested_at AS "reserveDate",
+        t.status::text AS "status",
+        t.type::text AS "type",
+        t.available_at AS "availableAt"
+       FROM transactions t
+       WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2))
+         AND t.type::text = 'Reservation'
+         AND t.status::text IN ('Approved', 'Pending', 'Reserved')
+         AND t.picked_up_at IS NULL
+       ORDER BY t.requested_at DESC`,
+      [student.id, student.idNumber]
+    );
+
+    const reservedBooks = resQuery.rows.map((r: any) => ({
+      id: r.id,
+      bookTitle: r.bookTitle || "Reserved Book",
+      reserveDate: r.reserveDate ? new Date(r.reserveDate).toISOString().split("T")[0] : "—",
+      status: r.status,
+      type: "Reservation",
+      available: Boolean(r.availableAt),
+    }));
 
     return NextResponse.json(
       {
         student,
+        libraryCard,
+        reservedBooks,
+        violations: [],
         transactions: txRes.rows,
         borrowHistory: txRes.rows,
       },

@@ -89,9 +89,250 @@ export type UserProfile = {
   yearLevel?: string;
   section?: string;
   avatar: string;
+  schoolIdFront?: string;
+  schoolIdBack?: string;
+  libraryIdFront?: string;
+  libraryIdBack?: string;
   qrCode?: string;
   status?: string;
   role?: string;
+};
+
+export type StudentIdCardsData = {
+  schoolIdFront: string;
+  schoolIdBack: string;
+  libraryIdFront: string;
+  libraryIdBack: string;
+  verifiedAt?: string;
+  ownerEmail?: string;
+  ownerStudentId?: string;
+};
+
+export const hasAllFourIdPhotos = (
+  obj?: {
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
+  } | null
+): boolean => {
+  if (!obj) return false;
+  return Boolean(
+    obj.schoolIdFront &&
+      String(obj.schoolIdFront).trim().length > 0 &&
+      obj.schoolIdBack &&
+      String(obj.schoolIdBack).trim().length > 0 &&
+      obj.libraryIdFront &&
+      String(obj.libraryIdFront).trim().length > 0 &&
+      obj.libraryIdBack &&
+      String(obj.libraryIdBack).trim().length > 0
+  );
+};
+
+const inMemoryIdCardsByUser: Record<string, StudentIdCardsData> = {};
+
+const stripLargeBase64FromProfileForStorage = (prof: UserProfile): UserProfile => {
+  const MAX_INLINE_URI_LEN = 2048;
+  return {
+    ...prof,
+    schoolIdFront:
+      prof.schoolIdFront && prof.schoolIdFront.length <= MAX_INLINE_URI_LEN
+        ? prof.schoolIdFront
+        : "",
+    schoolIdBack:
+      prof.schoolIdBack && prof.schoolIdBack.length <= MAX_INLINE_URI_LEN
+        ? prof.schoolIdBack
+        : "",
+    libraryIdFront:
+      prof.libraryIdFront && prof.libraryIdFront.length <= MAX_INLINE_URI_LEN
+        ? prof.libraryIdFront
+        : "",
+    libraryIdBack:
+      prof.libraryIdBack && prof.libraryIdBack.length <= MAX_INLINE_URI_LEN
+        ? prof.libraryIdBack
+        : "",
+  };
+};
+
+export const safeSaveProfileToStorage = async (prof: UserProfile) => {
+  const lightProfile = stripLargeBase64FromProfileForStorage(prof);
+  try {
+    await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(lightProfile));
+  } catch (err) {
+    console.log("Recovering AsyncStorage space for STUDENT_PROFILE:", err);
+    try {
+      await AsyncStorage.removeItem("STUDENT_ID_CARDS");
+      await AsyncStorage.removeItem("STUDENT_PROFILE");
+      await AsyncStorage.setItem(
+        "STUDENT_PROFILE",
+        JSON.stringify({ ...lightProfile, avatar: "" })
+      );
+    } catch (retryErr) {
+      console.log("Could not persist STUDENT_PROFILE to AsyncStorage:", retryErr);
+    }
+  }
+};
+
+export const saveStudentIdCardsToStorage = async (
+  cards: StudentIdCardsData,
+  email?: string,
+  studentId?: string
+) => {
+  const cleanEmail = (email || cards.ownerEmail || cachedProfile.email || "").trim().toLowerCase();
+  const cleanId = (studentId || cards.ownerStudentId || cachedProfile.studentId || "").trim().toLowerCase();
+  const existing =
+    (cleanEmail && inMemoryIdCardsByUser[cleanEmail]) ||
+    (cleanId && inMemoryIdCardsByUser[cleanId]) ||
+    null;
+
+  const pickLightUri = (incoming: string, prev?: string) => {
+    if (prev && prev.startsWith("file://") && incoming && incoming.startsWith("data:")) {
+      return prev;
+    }
+    return incoming;
+  };
+
+  const payload: StudentIdCardsData = {
+    schoolIdFront: pickLightUri(cards.schoolIdFront, existing?.schoolIdFront),
+    schoolIdBack: pickLightUri(cards.schoolIdBack, existing?.schoolIdBack),
+    libraryIdFront: pickLightUri(cards.libraryIdFront, existing?.libraryIdFront),
+    libraryIdBack: pickLightUri(cards.libraryIdBack, existing?.libraryIdBack),
+    verifiedAt: cards.verifiedAt || existing?.verifiedAt || new Date().toISOString(),
+    ownerEmail: cleanEmail,
+    ownerStudentId: cleanId,
+  };
+
+  // Always cache in memory immediately so session lookups never fail
+  if (cleanEmail) inMemoryIdCardsByUser[cleanEmail] = payload;
+  if (cleanId) inMemoryIdCardsByUser[cleanId] = payload;
+  inMemoryIdCardsByUser["__latest__"] = payload;
+
+  // Use a single primary key to avoid tripling Android SQLite usage
+  const primaryKey = cleanEmail
+    ? `STUDENT_ID_CARDS_${cleanEmail}`
+    : cleanId && !cleanId.startsWith("temp-")
+    ? `STUDENT_ID_CARDS_${cleanId}`
+    : "STUDENT_ID_CARDS";
+
+  try {
+    // Remove legacy duplicate keys to free Android SQLite quota
+    if (primaryKey !== "STUDENT_ID_CARDS") {
+      await AsyncStorage.removeItem("STUDENT_ID_CARDS").catch(() => {});
+    }
+    if (cleanEmail && cleanId && !cleanId.startsWith("temp-")) {
+      await AsyncStorage.removeItem(`STUDENT_ID_CARDS_${cleanId}`).catch(() => {});
+    }
+    await AsyncStorage.setItem(primaryKey, JSON.stringify(payload));
+  } catch (err) {
+    console.log("Storage full when saving student ID cards, reclaiming space:", err);
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const keysToPurge = allKeys.filter(
+        (k) =>
+          (k.startsWith("STUDENT_ID_CARDS") && k !== primaryKey) ||
+          k === "STUDENT_PROFILE" ||
+          k === "VIEWED_BOOKS_HISTORY" ||
+          k === "STUDENT_ANNOUNCEMENTS"
+      );
+      if (keysToPurge.length > 0) {
+        await AsyncStorage.multiRemove(keysToPurge);
+      }
+      await AsyncStorage.setItem(primaryKey, JSON.stringify(payload));
+    } catch (retryErr) {
+      console.log("Kept student ID cards in memory after storage quota limit:", retryErr);
+    }
+  }
+};
+
+export const loadStudentIdCardsForUser = async (
+  userOrProfile?: {
+    email?: string;
+    studentId?: string;
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
+  } | null
+): Promise<StudentIdCardsData | null> => {
+  const targetEmail = (userOrProfile?.email || cachedProfile.email || "").trim().toLowerCase();
+  const targetStudentId = (userOrProfile?.studentId || cachedProfile.studentId || "").trim().toLowerCase();
+
+  // 1. Check direct fields on passed object
+  if (hasAllFourIdPhotos(userOrProfile)) {
+    return {
+      schoolIdFront: String(userOrProfile!.schoolIdFront),
+      schoolIdBack: String(userOrProfile!.schoolIdBack),
+      libraryIdFront: String(userOrProfile!.libraryIdFront),
+      libraryIdBack: String(userOrProfile!.libraryIdBack),
+      ownerEmail: targetEmail,
+      ownerStudentId: targetStudentId,
+    };
+  }
+
+  // 2. Check in-memory ID cards cache
+  if (targetEmail && hasAllFourIdPhotos(inMemoryIdCardsByUser[targetEmail])) {
+    return inMemoryIdCardsByUser[targetEmail];
+  }
+  if (targetStudentId && hasAllFourIdPhotos(inMemoryIdCardsByUser[targetStudentId])) {
+    return inMemoryIdCardsByUser[targetStudentId];
+  }
+
+  // 3. Check cachedProfile if it belongs to the same user
+  const cachedMatches =
+    (targetEmail && cachedProfile.email.toLowerCase().trim() === targetEmail) ||
+    (targetStudentId && cachedProfile.studentId.toLowerCase().trim() === targetStudentId);
+  if (cachedMatches && hasAllFourIdPhotos(cachedProfile)) {
+    return {
+      schoolIdFront: String(cachedProfile.schoolIdFront),
+      schoolIdBack: String(cachedProfile.schoolIdBack),
+      libraryIdFront: String(cachedProfile.libraryIdFront),
+      libraryIdBack: String(cachedProfile.libraryIdBack),
+      ownerEmail: targetEmail,
+      ownerStudentId: targetStudentId,
+    };
+  }
+
+  // 4. Check scoped AsyncStorage keys for this email or studentId
+  try {
+    if (targetEmail) {
+      const byEmail = await AsyncStorage.getItem(`STUDENT_ID_CARDS_${targetEmail}`);
+      if (byEmail) {
+        const parsed = JSON.parse(byEmail);
+        if (hasAllFourIdPhotos(parsed)) {
+          inMemoryIdCardsByUser[targetEmail] = parsed;
+          return parsed;
+        }
+      }
+    }
+    if (targetStudentId && !targetStudentId.startsWith("temp-")) {
+      const byId = await AsyncStorage.getItem(`STUDENT_ID_CARDS_${targetStudentId}`);
+      if (byId) {
+        const parsed = JSON.parse(byId);
+        if (hasAllFourIdPhotos(parsed)) {
+          inMemoryIdCardsByUser[targetStudentId] = parsed;
+          return parsed;
+        }
+      }
+    }
+
+    // 5. Check generic STUDENT_ID_CARDS only if ownerEmail or ownerStudentId matches
+    const rawGeneric = await AsyncStorage.getItem("STUDENT_ID_CARDS");
+    if (rawGeneric) {
+      const parsed = JSON.parse(rawGeneric);
+      const ownerEmail = (parsed?.ownerEmail || "").trim().toLowerCase();
+      const ownerId = (parsed?.ownerStudentId || "").trim().toLowerCase();
+      const matchesOwner =
+        (targetEmail && ownerEmail && ownerEmail === targetEmail) ||
+        (targetStudentId && ownerId && ownerId === targetStudentId);
+      if (matchesOwner && hasAllFourIdPhotos(parsed)) {
+        return parsed;
+      }
+    }
+  } catch (err) {
+    console.log("Error loading student ID cards from storage:", err);
+  }
+
+  return null;
 };
 
 export type AnnouncementItem = {
@@ -135,6 +376,10 @@ export const DEFAULT_PROFILE: UserProfile = {
   address: "",
   yearlevel: "",
   avatar: "",
+  schoolIdFront: "",
+  schoolIdBack: "",
+  libraryIdFront: "",
+  libraryIdBack: "",
   qrCode: "",
 };
 
@@ -158,6 +403,10 @@ export const resetProfileCache = (user?: Partial<UserProfile>) => {
     status: user?.status || "Active",
     role: user?.role || "Student",
     avatar: user?.avatar || "",
+    schoolIdFront: user?.schoolIdFront || "",
+    schoolIdBack: user?.schoolIdBack || "",
+    libraryIdFront: user?.libraryIdFront || "",
+    libraryIdBack: user?.libraryIdBack || "",
     qrCode: user?.qrCode || "",
   };
   notify();
@@ -255,6 +504,10 @@ const loadCacheFromStorage = async () => {
             status: parsedUser.status || "Active",
             role: parsedUser.role || "Student",
             avatar: parsedUser.avatar || "",
+            schoolIdFront: parsedUser.schoolIdFront || parsedUser.school_id_front || "",
+            schoolIdBack: parsedUser.schoolIdBack || parsedUser.school_id_back || "",
+            libraryIdFront: parsedUser.libraryIdFront || parsedUser.library_id_front || "",
+            libraryIdBack: parsedUser.libraryIdBack || parsedUser.library_id_back || "",
             qrCode: parsedUser.qrCode || "",
           };
         }
@@ -276,6 +529,10 @@ const loadCacheFromStorage = async () => {
             ...cachedProfile,
             ...parsedProfile,
             avatar: parsedProfile.avatar || cachedProfile.avatar || "",
+            schoolIdFront: parsedProfile.schoolIdFront || cachedProfile.schoolIdFront || "",
+            schoolIdBack: parsedProfile.schoolIdBack || cachedProfile.schoolIdBack || "",
+            libraryIdFront: parsedProfile.libraryIdFront || cachedProfile.libraryIdFront || "",
+            libraryIdBack: parsedProfile.libraryIdBack || cachedProfile.libraryIdBack || "",
           };
         } else {
           // Stale profile belonging to an older account: discard it
@@ -283,6 +540,20 @@ const loadCacheFromStorage = async () => {
         }
       } catch (err) {
         console.log("Error parsing STUDENT_PROFILE:", err);
+      }
+    }
+
+    // Hydrate ID cards from scoped storage if not already populated in cachedProfile
+    if (!hasAllFourIdPhotos(cachedProfile) && (cachedProfile.email || cachedProfile.studentId)) {
+      const storedCards = await loadStudentIdCardsForUser(cachedProfile);
+      if (storedCards) {
+        cachedProfile = {
+          ...cachedProfile,
+          schoolIdFront: storedCards.schoolIdFront,
+          schoolIdBack: storedCards.schoolIdBack,
+          libraryIdFront: storedCards.libraryIdFront,
+          libraryIdBack: storedCards.libraryIdBack,
+        };
       }
     }
 
@@ -524,6 +795,7 @@ socketService.subscribeToReturn((data) => {
 // Throttling mechanism to prevent infinite API render-fetch loops
 let lastProfileFetchTime = 0;
 let lastTxFetchTime = 0;
+let inFlightTxSyncPromise: Promise<void> | null = null;
 const FETCH_COOLDOWN_MS = 4000; // 4 seconds cooldown
 
 export const syncProfileWithBackend = async (force = false) => {
@@ -557,11 +829,28 @@ export const syncProfileWithBackend = async (force = false) => {
         phone: dbUser.phone || cachedProfile.phone,
         dateOfBirth: dbUser.dateOfBirth || cachedProfile.dateOfBirth,
         address: dbUser.address || cachedProfile.address,
-        avatar: dbUser.avatar || "",
+        avatar: dbUser.avatar || cachedProfile.avatar || "",
+        schoolIdFront: dbUser.schoolIdFront || dbUser.school_id_front || cachedProfile.schoolIdFront || "",
+        schoolIdBack: dbUser.schoolIdBack || dbUser.school_id_back || cachedProfile.schoolIdBack || "",
+        libraryIdFront: dbUser.libraryIdFront || dbUser.library_id_front || cachedProfile.libraryIdFront || "",
+        libraryIdBack: dbUser.libraryIdBack || dbUser.library_id_back || cachedProfile.libraryIdBack || "",
         qrCode: dbUser.qrCode || cachedProfile.qrCode || "",
       };
 
-      await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(cachedProfile));
+      if (hasAllFourIdPhotos(cachedProfile)) {
+        await saveStudentIdCardsToStorage(
+          {
+            schoolIdFront: cachedProfile.schoolIdFront!,
+            schoolIdBack: cachedProfile.schoolIdBack!,
+            libraryIdFront: cachedProfile.libraryIdFront!,
+            libraryIdBack: cachedProfile.libraryIdBack!,
+          },
+          cachedProfile.email,
+          cachedProfile.studentId
+        );
+      }
+
+      await safeSaveProfileToStorage(cachedProfile);
       if (cachedProfile.studentId) {
         socketService.joinUserRoom(cachedProfile.studentId);
       }
@@ -635,123 +924,150 @@ export const formatDateOnly = (dateStr?: string | Date | null): string => {
   return `${parsed.year}-${m}-${d}`;
 };
 
-export const syncTransactionsWithBackend = async (force = false) => {
+export const syncTransactionsWithBackend = async (force = false): Promise<void> => {
+  if (inFlightTxSyncPromise) {
+    return inFlightTxSyncPromise;
+  }
+
   const now = Date.now();
   if (!force && now - lastTxFetchTime < FETCH_COOLDOWN_MS) {
     return;
   }
   lastTxFetchTime = now;
 
-  try {
-    const headers = await getAuthHeaders();
-    if (!headers.headers || !headers.headers.Authorization) {
-      return;
-    }
-
-    const response = await axios.get(`${API_URL}/api/student/borrow-history`, headers);
-    if (response.status === 200 && response.data?.history) {
-      const dbHistory = response.data.history;
-
-      const mappedList: ReservationBook[] = dbHistory.map((tx: any) => {
-        const isTxReturned = tx.status === 'Returned' || tx.status === 'Completed';
-        const isTxApproved = tx.status === 'Approved' || tx.status === 'On Loan';
-        const isTxPending = tx.status === 'Pending';
-        const isTxPickedUp = !isTxPending && Boolean(tx.pickedUpAt || tx.picked_up_at || tx.isPickedUp);
-        
-        let displayStatus = isTxPending ? "Pending" : "Upcoming";
-        if (isTxReturned) {
-          displayStatus = "Completed";
-        } else if (tx.status === 'Declined') {
-          displayStatus = "Declined";
-        } else if (isTxPending) {
-          displayStatus = "Pending";
-        } else if (isTxPickedUp) {
-          displayStatus = "Picked Up";
-        } else if (tx.type === 'Reservation') {
-          displayStatus = tx.status === 'Approved' ? 'Approved' : (tx.status === 'Declined' ? 'Declined' : 'Pending');
-        } else if (isTxApproved) {
-          displayStatus = "Approved";
-        }
-
-        const borrowDateTime = tx.pickedUpAt
-          ? formatBorrowDateTime(tx.pickedUpAt)
-          : (tx.requestedAt
-              ? formatBorrowDateTime(tx.requestedAt)
-              : (tx.requested_at
-                  ? formatBorrowDateTime(tx.requested_at)
-                  : (tx.borrowDate || (tx.date && tx.date !== 'Returned' ? tx.date : undefined))));
-
-        const returnDateTime = tx.returnedAt
-          ? new Date(tx.returnedAt).toISOString().split('T')[0]
-          : (isTxReturned && tx.decidedAt
-              ? new Date(tx.decidedAt).toISOString().split('T')[0]
-              : (tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : undefined));
-
-        const dueDateTime = tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : undefined;
-
-        return {
-          id: tx.id,
-          studentId: tx.studentId || tx.student_id || undefined,
-          studentName: tx.studentName || tx.student_name || undefined,
-          isbn: tx.isbn || undefined,
-          copies: tx.copies ? Number(tx.copies) : undefined,
-          title: tx.title || tx.resourceTitle || "Unknown Book",
-          author: tx.author || "Unknown Author",
-          description: tx.description || "",
-          year: tx.year || "2024",
-          pages: tx.pages || 320,
-          language: tx.language || "EN",
-          category: tx.category || "CS",
-          date: isTxReturned ? "Returned" : (dueDateTime || 'Pending'),
-          dateReserved: borrowDateTime,
-          borrowDate: borrowDateTime,
-          status: displayStatus,
-          isReturned: isTxReturned,
-          pickedUpAt: tx.pickedUpAt || tx.picked_up_at || undefined,
-          isPickedUp: isTxPickedUp,
-          pickupDate: borrowDateTime,
-          returnDate: returnDateTime,
-          dueDate: dueDateTime,
-          queuePosition: tx.queuePosition ? String(tx.queuePosition) : undefined,
-          estimatedWait: tx.estimatedWait || undefined,
-          available: String(tx.available === "Available" || tx.available === "true" || tx.available === true),
-          shelf: tx.shelf || undefined,
-          action: tx.type === 'Reservation' ? 'Reserve' : 'Borrow',
-          type: tx.type === 'Reservation' ? 'Reservation' : 'Borrow',
-          comment: tx.comment || undefined,
-          availableAt: tx.availableAt || undefined,
-          expiresAt: tx.expiresAt || undefined,
-          claimDeadlineRemainingSeconds: typeof tx.claimDeadlineRemainingSeconds === 'number' ? tx.claimDeadlineRemainingSeconds : undefined,
-        };
-      });
-
-      // Deduplicate mappedList by transaction ID
-      const uniqueMappedList: ReservationBook[] = [];
-      const seenTxIds = new Set<string>();
-      for (const item of mappedList) {
-        if (!seenTxIds.has(item.id)) {
-          seenTxIds.add(item.id);
-          uniqueMappedList.push(item);
-        }
+  inFlightTxSyncPromise = (async () => {
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers.headers || !headers.headers.Authorization) {
+        return;
       }
 
-      // Filter active (non-returned/declined) reservations/borrows for getReservations/getUpcomingReservations
-      // Unapproved (Pending) reservations must not show in the reservations tab or library card
-      cachedReservations = uniqueMappedList.filter(item => {
-        if (item.status === 'Completed' || item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Returned' || item.isReturned) return false;
-        const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation';
-        if (isRes && (item.status === 'Pending' || item.status === 'Waitlisted')) return false;
-        return true;
-      });
-      cachedHistory = uniqueMappedList;
+      const studentId = cachedProfile?.studentId || '';
+      const email = cachedProfile?.email || '';
+      const queryParams = new URLSearchParams();
+      if (studentId) queryParams.append('studentId', studentId);
+      if (email) queryParams.append('email', email);
+      const queryString = queryParams.toString() ? `?${queryParams.toString()}` : '';
 
-      await AsyncStorage.setItem("STUDENT_RESERVATIONS", JSON.stringify(cachedReservations));
-      await AsyncStorage.setItem("STUDENT_HISTORY", JSON.stringify(cachedHistory));
-      notify();
+      const response = await axios.get(`${API_URL}/api/student/borrow-history${queryString}`, headers);
+      if (response.status === 200 && response.data?.history) {
+        const dbHistory = response.data.history;
+
+        const mappedList: ReservationBook[] = dbHistory.map((tx: any) => {
+          const isTxReturned = tx.status === 'Returned' || tx.status === 'Completed';
+          const isTxApproved = tx.status === 'Approved' || tx.status === 'On Loan';
+          const isTxPending = tx.status === 'Pending';
+          const isTxPickedUp = !isTxPending && Boolean(tx.pickedUpAt || tx.picked_up_at || tx.isPickedUp);
+          
+          let displayStatus = isTxPending ? "Pending" : "Upcoming";
+          if (isTxReturned) {
+            displayStatus = "Completed";
+          } else if (tx.status === 'Declined') {
+            displayStatus = "Declined";
+          } else if (isTxPending) {
+            displayStatus = "Pending";
+          } else if (isTxPickedUp) {
+            displayStatus = "Picked Up";
+          } else if (tx.type === 'Reservation') {
+            displayStatus = tx.status === 'Approved' ? 'Approved' : (tx.status === 'Declined' ? 'Declined' : 'Pending');
+          } else if (isTxApproved) {
+            displayStatus = "Approved";
+          }
+
+          const borrowDateTime = tx.pickedUpAt
+            ? formatBorrowDateTime(tx.pickedUpAt)
+            : (tx.requestedAt
+                ? formatBorrowDateTime(tx.requestedAt)
+                : (tx.requested_at
+                    ? formatBorrowDateTime(tx.requested_at)
+                    : (tx.borrowDate || (tx.date && tx.date !== 'Returned' ? tx.date : undefined))));
+
+          const returnDateTime = tx.returnedAt
+            ? new Date(tx.returnedAt).toISOString().split('T')[0]
+            : (isTxReturned && tx.decidedAt
+                ? new Date(tx.decidedAt).toISOString().split('T')[0]
+                : (tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : undefined));
+
+          let dueDateTime = (tx.dueDate || tx.due_date) ? new Date(tx.dueDate || tx.due_date).toISOString().split('T')[0] : undefined;
+          if (!dueDateTime && (tx.requestedAt || tx.requested_at || tx.pickedUpAt || tx.picked_up_at || tx.borrowDate)) {
+            const rawBase = tx.pickedUpAt || tx.picked_up_at || tx.requestedAt || tx.requested_at || tx.borrowDate;
+            try {
+              const d = new Date(rawBase);
+              if (!isNaN(d.getTime())) {
+                d.setDate(d.getDate() + 7);
+                dueDateTime = d.toISOString().split('T')[0];
+              }
+            } catch {}
+          }
+
+          return {
+            id: tx.id,
+            studentId: tx.studentId || tx.student_id || undefined,
+            studentName: tx.studentName || tx.student_name || undefined,
+            isbn: tx.isbn || undefined,
+            copies: tx.copies ? Number(tx.copies) : undefined,
+            title: tx.title || tx.resourceTitle || "Unknown Book",
+            author: tx.author || "Unknown Author",
+            description: tx.description || "",
+            year: tx.year || "2024",
+            pages: tx.pages || 320,
+            language: tx.language || "EN",
+            category: tx.category || "CS",
+            date: isTxReturned ? "Returned" : (dueDateTime || 'Pending'),
+            dateReserved: borrowDateTime,
+            borrowDate: borrowDateTime,
+            status: displayStatus,
+            isReturned: isTxReturned,
+            pickedUpAt: tx.pickedUpAt || tx.picked_up_at || undefined,
+            isPickedUp: isTxPickedUp,
+            pickupDate: borrowDateTime,
+            returnDate: returnDateTime,
+            dueDate: dueDateTime,
+            queuePosition: tx.queuePosition ? String(tx.queuePosition) : undefined,
+            estimatedWait: tx.estimatedWait || undefined,
+            available: String(tx.available === "Available" || tx.available === "true" || tx.available === true),
+            shelf: tx.shelf || undefined,
+            action: tx.type === 'Reservation' ? 'Reserve' : 'Borrow',
+            type: tx.type === 'Reservation' ? 'Reservation' : 'Borrow',
+            comment: tx.comment || undefined,
+            availableAt: tx.availableAt || undefined,
+            expiresAt: tx.expiresAt || undefined,
+            claimDeadlineRemainingSeconds: typeof tx.claimDeadlineRemainingSeconds === 'number' ? tx.claimDeadlineRemainingSeconds : undefined,
+          };
+        });
+
+        // Deduplicate mappedList by transaction ID
+        const uniqueMappedList: ReservationBook[] = [];
+        const seenTxIds = new Set<string>();
+        for (const item of mappedList) {
+          if (!seenTxIds.has(item.id)) {
+            seenTxIds.add(item.id);
+            uniqueMappedList.push(item);
+          }
+        }
+
+        // Filter active (non-returned/declined) reservations/borrows for getReservations/getUpcomingReservations
+        // Unapproved (Pending) reservations must not show in the reservations tab or library card
+        cachedReservations = uniqueMappedList.filter(item => {
+          if (item.status === 'Completed' || item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Returned' || item.isReturned) return false;
+          const isRes = item.action === 'Reserve' || (item as any).type === 'Reservation';
+          if (isRes && (item.status === 'Pending' || item.status === 'Waitlisted')) return false;
+          return true;
+        });
+        cachedHistory = uniqueMappedList;
+
+        await AsyncStorage.setItem("STUDENT_RESERVATIONS", JSON.stringify(cachedReservations));
+        await AsyncStorage.setItem("STUDENT_HISTORY", JSON.stringify(cachedHistory));
+        notify();
+      }
+    } catch (error) {
+      console.log("Error syncing transactions with backend:", error);
     }
-  } catch (error) {
-    console.log("Error syncing transactions with backend:", error);
-  }
+  })().finally(() => {
+    inFlightTxSyncPromise = null;
+  });
+
+  return inFlightTxSyncPromise;
 };
 
 // Synchronous getters (return current cache immediately and start background API sync)
@@ -866,6 +1182,7 @@ export const getReservedBooks = (): ReservationBook[] => {
       (item as any).returnedAt
     );
     if (isReturned) return;
+    if (item.action === 'Borrow' || (item as any).type === 'Borrow' || item.isPickedUp || item.pickedUpAt) return;
 
     const isDeclined = item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected';
     if (isDeclined) return;
@@ -923,7 +1240,7 @@ export const getLibraryCardHistory = (): ReservationBook[] => {
     }
 
     const isApprovedOrCompletedBorrow =
-      (item.action === 'Borrow' || (item as any).type === 'Borrow' || (item as any).type === 'Borrowing') &&
+      (item.action === 'Borrow' || (item as any).type === 'Borrow' || (item as any).type === 'Borrowing' || !item.action) &&
       (item.status === 'Approved' ||
        item.status === 'Picked Up' ||
        item.status === 'On Loan' ||
@@ -935,7 +1252,9 @@ export const getLibraryCardHistory = (): ReservationBook[] => {
        item.status === 'Active' ||
        item.status === 'Active Loan' ||
        item.isReturned === true ||
-       item.date === 'Returned');
+       item.date === 'Returned' ||
+       Boolean(item.pickedUpAt) ||
+       Boolean(item.isPickedUp));
 
     if (isApprovedOrCompletedBorrow) {
       seenIds.add(item.id);
@@ -953,7 +1272,21 @@ export const getLibraryCardHistory = (): ReservationBook[] => {
     processItem(item);
   }
 
-  return list;
+  // Sort: Active loans & active reservations first, then returned history; newest date first
+  return list.sort((a, b) => {
+    const aReturned = !!(a.isReturned || a.status === 'Completed' || a.status === 'Returned' || a.date === 'Returned');
+    const bReturned = !!(b.isReturned || b.status === 'Completed' || b.status === 'Returned' || b.date === 'Returned');
+    if (!aReturned && bReturned) return -1;
+    if (aReturned && !bReturned) return 1;
+
+    const parseDateMs = (book: ReservationBook) => {
+      const d = book.pickedUpAt || book.borrowDate || book.dateReserved || book.pickupDate || (book.date !== 'Returned' ? book.date : undefined);
+      if (!d) return 0;
+      const t = new Date(d).getTime();
+      return isNaN(t) ? 0 : t;
+    };
+    return parseDateMs(b) - parseDateMs(a);
+  });
 };
 
 // ── Global Circulation & Policy Settings ─────────────────────────────────────
@@ -1016,30 +1349,29 @@ export const updateCachedSystemSettings = (updates: Partial<SystemSettings>) => 
 // Helper to normalize student IDs for safe cross-matching
 const normalizeStudentId = (id?: string) => (id || "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
 
-// Returns the student's current active borrowed books count (including due/overdue loans and pending borrow requests)
+// Returns the student's current active borrowed books count strictly matching the active borrowed loans on the Library Card ledger
 export const getActiveBorrowCount = (targetStudentId?: string): number => {
   syncTransactionsWithBackend();
   const libraryCardList = getLibraryCardHistory();
   const allHistory = cachedHistory || [];
   const allReservations = cachedReservations || [];
 
-  const seenKeys = new Set<string>();
+  const effectiveTarget = targetStudentId || cachedProfile.studentId || "";
+  const normalizedTarget = normalizeStudentId(effectiveTarget);
+
+  const seenBookKeys = new Set<string>();
   let count = 0;
-  const normalizedTarget = normalizeStudentId(targetStudentId);
 
   const checkItem = (item: any) => {
     if (!item) return;
 
     if (normalizedTarget) {
-      const itemStudentId = normalizeStudentId(item.studentId || item.student_id);
+      const itemStudentId = normalizeStudentId(item.studentId || item.student_id || item.id_number || item.idNumber);
       // Only filter out if the item has an explicit student ID and it distinctly differs from the target
       if (itemStudentId && itemStudentId !== normalizedTarget) {
         return;
       }
     }
-
-    const key = item.id ? `id:${item.id}` : `${item.title || ''}-${item.isbn || ''}`;
-    if (seenKeys.has(key)) return;
 
     const isReturned = !!(
       item.isReturned === true ||
@@ -1068,9 +1400,32 @@ export const getActiveBorrowCount = (targetStudentId?: string): number => {
       item.type === 'Borrow' ||
       item.type === 'Borrowing' ||
       (!item.action && !item.type);
+    if (!isBorrowType) return;
 
-    if (isBorrowType) {
-      seenKeys.add(key);
+    // Only count active approved/issued loans — exactly matching the green items on the Library Card ledger
+    // Pending requests awaiting circulation desk pickup do NOT count as currently borrowed books
+    const isActiveApprovedLoan =
+      item.status === 'Approved' ||
+      item.status === 'Picked Up' ||
+      item.status === 'On Loan' ||
+      item.status === 'Active' ||
+      item.status === 'Active Loan' ||
+      item.status === 'Due to Return' ||
+      item.status === 'Overdue' ||
+      item.status === 'Due' ||
+      Boolean(item.isPickedUp || item.pickedUpAt);
+
+    if (!isActiveApprovedLoan) return;
+
+    // Deduplicate strictly by normalized title or ISBN to ensure identical books across cache and backend are never counted multiple times
+    const cleanTitle = (item.title || item.resourceTitle || '').trim().toLowerCase();
+    const cleanIsbn = (item.isbn && item.isbn !== 'N/A') ? item.isbn.trim().toLowerCase() : '';
+    const bookKey = cleanTitle || cleanIsbn;
+
+    if (!bookKey) return;
+
+    if (!seenBookKeys.has(bookKey)) {
+      seenBookKeys.add(bookKey);
       count++;
     }
   };
@@ -1089,22 +1444,21 @@ export const getActiveReservationCount = (targetStudentId?: string): number => {
   const allHistory = cachedHistory || [];
   const allReservations = cachedReservations || [];
 
-  const seenKeys = new Set<string>();
+  const effectiveTarget = targetStudentId || cachedProfile.studentId || "";
+  const normalizedTarget = normalizeStudentId(effectiveTarget);
+
+  const seenBookKeys = new Set<string>();
   let count = 0;
-  const normalizedTarget = normalizeStudentId(targetStudentId);
 
   const checkItem = (item: any) => {
     if (!item) return;
 
     if (normalizedTarget) {
-      const itemStudentId = normalizeStudentId(item.studentId || item.student_id);
+      const itemStudentId = normalizeStudentId(item.studentId || item.student_id || item.id_number || item.idNumber);
       if (itemStudentId && itemStudentId !== normalizedTarget) {
         return;
       }
     }
-
-    const key = item.id ? `id:${item.id}` : `${item.title || ''}-${item.isbn || ''}`;
-    if (seenKeys.has(key)) return;
 
     const isReturned = !!(
       item.isReturned === true ||
@@ -1125,9 +1479,20 @@ export const getActiveReservationCount = (targetStudentId?: string): number => {
       item.status === 'Reservation' ||
       item.dueReturnDate === 'Reservation'
     );
+    if (!isReservation) return;
 
-    if (isReservation) {
-      seenKeys.add(key);
+    // Only librarian-approved reservations belong to the active reservation count
+    const isApprovedRes = item.status === 'Reserved' || item.status === 'Approved';
+    if (!isApprovedRes) return;
+
+    const cleanTitle = (item.title || item.resourceTitle || '').trim().toLowerCase();
+    const cleanIsbn = (item.isbn && item.isbn !== 'N/A') ? item.isbn.trim().toLowerCase() : '';
+    const bookKey = cleanTitle || cleanIsbn;
+
+    if (!bookKey) return;
+
+    if (!seenBookKeys.has(bookKey)) {
+      seenBookKeys.add(bookKey);
       count++;
     }
   };
@@ -1146,22 +1511,21 @@ export const getOverdueBooks = (targetStudentId?: string): ReservationBook[] => 
   const allHistory = cachedHistory || [];
   const allReservations = cachedReservations || [];
 
-  const seenKeys = new Set<string>();
+  const effectiveTarget = targetStudentId || cachedProfile.studentId || "";
+  const normalizedTarget = normalizeStudentId(effectiveTarget);
+
+  const seenBookKeys = new Set<string>();
   const overdueList: ReservationBook[] = [];
-  const normalizedTarget = normalizeStudentId(targetStudentId);
 
   const checkItem = (item: any) => {
     if (!item) return;
 
     if (normalizedTarget) {
-      const itemStudentId = normalizeStudentId(item.studentId || item.student_id);
+      const itemStudentId = normalizeStudentId(item.studentId || item.student_id || item.id_number || item.idNumber);
       if (itemStudentId && itemStudentId !== normalizedTarget) {
         return;
       }
     }
-
-    const key = item.id ? `id:${item.id}` : `${item.title || ''}-${item.isbn || ''}`;
-    if (seenKeys.has(key)) return;
 
     const isReturned = !!(
       item.isReturned === true ||
@@ -1190,18 +1554,37 @@ export const getOverdueBooks = (targetStudentId?: string): ReservationBook[] => 
       item.type === 'Borrow' ||
       item.type === 'Borrowing' ||
       (!item.action && !item.type);
+    if (!isBorrowType) return;
 
-    if (isBorrowType) {
-      seenKeys.add(key);
-      const dueVal = item.dueDate || item.returnDate || (item.date !== 'Returned' ? item.date : undefined);
-      if (
-        item.status === 'Due to Return' ||
-        item.status === 'Overdue' ||
-        item.status === 'Due' ||
-        (dueVal && isDueToReturn(dueVal))
-      ) {
-        overdueList.push(item);
-      }
+    const isApprovedLoan =
+      item.status === 'Approved' ||
+      item.status === 'Picked Up' ||
+      item.status === 'On Loan' ||
+      item.status === 'Active' ||
+      item.status === 'Active Loan' ||
+      item.status === 'Due to Return' ||
+      item.status === 'Overdue' ||
+      item.status === 'Due' ||
+      Boolean(item.isPickedUp || item.pickedUpAt);
+
+    if (!isApprovedLoan) return;
+
+    const cleanTitle = (item.title || item.resourceTitle || '').trim().toLowerCase();
+    const cleanIsbn = (item.isbn && item.isbn !== 'N/A') ? item.isbn.trim().toLowerCase() : '';
+    const bookKey = cleanTitle || cleanIsbn;
+
+    if (!bookKey) return;
+    if (seenBookKeys.has(bookKey)) return;
+    seenBookKeys.add(bookKey);
+
+    const dueVal = item.dueDate || item.returnDate || (item.date !== 'Returned' ? item.date : undefined);
+    if (
+      item.status === 'Due to Return' ||
+      item.status === 'Overdue' ||
+      item.status === 'Due' ||
+      (dueVal && isDueToReturn(dueVal))
+    ) {
+      overdueList.push(item);
     }
   };
 
@@ -1265,11 +1648,21 @@ export const addReservation = async (reservation: any) => {
     const createdTx = response.data?.transaction;
     const realTxId = createdTx?.id || reservation.id;
     if (createdTx?.id) {
+      const tempId = reservation.id;
       reservation.id = createdTx.id;
-      const rIdx = cachedReservations.findIndex((r) => r.id === reservation.id || r.title === reservation.title);
-      if (rIdx !== -1) cachedReservations[rIdx].id = createdTx.id;
-      const hIdx = cachedHistory.findIndex((h) => h.id === reservation.id || h.title === reservation.title);
-      if (hIdx !== -1) cachedHistory[hIdx].id = createdTx.id;
+      if (createdTx.status) {
+        reservation.status = createdTx.status;
+      }
+      const rIdx = cachedReservations.findIndex((r) => r.id === tempId || r.id === createdTx.id);
+      if (rIdx !== -1) {
+        cachedReservations[rIdx].id = createdTx.id;
+        if (createdTx.status) cachedReservations[rIdx].status = createdTx.status;
+      }
+      const hIdx = cachedHistory.findIndex((h) => h.id === tempId || h.id === createdTx.id);
+      if (hIdx !== -1) {
+        cachedHistory[hIdx].id = createdTx.id;
+        if (createdTx.status) cachedHistory[hIdx].status = createdTx.status;
+      }
     }
 
     // Emit real-time WebSocket event for Circulation Librarian
@@ -1420,7 +1813,19 @@ export const updateStudentProfile = async (updatedProfile: Partial<UserProfile>)
     ...cachedProfile,
     ...updatedProfile,
   };
-  await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(cachedProfile));
+  await safeSaveProfileToStorage(cachedProfile);
+  if (hasAllFourIdPhotos(cachedProfile)) {
+    await saveStudentIdCardsToStorage(
+      {
+        schoolIdFront: cachedProfile.schoolIdFront!,
+        schoolIdBack: cachedProfile.schoolIdBack!,
+        libraryIdFront: cachedProfile.libraryIdFront!,
+        libraryIdBack: cachedProfile.libraryIdBack!,
+      },
+      cachedProfile.email,
+      cachedProfile.studentId
+    );
+  }
   notify();
 
   try {
@@ -1437,6 +1842,10 @@ export const updateStudentProfile = async (updatedProfile: Partial<UserProfile>)
           yearLevel: updatedProfile.yearLevel || updatedProfile.yearlevel,
           section: updatedProfile.section,
           avatar: updatedProfile.avatar,
+          schoolIdFront: updatedProfile.schoolIdFront,
+          schoolIdBack: updatedProfile.schoolIdBack,
+          libraryIdFront: updatedProfile.libraryIdFront,
+          libraryIdBack: updatedProfile.libraryIdBack,
         },
         headers
       );
@@ -1450,7 +1859,7 @@ export const updateStudentProfile = async (updatedProfile: Partial<UserProfile>)
     // If there's an actual unique constraint conflict, alert the user
     if (error.response?.status === 400 || serverMsg.toLowerCase().includes("already in use")) {
       cachedProfile = previousProfile;
-      await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(cachedProfile));
+      await safeSaveProfileToStorage(cachedProfile);
       notify();
       return { success: false, message: serverMsg || "Student ID or Email is already registered." };
     }
@@ -2934,6 +3343,10 @@ export type ScannedStudentCardData = {
     role?: string;
     avatar?: string;
     qrCode?: string;
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
   };
   libraryCard: {
     id: string;
@@ -3075,6 +3488,10 @@ export const fetchStudentCardAndViolations = async (qrPayload: string): Promise<
       avatar: avatar,
       qrCode: qrCode,
       role: activeUser?.role || cachedProfile.role || "Student",
+      schoolIdFront: activeUser?.schoolIdFront || cachedProfile.schoolIdFront || "",
+      schoolIdBack: activeUser?.schoolIdBack || cachedProfile.schoolIdBack || "",
+      libraryIdFront: activeUser?.libraryIdFront || cachedProfile.libraryIdFront || "",
+      libraryIdBack: activeUser?.libraryIdBack || cachedProfile.libraryIdBack || "",
     },
     libraryCard: matchingBorrowed.length > 0 ? matchingBorrowed : [
       {

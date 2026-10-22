@@ -8,7 +8,6 @@ import {
   RefreshControl,
   Modal,
   Animated,
-  PanResponder,
   TextInput,
   ActivityIndicator,
   Image,
@@ -49,6 +48,7 @@ import {
   getActiveReservationCount,
   getBorrowedBooks,
   getReservedBooks,
+  syncTransactionsWithBackend,
 } from "../../data/store";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -261,66 +261,6 @@ export default function HomeScreen() {
   
   const displayName = user?.fullName || "Student";
 
-  // Draggable floating QR button position using Animated.ValueXY
-  const pan = React.useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
-  const panOffset = React.useRef({ x: 0, y: 0 });
-
-  const scanPulseAnim = React.useRef(new Animated.Value(1)).current;
-
-  React.useEffect(() => {
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scanPulseAnim, {
-          toValue: 1.12,
-          duration: 1100,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scanPulseAnim, {
-          toValue: 1,
-          duration: 1100,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    pulse.start();
-    return () => pulse.stop();
-  }, []);
-
-  React.useEffect(() => {
-    const id = pan.addListener((value) => {
-      panOffset.current = value;
-    });
-    return () => {
-      pan.removeListener(id);
-    };
-  }, []);
-
-  const panResponder = React.useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => false,
-      onMoveShouldSetPanResponder: (evt, gestureState) => {
-        // Only trigger responder if the user actually dragged, not just tapped
-        return Math.abs(gestureState.dx) > 3 || Math.abs(gestureState.dy) > 3;
-      },
-      onPanResponderGrant: () => {
-        pan.setOffset({
-          x: panOffset.current.x,
-          y: panOffset.current.y,
-        });
-        pan.setValue({ x: 0, y: 0 });
-      },
-      onPanResponderMove: Animated.event([null, { dx: pan.x, dy: pan.y }], {
-        useNativeDriver: false,
-      }),
-      onPanResponderRelease: (e, gestureState) => {
-        pan.flattenOffset();
-      },
-      onPanResponderTerminate: (e, gestureState) => {
-        pan.flattenOffset();
-      },
-    })
-  ).current;
-
   const [announcements, setAnnouncements] = React.useState<AnnouncementItem[]>(
     getAnnouncements()
   );
@@ -355,6 +295,11 @@ export default function HomeScreen() {
     setNotifications(getNotifications());
     setLibraryPoints(getLibraryPoints());
     void syncAnnouncementsWithBackend(true);
+    void syncTransactionsWithBackend(true).then(() => {
+      setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
+      setBorrowHistory(getReservationHistory());
+    });
 
     const unsubscribe = subscribe(() => {
       setAnnouncements(getAnnouncements());
@@ -941,6 +886,11 @@ export default function HomeScreen() {
       setLibraryPoints(getLibraryPoints());
       syncAnnouncementsWithBackend(true);
       fetchBooksPayload();
+      void syncTransactionsWithBackend(true).then(() => {
+        setActiveReservations(getUpcomingReservations());
+        setLibraryCardBooks(getLibraryCardHistory());
+        setBorrowHistory(getReservationHistory());
+      });
     }, [fetchBooksPayload])
   );
 
@@ -996,9 +946,10 @@ export default function HomeScreen() {
     };
 
     libraryCardBooks.forEach(checkItem);
+    borrowHistory.forEach(checkItem);
     activeReservations.forEach(checkItem);
     return count;
-  }, [libraryCardBooks, activeReservations]);
+  }, [libraryCardBooks, borrowHistory, activeReservations]);
 
   // Unified active reserved count strictly matching Library Card & Reservations tab
   const activeReservedCount = React.useMemo(() => {
@@ -1106,13 +1057,13 @@ export default function HomeScreen() {
         <View style={styles.headerLeftContainer}>
           <TouchableOpacity
             style={styles.hamburgerBtn}
-            onPress={() => router.push("/settings")}
+            onPress={() => router.push("/(tabs)/profile")}
             activeOpacity={0.7}
-            accessibilityLabel="Open settings menu"
+            accessibilityLabel="Open profile"
           >
-            <Ionicons
-              name="menu-outline"
-              size={24}
+            <MaterialCommunityIcons
+              name="account-circle-outline"
+              size={26}
               color={isDarkMode ? theme.accentGold : theme.accentBlue}
             />
           </TouchableOpacity>
@@ -1198,6 +1149,10 @@ export default function HomeScreen() {
               try {
                 await fetchBooksPayload();
                 await syncAnnouncementsWithBackend(true);
+                await syncTransactionsWithBackend(true);
+                setActiveReservations(getUpcomingReservations());
+                setLibraryCardBooks(getLibraryCardHistory());
+                setBorrowHistory(getReservationHistory());
               } finally {
                 setIsRefreshing(false);
               }
@@ -1777,35 +1732,6 @@ export default function HomeScreen() {
         <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* FLOATING DRAGGABLE QR BUTTON */}
-      <Animated.View
-        style={[
-          styles.floatingButton,
-          {
-            backgroundColor: isDarkMode ? theme.accentGold : theme.accentYellow,
-            shadowColor: isDarkMode ? theme.accentGold : "#0274BB",
-            borderWidth: isDarkMode ? 0 : 1.5,
-            borderColor: isDarkMode ? "transparent" : "rgba(2, 116, 187, 0.25)",
-            transform: pan.getTranslateTransform(),
-          },
-        ]}
-        {...panResponder.panHandlers}
-      >
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => router.push("/scanner")}
-          style={styles.floatingButtonTouchable}
-        >
-          <Animated.View style={{ transform: [{ scale: scanPulseAnim }] }}>
-            <MaterialCommunityIcons
-              name="qrcode-scan"
-              size={24}
-              color={isDarkMode ? "#080F1E" : "#0274BB"}
-            />
-          </Animated.View>
-        </TouchableOpacity>
-      </Animated.View>
-
       {/* ANNOUNCEMENT DETAIL MODAL */}
       <Modal
         visible={selectedAnnouncement !== null}
@@ -2368,24 +2294,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  floatingButton: {
-    position: "absolute",
-    right: 20,
-    bottom: 15,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#FFD700",
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 10,
-    shadowColor: "#FFD700",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    zIndex: 99,
-  },
-
   announcementsContainer: {
     marginTop: 20,
   },
@@ -2590,12 +2498,6 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     fontSize: 14,
     fontWeight: "600",
-  },
-  floatingButtonTouchable: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
   },
   searchBarWrapper: {
     height: 58,

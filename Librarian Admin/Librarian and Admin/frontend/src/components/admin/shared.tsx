@@ -104,16 +104,16 @@ export function AdminModal({
   }
 
   return (
-    <div className="admin-overlay modal-backdrop fixed inset-0 z-[80] flex items-center justify-center px-4 py-8 transition-opacity duration-300 ease-out">
-      <div className="w-full max-w-3xl rounded-[16px] border border-[var(--line)] bg-[var(--card-bg)] p-8 shadow-2xl">
-        <div className="flex items-start justify-between gap-6">
-          <div className="flex-1">
-            <h3 className="text-3xl font-bold text-[var(--module-title-color)]">{title}</h3>
-            <p className="mt-3 text-base text-[var(--module-muted-color)]">{description}</p>
+    <div className="admin-overlay modal-backdrop fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-6 transition-opacity duration-300 ease-out">
+      <div className="w-full max-w-3xl max-h-[92vh] flex flex-col rounded-[20px] border border-[var(--line)] bg-[var(--card-bg)] shadow-2xl overflow-hidden">
+        <div className="flex items-start justify-between gap-4 p-6 sm:p-7 border-b border-[var(--line)]/50 shrink-0">
+          <div className="flex-1 min-w-0 pr-2">
+            <h3 className="text-2xl sm:text-3xl font-bold text-[var(--module-title-color)] tracking-tight">{title}</h3>
+            <p className="mt-2 text-sm sm:text-base text-[var(--module-muted-color)]">{description}</p>
           </div>
           <button
             type="button"
-            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[10px] border border-[var(--line)] text-[var(--card-foreground)] transition-all duration-300 ease-out hover:bg-[var(--surface-hover)]"
+            className="inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] border border-[var(--line)] text-[var(--card-foreground)] transition-all duration-200 ease-out hover:bg-[var(--surface-hover)] cursor-pointer"
             onClick={onClose}
             aria-label="Close modal"
             title="Close"
@@ -121,7 +121,7 @@ export function AdminModal({
             <X className="h-5 w-5" />
           </button>
         </div>
-        <div className="mt-8">{children}</div>
+        <div className="p-6 sm:p-7 overflow-y-auto flex-1">{children}</div>
       </div>
     </div>
   );

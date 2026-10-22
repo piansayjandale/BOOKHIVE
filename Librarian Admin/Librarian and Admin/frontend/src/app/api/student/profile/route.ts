@@ -53,7 +53,11 @@ export async function GET(request: Request) {
           year_level AS "yearLevel",
           avatar,
           qr_code AS "qrCode",
-          status
+          status,
+          school_id_front AS "schoolIdFront",
+          school_id_back AS "schoolIdBack",
+          library_id_front AS "libraryIdFront",
+          library_id_back AS "libraryIdBack"
         FROM users
         WHERE LOWER(id_number) = LOWER($1) OR LOWER(email) = LOWER($1) OR id::text = $1
         LIMIT 1`,
@@ -89,9 +93,21 @@ export async function GET(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const { studentId, email, name, department, course, phone, address, avatar } = body;
+    const {
+      studentId,
+      idNumber,
+      email,
+      name,
+      department,
+      course,
+      avatar,
+      schoolIdFront,
+      schoolIdBack,
+      libraryIdFront,
+      libraryIdBack,
+    } = body;
 
-    const target = studentId || email;
+    const target = studentId || idNumber || email;
     if (target) {
       await pool.query(
         `UPDATE users
@@ -100,9 +116,23 @@ export async function PUT(request: Request) {
            department = COALESCE(NULLIF($2, ''), department),
            course = COALESCE(NULLIF($3, ''), course),
            avatar = COALESCE(NULLIF($4, ''), avatar),
+           school_id_front = COALESCE(NULLIF($5, ''), school_id_front),
+           school_id_back = COALESCE(NULLIF($6, ''), school_id_back),
+           library_id_front = COALESCE(NULLIF($7, ''), library_id_front),
+           library_id_back = COALESCE(NULLIF($8, ''), library_id_back),
            updated_at = NOW()
-         WHERE LOWER(id_number) = LOWER($5) OR LOWER(email) = LOWER($5)`,
-        [name, department, course, avatar, target]
+         WHERE LOWER(id_number) = LOWER($9) OR LOWER(email) = LOWER($9) OR id::text = $9`,
+        [
+          name,
+          department,
+          course,
+          avatar,
+          schoolIdFront,
+          schoolIdBack,
+          libraryIdFront,
+          libraryIdBack,
+          target,
+        ]
       );
     }
 

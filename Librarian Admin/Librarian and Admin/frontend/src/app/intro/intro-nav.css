@@ -1,0 +1,779 @@
+/* =========================================================================
+   INTRO PAGE STYLES - Custom Layouts & Refinements
+   - Full edge-to-edge white navbar (Theme toggle removed)
+   - Kicker matching Picture 3 (dark glass pill, yellow icon, white text)
+   - Headline BookHive in flat yellow (#FFF200, NO glow)
+   - White container for BookHive logo
+   - Features section with position relative, z-index 10, white bg, black text,
+     no card containers, only icons + names
+   ========================================================================= */
+
+/* 1. TOP NAVBAR: Stretched edge-to-edge and solid navy blue */
+.intro-header-nav-white {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  width: 100%;
+  background: #002b4d !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 18px rgba(0, 20, 45, 0.35);
+  box-sizing: border-box;
+}
+
+.intro-nav-bar-full {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 40px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .intro-nav-bar-full {
+    padding: 12px 18px;
+  }
+}
+
+.intro-brand-title-black {
+  font-size: 26px;
+  font-weight: 900;
+  color: #ffffff !important;
+  letter-spacing: -0.5px;
+}
+
+.login-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.login-nav-sti-badge {
+  width: 38px;
+  height: 38px;
+  min-width: 38px;
+  min-height: 38px;
+  border-radius: 10px;
+  background: #FFF200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  box-sizing: border-box;
+  transition: transform 0.2s ease;
+  overflow: hidden;
+}
+
+.login-nav-sti-badge:hover {
+  transform: scale(1.05);
+}
+
+.login-nav-sti-badge img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.login-footer-badge {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  background: #FFF200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.login-footer-badge img {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  object-fit: contain !important;
+  display: block !important;
+}
+
+.intro-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+@media (max-width: 640px) {
+  .intro-nav-right {
+    gap: 10px;
+  }
+}
+
+.intro-nav-faq-black-btn {
+  background: transparent;
+  border: none;
+  color: #ffffff !important;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 8px 18px;
+  border-radius: 8px;
+  transition: all 0.18s ease;
+  letter-spacing: 0.02em;
+}
+
+.intro-nav-faq-black-btn:hover {
+  color: #FFF200 !important;
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+.intro-nav-login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  background: #0072ce !important;
+  color: #ffffff !important;
+  font-size: 16px;
+  font-weight: 800;
+  padding: 11px 24px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.18s ease;
+  box-shadow: 0 2px 8px rgba(0, 114, 206, 0.3);
+}
+
+.intro-nav-login-btn:hover {
+  background: #005ea6 !important;
+  box-shadow: 0 4px 12px rgba(0, 114, 206, 0.45);
+  transform: translateY(-1px);
+}
+
+/* 2. HERO LEFT COLUMN */
+.intro-hero-left-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 780px;
+}
+
+/* Kicker Pill: Exact match to Picture 3 (dark pill, yellow book, white text) */
+.intro-kicker-badge-p3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(8, 20, 38, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: #ffffff !important;
+  font-weight: 800;
+  font-size: 16.5px;
+  padding: 8px 22px;
+  border-radius: 9999px;
+  margin-bottom: 24px;
+  letter-spacing: 0.01em;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+/* Headline: Welcome to (white) + BookHive in pure flat yellow with NO glow */
+.intro-hero-heading-v2 {
+  font-size: clamp(52px, 5.2vw, 76px);
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  margin: 0;
+}
+
+.intro-hero-yellow-title {
+  color: #FFF200 !important;
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* Subheading */
+.intro-hero-subtitle-v2 {
+  font-size: clamp(21px, 2.2vw, 28px);
+  font-weight: 700;
+  color: #fde047;
+  line-height: 1.34;
+  margin-top: 16px;
+  max-width: 740px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
+}
+
+/* Lead paragraph */
+.intro-hero-paragraph-v2 {
+  font-size: clamp(17px, 1.4vw, 20px);
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.95);
+  line-height: 1.68;
+  margin-top: 16px;
+  max-width: 740px;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
+/* 3. HERO RIGHT COLUMN - BOOKHIVE LOGO IN WHITE CONTAINER */
+.intro-hero-logo-col {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+}
+
+.intro-logo-white-card {
+  width: 100%;
+  max-width: 440px;
+  background: #ffffff;
+  border-radius: 28px;
+  padding: 36px 32px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  animation: introLogoFloat 4s ease-in-out infinite alternate;
+}
+
+.intro-logo-white-card:hover {
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.45), 0 0 0 2px #FFF200;
+}
+
+.intro-hero-logo-img {
+  width: 100%;
+  max-width: 380px;
+  height: auto;
+  object-fit: contain;
+  user-select: none;
+}
+
+@keyframes introLogoFloat {
+  0% {
+    transform: translateY(0px);
+  }
+  100% {
+    transform: translateY(-10px);
+  }
+}
+
+/* 4. FEATURES SECTION - Reverted to dark navy like Picture 1 with card containers */
+.intro-features-section {
+  position: relative !important;
+  z-index: 10 !important;
+  background: #09172a !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.intro-features-section .login-section-title {
+  color: #ffffff !important;
+}
+
+.intro-features-section .login-section-subtitle {
+  color: #94a3b8 !important;
+}
+
+.intro-features-section .login-features-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 24px;
+}
+
+@media (max-width: 1200px) {
+  .intro-features-section .login-features-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+  }
+}
+
+@media (max-width: 640px) {
+  .intro-features-section .login-features-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+}
+
+.intro-features-section .login-feature-card {
+  background: #0c1d33 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 18px !important;
+  padding: 22px 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  min-height: 135px !important;
+  align-items: flex-start !important;
+  text-align: left !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28) !important;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease !important;
+  position: relative !important;
+}
+
+.intro-features-section .login-feature-card:hover {
+  transform: translateY(-5px) !important;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4) !important;
+  border-color: rgba(255, 242, 0, 0.35) !important;
+}
+
+.intro-features-section .login-feature-card-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  margin-bottom: 14px !important;
+}
+
+.intro-features-section .login-feature-icon-badge {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid !important;
+  transition: transform 0.2s ease !important;
+}
+
+.intro-features-section .login-feature-card:hover .login-feature-icon-badge {
+  transform: scale(1.08) !important;
+}
+
+.intro-features-section .login-feature-number {
+  font-family: inherit !important;
+  font-size: 28px !important;
+  font-weight: 900 !important;
+  color: rgba(255, 255, 255, 0.22) !important;
+  letter-spacing: -0.03em !important;
+  user-select: none !important;
+}
+
+.intro-features-section .login-feature-card-title {
+  font-size: 19px !important;
+  font-weight: 800 !important;
+  color: #ffffff !important;
+  margin: 0 !important;
+  line-height: 1.4 !important;
+  text-align: left !important;
+}
+
+/* 4. FEATURES SECTION BADGE (Darker blue container with yellow font) */
+.intro-features-badge-container {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #020b18 !important; /* Darker blue container */
+  border: 1px solid rgba(0, 114, 206, 0.45);
+  border-radius: 9999px;
+  padding: 6px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 16px rgba(0, 5, 15, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.intro-features-badge-text {
+  color: #FFF200 !important; /* Yellow font */
+  font-size: 13.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  display: inline-block;
+  line-height: 1;
+}
+
+
+/* =====================================================================
+   MODERN EASY-TO-UNDERSTAND ANALYTICS SECTION (PICTURE 3)
+   ===================================================================== */
+.intro-modern-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 28px;
+  max-width: 1260px;
+  margin: 0 auto;
+}
+
+@media (max-width: 860px) {
+  .intro-modern-analytics-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+.intro-modern-analytic-card {
+  position: relative;
+  background: linear-gradient(145deg, rgba(14, 29, 51, 0.95) 0%, rgba(8, 18, 33, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  padding: 36px 32px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  overflow: hidden;
+}
+
+.intro-modern-analytic-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: transparent;
+  transition: opacity 0.3s ease;
+}
+
+.intro-modern-analytic-card.books-card::before {
+  background: linear-gradient(90deg, #0072ce, #38bdf8);
+}
+
+.intro-modern-analytic-card.users-card::before {
+  background: linear-gradient(90deg, #ca8a04, #FFF200);
+}
+
+.intro-modern-analytic-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.intro-modern-analytic-card.books-card:hover {
+  box-shadow: 0 22px 50px rgba(0, 114, 206, 0.2);
+  border-color: rgba(56, 189, 248, 0.4);
+}
+
+.intro-modern-analytic-card.users-card:hover {
+  box-shadow: 0 22px 50px rgba(255, 242, 0, 0.18);
+  border-color: rgba(255, 242, 0, 0.4);
+}
+
+.intro-analytic-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.intro-analytic-icon-box {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.intro-analytic-icon-box.books {
+  background: rgba(0, 114, 206, 0.18);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+.intro-analytic-icon-box.users {
+  background: rgba(255, 242, 0, 0.14);
+  border: 1px solid rgba(255, 242, 0, 0.35);
+  color: #FFF200;
+}
+
+.intro-analytic-live-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+}
+
+.intro-analytic-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: pulseDot 2s infinite;
+}
+
+.intro-analytic-metric-num {
+  font-size: clamp(60px, 6.2vw, 84px);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.025em;
+  margin-bottom: 8px;
+}
+
+.intro-analytic-metric-num.books-num {
+  color: #38bdf8;
+  text-shadow: 0 4px 20px rgba(56, 189, 248, 0.25);
+}
+
+.intro-analytic-metric-num.users-num {
+  color: #FFF200;
+  text-shadow: 0 4px 20px rgba(255, 242, 0, 0.2);
+}
+
+.intro-analytic-metric-title {
+  font-size: clamp(23px, 2.3vw, 29px);
+  font-weight: 800;
+  color: #ffffff;
+  margin: 0 0 10px 0;
+  letter-spacing: -0.01em;
+}
+
+.intro-analytic-metric-desc {
+  font-size: clamp(16.5px, 1.35vw, 19px);
+  line-height: 1.65;
+  color: #94a3b8;
+  margin: 0 0 24px 0;
+}
+
+.intro-analytic-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.intro-analytic-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+}
+
+
+/* =========================================================================
+   PICTURE 5 LIVE KPI METRICS STYLES (ACTIVE_USERS, PENDING_REQ, ACTIVE_BORROWS)
+   ========================================================================= */
+.intro-kpi-pill-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px) {
+  .intro-kpi-pill-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.intro-kpi-pill-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(15, 30, 52, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-left-width: 5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.intro-kpi-pill-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.intro-kpi-pill-item.kpi-active-users {
+  border-left-color: #38bdf8;
+}
+
+.intro-kpi-pill-item.kpi-pending-req {
+  border-left-color: #f97316;
+}
+
+.intro-kpi-pill-item.kpi-active-borrows {
+  border-left-color: #ef4444;
+}
+
+.intro-kpi-pill-label {
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #94a3b8;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+}
+
+.intro-kpi-pill-val {
+  font-size: 28px;
+  font-weight: 900;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.intro-kpi-pill-item.kpi-active-users .intro-kpi-pill-val {
+  color: #38bdf8;
+}
+
+.intro-kpi-pill-item.kpi-pending-req .intro-kpi-pill-val {
+  color: #ffffff;
+}
+
+.intro-kpi-pill-item.kpi-active-borrows .intro-kpi-pill-val {
+  color: #ef4444;
+}
+
+/* =========================================================================
+   ENHANCED SCALING FOR 75% ZOOM & HIGH RESOLUTION MONITORS
+   ========================================================================= */
+@media (min-width: 1360px) {
+  .login-page-root {
+    font-size: 18px;
+  }
+  .intro-hero-heading-v2 {
+    font-size: clamp(58px, 5.5vw, 84px);
+  }
+  .intro-hero-subtitle-v2 {
+    font-size: clamp(23px, 2.2vw, 30px);
+  }
+  .intro-hero-paragraph-v2 {
+    font-size: clamp(18px, 1.4vw, 21.5px);
+    line-height: 1.82;
+  }
+  .intro-kicker-badge-p3 {
+    font-size: 18px;
+    padding: 10px 24px;
+  }
+  .intro-nav-faq-black-btn,
+  .intro-nav-login-btn {
+    font-size: 17px;
+  }
+  .intro-brand-title-black {
+    font-size: 28px;
+  }
+  .login-summary-heading {
+    font-size: 46px !important;
+  }
+  .login-summary-lead {
+    font-size: 20px !important;
+    line-height: 1.88 !important;
+  }
+  .intro-analytic-metric-num {
+    font-size: clamp(66px, 6.5vw, 92px);
+  }
+  .intro-analytic-metric-title {
+    font-size: 28px;
+  }
+  .intro-analytic-metric-desc {
+    font-size: 18.5px;
+    line-height: 1.7;
+  }
+  .intro-features-section .login-section-title {
+    font-size: 44px !important;
+  }
+  .intro-features-section .login-section-subtitle {
+    font-size: 21px !important;
+  }
+  .intro-features-section .login-feature-card-title {
+    font-size: 21.5px !important;
+  }
+}
+
+@media (min-width: 1800px) {
+  /* Widescreen / 75% browser zoom level */
+  .login-page-root {
+    font-size: 20px;
+  }
+  .intro-hero-heading-v2 {
+    font-size: 84px;
+  }
+  .intro-hero-subtitle-v2 {
+    font-size: 30px;
+  }
+  .intro-hero-paragraph-v2 {
+    font-size: 22px;
+    line-height: 1.85;
+  }
+  .login-summary-heading {
+    font-size: 50px !important;
+  }
+  .login-summary-lead {
+    font-size: 22px !important;
+    line-height: 1.92 !important;
+  }
+  .intro-analytic-metric-num {
+    font-size: 96px;
+  }
+  .intro-analytic-metric-title {
+    font-size: 32px;
+  }
+  .intro-analytic-metric-desc {
+    font-size: 20px;
+  }
+  .intro-features-section .login-feature-card-title {
+    font-size: 23px !important;
+  }
+}
+
+/* Styles for Separated Pending Requests and Active Borrows Cards */
+.intro-modern-analytic-card.pending-card::before {
+  background: linear-gradient(90deg, #ea580c, #f97316);
+}
+
+.intro-modern-analytic-card.borrows-card::before {
+  background: linear-gradient(90deg, #dc2626, #ef4444);
+}
+
+.intro-modern-analytic-card.pending-card:hover {
+  box-shadow: 0 22px 50px rgba(249, 115, 22, 0.22);
+  border-color: rgba(249, 115, 22, 0.45);
+}
+
+.intro-modern-analytic-card.borrows-card:hover {
+  box-shadow: 0 22px 50px rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.45);
+}
+
+.intro-analytic-icon-box.pending {
+  background: rgba(249, 115, 22, 0.16);
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  color: #f97316;
+}
+
+.intro-analytic-icon-box.borrows {
+  background: rgba(239, 68, 68, 0.16);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #ef4444;
+}
+
+.intro-analytic-metric-num.pending-num {
+  color: #f97316;
+  text-shadow: 0 4px 20px rgba(249, 115, 22, 0.28);
+}
+
+.intro-analytic-metric-num.borrows-num {
+  color: #ef4444;
+  text-shadow: 0 4px 20px rgba(239, 68, 68, 0.28);
+}

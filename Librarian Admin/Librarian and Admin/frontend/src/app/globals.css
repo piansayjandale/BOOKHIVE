@@ -420,7 +420,7 @@ html[data-theme="light"] {
   }
 
   /* Text color overrides outside the sidebar to ensure legibility on light cards */
-  .text-white:not(aside *):not(.panel-hero *):not([class*="bg-rose"]):not([class*="bg-rose"] *):not([class*="bg-red"]):not([class*="bg-red"] *):not([class*="bg-emerald"]):not([class*="bg-emerald"] *):not([class*="bg-sky"]):not([class*="bg-sky"] *):not([class*="bg-blue"]):not([class*="bg-blue"] *):not([class*="bg-[#0274BB]"]):not([class*="bg-[#0274BB]"] *):not(.btn-purge):not(.btn-purge *):not(.btn-save-active):not(.btn-save-active *),
+  .text-white:not(aside *):not(.panel-hero *):not([class*="bg-rose"]):not([class*="bg-rose"] *):not([class*="bg-red"]):not([class*="bg-red"] *):not([class*="bg-emerald"]):not([class*="bg-emerald"] *):not([class*="bg-sky"]):not([class*="bg-sky"] *):not([class*="bg-blue"]):not([class*="bg-blue"] *):not([class*="bg-[#0274BB]"]):not([class*="bg-[#0274BB]"] *):not([class*="bg-orange"]):not([class*="bg-orange"] *):not(.btn-confirm-archive):not(.btn-confirm-archive *):not(.btn-purge):not(.btn-purge *):not(.btn-save-active):not(.btn-save-active *),
   .text-white\/90:not(aside *):not(.panel-hero *):not([class*="bg-rose"]):not([class*="bg-rose"] *):not([class*="bg-red"]):not([class*="bg-red"] *),
   .text-white\/85:not(aside *):not(.panel-hero *):not([class*="bg-rose"]):not([class*="bg-rose"] *):not([class*="bg-red"]):not([class*="bg-red"] *),
   .text-white\/80:not(aside *):not(.panel-hero *):not([class*="bg-rose"]):not([class*="bg-rose"] *):not([class*="bg-red"]):not([class*="bg-red"] *),
@@ -438,6 +438,15 @@ html[data-theme="light"] {
   }
 
   /* Force white text on danger, purge, and save action buttons */
+  .btn-confirm-archive,
+  .btn-confirm-archive *,
+  button.btn-confirm-archive,
+  button.btn-confirm-archive span,
+  button.btn-confirm-archive svg,
+  button[class*="bg-orange-500"]:not(:disabled),
+  button[class*="bg-orange-500"]:not(:disabled) *,
+  button[class*="bg-orange-600"]:not(:disabled),
+  button[class*="bg-orange-600"]:not(:disabled) *,
   .btn-purge,
   .btn-purge *,
   button.btn-purge,
@@ -813,18 +822,28 @@ html[data-theme="light"] {
   }
 
   /* Universal text elements in light mode */
-  h1:not(aside *),
-  h2:not(aside *),
-  h3:not(aside *),
-  h4:not(aside *),
-  h5:not(aside *),
-  h6:not(aside *),
-  p:not(aside *):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-rose"]):not([class*="text-amber"]):not([class*="text-sky"]),
-  label:not(aside *),
-  span:not(aside *):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-rose"]):not([class*="text-amber"]):not([class*="text-sky"]):not([class*="bg-"]):not([class*="badge"]),
+  h1:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  h2:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  h3:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  h4:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  h5:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  h6:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  p:not(aside *):not(.intro-root *):not([data-intro-page] *):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-rose"]):not([class*="text-amber"]):not([class*="text-sky"]),
+  label:not(aside *):not(.intro-root *):not([data-intro-page] *),
+  span:not(aside *):not(.intro-root *):not([data-intro-page] *):not([class*="text-emerald"]):not([class*="text-red"]):not([class*="text-rose"]):not([class*="text-amber"]):not([class*="text-sky"]):not([class*="bg-"]):not([class*="badge"]),
   td:not(aside *),
   th:not(aside *) {
     color: #000000;
+  }
+
+  /* Intro Page Text Exceptions */
+  .intro-root .intro-hero-title,
+  .intro-root .intro-hero-desc,
+  .intro-root [data-intro-white],
+  [data-intro-page="true"] .intro-hero-title,
+  [data-intro-page="true"] .intro-hero-desc,
+  [data-intro-page="true"] [data-intro-white] {
+    color: #FFFFFF !important;
   }
 }
 
@@ -850,11 +869,26 @@ body {
 
 /* Allow natural vertical scrolling on public download and landing pages */
 html:has(.download-page-root),
-body:has(.download-page-root) {
+body:has(.download-page-root),
+html:has([data-intro-page]),
+body:has([data-intro-page]),
+html:has(.intro-root),
+body:has(.intro-root) {
   height: auto !important;
   min-height: 100% !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
+}
+
+/* STI Style 3D Bubble Title */
+.sti-bubble-title {
+  color: #0284c7;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  -webkit-text-stroke: 3.5px #ffffff;
+  paint-order: stroke fill;
+  filter: drop-shadow(0 4px 0 #002b4d) drop-shadow(0 8px 14px rgba(0, 0, 0, 0.35));
 }
 
 *,
@@ -1755,3 +1789,12 @@ html[data-theme="dark"] .digitized-delete-btn:hover svg {
 
 
 
+
+/* Confirm Archive button - guaranteed white text */
+.btn-confirm-archive,
+button.btn-confirm-archive,
+button.btn-confirm-archive span,
+.btn-confirm-archive * {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}

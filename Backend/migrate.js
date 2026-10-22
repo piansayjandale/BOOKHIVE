@@ -53,12 +53,16 @@ async function migrate() {
     console.log("✓ Verified columns: transactions (student_id_image, comment, available_at, expires_at, picked_up_at)");
 
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id_front TEXT");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id_back TEXT");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS library_id_front TEXT");
+    await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS library_id_back TEXT");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS qr_code UUID UNIQUE DEFAULT gen_random_uuid()");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS year_level TEXT");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS section TEXT");
     await client.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{\"home\":true,\"records\":true,\"transactions\":true,\"reminders\":true,\"reports\":true,\"history\":true,\"settings\":true}'::jsonb");
     await client.query("UPDATE users SET qr_code = gen_random_uuid() WHERE qr_code IS NULL");
-    console.log("✓ Verified columns: users (avatar, qr_code, year_level, section, permissions)");
+    console.log("✓ Verified columns: users (avatar, school_id_front, school_id_back, library_id_front, library_id_back, qr_code, year_level, section, permissions)");
 
     await client.query(`
       CREATE TABLE IF NOT EXISTS violations (

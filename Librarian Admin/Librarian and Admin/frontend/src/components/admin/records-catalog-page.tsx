@@ -3,6 +3,7 @@
 import { startTransition, useDeferredValue, useEffect, useState } from "react";
 
 import { AdminPageHeader, AdminSection, AdminTable } from "@/components/admin/shared";
+import { DepartmentBadge } from "@/components/ui/department-badge";
 import { requestJson } from "@/lib/admin/client";
 import type { RecordsCatalogPayload } from "@/lib/admin/types";
 
@@ -61,7 +62,9 @@ export function RecordsCatalogPage() {
                 <tr key={record.id} className="border-t border-[var(--line)]">
                   <td className="px-4 py-3 text-sm font-semibold">{record.title}</td>
                   <td className="px-4 py-3 text-sm">{record.author}</td>
-                  <td className="px-4 py-3 text-sm">{record.department}</td>
+                  <td className="px-4 py-3 text-sm">
+                    <DepartmentBadge department={record.department} />
+                  </td>
                   <td className="px-4 py-3 text-sm">{record.category}</td>
                   <td className="px-4 py-3 text-sm">{record.shelfLocation}</td>
                 </tr>

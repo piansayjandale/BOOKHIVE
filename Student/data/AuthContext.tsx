@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { authService, type User, normalizeUserSession } from "./authService";
+import { authService, type User, normalizeUserSession, safeSaveCurrentUserToStorage } from "./authService";
 import { clearLocalCache, resetProfileCache } from "./store";
 
 type AuthContextType = {
@@ -65,6 +65,10 @@ export const AuthProvider = ({ children }: any) => {
         status: result.user.status,
         role: result.user.role,
         avatar: result.user.avatar || "",
+        schoolIdFront: result.user.schoolIdFront || "",
+        schoolIdBack: result.user.schoolIdBack || "",
+        libraryIdFront: result.user.libraryIdFront || "",
+        libraryIdBack: result.user.libraryIdBack || "",
         qrCode: result.user.qrCode || "",
       });
       setUser(result.user);
@@ -136,7 +140,7 @@ export const AuthProvider = ({ children }: any) => {
     setUser((prev) => {
       if (!prev) return null;
       const updated = { ...prev, ...updatedUser };
-      AsyncStorage.setItem("CURRENT_USER", JSON.stringify(updated)).catch(() => {});
+      void safeSaveCurrentUserToStorage(updated);
       return updated;
     });
   };

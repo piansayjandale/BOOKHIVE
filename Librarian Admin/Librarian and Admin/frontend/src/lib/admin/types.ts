@@ -155,6 +155,16 @@ export interface AnalyticsPayload {
   mostSearchedBooks?: MostSearchedBooks;
   circulationHealth?: CirculationHealth;
   collectionDepth?: CollectionDepth;
+  topStudentBorrowers?: TopStudentBorrower[];
+}
+
+export interface TopStudentBorrower {
+  rank: number;
+  name: string;
+  studentId: string;
+  course: string;
+  borrowCount: number;
+  badge?: string;
 }
 
 export interface MostCourseBorrowed {

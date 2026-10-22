@@ -1,7 +1,7 @@
 "use client";
 
 export async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
+  const response = await fetch(input, { cache: "no-store", ...init });
 
   if (response.status === 401) {
     if (typeof window !== "undefined") {

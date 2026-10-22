@@ -2,6 +2,7 @@ import React, { useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuth } from "../data/AuthContext";
+import { loadStudentIdCardsForUser } from "../data/store";
 
 export default function Index() {
   const { isSignedIn, loading, user } = useAuth();
@@ -10,7 +11,7 @@ export default function Index() {
   useEffect(() => {
     if (!loading) {
       // Small timeout to allow the navigation context to settle
-      const timer = setTimeout(() => {
+      const timer = setTimeout(async () => {
         if (isSignedIn && user) {
           const userRole = (user.role || "").toLowerCase().trim();
           const isStaff = userRole === "librarian" || userRole === "admin" || userRole === "super admin" || userRole === "staff";
@@ -20,22 +21,29 @@ export default function Index() {
             return;
           }
 
+          const rawStudentId = user.studentId || "";
           const isNew = Boolean(
             user.isNewUser ||
-            !user.studentId ||
-            user.studentId.startsWith("STI-") ||
-            user.studentId.startsWith("MS-") ||
-            !/^\d{2}-\d{4}-\d{3}$/.test(user.studentId) ||
-            !user.yearLevel ||
-            !user.section
+            !rawStudentId ||
+            rawStudentId.startsWith("TEMP-")
           );
 
           if (isNew) {
             router.replace("/complete-profile");
+            return;
+          }
+
+          const existingIdCards = await loadStudentIdCardsForUser(user);
+          if (!existingIdCards) {
+            router.replace({
+              pathname: "/(tabs)/profile",
+              params: { requireIdUpload: "1" },
+            });
           } else {
             router.replace("/(tabs)");
           }
         } else {
+          // Intro page removed on mobile: go directly to login
           router.replace("/login");
         }
       }, 100);

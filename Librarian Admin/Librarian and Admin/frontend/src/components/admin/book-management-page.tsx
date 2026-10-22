@@ -5,6 +5,7 @@ import { Archive, Eye, Plus, Search, ChevronLeft, ChevronRight, Inbox, Check, X,
 
 import { useNotice } from "@/components/providers/notice-provider";
 import { AdminModal, AdminPageHeader, AdminSection, AdminTable, FieldLabel } from "@/components/admin/shared";
+import { DepartmentBadge } from "@/components/ui/department-badge";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminBookRecord, AdminBooksPayload, AdminTransactionsPayload } from "@/lib/admin/types";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
@@ -488,7 +489,9 @@ export function BookManagementPage({ tabs }: { tabs?: ReactNode }) {
                         </div>
                         <p className="mt-1 text-xs text-[var(--topbar-muted)] leading-relaxed">{book.apaCitation}</p>
                       </td>
-                      <td className="px-5 py-4 text-sm text-slate-300 whitespace-nowrap">{book.department}</td>
+                      <td className="px-5 py-4 whitespace-nowrap">
+                        <DepartmentBadge department={book.department} />
+                      </td>
                       <td className="px-5 py-4 text-sm text-slate-300 whitespace-nowrap">{book.category}</td>
                       <td className="px-5 py-4 text-xs font-mono text-slate-300 whitespace-nowrap">{book.shelfLocation}</td>
                       <td className="px-5 py-4 text-xs text-slate-400 whitespace-nowrap">{formatDate(book.publishedDate)}</td>

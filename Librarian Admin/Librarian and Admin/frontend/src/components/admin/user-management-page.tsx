@@ -5,6 +5,7 @@ import { Eye, Archive, Plus, Search, UserX, ChevronLeft, ChevronRight, Mail } fr
 
 import { useNotice } from "@/components/providers/notice-provider";
 import { AdminModal, AdminPageHeader, AdminSection, AdminTable, FieldLabel } from "@/components/admin/shared";
+import { DepartmentBadge } from "@/components/ui/department-badge";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminUserRecord, AdminUsersPayload } from "@/lib/admin/types";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -272,7 +273,9 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
                   <td className="px-5 py-4 whitespace-nowrap">
                     <RoleBadge role={user.role} />
                   </td>
-                  <td className="px-5 py-4 text-sm text-slate-300 whitespace-nowrap">{user.department}</td>
+                  <td className="px-5 py-4 whitespace-nowrap">
+                    <DepartmentBadge department={user.department} />
+                  </td>
                   <td className="px-5 py-4 text-sm text-slate-300 whitespace-nowrap">{user.course || "—"}</td>
                   <td className="px-5 py-4 text-xs text-slate-400 whitespace-nowrap">{formatDateTime(user.lastActive)}</td>
                   <td className="px-5 py-4 whitespace-nowrap">
@@ -394,13 +397,30 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
                           return dueStart <= todayStart;
                         })();
 
-                        const dueText = isReturned
-                          ? "Returned"
-                          : isReservation
-                          ? "Reservation"
-                          : tx.dueDate
-                          ? new Date(tx.dueDate).toISOString().split("T")[0]
-                          : "7 days";
+                        const resolveTxDueDate = (t: any): string => {
+                          const candidate = t.dueDate || t.due_date;
+                          if (candidate) {
+                            try {
+                              const d = new Date(candidate);
+                              if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+                            } catch {}
+                          }
+                          const startCandidate = t.requestedAt || t.requested_at;
+                          if (startCandidate) {
+                            try {
+                              const d = new Date(startCandidate);
+                              if (!isNaN(d.getTime())) {
+                                d.setDate(d.getDate() + 7);
+                                return d.toISOString().split("T")[0];
+                              }
+                            } catch {}
+                          }
+                          const fallback = new Date();
+                          fallback.setDate(fallback.getDate() + 7);
+                          return fallback.toISOString().split("T")[0];
+                        };
+
+                        const dueText = resolveTxDueDate(tx);
 
                         const rowBgClass = isReturned
                           ? ""

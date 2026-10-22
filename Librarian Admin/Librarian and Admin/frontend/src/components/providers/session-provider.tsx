@@ -77,7 +77,7 @@ export function SessionProvider({
           console.warn("Logout request failed or interrupted:", err);
         } finally {
           setUser(null);
-          window.location.assign("/login");
+          window.location.assign("/intro");
         }
       },
     }),

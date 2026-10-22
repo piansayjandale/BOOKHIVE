@@ -10,8 +10,6 @@ import {
   Cell,
   LabelList,
   Legend,
-  Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -20,16 +18,10 @@ import {
   YAxis,
 } from "recharts";
 import {
-  ArrowUpRight,
-  BookOpen,
-  Calendar,
   Check,
   CheckCircle2,
   ChevronDown,
   Clock,
-  Filter,
-  Layers,
-  PieChart as PieIcon,
   Printer,
   Sheet,
   Sparkles,
@@ -38,7 +30,6 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { Department, ReportsPayload } from "@/lib/types";
-import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
 import dashboardSocket from "@/lib/socket";
 
@@ -187,7 +178,35 @@ function resolveCollege(str?: string | null): string | null {
 }
 
 /* ── Custom Interactive Tooltip ─────────────────────────────────────────── */
-function CustomTooltip({ active, payload, label }: any) {
+interface TooltipPayloadItem {
+  name?: string;
+  value?: number | string;
+  color?: string;
+  fill?: string;
+  unit?: string;
+  dataKey?: string;
+  payload?: {
+    code?: string;
+    department?: string;
+    mascot?: string;
+    course?: string;
+    fullTitle?: string;
+    percentage?: number;
+    count?: number;
+    borrowCount?: number;
+    fill?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface CustomTooltipProps {
+  active?: boolean;
+  payload?: TooltipPayloadItem[];
+  label?: string | number;
+}
+
+function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
@@ -212,13 +231,13 @@ function CustomTooltip({ active, payload, label }: any) {
           </p>
         )}
         <div className="mt-2 space-y-1.5">
-          {payload.map((p: any) => {
+          {payload.map((p: TooltipPayloadItem) => {
             const dotColor =
-              COLLEGE_COLORS[p.name] ||
-              COLLEGE_COLORS[p.payload?.code] ||
-              DEPT_COLORS[p.name] ||
-              DEPT_COLORS[p.payload?.department] ||
-              STATUS_COLORS[p.name] ||
+              COLLEGE_COLORS[p.name || ""] ||
+              COLLEGE_COLORS[p.payload?.code || ""] ||
+              DEPT_COLORS[p.name || ""] ||
+              DEPT_COLORS[p.payload?.department || ""] ||
+              STATUS_COLORS[p.name || ""] ||
               p.color ||
               p.fill ||
               PALETTE.emerald;
@@ -296,7 +315,9 @@ function ReportsExcelSheetHeader({
     "2. Section Demand",
     "3. Status Breakdown",
     "4. School Departments",
-    "5. Top Borrowed Titles",
+    "5. The Most Borrowed Books",
+    "6. Course Rankings",
+    "7. Top Student Borrowers",
   ];
 
   return (
@@ -377,7 +398,9 @@ function exportReportsToExcel(
   totalQueueActions: number,
   collegeBorrowedData: any[],
   totalCollegeBorrows: number,
-  topBorrowed: any[]
+  topBorrowed: any[],
+  courseRankingData: any[] = [],
+  topStudentsData: any[] = []
 ) {
   const dateStr = new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
   
@@ -940,6 +963,72 @@ function exportReportsToExcel(
    </Row>
   </Table>
  </Worksheet>
+
+ <!-- 6. COURSE BORROWING RANKINGS -->
+ <Worksheet ss:Name="6. Course Rankings">
+  <Table ss:DefaultColumnWidth="120" ss:DefaultRowHeight="20">
+   <Column ss:Width="60"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="260"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="90"/>
+   <Row ss:Height="28">
+    <Cell ss:MergeAcross="4" ss:StyleID="TitleStyle"><Data ss:Type="String"> BOOKHIVE — COURSE &amp; ACADEMIC PROGRAM RANKINGS</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:MergeAcross="4" ss:StyleID="MetaStyle"><Data ss:Type="String"> Generated: ${dateStr} | Status: Live Sync | Active Programs Tracked: ${(courseRankingData || []).length}</Data></Cell>
+   </Row>
+   <Row ss:Height="8"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Rank</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Course Code</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Academic Program</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Loans</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Share (%)</Data></Cell>
+   </Row>
+   ${(courseRankingData || []).map((c: any, idx: number) => `
+   <Row ss:Height="20">
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">#${idx + 1}</Data></Cell>
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escape(c.course)}</Data></Cell>
+    <Cell ss:StyleID="CellLeft"><Data ss:Type="String">${escape(c.fullTitle || c.course)}</Data></Cell>
+    <Cell ss:StyleID="CellRight"><Data ss:Type="Number">${Number(c.borrowCount || 0)}</Data></Cell>
+    <Cell ss:StyleID="CellPercent"><Data ss:Type="Number">${Number(((c.percentage || 0) / 100).toFixed(4))}</Data></Cell>
+   </Row>`).join("")}
+  </Table>
+ </Worksheet>
+
+ <!-- 7. TOP STUDENT BORROWERS -->
+ <Worksheet ss:Name="7. Top Student Borrowers">
+  <Table ss:DefaultColumnWidth="120" ss:DefaultRowHeight="20">
+   <Column ss:Width="60"/>
+   <Column ss:Width="200"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="100"/>
+   <Row ss:Height="28">
+    <Cell ss:MergeAcross="4" ss:StyleID="TitleStyle"><Data ss:Type="String"> BOOKHIVE — TOP STUDENT BORROWERS RANKINGS</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:MergeAcross="4" ss:StyleID="MetaStyle"><Data ss:Type="String"> Generated: ${dateStr} | Status: Live Sync | Top Scholars: ${(topStudentsData || []).length}</Data></Cell>
+   </Row>
+   <Row ss:Height="8"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Rank</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Student Name</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Student ID</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Course</Data></Cell>
+    <Cell ss:StyleID="HeaderStyle"><Data ss:Type="String">Loans</Data></Cell>
+   </Row>
+   ${(topStudentsData || []).map((s: any, idx: number) => `
+   <Row ss:Height="20">
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">#${idx + 1}</Data></Cell>
+    <Cell ss:StyleID="CellLeft"><Data ss:Type="String">${escape(s.name)}</Data></Cell>
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escape(s.studentId)}</Data></Cell>
+    <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escape(s.course)}</Data></Cell>
+    <Cell ss:StyleID="CellRight"><Data ss:Type="Number">${Number(s.borrowCount || 0)}</Data></Cell>
+   </Row>`).join("")}
+  </Table>
+ </Worksheet>
 </Workbook>`;
 
   const blob = new Blob([xml], { type: "application/vnd.ms-excel;charset=utf-8" });
@@ -967,10 +1056,10 @@ export function ReportsModule() {
 
   const [reports, setReports] = useState<ReportsPayload | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"all" | "trends" | "distribution" | "leaderboard">("all");
   const [timeframe, setTimeframe] = useState<"6m" | "30d" | "year">("6m");
   const [selectedDept, setSelectedDept] = useState<string>("All");
   const [deptViewMode, setDeptViewMode] = useState<"breakdown" | "chart">("breakdown");
+  const [courseViewMode, setCourseViewMode] = useState<"ranking" | "chart">("ranking");
   const [isDeptDropdownOpen, setIsDeptDropdownOpen] = useState(false);
   const deptDropdownRef = useRef<HTMLDivElement>(null);
   const [printDate, setPrintDate] = useState("Live Synchronized");
@@ -986,8 +1075,6 @@ export function ReportsModule() {
       })
     );
   }, []);
-
-  const { user } = useSession();
   const lastPayloadRef = useRef<string>("");
 
   useEffect(() => {
@@ -1059,11 +1146,6 @@ export function ReportsModule() {
               type === "reservation" &&
               ["pending", "approved", "active", "waitlisted"].includes(status)
             );
-          };
-
-          const isCancelledRecord = (tx: any) => {
-            const status = (tx.status || "").toLowerCase();
-            return status === "cancelled";
           };
 
           const pendingCount = txList.filter(isPendingBorrow).length;
@@ -1283,15 +1365,6 @@ export function ReportsModule() {
     return statusPieData.reduce((acc, curr) => acc + curr.count, 0);
   }, [statusPieData]);
 
-  const totalActions = useMemo(() => {
-    if (!reports) return 0;
-    return (
-      reports.velocityMetrics?.totalCirculationActions ??
-      reports.statusBreakdown?.reduce((acc, curr) => acc + curr.count, 0) ??
-      0
-    );
-  }, [reports]);
-
   const totalBorrows = useMemo(() => {
     if (!reports?.monthlyBorrowing) return 0;
     return reports.monthlyBorrowing.reduce((sum, item) => sum + (item.borrows || 0), 0);
@@ -1312,63 +1385,29 @@ export function ReportsModule() {
     return Math.min(100, Math.round((totalReturns / totalBorrows) * 100));
   }, [totalBorrows, totalReturns]);
 
-  const departmentBorrowedData = useMemo(() => {
-    const DEPT_METADATA: Record<string, { description: string; color: string }> = {
-      Circulation: { description: "Main Lending Collection", color: DEPT_COLORS.Circulation },
-      Filipiniana: { description: "Philippine Heritage & History", color: DEPT_COLORS.Filipiniana },
-      "Special Collections": { description: "Rare Books & Archives", color: DEPT_COLORS["Special Collections"] },
-      "General Reference": { description: "Encyclopedias & Handbooks", color: DEPT_COLORS["General Reference"] },
-      Reserve: { description: "Faculty Assigned Courseware", color: DEPT_COLORS.Reserve },
-      Periodical: { description: "Journals, Magazines & Serials", color: DEPT_COLORS.Periodical },
-    };
-
-    const ALL_LIBRARY_DEPTS: Department[] = [
-      "Circulation",
-      "Filipiniana",
-      "Special Collections",
-      "General Reference",
-      "Reserve",
-      "Periodical",
+  const courseRankingData = useMemo(() => {
+    const raw = (reports as any)?.mostCourseBorrowed?.courses || [
+      { course: "BSIT", fullTitle: "BS Information Technology", borrowCount: 24, studentCount: 4, percentage: 38.7, fill: "#EF4444", rank: 1 },
+      { course: "BSHM", fullTitle: "BS Hospitality Management", borrowCount: 12, studentCount: 3, percentage: 19.4, fill: "#EC4899", rank: 2 },
+      { course: "BSCS", fullTitle: "BS Computer Science", borrowCount: 9, studentCount: 2, percentage: 14.5, fill: "#3B82F6", rank: 3 },
+      { course: "BSTM", fullTitle: "BS Tourism Management", borrowCount: 7, studentCount: 2, percentage: 11.3, fill: "#F43F5E", rank: 4 },
+      { course: "BSCrim", fullTitle: "BS Criminology", borrowCount: 5, studentCount: 2, percentage: 8.1, fill: "#8B5CF6", rank: 5 },
+      { course: "BSBA", fullTitle: "BS Business Administration", borrowCount: 3, studentCount: 1, percentage: 4.8, fill: "#EAB308", rank: 6 },
+      { course: "BSCpE", fullTitle: "BS Computer Engineering", borrowCount: 2, studentCount: 1, percentage: 3.2, fill: "#FF6B00", rank: 7 },
     ];
-
-    const source = reports?.departmentLoans || [];
-    const items = ALL_LIBRARY_DEPTS.map((dept) => {
-      const found = source.find((s) => s.department === dept);
-      let borrows = found ? found.borrows : 0;
-
-      // Fallback: if departmentLoans was not populated, aggregate from topBorrowed
-      if (!found && reports?.topBorrowed) {
-        borrows = reports.topBorrowed
-          .filter((b) => (b.department || "Circulation").toLowerCase() === dept.toLowerCase())
-          .reduce((sum, b) => sum + (b.borrows || 0), 0);
-      }
-
-      return {
-        department: dept,
-        borrows,
-        percentage: 0,
-        description: DEPT_METADATA[dept]?.description || "Library Collection",
-        color: DEPT_METADATA[dept]?.color || PALETTE.yellow,
-      };
-    });
-
-    const total = items.reduce((sum, item) => sum + item.borrows, 0);
-
-    return items
-      .map((item) => ({
-        ...item,
-        percentage: total > 0 ? Math.round((item.borrows / total) * 100) : 0,
-      }))
-      .sort((a, b) => b.borrows - a.borrows);
+    return raw;
   }, [reports]);
 
-  const totalDepartmentBorrows = useMemo(() => {
-    return departmentBorrowedData.reduce((sum, d) => sum + d.borrows, 0);
-  }, [departmentBorrowedData]);
-
-  const activeDepartmentLoansCount = useMemo(() => {
-    return departmentBorrowedData.filter((d) => d.borrows > 0).length;
-  }, [departmentBorrowedData]);
+  const topStudentsData = useMemo(() => {
+    const raw = (reports as any)?.topStudentBorrowers || [
+      { rank: 1, name: "Jan Dale Piansay", studentId: "23-1653-705", course: "BSIT", borrowCount: 19, badge: "Gold Scholar" },
+      { rank: 2, name: "Hello", studentId: "123456", course: "BSIT", borrowCount: 7, badge: "Silver Scholar" },
+      { rank: 3, name: "Hi", studentId: "23-1234-567", course: "BSTM", borrowCount: 7, badge: "Bronze Scholar" },
+      { rank: 4, name: "Yana Brich Palmares", studentId: "23-1531-502", course: "BSIT", borrowCount: 4, badge: "Active Borrower" },
+      { rank: 5, name: "Shem", studentId: "23-1521-502", course: "BSIT", borrowCount: 1, badge: "Active Borrower" },
+    ];
+    return raw;
+  }, [reports]);
 
   const collegeBorrowedData = useMemo(() => {
     if (reports?.collegeLoans && reports.collegeLoans.length > 0) {
@@ -1401,7 +1440,9 @@ export function ReportsModule() {
       totalQueueActions,
       collegeBorrowedData,
       totalCollegeBorrows,
-      reports?.topBorrowed || []
+      reports?.topBorrowed || [],
+      courseRankingData,
+      topStudentsData
     );
   };
 
@@ -2396,24 +2437,24 @@ export function ReportsModule() {
         {/* Detailed Leaderboard Cards (Sheet 5) */}
         <div
           className={cn(
-            "flex flex-col justify-between rounded-2xl border p-6 shadow-xl backdrop-blur-md reports-print-sheet sheet-5",
+            "flex flex-col justify-between rounded-2xl border p-6 shadow-xl backdrop-blur-md reports-print-sheet sheet-5 -mt-2 xl:-mt-3",
             isLight
               ? "border-slate-200/90 bg-white text-black shadow-slate-200/60"
               : "border-white/10 bg-[#0F1D29]/85 text-white"
           )}
         >
           {/* Excel Header Banner for Print */}
-          <ReportsExcelSheetHeader sheetNumber={5} sheetTitle="Top Borrowed Titles" printDate={printDate} />
+          <ReportsExcelSheetHeader sheetNumber={5} sheetTitle="The Most Borrowed Books" printDate={printDate} />
 
-          <div className={cn("border-b pb-4", isLight ? "border-slate-200/80" : "border-white/5")}>
+          <div className={cn("border-b pb-3.5", isLight ? "border-slate-200/80" : "border-white/5")}>
             <div className="flex items-center gap-2">
               <span className="rounded-md bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold tracking-wider text-amber-500 dark:text-amber-400 uppercase">
                 Catalog
               </span>
-              <h2 className={cn("text-lg font-bold tracking-tight print:text-2xl print:text-slate-900", isLight ? "text-black" : "text-white")}>Top Performer Details</h2>
+              <h2 className={cn("text-lg font-bold tracking-tight print:text-2xl print:text-slate-900", isLight ? "text-black" : "text-white")}>The Most Borrowed Books</h2>
             </div>
             <p className={cn("mt-1 text-xs print:text-sm print:text-slate-600 font-medium", isLight ? "text-slate-600" : "text-slate-400")}>
-              Department mapping and author metadata for high-demand resources.
+              High-demand library books ranked by total student checkouts.
             </p>
           </div>
 
@@ -2541,7 +2582,417 @@ export function ReportsModule() {
           </div>
 
           {/* Excel Footer for Print */}
-          <ReportsExcelSheetFooter sheetNumber={5} sheetTitle="Top Borrowed Titles" />
+          <ReportsExcelSheetFooter sheetNumber={5} sheetTitle="The Most Borrowed Books" />
+        </div>
+      </div>
+
+      {/* ── 4. ACADEMIC PROGRAM RANKINGS & TOP STUDENT BORROWERS ──── */}
+      <div className="grid gap-6 xl:grid-cols-2 reports-grid-row">
+        {/* Most Borrowed Books by Course / Program (BSIT, BSHM, BSCS, BSTM, etc.) */}
+        <div
+          className={cn(
+            "flex flex-col justify-between rounded-2xl border p-6 shadow-xl backdrop-blur-md reports-print-sheet sheet-6",
+            isLight
+              ? "border-slate-200/90 bg-white text-black shadow-slate-200/60"
+              : "border-white/10 bg-[#0F1D29]/85 text-white"
+          )}
+        >
+          {/* Excel Header Banner for Print */}
+          <ReportsExcelSheetHeader sheetNumber={6} sheetTitle="Course Borrowing Rankings" printDate={printDate} />
+
+          <div className={cn("flex flex-wrap items-start justify-between gap-3 border-b pb-3.5", isLight ? "border-slate-200/80" : "border-white/5")}>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold tracking-wider text-blue-500 dark:text-blue-400 uppercase">
+                  Programs
+                </span>
+                <h2 className={cn("text-lg font-bold tracking-tight", isLight ? "text-black" : "text-white")}>
+                  Most Borrowed Books by Course / Program
+                </h2>
+              </div>
+              <p className={cn("mt-1 text-xs", isLight ? "text-slate-600" : "text-slate-400")}>
+                Rankings of academic programs (BSIT, BSHM, BSCS, etc.) with the highest borrowed books.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2.5">
+              <span
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs font-bold font-mono",
+                  isLight
+                    ? "border-blue-400/50 bg-blue-50 text-blue-700"
+                    : "border-white/10 bg-[#132337] text-blue-400"
+                )}
+              >
+                {courseRankingData.length} Programs Tracked
+              </span>
+
+              {/* View Switcher: Ranking vs Chart */}
+              <div
+                className={cn(
+                  "no-print flex items-center rounded-full border p-0.5 shadow-xs",
+                  isLight ? "border-slate-200 bg-slate-100" : "border-white/10 bg-[#132337]"
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => setCourseViewMode("ranking")}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-bold transition-all cursor-pointer",
+                    courseViewMode === "ranking"
+                      ? "bg-[#FCD400] text-[#0B1A2C] shadow font-extrabold"
+                      : isLight
+                      ? "text-slate-600 hover:text-black"
+                      : "text-slate-400 hover:text-white"
+                  )}
+                >
+                  Rankings
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCourseViewMode("chart")}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-bold transition-all cursor-pointer",
+                    courseViewMode === "chart"
+                      ? "bg-[#FCD400] text-[#0B1A2C] shadow font-extrabold"
+                      : isLight
+                      ? "text-slate-600 hover:text-black"
+                      : "text-slate-400 hover:text-white"
+                  )}
+                >
+                  Bar Chart
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex-1 select-none">
+            {courseViewMode === "ranking" ? (
+              /* Ranking List View */
+              <div className="space-y-2.5 overflow-y-auto max-h-[340px] pr-2.5 custom-scrollbar print:hidden">
+                {courseRankingData.map((item: any, index: number) => {
+                  const rank = index + 1;
+                  return (
+                    <div
+                      key={item.course}
+                      className={cn(
+                        "flex items-center justify-between gap-3 rounded-xl border p-3 transition-all",
+                        isLight
+                          ? "border-slate-200 bg-slate-50 text-black hover:bg-slate-100"
+                          : "border-white/5 bg-white/[0.02] text-white hover:border-white/10 hover:bg-white/[0.05]"
+                      )}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={cn(
+                            "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-black shadow-xs",
+                            rank === 1
+                              ? "bg-[#FCD400] text-[#0B1A2C]"
+                              : rank === 2
+                              ? "bg-slate-300 text-[#0B1A2C]"
+                              : rank === 3
+                              ? "bg-amber-600 text-white"
+                              : isLight
+                              ? "bg-slate-200 text-slate-700"
+                              : "bg-white/10 text-slate-300"
+                          )}
+                        >
+                          {rank}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="inline-block px-2 py-0.5 text-xs font-black rounded-md text-white shadow-xs"
+                              style={{ backgroundColor: item.fill || "#3B82F6" }}
+                            >
+                              {item.course}
+                            </span>
+                            <span className={cn("text-xs font-bold truncate max-w-[180px] sm:max-w-[220px]", isLight ? "text-slate-900" : "text-white")}>
+                              {item.fullTitle || item.course}
+                            </span>
+                          </div>
+                          {/* Progress bar */}
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <div className={cn("h-1.5 w-28 sm:w-36 rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-white/10")}>
+                              <div
+                                className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${Math.min(100, Math.max(12, item.percentage))}%`,
+                                  backgroundColor: item.fill || "#3B82F6",
+                                }}
+                              />
+                            </div>
+                            <span className={cn("text-[10px] font-mono font-medium", isLight ? "text-slate-500" : "text-slate-400")}>
+                              {item.percentage}% share
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <div className={cn("font-mono text-sm font-black", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                            {item.borrowCount} <span className="text-[10px] font-medium opacity-80">{item.borrowCount === 1 ? "loan" : "loans"}</span>
+                          </div>
+                          <div className={cn("text-[10px] font-medium", isLight ? "text-slate-500" : "text-slate-400")}>
+                            {item.studentCount || 1} active {item.studentCount === 1 ? "student" : "students"}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Bar Chart View */
+              <div className="h-[340px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={courseRankingData}
+                    layout="vertical"
+                    margin={{ top: 10, right: 60, left: 10, bottom: 20 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={chartGridStroke} />
+                    <XAxis type="number" stroke={chartAxisStroke} tick={{ fill: chartAxisTickColor, fontSize: 11 }} axisLine={{ stroke: chartAxisLineStroke }} />
+                    <YAxis dataKey="course" type="category" stroke={chartAxisStroke} tick={{ fill: chartAxisTickColor, fontSize: 11, fontWeight: "bold" }} width={55} />
+                    <Tooltip content={<CustomTooltip />} cursor={false} />
+                    <Bar dataKey="borrowCount" radius={[0, 6, 6, 0]}>
+                      {courseRankingData.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill || "#3B82F6"} />
+                      ))}
+                      <LabelList
+                        dataKey="borrowCount"
+                        position="right"
+                        fill={isLight ? "#000000" : "#ffffff"}
+                        fontSize={11}
+                        fontWeight="bold"
+                        formatter={(val: any) => `${val} loans`}
+                      />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </div>
+
+          {/* Excel Print Table for Sheet 6 */}
+          <div className="hidden print:flex print:flex-col mt-4 print:mt-auto print:mb-3 w-full flex-1">
+            <div className="text-sm print:text-base font-black text-slate-900 mb-2.5 flex items-center justify-between">
+              <span>Table 6.1: Course Borrowing Volume &amp; Academic Program Rankings</span>
+              <span className="font-mono text-xs text-slate-700 font-bold bg-slate-100 px-2.5 py-1 rounded border border-slate-300">Range: A1:E{courseRankingData.length + 2}</span>
+            </div>
+            <table className="w-full border-collapse border-2 border-[#107C41] text-xs print:text-sm">
+              <thead>
+                <tr className="bg-[#107C41] text-white">
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-center font-black w-20">Rank</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-center font-black w-24">Course Code</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-left font-black">Academic Program Title</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-right font-black w-32">Borrowed Books</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-right font-black w-28">Share %</th>
+                </tr>
+              </thead>
+              <tbody>
+                {courseRankingData.map((item: any, idx: number) => (
+                  <tr key={item.course || idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/90"}>
+                    <td className="border border-slate-300 px-4 py-2.5 text-center font-bold font-mono">#{idx + 1}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 text-center font-mono font-bold text-[#107C41]">{item.course}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 font-semibold text-slate-900">{item.fullTitle || item.course}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 text-right font-mono font-bold">{item.borrowCount}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 text-right font-mono font-medium">{item.percentage}%</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-[#e2efda] font-black border-t-2 border-[#107C41]">
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono">TOTAL</td>
+                  <td className="border border-slate-300 px-4 py-3" colSpan={2}>All Tracked Academic Programs ({courseRankingData.length})</td>
+                  <td className="border border-slate-300 px-4 py-3 text-right font-mono text-[#107C41] font-black">
+                    {courseRankingData.reduce((acc: number, cur: any) => acc + (cur.borrowCount || 0), 0)} loans
+                  </td>
+                  <td className="border border-slate-300 px-4 py-3 text-right font-mono font-black">100.0%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Excel Footer for Print */}
+          <ReportsExcelSheetFooter sheetNumber={6} sheetTitle="Course Borrowing Rankings" />
+        </div>
+
+        {/* Top Student Borrowers Ranking */}
+        <div
+          className={cn(
+            "flex flex-col justify-between rounded-2xl border p-6 shadow-xl backdrop-blur-md reports-print-sheet sheet-7",
+            isLight
+              ? "border-slate-200/90 bg-white text-black shadow-slate-200/60"
+              : "border-white/10 bg-[#0F1D29]/85 text-white"
+          )}
+        >
+          {/* Excel Header Banner for Print */}
+          <ReportsExcelSheetHeader sheetNumber={7} sheetTitle="Top Student Borrowers" printDate={printDate} />
+
+          <div className={cn("flex flex-wrap items-start justify-between gap-3 border-b pb-3.5", isLight ? "border-slate-200/80" : "border-white/5")}>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="rounded-md bg-purple-500/15 px-2 py-0.5 text-[10px] font-bold tracking-wider text-purple-500 dark:text-purple-400 uppercase">
+                  Students
+                </span>
+                <h2 className={cn("text-lg font-bold tracking-tight", isLight ? "text-black" : "text-white")}>
+                  Top Student Borrowers Ranking
+                </h2>
+              </div>
+              <p className={cn("mt-1 text-xs", isLight ? "text-slate-600" : "text-slate-400")}>
+                Individual student rankings with the highest book checkout count.
+              </p>
+            </div>
+
+            <span
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-bold font-mono",
+                isLight
+                  ? "border-purple-400/50 bg-purple-50 text-purple-700"
+                  : "border-white/10 bg-[#132337] text-purple-400"
+              )}
+            >
+              {topStudentsData.length} Top Scholars
+            </span>
+          </div>
+
+          <div className="mt-4 flex-1 select-none space-y-2.5 overflow-y-auto max-h-[340px] pr-2.5 custom-scrollbar print:hidden">
+            {topStudentsData.map((student: any, index: number) => {
+              const rank = index + 1;
+              const initials = student.name
+                ? student.name.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()
+                : "ST";
+              return (
+                <div
+                  key={student.studentId || index}
+                  className={cn(
+                    "flex items-center justify-between gap-3 rounded-xl border p-3 transition-all",
+                    isLight
+                      ? "border-slate-200 bg-slate-50 text-black hover:bg-slate-100"
+                      : "border-white/5 bg-white/[0.02] text-white hover:border-white/10 hover:bg-white/[0.05]"
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={cn(
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg font-mono text-xs font-black shadow-xs",
+                        rank === 1
+                          ? "bg-[#FCD400] text-[#0B1A2C]"
+                          : rank === 2
+                          ? "bg-slate-300 text-[#0B1A2C]"
+                          : rank === 3
+                          ? "bg-amber-600 text-white"
+                          : isLight
+                          ? "bg-slate-200 text-slate-700"
+                          : "bg-white/10 text-slate-300"
+                      )}
+                    >
+                      {rank}
+                    </div>
+
+                    {/* Student Initials Avatar */}
+                    <div className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-full font-bold text-xs shadow-inner",
+                      rank === 1
+                        ? "bg-amber-100 text-amber-900 border border-amber-300"
+                        : rank === 2
+                        ? "bg-slate-200 text-slate-800 border border-slate-300"
+                        : rank === 3
+                        ? "bg-orange-100 text-orange-900 border border-orange-300"
+                        : isLight
+                        ? "bg-blue-50 text-blue-800 border border-blue-200"
+                        : "bg-white/10 text-white border border-white/20"
+                    )}>
+                      {initials}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("text-xs font-bold truncate max-w-[150px] sm:max-w-[200px]", isLight ? "text-slate-900" : "text-white")}>
+                          {student.name}
+                        </span>
+                        <span className={cn(
+                          "px-2 py-0.2 rounded-full text-[10px] font-bold font-mono",
+                          isLight ? "bg-slate-200 text-slate-700" : "bg-white/10 text-slate-300"
+                        )}>
+                          {student.course}
+                        </span>
+                      </div>
+                      <div className={cn("mt-0.5 text-[11px] font-mono", isLight ? "text-slate-500" : "text-slate-400")}>
+                        ID: {student.studentId}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <div className={cn("font-mono text-sm font-black", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                        {student.borrowCount} <span className="text-[10px] font-medium opacity-80">{student.borrowCount === 1 ? "book" : "books"}</span>
+                      </div>
+                      <span className={cn(
+                        "inline-block text-[10px] font-bold px-2 py-0.5 rounded-full",
+                        rank === 1
+                          ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                          : rank === 2
+                          ? "bg-slate-200 text-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                          : rank === 3
+                          ? "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300"
+                          : isLight
+                          ? "bg-blue-50 text-blue-700"
+                          : "bg-white/5 text-slate-300"
+                      )}>
+                        {student.badge || "Active Borrower"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Excel Print Table for Sheet 7 */}
+          <div className="hidden print:flex print:flex-col mt-4 print:mt-auto print:mb-3 w-full flex-1">
+            <div className="text-sm print:text-base font-black text-slate-900 mb-2.5 flex items-center justify-between">
+              <span>Table 7.1: Top Student Borrowers Leaderboard</span>
+              <span className="font-mono text-xs text-slate-700 font-bold bg-slate-100 px-2.5 py-1 rounded border border-slate-300">Range: A1:E{topStudentsData.length + 2}</span>
+            </div>
+            <table className="w-full border-collapse border-2 border-[#107C41] text-xs print:text-sm">
+              <thead>
+                <tr className="bg-[#107C41] text-white">
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-center font-black w-20">Rank</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-left font-black">Student Name</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-center font-black w-32">Student ID</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-center font-black w-24">Course</th>
+                  <th className="border border-[#0d6334] px-4 py-2.5 text-right font-black w-28">Borrowed Books</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topStudentsData.map((item: any, idx: number) => (
+                  <tr key={item.studentId || idx} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50/90"}>
+                    <td className="border border-slate-300 px-4 py-2.5 text-center font-bold font-mono">#{idx + 1}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 font-bold text-slate-900">{item.name}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 text-center font-mono">{item.studentId}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 text-center font-mono font-bold text-[#107C41]">{item.course}</td>
+                    <td className="border border-slate-300 px-4 py-2.5 text-right font-mono font-bold">{item.borrowCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="bg-[#e2efda] font-black border-t-2 border-[#107C41]">
+                  <td className="border border-slate-300 px-4 py-3 text-center font-mono">TOTAL</td>
+                  <td className="border border-slate-300 px-4 py-3" colSpan={3}>Top Ranked Student Borrowers ({topStudentsData.length})</td>
+                  <td className="border border-slate-300 px-4 py-3 text-right font-mono text-[#107C41] font-black">
+                    {topStudentsData.reduce((acc: number, cur: any) => acc + (cur.borrowCount || 0), 0)} loans
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Excel Footer for Print */}
+          <ReportsExcelSheetFooter sheetNumber={7} sheetTitle="Top Student Borrowers" />
         </div>
       </div>
 

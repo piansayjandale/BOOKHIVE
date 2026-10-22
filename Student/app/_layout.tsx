@@ -10,6 +10,7 @@ function RootStack() {
 
   return (
     <Stack
+      initialRouteName="index"
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: theme.background },
@@ -18,6 +19,7 @@ function RootStack() {
         gestureEnabled: true,
       }}
     >
+      <Stack.Screen name="index" options={{ animation: "fade" }} />
       <Stack.Screen name="login" />
       <Stack.Screen name="complete-profile" />
       <Stack.Screen name="signup" />
@@ -43,6 +45,7 @@ function RootStack() {
       <Stack.Screen name="department-books" />
       <Stack.Screen name="terms-agreement" />
       <Stack.Screen name="modal" />
+      <Stack.Screen name="intro" />
     </Stack>
   );
 }

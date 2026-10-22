@@ -70,6 +70,8 @@ export async function GET(request: Request) {
           LOWER(t.student_id) = LOWER($1)
           OR LOWER(t.student_name) = LOWER($1)
           OR t.user_id::text = $1
+          OR LOWER(t.student_id) = (SELECT LOWER(id_number) FROM users WHERE id::text = $1 OR LOWER(id_number) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1)
+          OR t.user_id = (SELECT id FROM users WHERE id::text = $1 OR LOWER(id_number) = LOWER($1) OR LOWER(email) = LOWER($1) LIMIT 1)
         )
         ORDER BY t.requested_at DESC
         LIMIT 200

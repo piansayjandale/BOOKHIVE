@@ -69,6 +69,7 @@ export async function GET() {
             safeMonthlyRate: 83,
           },
           mostCourseBorrowed: data.mostCourseBorrowed || null,
+          topStudentBorrowers: data.topStudentBorrowers || [],
           mostSearchedBooks: data.mostSearchedBooks || null,
           circulationHealth: data.circulationHealth || null,
           collectionDepth: data.collectionDepth || null,

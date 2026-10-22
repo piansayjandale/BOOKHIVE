@@ -16,7 +16,7 @@ import {
 import { eventDispatcher } from "../services/event-dispatcher.js";
 import { pool } from "../db/pool.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
-import { processPaperScan } from "../services/ocr.service.js";
+import { processPaperScan, verifyStudentIdCardsOcr } from "../services/ocr.service.js";
 import { executeAiSearch } from "../services/ai-search.service.js";
 import { invalidateDashboardCache, onCacheInvalidation } from "./admin.controller.js";
 
@@ -144,6 +144,10 @@ export const studentController = {
         section: user.section || "",
         status: user.status,
         avatar: user.avatar,
+        schoolIdFront: user.schoolIdFront || user.school_id_front || "",
+        schoolIdBack: user.schoolIdBack || user.school_id_back || "",
+        libraryIdFront: user.libraryIdFront || user.library_id_front || "",
+        libraryIdBack: user.libraryIdBack || user.library_id_back || "",
         qrCode: user.qrCode,
         isNewUser,
       },
@@ -243,6 +247,10 @@ export const studentController = {
         course: user.course,
         status: user.status,
         avatar: user.avatar,
+        schoolIdFront: user.schoolIdFront || user.school_id_front || "",
+        schoolIdBack: user.schoolIdBack || user.school_id_back || "",
+        libraryIdFront: user.libraryIdFront || user.library_id_front || "",
+        libraryIdBack: user.libraryIdBack || user.library_id_back || "",
         qrCode: user.qrCode,
       },
     });
@@ -263,9 +271,35 @@ export const studentController = {
   async updateProfile(req, res) {
     try {
       const userId = req.user.sub;
-      const { name, email, idNumber, course, department, yearLevel, section, avatar } = req.body;
+      const {
+        name,
+        email,
+        idNumber,
+        course,
+        department,
+        yearLevel,
+        section,
+        avatar,
+        schoolIdFront,
+        schoolIdBack,
+        libraryIdFront,
+        libraryIdBack,
+      } = req.body;
       
-      const user = await studentModel.updateUserProfile(userId, { name, email, idNumber, course, department, yearLevel, section, avatar });
+      const user = await studentModel.updateUserProfile(userId, {
+        name,
+        email,
+        idNumber,
+        course,
+        department,
+        yearLevel,
+        section,
+        avatar,
+        schoolIdFront,
+        schoolIdBack,
+        libraryIdFront,
+        libraryIdBack,
+      });
       
       if (!user) {
         return res.status(404).json({ message: "User not found." });
@@ -468,7 +502,7 @@ export const studentController = {
 
   async getBorrowHistory(req, res) {
     try {
-      const userId = req.user.sub;
+      const userId = req.query.studentId || req.query.email || req.user?.sub;
       const history = await studentModel.getUserBorrowHistory(userId);
 
       return res.json({ history: Array.isArray(history) ? history : [] });
@@ -1386,7 +1420,14 @@ export const studentController = {
 
             <!-- SECTION 1: STUDENT INFORMATION -->
             <div class="section">
-              <div class="section-title">👤 STUDENT INFORMATION</div>
+              <div class="section-title" style="justify-content: space-between;">
+                <span>👤 STUDENT INFORMATION</span>
+                <button
+                  id="toggleIdsBtn"
+                  onclick="var el = document.getElementById('studentIdsGrid'); var btn = document.getElementById('toggleIdsBtn'); if (el.style.display === 'none') { el.style.display = 'grid'; btn.innerHTML = '🪪 Hide IDs ▲'; btn.style.borderColor = '#FFD700'; btn.style.color = '#FFD700'; } else { el.style.display = 'none'; btn.innerHTML = '🪪 Show IDs ▼'; btn.style.borderColor = 'rgba(255,255,255,0.18)'; btn.style.color = '#E2E8F0'; }"
+                  style="background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); color: #E2E8F0; border-radius: 10px; padding: 5px 12px; font-size: 11px; font-weight: 800; cursor: pointer; display: flex; align-items: center; gap: 5px;"
+                >🪪 Show IDs ▼</button>
+              </div>
               <div class="profile-card">
                 ${student.avatar && (student.avatar.startsWith('http') || student.avatar.startsWith('data:')) && !student.avatar.includes('placeholder.com') ? `
                   <img src="${student.avatar}" class="avatar-circle avatar-img" alt="${studentName}" />
@@ -1419,6 +1460,20 @@ export const studentController = {
                   <div class="info-label">Pass Verification</div>
                   <div class="info-val" style="color: var(--gold);">Verified Digital Card</div>
                 </div>
+              </div>
+
+              <div id="studentIdsGrid" style="display: none; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+                ${[
+                  { label: 'School ID (Front)', src: student.schoolIdFront },
+                  { label: 'School ID (Back)', src: student.schoolIdBack },
+                  { label: 'Library ID (Front)', src: student.libraryIdFront },
+                  { label: 'Library ID (Back)', src: student.libraryIdBack },
+                ].map(card => `
+                  <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 8px; text-align: center;">
+                    <div style="font-size: 10px; font-weight: 800; color: var(--gold); margin-bottom: 6px; text-transform: uppercase;">${card.label}</div>
+                    ${card.src ? `<img src="${card.src}" alt="${card.label}" style="width: 100%; height: 110px; object-fit: cover; border-radius: 6px; cursor: pointer;" onclick="window.open(this.src, '_blank')" />` : `<div style="height: 110px; display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); border: 1px dashed rgba(255,255,255,0.12); border-radius: 6px;">No ID Uploaded</div>`}
+                  </div>
+                `).join('')}
               </div>
             </div>
 
@@ -1475,12 +1530,49 @@ export const studentController = {
     }
   },
 
+  async verifyStudentIdOcr(req, res) {
+    const {
+      schoolIdFront,
+      schoolIdBack,
+      libraryIdFront,
+      libraryIdBack,
+      expectedName,
+      expectedIdNumber,
+    } = req.body;
+
+    if (!schoolIdFront && !schoolIdBack && !libraryIdFront && !libraryIdBack) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one ID image is required for verification.',
+      });
+    }
+
+    try {
+      const result = await verifyStudentIdCardsOcr({
+        schoolIdFront,
+        schoolIdBack,
+        libraryIdFront,
+        libraryIdBack,
+        expectedName,
+        expectedIdNumber,
+      });
+
+      return res.json(result);
+    } catch (err) {
+      console.error('[studentController.verifyStudentIdOcr] Error:', err.message);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify ID card via OCR service.',
+      });
+    }
+  },
+
   async scanPaperOcr(req, res) {
-    const { image, text } = req.body;
+    const { image, text, orientationHint } = req.body;
     if (!image && !text) {
       return res.status(400).json({ message: "Either image data or text query is required for paper scanning." });
     }
-    const result = await processPaperScan(image, text);
+    const result = await processPaperScan(image, text, orientationHint);
     return res.json(result);
   },
 

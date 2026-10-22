@@ -699,7 +699,7 @@ export function Topbar({
   ) : null;
 
   return (
-    <header className="sticky top-0 z-20 mb-8 flex items-center justify-between gap-4 rounded-[12px] border border-[var(--line)] bg-[var(--topbar-bg)] px-6 py-4 text-[var(--topbar-foreground)] shadow-sm transition-colors duration-300 ease-out backdrop-blur-md">
+    <header className="sticky top-0 z-40 mb-8 flex items-center justify-between gap-4 rounded-[12px] border border-[var(--line)] bg-[var(--topbar-bg)] px-6 py-4 text-[var(--topbar-foreground)] shadow-sm transition-colors duration-300 ease-out backdrop-blur-md">
       <div className="pl-0 flex-1">
         <p className="text-xs font-semibold uppercase tracking-[0.32em] text-[var(--topbar-muted)]">
           {config.label}
@@ -745,7 +745,7 @@ export function Topbar({
           </button>
 
           {notificationsOpen ? (
-            <div className="absolute right-0 z-30 mt-3 w-88 rounded-[24px] border border-[var(--line)] bg-[var(--card-bg)] p-4 shadow-2xl backdrop-blur-md transition-all duration-300">
+            <div className="absolute right-0 z-50 mt-3 w-88 rounded-[24px] border border-[var(--line)] bg-[var(--card-bg)] p-4 shadow-2xl backdrop-blur-md transition-all duration-300">
               {/* Header with Clear All and Close */}
               <div className="mb-3 flex items-center justify-between border-b border-[var(--line)] pb-3">
                 <p className="text-sm font-bold text-[var(--topbar-title-color)]">Notifications</p>

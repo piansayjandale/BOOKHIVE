@@ -11,13 +11,17 @@ import {
   Platform,
   ScrollView,
   Modal,
+  Image,
+  ActivityIndicator,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import AnimatedScreen from "../components/AnimatedScreen";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "../data/AuthContext";
-import { updateStudentProfile, clearLocalCache } from "../data/store";
+import { updateStudentProfile, clearLocalCache, saveStudentIdCardsToStorage } from "../data/store";
+import { apiClient } from "../services/api";
+import * as ImagePicker from "expo-image-picker";
 import { Ionicons } from "@expo/vector-icons";
 
 const DEPARTMENTS = [
@@ -34,8 +38,6 @@ const DEPARTMENT_COURSES: Record<string, { code: string; name: string }[]> = {
   CICT: [
     { code: "BSIT", name: "BS Information Technology" },
     { code: "BSCS", name: "BS Computer Science" },
-    { code: "BLIS", name: "Bachelor of Library & Information Science" },
-    { code: "ACT", name: "Associate in Computer Technology" },
   ],
   COE: [
     { code: "BSCPE", name: "BS Computer Engineering" },
@@ -69,6 +71,11 @@ const DEPARTMENT_COURSES: Record<string, { code: string; name: string }[]> = {
 const YEAR_LEVELS = ["1ST", "2ND", "3RD", "4TH"];
 const SECTIONS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"];
 
+type IdPhoto = {
+  uri: string;
+  base64: string;
+};
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -77,7 +84,7 @@ const styles = StyleSheet.create({
   scrollContainer: {
     flexGrow: 1,
     paddingHorizontal: 20,
-    paddingBottom: 24,
+    paddingBottom: 32,
   },
   topHeaderRow: {
     flexDirection: "row",
@@ -113,10 +120,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1.5,
     borderColor: "#1E2A42",
-    paddingHorizontal: 22,
-    paddingVertical: 26,
-    flexGrow: 1,
-    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 24,
   },
   fieldGroup: {
     marginBottom: 20,
@@ -175,9 +180,260 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     letterSpacing: 0.5,
   },
-  spacer: {
+  // ID Upload Section Styles
+  idSectionContainer: {
+    marginTop: 10,
+    marginBottom: 20,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: "#1E2A42",
+  },
+  sectionTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: "#94A3B8",
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  idCardBox: {
+    backgroundColor: "#172238",
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#253450",
+    padding: 14,
+    marginBottom: 16,
+  },
+  idCardBoxComplete: {
+    borderColor: "#10B981",
+  },
+  idCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  idCardHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  idCardTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.6,
+  },
+  badgeReady: {
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    borderColor: "#10B981",
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  badgeReadyText: {
+    color: "#34D399",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  badgeMissing: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderColor: "#EF4444",
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  badgeMissingText: {
+    color: "#F87171",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  badgePartial: {
+    backgroundColor: "rgba(245, 158, 11, 0.2)",
+    borderColor: "#F59E0B",
+    borderWidth: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  badgePartialText: {
+    color: "#FBBF24",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  scanBothButton: {
+    backgroundColor: "#1E2A42",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FFC800",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 12,
+  },
+  scanBothButtonText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#FFC800",
+    letterSpacing: 0.5,
+  },
+  slotsRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  slotBox: {
     flex: 1,
-    minHeight: 50,
+    height: 110,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#334155",
+    borderStyle: "dashed",
+    backgroundColor: "#0F172A",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+    position: "relative",
+  },
+  slotBoxFilled: {
+    borderStyle: "solid",
+    borderColor: "#10B981",
+  },
+  slotImage: {
+    width: "100%",
+    height: "100%",
+  },
+  slotPill: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#475569",
+  },
+  slotPillText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  slotRetakeBtn: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: "#FFC800",
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  slotRetakeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#000000",
+  },
+  slotPlaceholderText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#CBD5E1",
+    marginTop: 4,
+  },
+  slotSubtext: {
+    fontSize: 9,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  ocrNoticeBox: {
+    backgroundColor: "rgba(30, 42, 66, 0.8)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2D3E5E",
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 16,
+  },
+  ocrNoticeText: {
+    fontSize: 12,
+    color: "#94A3B8",
+    flex: 1,
+    lineHeight: 18,
+  },
+  ocrVerifyingBox: {
+    backgroundColor: "rgba(234, 179, 8, 0.12)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#EAB308",
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    marginBottom: 16,
+  },
+  ocrVerifyingText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFC800",
+  },
+  ocrErrorBox: {
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#EF4444",
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+    marginBottom: 16,
+  },
+  ocrErrorText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#F87171",
+    flex: 1,
+    lineHeight: 18,
+  },
+  ocrSuccessBox: {
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: "#10B981",
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 16,
+  },
+  ocrSuccessText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#34D399",
   },
   errorText: {
     color: "#EF4444",
@@ -197,9 +453,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 5,
+    marginTop: 8,
   },
   doneButtonText: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: "900",
     color: "#000000",
     letterSpacing: 1.5,
@@ -291,6 +548,17 @@ export default function CompleteProfileScreen() {
   const [yearLevel, setYearLevel] = useState("4TH");
   const [section, setSection] = useState("H");
 
+  // ID Cards State
+  const [schoolIdFront, setSchoolIdFront] = useState<IdPhoto | null>(null);
+  const [schoolIdBack, setSchoolIdBack] = useState<IdPhoto | null>(null);
+  const [libraryIdFront, setLibraryIdFront] = useState<IdPhoto | null>(null);
+  const [libraryIdBack, setLibraryIdBack] = useState<IdPhoto | null>(null);
+  const [idCaptureOrientation, setIdCaptureOrientation] = useState<"portrait" | "landscape">("portrait");
+
+  const [ocrVerifying, setOcrVerifying] = useState(false);
+  const [ocrVerified, setOcrVerified] = useState(false);
+  const [ocrError, setOcrError] = useState("");
+
   const [errorMessage, setErrorMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -351,6 +619,7 @@ export default function CompleteProfileScreen() {
     }
     setIdNumber(formatted);
     setErrorMessage("");
+    setOcrError("");
   };
 
   const handleDepartmentSelect = (deptCode: string) => {
@@ -362,9 +631,217 @@ export default function CompleteProfileScreen() {
     setActivePicker(null);
   };
 
+  const requestCameraPermission = async (): Promise<boolean> => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Camera Permission Required",
+          "Camera permission is required to photograph your ID cards for verification."
+        );
+        return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const captureSingleSlot = async (
+    slot: "schoolFront" | "schoolBack" | "libraryFront" | "libraryBack",
+    source: "camera" | "gallery" = "camera",
+    orientationOverride?: "portrait" | "landscape"
+  ) => {
+    const activeOrientation = orientationOverride || idCaptureOrientation;
+    const cropAspect: [number, number] =
+      activeOrientation === "portrait" ? [10, 16] : [16, 10];
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      if (source === "gallery") {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission Required", "Gallery permission is needed to choose an ID image.");
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ["images"],
+          allowsEditing: true,
+          aspect: cropAspect,
+          quality: 0.45,
+          base64: true,
+        });
+      } else {
+        const hasPerm = await requestCameraPermission();
+        if (!hasPerm) return;
+        result = await ImagePicker.launchCameraAsync({
+          allowsEditing: true,
+          aspect: cropAspect,
+          quality: 0.45,
+          base64: true,
+        });
+      }
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        const photoData: IdPhoto = {
+          uri: asset.uri,
+          base64: asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri,
+        };
+
+        if (slot === "schoolFront") setSchoolIdFront(photoData);
+        if (slot === "schoolBack") setSchoolIdBack(photoData);
+        if (slot === "libraryFront") setLibraryIdFront(photoData);
+        if (slot === "libraryBack") setLibraryIdBack(photoData);
+
+        setOcrError("");
+        setOcrVerified(false);
+      }
+    } catch (err: any) {
+      console.warn("Error capturing ID photo:", err);
+      Alert.alert("Capture Error", "Could not capture image. Please try again.");
+    }
+  };
+
+  const promptSlotOrientation = (
+    slot: "schoolFront" | "schoolBack" | "libraryFront" | "libraryBack",
+    source: "camera" | "gallery",
+    label: string
+  ) => {
+    if (Platform.OS === "web") {
+      void captureSingleSlot(slot, source, idCaptureOrientation);
+      return;
+    }
+    Alert.alert(
+      `${label} Orientation`,
+      `Choose Portrait (vertical ID) or Landscape (horizontal ID) before ${
+        source === "camera" ? "capturing" : "cropping"
+      }:`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Portrait (Vertical)",
+          onPress: () => {
+            setIdCaptureOrientation("portrait");
+            void captureSingleSlot(slot, source, "portrait");
+          },
+        },
+        {
+          text: "Landscape (Horizontal)",
+          onPress: () => {
+            setIdCaptureOrientation("landscape");
+            void captureSingleSlot(slot, source, "landscape");
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSlotPress = (
+    slot: "schoolFront" | "schoolBack" | "libraryFront" | "libraryBack",
+    label: string
+  ) => {
+    Alert.alert(
+      `Capture ${label}`,
+      "Take a clear photo using your camera or select from gallery:",
+      [
+        {
+          text: "Camera (Recommended)",
+          onPress: () => promptSlotOrientation(slot, "camera", label),
+        },
+        {
+          text: "Choose from Gallery",
+          onPress: () => promptSlotOrientation(slot, "gallery", label),
+        },
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ]
+    );
+  };
+
+  const handleScanFullId = async (type: "school" | "library") => {
+    const hasPerm = await requestCameraPermission();
+    if (!hasPerm) return;
+
+    const label = type === "school" ? "School ID" : "Library ID";
+    const cropAspect: [number, number] =
+      idCaptureOrientation === "portrait" ? [10, 16] : [16, 10];
+
+    try {
+      Alert.alert(
+        `Scan ${label} (Front)`,
+        `Please point your camera at the FRONT of your ${label} (${
+          idCaptureOrientation === "portrait" ? "Portrait / Vertical" : "Landscape / Horizontal"
+        }) and ensure text is clearly visible and legible.`,
+        [
+          {
+            text: "Open Camera",
+            onPress: async () => {
+              const frontRes = await ImagePicker.launchCameraAsync({
+                allowsEditing: true,
+                aspect: cropAspect,
+                quality: 0.45,
+                base64: true,
+              });
+
+              if (!frontRes.canceled && frontRes.assets?.[0]) {
+                const frontAsset = frontRes.assets[0];
+                const frontPhoto: IdPhoto = {
+                  uri: frontAsset.uri,
+                  base64: frontAsset.base64 ? `data:image/jpeg;base64,${frontAsset.base64}` : frontAsset.uri,
+                };
+                if (type === "school") setSchoolIdFront(frontPhoto);
+                else setLibraryIdFront(frontPhoto);
+
+                setTimeout(() => {
+                  Alert.alert(
+                    `Front Captured!`,
+                    `Now please flip your ${label} and take a photo of the BACK side.`,
+                    [
+                      {
+                        text: "Capture Back",
+                        onPress: async () => {
+                          const backRes = await ImagePicker.launchCameraAsync({
+                            allowsEditing: true,
+                            aspect: cropAspect,
+                            quality: 0.45,
+                            base64: true,
+                          });
+
+                          if (!backRes.canceled && backRes.assets?.[0]) {
+                            const backAsset = backRes.assets[0];
+                            const backPhoto: IdPhoto = {
+                              uri: backAsset.uri,
+                              base64: backAsset.base64 ? `data:image/jpeg;base64,${backAsset.base64}` : backAsset.uri,
+                            };
+                            if (type === "school") setSchoolIdBack(backPhoto);
+                            else setLibraryIdBack(backPhoto);
+                            setOcrError("");
+                            setOcrVerified(false);
+                          }
+                        },
+                      },
+                      { text: "Later", style: "cancel" },
+                    ]
+                  );
+                }, 350);
+              }
+            },
+          },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
+    } catch (err: any) {
+      console.warn("Guided scan error:", err);
+      Alert.alert("Camera Notice", "Could not start camera. Please try again.");
+    }
+  };
+
   const handleDone = async () => {
     try {
       setErrorMessage("");
+      setOcrError("");
       const cleanName = name.trim();
       const cleanId = idNumber.trim();
       const cleanEmail = email.trim().toLowerCase();
@@ -385,8 +862,99 @@ export default function CompleteProfileScreen() {
         return;
       }
 
-      setLoading(true);
+      // 1. Validate ID Uploads
+      if (!schoolIdFront || !schoolIdBack) {
+        setErrorMessage("Please capture both Front and Back photos of your School ID.");
+        Alert.alert(
+          "School ID Required",
+          "Please capture both the Front and Back of your School ID before proceeding."
+        );
+        return;
+      }
 
+      if (!libraryIdFront || !libraryIdBack) {
+        setErrorMessage("Please capture both Front and Back photos of your Library ID.");
+        Alert.alert(
+          "Library ID Required",
+          "Please capture both the Front and Back of your Library ID before proceeding."
+        );
+        return;
+      }
+
+      setLoading(true);
+      setOcrVerifying(true);
+
+      // 2. OCR Verification Call
+      let ocrResult: any = null;
+      try {
+        const verifyResponse = await apiClient.post("/api/student/ocr/verify-id", {
+          schoolIdFront: schoolIdFront.base64,
+          schoolIdBack: schoolIdBack.base64,
+          libraryIdFront: libraryIdFront.base64,
+          libraryIdBack: libraryIdBack.base64,
+          expectedName: cleanName,
+          expectedIdNumber: cleanId,
+        });
+        ocrResult = verifyResponse.data;
+      } catch (apiErr: any) {
+        console.warn("OCR API Error:", apiErr?.response?.data || apiErr?.message);
+        if (apiErr?.response?.data) {
+          ocrResult = apiErr.response.data;
+        }
+      }
+
+      if (!ocrResult || !ocrResult.success) {
+        setLoading(false);
+        setOcrVerifying(false);
+        setOcrVerified(false);
+
+        const mismatchReason =
+          ocrResult?.message ||
+          "The student name or ID number on your uploaded ID cards failed to match your entered credentials.";
+        setOcrError(mismatchReason);
+
+        Alert.alert(
+          "Identity Verification Failed",
+          `${mismatchReason}\n\nEntered Credentials:\n• Name: ${cleanName}\n• ID No: ${cleanId}\n\nYou cannot proceed to the app until your ID cards match your information. Please ensure your physical IDs are clear, well-lit, and legible, then retake the photos.`,
+          [
+            {
+              text: "Retake ID Photos",
+              style: "default",
+            },
+          ]
+        );
+        return;
+      }
+
+      setOcrVerified(true);
+      setOcrVerifying(false);
+
+      const schoolFrontData = schoolIdFront.base64 || schoolIdFront.uri;
+      const schoolBackData = schoolIdBack.base64 || schoolIdBack.uri;
+      const libraryFrontData = libraryIdFront.base64 || libraryIdFront.uri;
+      const libraryBackData = libraryIdBack.base64 || libraryIdBack.uri;
+
+      const localSchoolFront = Platform.OS === "web" ? schoolFrontData : (schoolIdFront.uri || schoolFrontData);
+      const localSchoolBack = Platform.OS === "web" ? schoolBackData : (schoolIdBack.uri || schoolBackData);
+      const localLibraryFront = Platform.OS === "web" ? libraryFrontData : (libraryIdFront.uri || libraryFrontData);
+      const localLibraryBack = Platform.OS === "web" ? libraryBackData : (libraryIdBack.uri || libraryBackData);
+
+      // Save lightweight local URIs first so AsyncStorage never hits SQLITE_FULL
+      await saveStudentIdCardsToStorage(
+        {
+          schoolIdFront: localSchoolFront,
+          schoolIdBack: localSchoolBack,
+          libraryIdFront: localLibraryFront,
+          libraryIdBack: localLibraryBack,
+          verifiedAt: new Date().toISOString(),
+          ownerEmail: cleanEmail,
+          ownerStudentId: cleanId,
+        },
+        cleanEmail,
+        cleanId
+      );
+
+      // 3. Save profile to backend & local storage
       const res = await updateStudentProfile({
         name: cleanName,
         studentId: cleanId,
@@ -396,26 +964,16 @@ export default function CompleteProfileScreen() {
         yearLevel,
         yearlevel: `${yearLevel} Year`,
         section,
+        schoolIdFront: schoolFrontData,
+        schoolIdBack: schoolBackData,
+        libraryIdFront: libraryFrontData,
+        libraryIdBack: libraryBackData,
       });
 
       if (!res.success) {
         setErrorMessage(res.message || "Failed to update profile. Please try again.");
         setLoading(false);
         return;
-      }
-
-      const userJson = await AsyncStorage.getItem("CURRENT_USER");
-      if (userJson) {
-        const currentUser = JSON.parse(userJson);
-        currentUser.fullName = cleanName;
-        currentUser.studentId = cleanId;
-        currentUser.email = cleanEmail;
-        currentUser.department = department;
-        currentUser.course = course;
-        currentUser.yearLevel = yearLevel;
-        currentUser.section = section;
-        currentUser.isNewUser = false;
-        await AsyncStorage.setItem("CURRENT_USER", JSON.stringify(currentUser));
       }
 
       updateUser({
@@ -426,20 +984,31 @@ export default function CompleteProfileScreen() {
         course,
         yearLevel,
         section,
+        schoolIdFront: localSchoolFront,
+        schoolIdBack: localSchoolBack,
+        libraryIdFront: localLibraryFront,
+        libraryIdBack: localLibraryBack,
         isNewUser: false,
       });
 
-      // Directly redirect to home screen as requested
+      // Navigate to tabs
       router.replace("/(tabs)");
     } catch (err) {
       console.log("Setup Error:", err);
       setErrorMessage("Something went wrong while saving details.");
     } finally {
       setLoading(false);
+      setOcrVerifying(false);
     }
   };
 
   const currentCourses = DEPARTMENT_COURSES[department] || DEPARTMENT_COURSES.CICT;
+
+  const schoolComplete = Boolean(schoolIdFront && schoolIdBack);
+  const schoolPartial = Boolean(schoolIdFront || schoolIdBack) && !schoolComplete;
+
+  const libraryComplete = Boolean(libraryIdFront && libraryIdBack);
+  const libraryPartial = Boolean(libraryIdFront || libraryIdBack) && !libraryComplete;
 
   return (
     <AnimatedScreen style={{ flex: 1 }}>
@@ -452,7 +1021,7 @@ export default function CompleteProfileScreen() {
             styles.scrollContainer,
             {
               paddingTop: Math.max(insets.top + 10, 28),
-              paddingBottom: Math.max(insets.bottom + 10, 24),
+              paddingBottom: Math.max(insets.bottom + 16, 32),
             },
           ]}
           keyboardShouldPersistTaps="handled"
@@ -488,6 +1057,7 @@ export default function CompleteProfileScreen() {
                   onChangeText={(v) => {
                     setName(v);
                     setErrorMessage("");
+                    setOcrError("");
                   }}
                   autoCapitalize="words"
                 />
@@ -519,6 +1089,7 @@ export default function CompleteProfileScreen() {
                   onChangeText={(v) => {
                     setEmail(v);
                     setErrorMessage("");
+                    setOcrError("");
                   }}
                   keyboardType="email-address"
                   autoCapitalize="none"
@@ -582,10 +1153,362 @@ export default function CompleteProfileScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
-            </View>
 
-            {/* SPACER */}
-            <View style={styles.spacer} />
+              {/* ======================================================== */}
+              {/* ID VERIFICATION SECTION (SCHOOL ID & LIBRARY ID) */}
+              {/* ======================================================== */}
+              <View style={styles.idSectionContainer}>
+                <View style={styles.sectionTitleRow}>
+                  <Ionicons name="shield-checkmark" size={18} color="#FFC800" />
+                  <Text style={styles.sectionTitle}>REQUIRED ID VERIFICATION</Text>
+                </View>
+                <Text style={styles.sectionSubtitle}>
+                  Please capture both the Front and Back of your School ID and Library ID. Our OCR scanner will verify that your Name and ID Number match your entered credentials.
+                </Text>
+
+                {/* PORTRAIT / LANDSCAPE ORIENTATION SELECTOR */}
+                <View
+                  style={{
+                    backgroundColor: "#172238",
+                    borderRadius: 14,
+                    padding: 10,
+                    marginBottom: 14,
+                    borderWidth: 1,
+                    borderColor: "#253450",
+                  }}
+                >
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginBottom: 8,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="crop-outline" size={15} color="#FFC800" />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "800",
+                          color: "#F8FAFC",
+                        }}
+                      >
+                        ID Capture Orientation
+                      </Text>
+                    </View>
+                    <Text
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: "600",
+                        color: "#94A3B8",
+                      }}
+                    >
+                      {idCaptureOrientation === "portrait"
+                        ? "Vertical (10:16)"
+                        : "Horizontal (16:10)"}
+                    </Text>
+                  </View>
+
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setIdCaptureOrientation("portrait")}
+                      style={{
+                        flex: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        paddingVertical: 9,
+                        borderRadius: 10,
+                        borderWidth: 1.5,
+                        backgroundColor:
+                          idCaptureOrientation === "portrait"
+                            ? "rgba(255, 200, 0, 0.16)"
+                            : "#0F172A",
+                        borderColor:
+                          idCaptureOrientation === "portrait"
+                            ? "#FFC800"
+                            : "#334155",
+                      }}
+                    >
+                      <Ionicons
+                        name="phone-portrait-outline"
+                        size={15}
+                        color={idCaptureOrientation === "portrait" ? "#FFC800" : "#94A3B8"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "800",
+                          color: idCaptureOrientation === "portrait" ? "#FFC800" : "#CBD5E1",
+                        }}
+                      >
+                        Portrait (Vertical)
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      onPress={() => setIdCaptureOrientation("landscape")}
+                      style={{
+                        flex: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        paddingVertical: 9,
+                        borderRadius: 10,
+                        borderWidth: 1.5,
+                        backgroundColor:
+                          idCaptureOrientation === "landscape"
+                            ? "rgba(255, 200, 0, 0.16)"
+                            : "#0F172A",
+                        borderColor:
+                          idCaptureOrientation === "landscape"
+                            ? "#FFC800"
+                            : "#334155",
+                      }}
+                    >
+                      <Ionicons
+                        name="phone-landscape-outline"
+                        size={15}
+                        color={idCaptureOrientation === "landscape" ? "#FFC800" : "#94A3B8"}
+                      />
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: "800",
+                          color: idCaptureOrientation === "landscape" ? "#FFC800" : "#CBD5E1",
+                        }}
+                      >
+                        Landscape (Horizontal)
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* 1. SCHOOL ID BOX */}
+                <View style={[styles.idCardBox, schoolComplete && styles.idCardBoxComplete]}>
+                  <View style={styles.idCardHeader}>
+                    <View style={styles.idCardHeaderLeft}>
+                      <Ionicons name="school" size={18} color="#FFC800" />
+                      <Text style={styles.idCardTitle}>SCHOOL ID</Text>
+                    </View>
+                    {schoolComplete ? (
+                      <View style={styles.badgeReady}>
+                        <Text style={styles.badgeReadyText}>✓ READY</Text>
+                      </View>
+                    ) : schoolPartial ? (
+                      <View style={styles.badgePartial}>
+                        <Text style={styles.badgePartialText}>1/2 SIDES</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.badgeMissing}>
+                        <Text style={styles.badgeMissingText}>REQUIRED</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.scanBothButton}
+                    activeOpacity={0.8}
+                    onPress={() => handleScanFullId("school")}
+                  >
+                    <Ionicons name="camera" size={16} color="#FFC800" />
+                    <Text style={styles.scanBothButtonText}>
+                      {schoolComplete ? "RETAKE SCHOOL ID (FRONT & BACK)" : "SCAN SCHOOL ID (FRONT & BACK)"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.slotsRow}>
+                    {/* FRONT SLOT */}
+                    <TouchableOpacity
+                      style={[styles.slotBox, Boolean(schoolIdFront) && styles.slotBoxFilled]}
+                      activeOpacity={0.8}
+                      onPress={() => handleSlotPress("schoolFront", "School ID (Front)")}
+                    >
+                      {schoolIdFront ? (
+                        <>
+                          <Image
+                            source={{ uri: schoolIdFront.uri }}
+                            style={styles.slotImage}
+                            resizeMode="contain"
+                          />
+                          <View style={styles.slotPill}>
+                            <Text style={styles.slotPillText}>FRONT</Text>
+                          </View>
+                          <View style={styles.slotRetakeBtn}>
+                            <Ionicons name="camera" size={10} color="#000" />
+                            <Text style={styles.slotRetakeText}>Retake</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={24} color="#94A3B8" />
+                          <Text style={styles.slotPlaceholderText}>Front Side</Text>
+                          <Text style={styles.slotSubtext}>Tap to capture</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* BACK SLOT */}
+                    <TouchableOpacity
+                      style={[styles.slotBox, Boolean(schoolIdBack) && styles.slotBoxFilled]}
+                      activeOpacity={0.8}
+                      onPress={() => handleSlotPress("schoolBack", "School ID (Back)")}
+                    >
+                      {schoolIdBack ? (
+                        <>
+                          <Image
+                            source={{ uri: schoolIdBack.uri }}
+                            style={styles.slotImage}
+                            resizeMode="contain"
+                          />
+                          <View style={styles.slotPill}>
+                            <Text style={styles.slotPillText}>BACK</Text>
+                          </View>
+                          <View style={styles.slotRetakeBtn}>
+                            <Ionicons name="camera" size={10} color="#000" />
+                            <Text style={styles.slotRetakeText}>Retake</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={24} color="#94A3B8" />
+                          <Text style={styles.slotPlaceholderText}>Back Side</Text>
+                          <Text style={styles.slotSubtext}>Tap to capture</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* 2. LIBRARY ID BOX */}
+                <View style={[styles.idCardBox, libraryComplete && styles.idCardBoxComplete]}>
+                  <View style={styles.idCardHeader}>
+                    <View style={styles.idCardHeaderLeft}>
+                      <Ionicons name="card" size={18} color="#FFC800" />
+                      <Text style={styles.idCardTitle}>LIBRARY ID</Text>
+                    </View>
+                    {libraryComplete ? (
+                      <View style={styles.badgeReady}>
+                        <Text style={styles.badgeReadyText}>✓ READY</Text>
+                      </View>
+                    ) : libraryPartial ? (
+                      <View style={styles.badgePartial}>
+                        <Text style={styles.badgePartialText}>1/2 SIDES</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.badgeMissing}>
+                        <Text style={styles.badgeMissingText}>REQUIRED</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.scanBothButton}
+                    activeOpacity={0.8}
+                    onPress={() => handleScanFullId("library")}
+                  >
+                    <Ionicons name="camera" size={16} color="#FFC800" />
+                    <Text style={styles.scanBothButtonText}>
+                      {libraryComplete ? "RETAKE LIBRARY ID (FRONT & BACK)" : "SCAN LIBRARY ID (FRONT & BACK)"}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <View style={styles.slotsRow}>
+                    {/* FRONT SLOT */}
+                    <TouchableOpacity
+                      style={[styles.slotBox, Boolean(libraryIdFront) && styles.slotBoxFilled]}
+                      activeOpacity={0.8}
+                      onPress={() => handleSlotPress("libraryFront", "Library ID (Front)")}
+                    >
+                      {libraryIdFront ? (
+                        <>
+                          <Image
+                            source={{ uri: libraryIdFront.uri }}
+                            style={styles.slotImage}
+                            resizeMode="contain"
+                          />
+                          <View style={styles.slotPill}>
+                            <Text style={styles.slotPillText}>FRONT</Text>
+                          </View>
+                          <View style={styles.slotRetakeBtn}>
+                            <Ionicons name="camera" size={10} color="#000" />
+                            <Text style={styles.slotRetakeText}>Retake</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={24} color="#94A3B8" />
+                          <Text style={styles.slotPlaceholderText}>Front Side</Text>
+                          <Text style={styles.slotSubtext}>Tap to capture</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+
+                    {/* BACK SLOT */}
+                    <TouchableOpacity
+                      style={[styles.slotBox, Boolean(libraryIdBack) && styles.slotBoxFilled]}
+                      activeOpacity={0.8}
+                      onPress={() => handleSlotPress("libraryBack", "Library ID (Back)")}
+                    >
+                      {libraryIdBack ? (
+                        <>
+                          <Image
+                            source={{ uri: libraryIdBack.uri }}
+                            style={styles.slotImage}
+                            resizeMode="contain"
+                          />
+                          <View style={styles.slotPill}>
+                            <Text style={styles.slotPillText}>BACK</Text>
+                          </View>
+                          <View style={styles.slotRetakeBtn}>
+                            <Ionicons name="camera" size={10} color="#000" />
+                            <Text style={styles.slotRetakeText}>Retake</Text>
+                          </View>
+                        </>
+                      ) : (
+                        <>
+                          <Ionicons name="camera-outline" size={24} color="#94A3B8" />
+                          <Text style={styles.slotPlaceholderText}>Back Side</Text>
+                          <Text style={styles.slotSubtext}>Tap to capture</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                {/* OCR STATUS FEEDBACK BOXES */}
+                {ocrVerifying ? (
+                  <View style={styles.ocrVerifyingBox}>
+                    <ActivityIndicator size="small" color="#FFC800" />
+                    <Text style={styles.ocrVerifyingText}>
+                      Scanning ID cards via OCR & verifying identity...
+                    </Text>
+                  </View>
+                ) : ocrError ? (
+                  <View style={styles.ocrErrorBox}>
+                    <Ionicons name="alert-circle" size={20} color="#EF4444" style={{ marginTop: 1 }} />
+                    <Text style={styles.ocrErrorText}>{ocrError}</Text>
+                  </View>
+                ) : ocrVerified ? (
+                  <View style={styles.ocrSuccessBox}>
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                    <Text style={styles.ocrSuccessText}>Identity Verified Successfully via OCR ✓</Text>
+                  </View>
+                ) : (
+                  <View style={styles.ocrNoticeBox}>
+                    <Ionicons name="information-circle-outline" size={18} color="#FFC800" style={{ marginTop: 1 }} />
+                    <Text style={styles.ocrNoticeText}>
+                      BookHive requires student identity validation. If the Name or ID Number detected on your ID cards does not match your entered credentials, access will be blocked until retaken.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
 
             {/* Error Message */}
             {errorMessage ? (
@@ -600,7 +1523,7 @@ export default function CompleteProfileScreen() {
               disabled={loading}
             >
               <Text style={styles.doneButtonText}>
-                {loading ? "SAVING..." : "DONE"}
+                {loading ? (ocrVerifying ? "VERIFYING OCR..." : "SAVING...") : "DONE"}
               </Text>
             </TouchableOpacity>
           </View>

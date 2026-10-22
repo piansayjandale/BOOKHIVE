@@ -2,13 +2,10 @@
 
 import React, { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sun, Moon } from 'lucide-react';
-import { useTheme } from '@/components/providers/theme-provider';
 import './Login.css';
 
 const LoginPage: React.FC = () => {
-  const { theme, toggleTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
+    const [mounted, setMounted] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -89,7 +86,7 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="login-page" data-theme={mounted ? theme : "light"} suppressHydrationWarning>
+    <div className="login-page" data-theme="light" suppressHydrationWarning>
       <img 
         src="/login-building.jpg" 
         alt="Background" 
@@ -118,22 +115,7 @@ const LoginPage: React.FC = () => {
 
         {/* RIGHT PANEL */}
         <div className="right-panel">
-          {/* In-Card Theme Toggle Button */}
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="card-theme-toggle-btn"
-            aria-label={`Switch to ${mounted ? (theme === 'dark' ? 'light' : 'dark') : 'dark'} mode`}
-            title={`Switch to ${mounted ? (theme === 'dark' ? 'light' : 'dark') : 'dark'} mode`}
-            suppressHydrationWarning
-          >
-            {mounted && theme === 'dark' ? (
-              <Sun className="h-4 w-4 text-amber-400" />
-            ) : (
-              <Moon className="h-4 w-4 text-slate-600" />
-            )}
-          </button>
-
+          
           <h1 className="title">BOOKHIVE</h1>
           <p className="subtitle">Login Your Account</p>
 
@@ -191,7 +173,7 @@ const LoginPage: React.FC = () => {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ color: mounted && theme === 'dark' ? '#ffffff' : '#000000', opacity: 0.9 }}
+                      style={{ color: "#000000", opacity: 0.9 }}
                     >
                       <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
                       <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
@@ -209,7 +191,7 @@ const LoginPage: React.FC = () => {
                       strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
-                      style={{ color: mounted && theme === 'dark' ? '#ffffff' : '#000000', opacity: 0.9 }}
+                      style={{ color: "#000000", opacity: 0.9 }}
                     >
                       <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
                       <circle cx="12" cy="12" r="3" />

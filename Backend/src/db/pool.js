@@ -173,6 +173,16 @@ export async function runAutoMigrations() {
             OR latest_apk_url LIKE '%u0IuSm_N5wixAJ9iBDJMwuQbe4aKO4HzZfYAjYao-dU%'
             OR latest_apk_url LIKE '%9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU%'
           );
+        -- Ensure users table columns exist for transaction and profile queries
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS year_level TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS section TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id_front TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS school_id_back TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS library_id_front TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS library_id_back TEXT;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS qr_code UUID;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB;
         -- Essential performance indexes for high-speed queries across 48k+ books
         CREATE INDEX IF NOT EXISTS idx_books_isbn ON books (isbn);
         CREATE INDEX IF NOT EXISTS idx_books_lower_title ON books (LOWER(title));
@@ -269,7 +279,9 @@ function isConnectionError(err) {
     msg.includes("certificate") ||
     msg.includes("does not support ssl") ||
     msg.includes("server closed the connection") ||
-    msg.includes("database offline")
+    msg.includes("database offline") ||
+    msg.includes("exceeded the quota") ||
+    msg.includes("quota")
   );
 }
 

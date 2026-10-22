@@ -22,7 +22,9 @@ function warnIfNotOffline(label, error) {
     !msg.includes("offline") &&
     !msg.includes("password authentication failed") &&
     !msg.includes("connect econnrefused") &&
-    !msg.includes("does not support ssl")
+    !msg.includes("does not support ssl") &&
+    !msg.includes("exceeded the quota") &&
+    !msg.includes("quota")
   ) {
     console.warn(label, errObj.message || error);
   }

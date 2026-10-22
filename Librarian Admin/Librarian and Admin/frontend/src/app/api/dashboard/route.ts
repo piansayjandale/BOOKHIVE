@@ -38,6 +38,12 @@ export async function GET() {
 
       if (response.ok) {
         const data = await response.json();
+        const deptSum = Array.isArray(data?.departmentUsage)
+          ? data.departmentUsage.reduce((acc: number, d: any) => acc + (Number(d.count) || Number(d.usage) || 0), 0)
+          : 0;
+        if (data?.summary && deptSum > 0 && (!data.summary.totalUsers || Number(data.summary.totalUsers) < deptSum)) {
+          data.summary.totalUsers = deptSum;
+        }
         cachedDashboardData = data;
         cachedDashboardExpiry = now + 15000; // 15s in-memory cache for ultra-fast navigation
         return NextResponse.json(data);
@@ -50,6 +56,14 @@ export async function GET() {
 
   try {
     const data = await adminRepository.getDashboard();
+    const deptSum = Array.isArray(data?.departmentUsage)
+      ? data.departmentUsage.reduce((acc: number, d: any) => acc + (Number(d.count) || Number(d.usage) || 0), 0)
+      : 0;
+    if (data?.summary && deptSum > 0 && (!data.summary.totalUsers || Number(data.summary.totalUsers) < deptSum)) {
+      data.summary.totalUsers = deptSum;
+    }
+    cachedDashboardData = data;
+    cachedDashboardExpiry = now + 15000;
     return NextResponse.json(data);
   } catch (fallbackError) {
     console.error("/api/dashboard fallback error:", fallbackError);

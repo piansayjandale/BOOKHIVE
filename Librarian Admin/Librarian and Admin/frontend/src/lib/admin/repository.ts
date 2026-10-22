@@ -464,10 +464,48 @@ export const adminRepository = {
     }
 
     try {
-      totalUsers = await countAccountUsers();
-      newUsers = await listRecentAccountUsers(5);
+      const userCountRes = await pool.query<{ count: string }>(`
+        SELECT COUNT(*)::int AS count
+        FROM users
+        WHERE LOWER(role::text) = 'student' OR role IS NULL
+      `);
+      const studentCount = parseInt(userCountRes.rows[0]?.count ?? "0", 10);
+      if (studentCount > 0) {
+        totalUsers = studentCount;
+      } else {
+        totalUsers = await countAccountUsers();
+      }
+
+      const recentStudentsRes = await pool.query(`
+        SELECT
+          id,
+          name,
+          COALESCE(id_number, '') AS "idNumber",
+          COALESCE(email, '') AS email,
+          COALESCE(role, 'Student') AS role,
+          COALESCE(department, '') AS department,
+          COALESCE(course, '') AS course,
+          COALESCE(status, 'Active') AS status,
+          COALESCE(last_active, created_at, NOW()) AS "lastActive"
+        FROM users
+        WHERE LOWER(role::text) = 'student' OR role IS NULL
+        ORDER BY created_at DESC
+        LIMIT 5
+      `);
+      if (recentStudentsRes.rows.length > 0) {
+        newUsers = recentStudentsRes.rows.map((row) => ({
+          ...row,
+          lastActive: row.lastActive ? new Date(row.lastActive).toISOString() : new Date().toISOString(),
+        })) as any;
+      } else {
+        newUsers = await listRecentAccountUsers(5);
+      }
     } catch (error) {
-      console.error("Unable to load PostgreSQL account dashboard data, using fallback state:", error);
+      console.error("Unable to load PostgreSQL student account dashboard data, using fallback state:", error);
+      try {
+        totalUsers = await countAccountUsers();
+        newUsers = await listRecentAccountUsers(5);
+      } catch {}
     }
 
     const approvedBorrows = transactions.filter(
@@ -580,6 +618,12 @@ export const adminRepository = {
         { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", code: "CHTM", mascot: "Pink Vikings", usage: counts.CHTM, count: counts.CHTM, color: "#EC4899" },
         { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", code: "CCJE", mascot: "Purple Wizards", usage: counts.CCJE, count: counts.CCJE, color: "#8B5CF6" },
       ];
+
+      const totalDeptStudents = Object.values(counts).reduce((a, b) => a + b, 0);
+      if (totalDeptStudents > 0) {
+        totalUsers = Math.max(totalUsers, totalDeptStudents);
+        summary.totalUsers = totalUsers;
+      }
     } catch (err) {
       console.warn("DB getDepartmentUsage fallback:", err);
       const departmentMap = new Map<Department, number>();

@@ -21,6 +21,7 @@ apiRouter.use("/student", studentRouter);
 
 // Standardized direct endpoint aliases for Expo Mobile App & Web Dashboard integration
 apiRouter.get("/dashboard", asyncHandler(adminController.getDashboard));
+apiRouter.get("/public-stats", asyncHandler(adminController.getPublicStats));
 // In-memory cache for trending books to deliver instant sub-millisecond responses
 let trendingBooksCache = null;
 let trendingBooksCacheExpiry = 0;

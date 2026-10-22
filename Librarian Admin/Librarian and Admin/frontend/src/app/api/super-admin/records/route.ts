@@ -6,6 +6,7 @@ import { catalogRepository } from "@/lib/catalog/repository";
 import { store } from "@/lib/data/store";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   // 1. First attempt: proxy to Express backend if online and authorized
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
         (Array.isArray(payload.transactions) && payload.transactions.length > 0) ||
         payload.total > 0
       ) {
-        return NextResponse.json(payload);
+        return NextResponse.json(payload, { headers: { "Cache-Control": "no-store, max-age=0" } });
       }
     }
   } catch (err) {
@@ -80,7 +81,7 @@ export async function GET(request: Request) {
         LIMIT $${dataFilters.length - 1} OFFSET $${dataFilters.length}
       `;
       const { rows } = await pool.query(dataQuery, dataFilters);
-      return NextResponse.json({ users: rows, total, page, pageSize });
+      return NextResponse.json({ users: rows, total, page, pageSize }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
 
     if (tab === "books") {
@@ -126,7 +127,7 @@ export async function GET(request: Request) {
         LIMIT $${dataFilters.length - 1} OFFSET $${dataFilters.length}
       `;
       const { rows } = await pool.query(dataQuery, dataFilters);
-      return NextResponse.json({ books: rows, total, page, pageSize });
+      return NextResponse.json({ books: rows, total, page, pageSize }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
 
     if (tab === "transactions") {
@@ -168,7 +169,7 @@ export async function GET(request: Request) {
         LIMIT $${dataFilters.length - 1} OFFSET $${dataFilters.length}
       `;
       const { rows } = await pool.query(dataQuery, dataFilters);
-      return NextResponse.json({ transactions: rows, total, page, pageSize });
+      return NextResponse.json({ transactions: rows, total, page, pageSize }, { headers: { "Cache-Control": "no-store, max-age=0" } });
     }
 
     return NextResponse.json({ message: "Invalid tab specified." }, { status: 400 });

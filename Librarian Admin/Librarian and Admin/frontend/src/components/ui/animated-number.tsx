@@ -30,7 +30,7 @@ export function AnimatedNumber({
       return;
     }
 
-    let start = displayValue;
+    const start = displayValue;
     const end = value;
     if (start === end) return;
 

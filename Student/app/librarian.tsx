@@ -207,8 +207,30 @@ function normalizeHandwritingAuthor(rawAuthor: string): string {
 
 function normalizeHandwritingGenre(rawGenre: string, department?: string): string {
   let genre = cleanField(rawGenre);
-  if (/^(?:icrion|ticrion|fiction|fic|fict|r\s*ciel\s*eg|ciel)$/i.test(genre.replace(/[^a-zA-Z]/g, ""))) {
+  const cleanAlpha = genre.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  if (/^(?:icrion|ticrion|fiction|fic|fict|fixtion|fixt|r\s*ciel\s*eg|ciel)$/i.test(cleanAlpha)) {
     return "Fiction";
+  }
+  if (/^(?:non-?fiction|nonfic|nonfiction)$/i.test(cleanAlpha)) {
+    return "Non-Fiction";
+  }
+  if (/^(?:sci-?fi|science\s*fiction)$/i.test(cleanAlpha)) {
+    return "Science Fiction";
+  }
+  if (/^(?:ref|reference)$/i.test(cleanAlpha)) {
+    return "Reference";
+  }
+  if (/^(?:fil|filipiniana)$/i.test(cleanAlpha)) {
+    return "Filipiniana";
+  }
+  if (/^(?:bio|biography|memoir|autobiography)$/i.test(cleanAlpha)) {
+    return "Biography / Memoir";
+  }
+  if (/^(?:history|historical)$/i.test(cleanAlpha)) {
+    return "History";
+  }
+  if (/^(?:tech|technology|computer|cs|it)$/i.test(cleanAlpha)) {
+    return "Technology";
   }
   if (!genre && department) return department === "Circulation" ? "Fiction" : department;
   return toTitleCase(genre || (department === "Circulation" ? "Fiction" : "General"));
@@ -224,6 +246,7 @@ function sanitizeIsbn(val?: string | null): string {
   if (!val) return "";
   return String(val)
     .replace(/[—–]/g, "-")
+    .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
     .trim();
@@ -265,12 +288,49 @@ function extractIsbn(text: string): string {
 
 function extractPublishedYear(text: string): string {
   if (!text) return "";
-  const explicit = text.match(/(?:(?:published|publication|copyright|year|date|pub\s*date|copr\.?)[\s:;*=\-–—!?,.]*(?:in|c|©)?\s*)(19\d\d|20[0-3]\d)/i);
-  if (explicit) return explicit[1];
-  const copyMatch = text.match(/[©c]\s*(19\d\d|20[0-3]\d)/i);
-  if (copyMatch) return copyMatch[1];
-  const generalMatch = text.match(/\b(19[6-9]\d|20[0-2]\d)\b/);
-  if (generalMatch) return generalMatch[1];
+
+  // 1. Explicit line with prefix: Pub Date, Published Year, Date, Copyright, Year, etc.
+  const prefixRegex = /(?:(?:published\s*(?:year|date)?|publication\s*(?:year|date)?|pub\.?\s*(?:date|year)?|copyright\s*(?:year|date)?|date\s*of\s*pub(?:lication)?|year\s*(?:of\s*publication)?|copr\.?|date|year)[\s:;*=\-–—!?,.]*(?:in|c|©)?\s*)([^\r\n]+)/i;
+  const match = text.match(prefixRegex);
+  if (match && match[1]) {
+    const val = match[1].trim();
+    // 4-digit year directly: 1950 - 2035
+    const fourDigit = val.match(/\b(19\d\d|20[0-3]\d)\b/);
+    if (fourDigit) return fourDigit[1];
+
+    // Date formatted as M/D/YY or M/D/YYYY (e.g. 3/29/26, 03/29/2026, 2026-03-29)
+    const slashDate = val.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.](19\d\d|20[0-3]\d|\d{2})\b/);
+    if (slashDate) {
+      const yr = slashDate[1];
+      return yr.length === 2 ? `20${yr}` : yr;
+    }
+
+    const isoDate = val.match(/\b(19\d\d|20[0-3]\d)[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/);
+    if (isoDate) return isoDate[1];
+
+    // 2-digit year after label (e.g. '26 or 24 or 26)
+    const twoDigit = val.match(/(?:^|['\s])([0-3]\d)\b/);
+    if (twoDigit) return `20${twoDigit[1]}`;
+  }
+
+  // 2. Date pattern anywhere in text: e.g. 3/29/26, 10/12/2024
+  const generalDate = text.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.](19\d\d|20[0-3]\d|\d{2})\b/);
+  if (generalDate) {
+    const yr = generalDate[1];
+    return yr.length === 2 ? `20${yr}` : yr;
+  }
+
+  // 3. Copyright symbol: © 2024 or (c) 2024
+  const copyMatch = text.match(/[©c]\s*(19\d\d|20[0-3]\d|\d{2})/i);
+  if (copyMatch) {
+    const yr = copyMatch[1];
+    return yr.length === 2 ? `20${yr}` : yr;
+  }
+
+  // 4. Standalone 4-digit plausible year
+  const standaloneMatch = text.match(/\b(19[5-9]\d|20[0-3]\d)\b/);
+  if (standaloneMatch) return standaloneMatch[1];
+
   return "";
 }
 
@@ -283,9 +343,12 @@ function extractPages(text: string): string {
 
 function extractPublisher(text: string): string {
   if (!text) return "";
-  const explicit = text.match(/(?:(?:publisher|published\s*by|press|imprint)[\s:;*=\-–—!?,.]{1,4})(.*)/i);
+  const explicit = text.match(/(?:(?:publisher|published\s*by|imprint)[\s:;*=\-–—!?,.]{1,4})([^\r\n]+)/i);
   if (explicit && explicit[1]) {
-    return toTitleCase(cleanField(explicit[1].split(/[\n,;]/)[0]));
+    const cleaned = cleanField(explicit[1].split(/[\n,;]/)[0]);
+    if (cleaned && !/^(?:date|year|yr)\b/i.test(cleaned)) {
+      return toTitleCase(cleaned);
+    }
   }
   const KNOWN_PUBLISHERS = [
     "Penguin", "HarperCollins", "Simon & Schuster", "Macmillan", "Hachette",
@@ -320,7 +383,7 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
       title: "",
       author: "",
       genre: "General",
-      department: "General Collection",
+      department: "Circulation",
       isbn: "",
       copies: 1,
       edition: "None",
@@ -364,8 +427,8 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
     const line = lines[i];
 
     // 1. Title
-    if (!title && /^(?:(?:book\s*)?title|tite|tile|ttle|titie|the|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:(?:book\s*)?title|tite|tile|ttle|titie|the|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+    if (!title && /^(?:(?:book\s*)?title|tite|tile|ttle|titie|tltle|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:(?:book\s*)?title|tite|tile|ttle|titie|tltle|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       if (match) {
         title = normalizeHandwritingTitle(match[1]);
         detectedLabels++;
@@ -384,13 +447,16 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
     }
 
     // Department Loc.
-    if (!department && /^(?:department(?:\s*loc\.?)?|dept(?:\s*loc\.?)?|deputies|location|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:department(?:\s*loc\.?)?|dept(?:\s*loc\.?)?|deputies|location|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+    if (!department && /^(?:department(?:\s*loc(?:ation|\.)?)?|dept\.?(?:\s*loc(?:ation|\.)?)?|deputies|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:department(?:\s*loc(?:ation|\.)?)?|dept\.?(?:\s*loc(?:ation|\.)?)?|deputies|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       if (match) {
         const val = cleanField(match[1]);
         if (/circ/i.test(val)) department = "Circulation";
-        else if (/ref/i.test(val)) department = "Reference";
+        else if (/ref/i.test(val)) department = "General Reference";
         else if (/fil/i.test(val)) department = "Filipiniana";
+        else if (/res/i.test(val)) department = "Reserve";
+        else if (/per/i.test(val)) department = "Periodical";
+        else if (/spec/i.test(val)) department = "Special Collections";
         else department = toTitleCase(val);
         detectedLabels++;
       }
@@ -455,22 +521,28 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
       continue;
     }
 
-    // Publisher
-    if (!publisher && /^(?:publisher|published\s*by|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:publisher|published\s*by|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+    // Published Year / Pub Date (Checked BEFORE Publisher so "Pub. Date" is never misparsed as Publisher)
+    if (!publishedYear && /^(?:published\s*(?:year|date)?|publication\s*(?:year|date)?|pub\.?\s*year|pub\.?\s*date|pub\.?\s*yr|year|copyright\s*(?:year|date)?|date\s*of\s*pub(?:lication)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:published\s*(?:year|date)?|publication\s*(?:year|date)?|pub\.?\s*year|pub\.?\s*date|pub\.?\s*yr|year|copyright\s*(?:year|date)?|date\s*of\s*pub(?:lication)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       if (match) {
-        publisher = toTitleCase(cleanField(match[1]));
+        publishedYear = extractPublishedYear(match[0]);
+        if (!publishedYear && match[1]) publishedYear = extractPublishedYear(match[1]);
         detectedLabels++;
       }
       continue;
     }
 
-    // Published Year
-    if (!publishedYear && /^(?:published\s*year|pub\s*year|year|copyright\s*year|date\s*of\s*pub)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:published\s*year|pub\s*year|year|copyright\s*year|date\s*of\s*pub)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+    // Publisher
+    if (!publisher && /^(?:publisher|published\s*by|pub(?:\b|\.)(?![\s.:;\-]*date|[\s.:;\-]*year|[\s.:;\-]*yr)|publishing(?:\s*house)?|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:publisher|published\s*by|pub(?:\b|\.)(?![\s.:;\-]*date|[\s.:;\-]*year|[\s.:;\-]*yr)|publishing(?:\s*house)?|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       if (match) {
-        publishedYear = extractPublishedYear(match[1]);
-        detectedLabels++;
+        const candidatePub = cleanField(match[1]);
+        if (candidatePub && !/^(?:date|year|yr)\b/i.test(candidatePub)) {
+          publisher = toTitleCase(candidatePub);
+          detectedLabels++;
+        } else if (candidatePub && !publishedYear) {
+          publishedYear = extractPublishedYear(candidatePub);
+        }
       }
       continue;
     }
@@ -617,7 +689,12 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
   }
 
   if (!department) {
-    department = genre === "Fiction" ? "Circulation" : (genre || "General Collection");
+    if (/\bgeneral\s*reference\b|\breference\b/i.test(text) || /ref/i.test(genre)) department = "General Reference";
+    else if (/\bfilipiniana\b/i.test(text) || /fil/i.test(genre)) department = "Filipiniana";
+    else if (/\breserve\b/i.test(text)) department = "Reserve";
+    else if (/\bperiodical\b/i.test(text)) department = "Periodical";
+    else if (/\bspecial\s*collections?\b/i.test(text)) department = "Special Collections";
+    else department = "Circulation";
   }
 
   return {
@@ -690,6 +767,15 @@ export default function LibrarianScreen() {
   const [processingStep, setProcessingStep] = useState("");
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [isCameraActive, setIsCameraActive] = useState(true);
+  const isCapturingRef = useRef(false);
+  const [autoScanEnabled, setAutoScanEnabled] = useState(false);
+  const autoScanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Dedicated QR tracking & shutter scan refs for Student Info & Return
+  const latestQrRef = useRef<{ data: string; timestamp: number } | null>(null);
+  const isScanningQrRef = useRef(false);
+  const qrResolveRef = useRef<((val: string | null) => void) | null>(null);
+  const qrTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Animated effects: Shutter flash & Laser sweep
   const flashAnim = useRef(new Animated.Value(0)).current;
@@ -702,6 +788,7 @@ export default function LibrarianScreen() {
     title: "",
     author: "",
     genre: "General",
+    department: "Circulation",
     isbn: "",
     copies: 1,
     edition: "1st",
@@ -714,8 +801,10 @@ export default function LibrarianScreen() {
   const [ocrEngine, setOcrEngine] = useState<string>("ocr");
   const [ocrConfidence, setOcrConfidence] = useState<number>(92);
 
-  // Captured / uploaded picture preview for 1-second scan display
+  // Captured / uploaded picture preview for 1-second scan display (locked to upright portrait)
   const [previewPhotoUri, setPreviewPhotoUri] = useState<string | null>(null);
+  const [previewIsLandscape, setPreviewIsLandscape] = useState(false);
+  const [viewfinderSize, setViewfinderSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
   // Edit Mode toggle inside the modal
   const [isEditingFields, setIsEditingFields] = useState(false);
@@ -773,6 +862,13 @@ export default function LibrarianScreen() {
       setScanned(false);
       setProcessing(false);
       setProcessingStep("");
+      latestQrRef.current = null;
+      isScanningQrRef.current = false;
+      if (qrTimeoutRef.current) {
+        clearTimeout(qrTimeoutRef.current);
+        qrTimeoutRef.current = null;
+      }
+      qrResolveRef.current = null;
 
       // Fetch fresh librarian permissions in background
       authService.fetchLibrarianPermissions?.().then((fresh) => {
@@ -784,9 +880,61 @@ export default function LibrarianScreen() {
       return () => {
         setIsCameraActive(false);
         setIsCameraReady(false);
+        isScanningQrRef.current = false;
+        if (qrTimeoutRef.current) {
+          clearTimeout(qrTimeoutRef.current);
+          qrTimeoutRef.current = null;
+        }
+        qrResolveRef.current = null;
       };
     }, [updateUser])
   );
+
+  // Auto-scan steady hold: when the camera is held still over a book or paper in Catalog mode, auto-capture after 2.6s
+  useEffect(() => {
+    if (
+      autoScanEnabled &&
+      activeMode === "Catalog" &&
+      isCameraActive &&
+      isCameraReady &&
+      !scanned &&
+      !processing &&
+      !bookModalVisible &&
+      !receiptModalVisible &&
+      !previewPhotoUri &&
+      canCatalog
+    ) {
+      if (autoScanTimerRef.current) clearTimeout(autoScanTimerRef.current);
+      autoScanTimerRef.current = setTimeout(() => {
+        if (!isCapturingRef.current && !processing && !scanned && !bookModalVisible) {
+          handleShutterCapture();
+        }
+      }, 2600);
+    } else {
+      if (autoScanTimerRef.current) {
+        clearTimeout(autoScanTimerRef.current);
+        autoScanTimerRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoScanTimerRef.current) {
+        clearTimeout(autoScanTimerRef.current);
+        autoScanTimerRef.current = null;
+      }
+    };
+  }, [
+    autoScanEnabled,
+    activeMode,
+    isCameraActive,
+    isCameraReady,
+    scanned,
+    processing,
+    bookModalVisible,
+    receiptModalVisible,
+    previewPhotoUri,
+    canCatalog,
+  ]);
 
   const isReceiptPayload = (raw: string): boolean => {
     if (!raw) return false;
@@ -915,39 +1063,152 @@ export default function LibrarianScreen() {
   };
 
   /**
-   * Barcode detection fallback (if paper has an ISBN barcode, Student ID, or Receipt QR)
+   * QR Code detection handler from live CameraView
+   * Tracks visible QR payload in viewfinder without triggering premature navigation
    */
-  const handleBarCodeScanned = async ({ data }: { data: string }) => {
-    if (scanned || processing) return;
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
+    if (!data || typeof data !== "string" || !data.trim()) return;
+    const cleanData = data.trim();
+
+    // Cache latest QR code visible in frame with current timestamp
+    latestQrRef.current = {
+      data: cleanData,
+      timestamp: Date.now(),
+    };
+
+    // If librarian clicked the QR shutter icon and is actively awaiting detection:
+    if (isScanningQrRef.current && qrResolveRef.current) {
+      const resolve = qrResolveRef.current;
+      qrResolveRef.current = null;
+      if (qrTimeoutRef.current) {
+        clearTimeout(qrTimeoutRef.current);
+        qrTimeoutRef.current = null;
+      }
+      resolve(cleanData);
+    }
+  };
+
+  /**
+   * Scan Student QR Pass / Receipt when librarian clicks the QR shutter button
+   * Displays the laser scanning animation across the QR reticle for at least 1 second
+   */
+  const handleScanQr = async () => {
+    if (processing || isCapturingRef.current) return;
+
+    if (!canStudentPass) {
+      Alert.alert(
+        "Feature Restricted",
+        "Student Pass scanning has been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
 
     if (allScanningRestricted) {
+      Alert.alert(
+        "Access Restricted",
+        "Scanning functionalities have been restricted for your librarian account by the administrator."
+      );
+      return;
+    }
+
+    // Trigger visual camera shutter flash & button scale animation
+    triggerShutterFlash();
+    Animated.sequence([
+      Animated.timing(shutterScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
+      Animated.timing(shutterScale, { toValue: 1, duration: 120, useNativeDriver: true }),
+    ]).start();
+
+    setProcessing(true);
+    setProcessingStep("Scanning QR code...");
+    isScanningQrRef.current = true;
+
+    // Minimum 1-second scan animation so the librarian sees the laser line sweep across the reticle
+    const minAnimationPromise = new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Detection promise: check if a QR is already in viewfinder or wait up to 3.5s
+    const qrDetectionPromise = new Promise<string | null>((resolve) => {
+      // If a QR code was detected in the frame within the last 600ms, use it
+      if (latestQrRef.current && Date.now() - latestQrRef.current.timestamp < 600) {
+        resolve(latestQrRef.current.data);
+        return;
+      }
+
+      // Otherwise wait for onBarcodeScanned to detect one within 3.5 seconds
+      qrResolveRef.current = resolve;
+      qrTimeoutRef.current = setTimeout(() => {
+        if (qrResolveRef.current) {
+          qrResolveRef.current(null);
+          qrResolveRef.current = null;
+        }
+      }, 3500);
+    });
+
+    try {
+      const [detectedData] = await Promise.all([qrDetectionPromise, minAnimationPromise]);
+
+      isScanningQrRef.current = false;
+      qrResolveRef.current = null;
+      if (qrTimeoutRef.current) {
+        clearTimeout(qrTimeoutRef.current);
+        qrTimeoutRef.current = null;
+      }
+
+      if (!detectedData) {
+        setProcessing(false);
+        setProcessingStep("");
+        Alert.alert(
+          "No QR Code Detected",
+          "Could not detect a QR code inside the frame. Please align the Student ID or Receipt QR code and tap the QR button again.",
+          [
+            { text: "Try Again", style: "default" },
+            { text: "Enter Manually", onPress: () => setShowManualInput(true) }
+          ]
+        );
+        return;
+      }
+
+      const cleaned = cleanScannedPayload(detectedData);
+      if (!cleaned || cleaned.trim().length < 3) {
+        setProcessing(false);
+        setProcessingStep("");
+        Alert.alert(
+          "Unrecognized QR Code",
+          "The scanned QR code is not recognized as a valid BookHive student pass or receipt.",
+          [{ text: "OK" }]
+        );
+        return;
+      }
+
       setScanned(true);
-      Alert.alert("Access Restricted", "Scanning functionalities have been restricted for your librarian account by the administrator.");
-      return;
-    }
+      setProcessing(false);
+      setProcessingStep("");
 
-    setScanned(true);
-
-    if (isReceiptPayload(data)) {
-      if (!canPickup) {
-        Alert.alert("Feature Restricted", "Pick-up verification has been restricted for your account by the administrator.");
+      if (isReceiptPayload(cleaned) || isReceiptPayload(detectedData)) {
+        const payloadToUse = isReceiptPayload(detectedData) ? detectedData : cleaned;
+        if (!canPickup) {
+          Alert.alert("Feature Restricted", "Pick-up verification has been restricted for your account by the administrator.");
+          return;
+        }
+        await handleReceiptScanned(payloadToUse);
         return;
       }
-      await handleReceiptScanned(data);
-      return;
-    }
 
-    const cleaned = cleanScannedPayload(data);
-    if (isReceiptPayload(cleaned)) {
-      if (!canPickup) {
-        Alert.alert("Feature Restricted", "Pick-up verification has been restricted for your account by the administrator.");
-        return;
+      // Valid Student Pass QR -> navigate to /scanned-card
+      router.push({
+        pathname: "/scanned-card",
+        params: { qr: cleaned },
+      });
+    } catch (err: any) {
+      isScanningQrRef.current = false;
+      qrResolveRef.current = null;
+      if (qrTimeoutRef.current) {
+        clearTimeout(qrTimeoutRef.current);
+        qrTimeoutRef.current = null;
       }
-      await handleReceiptScanned(cleaned);
-      return;
+      setProcessing(false);
+      setProcessingStep("");
+      console.warn("QR scan error:", err?.message);
     }
-
-    processScanResult(cleaned);
   };
 
   /**
@@ -1064,6 +1325,15 @@ export default function LibrarianScreen() {
       return;
     }
 
+    if (isCapturingRef.current || processing) return;
+    isCapturingRef.current = true;
+
+    // Clear any pending steady-hold auto-scan timer
+    if (autoScanTimerRef.current) {
+      clearTimeout(autoScanTimerRef.current);
+      autoScanTimerRef.current = null;
+    }
+
     // Button depress animation
     Animated.sequence([
       Animated.timing(shutterScale, { toValue: 0.88, duration: 80, useNativeDriver: true }),
@@ -1074,103 +1344,93 @@ export default function LibrarianScreen() {
     triggerShutterFlash();
 
     if (activeMode === "Transaction") {
-      setShowManualInput(true);
+      isCapturingRef.current = false;
+      await handleScanQr();
       return;
     }
 
     try {
-      setProcessing(true);
-      setProcessingStep("Capturing paper frame...");
-      setScanned(true);
-
       let capturedBase64: string | null = null;
       let capturedUri: string | null = null;
+      let capturedIsSidewaysLandscape = false;
 
-      // 1. Try viewfinder camera capture if camera reference is active
+      // 1. Viewfinder camera capture
+      // CRITICAL: We do NOT toggle processing state before takePictureAsync.
+      // Keeping React props stable prevents native CameraX from unbinding use cases during capture.
       if (cameraRef.current && Platform.OS !== "web" && isCameraActive) {
-        // Wait briefly if camera is not marked ready yet
         if (!isCameraReady) {
-          await new Promise(r => setTimeout(r, 400));
+          await new Promise(r => setTimeout(r, 200));
         }
 
+        let photo: any = null;
         try {
-          const photo = await cameraRef.current.takePictureAsync({
-            quality: 0.9,
-            skipProcessing: false,
+          photo = await cameraRef.current.takePictureAsync({
+            quality: 0.85,
+            base64: false,
             shutterSound: false,
           });
-
-          if (photo?.uri) {
-            capturedUri = photo.uri;
-            try {
-              capturedBase64 = await FileSystem.readAsStringAsync(photo.uri, {
-                encoding: FileSystem.EncodingType.Base64,
+        } catch (firstCamErr: any) {
+          console.warn("[Shutter Viewfinder First Attempt Notice]:", firstCamErr?.message);
+          // Retry once after brief 150ms buffer clearance
+          try {
+            await new Promise(r => setTimeout(r, 150));
+            if (cameraRef.current) {
+              photo = await cameraRef.current.takePictureAsync({
+                quality: 0.85,
+                base64: false,
+                shutterSound: false,
               });
-            } catch (e) {
-              if (photo.base64) {
-                capturedBase64 = photo.base64;
-              }
             }
-          } else if (photo?.base64) {
-            capturedBase64 = photo.base64;
-            capturedUri = photo.base64.startsWith("data:") ? photo.base64 : `data:image/jpeg;base64,${photo.base64}`;
+          } catch (retryErr: any) {
+            console.warn("[Shutter Viewfinder Retry Notice]:", retryErr?.message);
           }
-        } catch (camErr: any) {
-          // Viewfinder capture could not grab buffer on this hardware HAL - will fallback to native camera
+        }
+
+        if (photo?.width && photo?.height && photo.width > photo.height) {
+          capturedIsSidewaysLandscape = true;
+        }
+
+        if (photo?.uri) {
+          capturedUri = photo.uri;
+          try {
+            capturedBase64 = await FileSystem.readAsStringAsync(photo.uri, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          } catch (readErr: any) {
+            console.warn("[Shutter Read Base64 Notice]:", readErr?.message);
+          }
+        } else if (photo?.base64) {
+          capturedBase64 = photo.base64;
+          capturedUri = photo.base64.startsWith("data:") ? photo.base64 : `data:image/jpeg;base64,${photo.base64}`;
         }
       }
 
-      // 2. Infallible fallback: If in-app capture couldn't capture, launch native camera with hardware release
-      if (!capturedBase64 && Platform.OS !== "web") {
-        setProcessingStep("Opening camera...");
-        const cameraPerm = await ImagePicker.requestCameraPermissionsAsync();
-        if (cameraPerm.granted) {
-          // Release camera hardware before opening native camera
-          setIsCameraActive(false);
-          setIsCameraReady(false);
-          await new Promise(r => setTimeout(r, 250));
-
-          const result = await ImagePicker.launchCameraAsync({
-            mediaTypes: ["images"],
-            allowsEditing: false,
-            quality: 0.9,
-            base64: true,
-          });
-
-          setIsCameraActive(true);
-
-          if (!result.canceled && result.assets && result.assets[0]) {
-            triggerShutterFlash();
-            capturedUri = result.assets[0].uri;
-            let base64 = result.assets[0].base64;
-            if (!base64 && capturedUri) {
-              try {
-                base64 = await FileSystem.readAsStringAsync(capturedUri, {
-                  encoding: FileSystem.EncodingType.Base64,
-                });
-              } catch (e) {}
-            }
-            capturedBase64 = base64 || null;
-          }
-        }
-      }
-
-      // 3. If we obtained base64, send to OCR
+      // 2. If image obtained, send directly to OCR
       if (capturedBase64) {
-        await processPaperImageOcr(capturedBase64, capturedUri);
+        isCapturingRef.current = false;
+        setScanned(true);
+        await processPaperImageOcr(capturedBase64, capturedUri, capturedIsSidewaysLandscape);
         return;
       }
 
-      // If user cancelled camera or web without camera
+      // Web environment fallback
       if (Platform.OS === "web") {
+        isCapturingRef.current = false;
         await handlePickPaperPhoto();
         return;
       }
 
+      // DO NOT redirect to phone camera here. Native camera is only triggered when clicking 'HD Camera'
+      isCapturingRef.current = false;
+      Alert.alert(
+        "Capture Notice",
+        "Could not capture from live viewfinder. Please hold steady and try again, or tap 'HD Camera' to use the full camera."
+      );
       setProcessing(false);
       setScanned(false);
       setProcessingStep("");
     } catch (err: any) {
+      isCapturingRef.current = false;
       setIsCameraActive(true);
       setProcessing(false);
       setScanned(false);
@@ -1222,7 +1482,7 @@ export default function LibrarianScreen() {
         }
 
         if (base64) {
-          await processPaperImageOcr(base64, photoUri);
+          await processPaperImageOcr(base64, photoUri, false);
           return;
         }
       }
@@ -1241,9 +1501,10 @@ export default function LibrarianScreen() {
    * Process paper image via Backend Tesseract OCR with database catalog matching & 8-field extraction.
    * Displays the captured/uploaded photo in the viewfinder and scans it with animated laser line for at least 1 second.
    */
-  const processPaperImageOcr = async (base64Data: string, previewUri?: string | null) => {
-    // Display captured or uploaded picture directly inside viewfinder
+  const processPaperImageOcr = async (base64Data: string, previewUri?: string | null, isSidewaysLandscape = false) => {
+    // Display captured or uploaded picture directly inside viewfinder (locked to portrait)
     const previewToDisplay = previewUri || (base64Data ? (base64Data.startsWith("data:") ? base64Data : `data:image/jpeg;base64,${base64Data}`) : null);
+    setPreviewIsLandscape(Boolean(isSidewaysLandscape));
     if (previewToDisplay) {
       setPreviewPhotoUri(previewToDisplay);
     }
@@ -1258,7 +1519,7 @@ export default function LibrarianScreen() {
       const url = `${API_URL}/api/student/ocr/scan-paper`;
       const ocrPromise = axios.post(
         url,
-        { image: base64Data },
+        { image: base64Data, orientationHint: isSidewaysLandscape ? 90 : 0 },
         { timeout: 35000 }
       );
 
@@ -1267,6 +1528,7 @@ export default function LibrarianScreen() {
       if (response.data && response.data.success) {
         if (response.data.isQrCode && response.data.qrData) {
           setPreviewPhotoUri(null);
+          setPreviewIsLandscape(false);
           setProcessing(false);
           setProcessingStep("");
           if (isReceiptPayload(response.data.qrData)) {
@@ -1287,20 +1549,22 @@ export default function LibrarianScreen() {
         const textOutput = scannedText || "";
         setScannedPaperText(textOutput);
 
-        // Fallback or verify with client-side parser to guarantee all 8 fields are complete
+        // Fallback or verify with client-side parser to guarantee all fields are complete
         const clientParsed = extractBookFieldsFromText(textOutput);
+        const rawPub = (parsedBook?.publisher || clientParsed.publisher || "").trim();
+        const cleanPub = /^(?:date|year|yr)\b/i.test(rawPub) ? "" : rawPub;
         const resolvedParsed: ParsedBookFields = {
           title: parsedBook?.title || clientParsed.title,
           author: parsedBook?.author || clientParsed.author,
           genre: parsedBook?.genre || clientParsed.genre,
-          department: parsedBook?.department || clientParsed.department,
+          department: parsedBook?.department || clientParsed.department || "Circulation",
           isbn: sanitizeIsbn(parsedBook?.isbn || clientParsed.isbn),
           copies: parsedBook?.copies || clientParsed.copies,
           edition: parsedBook?.edition || clientParsed.edition,
           volume: parsedBook?.volume || clientParsed.volume,
           summary: parsedBook?.summary || clientParsed.summary,
-          publisher: parsedBook?.publisher || clientParsed.publisher,
-          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear,
+          publisher: cleanPub,
+          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : ""),
           pages: parsedBook?.pages || clientParsed.pages,
           shelfLocation: parsedBook?.shelfLocation || clientParsed.shelfLocation,
           docType: parsedBook?.docType || clientParsed.docType,
@@ -1314,6 +1578,7 @@ export default function LibrarianScreen() {
           const top = exactMatch || matchedBooks[0];
           setScannedBook({
             ...top,
+            department: resolvedParsed.department || top.department || "Circulation",
             genre: resolvedParsed.genre || top.department,
             edition: resolvedParsed.edition || top.edition,
             volume: resolvedParsed.volume || top.volume,
@@ -1328,7 +1593,7 @@ export default function LibrarianScreen() {
             isbn: sanitizeIsbn(resolvedParsed.isbn) || `PAPER-${Date.now().toString().slice(-6)}`,
             title: resolvedParsed.title,
             author: resolvedParsed.author,
-            department: resolvedParsed.department || resolvedParsed.genre,
+            department: resolvedParsed.department || "Circulation",
             genre: resolvedParsed.genre,
             edition: resolvedParsed.edition,
             volume: resolvedParsed.volume,
@@ -1368,6 +1633,7 @@ export default function LibrarianScreen() {
       }
     } finally {
       setPreviewPhotoUri(null);
+      setPreviewIsLandscape(false);
       setProcessing(false);
       setProcessingStep("");
     }
@@ -1393,6 +1659,7 @@ export default function LibrarianScreen() {
     if (found) {
       setScannedBook({
         ...found,
+        department: parsed.department || found.department || "Circulation",
         genre: parsed.genre || found.department,
         edition: parsed.edition || found.edition,
         volume: parsed.volume || found.volume,
@@ -1403,7 +1670,7 @@ export default function LibrarianScreen() {
         isbn: sanitizeIsbn(parsed.isbn) || `PAPER-${Date.now().toString().slice(-6)}`,
         title: parsed.title,
         author: parsed.author,
-        department: parsed.genre,
+        department: parsed.department || "Circulation",
         genre: parsed.genre,
         edition: parsed.edition,
         volume: parsed.volume,
@@ -1487,15 +1754,23 @@ export default function LibrarianScreen() {
         setScannedPaperText(textOutput);
 
         const clientParsed = extractBookFieldsFromText(textOutput);
+        const rawPub = (parsedBook?.publisher || clientParsed.publisher || "").trim();
+        const cleanPub = /^(?:date|year|yr)\b/i.test(rawPub) ? "" : rawPub;
         const resolvedParsed: ParsedBookFields = {
           title: parsedBook?.title || clientParsed.title,
           author: parsedBook?.author || clientParsed.author,
           genre: parsedBook?.genre || clientParsed.genre,
+          department: parsedBook?.department || clientParsed.department || "Circulation",
           isbn: sanitizeIsbn(parsedBook?.isbn || clientParsed.isbn),
           copies: parsedBook?.copies || clientParsed.copies,
           edition: parsedBook?.edition || clientParsed.edition,
           volume: parsedBook?.volume || clientParsed.volume,
           summary: parsedBook?.summary || clientParsed.summary,
+          publisher: cleanPub,
+          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : ""),
+          pages: parsedBook?.pages || clientParsed.pages,
+          shelfLocation: parsedBook?.shelfLocation || clientParsed.shelfLocation,
+          docType: parsedBook?.docType || clientParsed.docType,
           rawText: textOutput,
         };
 
@@ -1506,6 +1781,7 @@ export default function LibrarianScreen() {
           const top = exactMatch || matchedBooks[0];
           setScannedBook({
             ...top,
+            department: resolvedParsed.department || top.department || "Circulation",
             genre: resolvedParsed.genre || top.department,
             edition: resolvedParsed.edition || top.edition,
             volume: resolvedParsed.volume || top.volume,
@@ -1748,7 +2024,15 @@ export default function LibrarianScreen() {
       {/* UPPER VIEWPORT: Modern Cinematic Viewfinder with Document Alignment Reticle */}
       {/* ========================================================================= */}
       <View style={styles.scannerCardContainer}>
-        <View style={styles.scannerGrayBox}>
+        <View
+          style={styles.scannerGrayBox}
+          onLayout={e => {
+            const { width, height } = e.nativeEvent.layout;
+            if (width > 0 && height > 0) {
+              setViewfinderSize({ width, height });
+            }
+          }}
+        >
           {/* Live Camera Viewfinder */}
           {Platform.OS !== "web" && isCameraActive ? (
             <CameraView
@@ -1757,10 +2041,12 @@ export default function LibrarianScreen() {
               facing={facing}
               enableTorch={torchOn}
               mode="picture"
+              mute={true}
+              animateShutter={false}
               barcodeScannerSettings={{
-                barcodeTypes: ["qr", "ean13", "ean8", "code128", "code39", "upc_a", "upc_e"],
+                barcodeTypes: activeMode === "Transaction" ? ["qr"] : [],
               }}
-              onBarcodeScanned={!scanned && !processing ? handleBarCodeScanned : undefined}
+              onBarcodeScanned={activeMode === "Transaction" ? handleBarCodeScanned : undefined}
               onCameraReady={() => setIsCameraReady(true)}
             />
           ) : (
@@ -1769,13 +2055,23 @@ export default function LibrarianScreen() {
             </View>
           )}
 
-          {/* Captured / Uploaded Picture Preview during 1-second scan */}
+          {/* Captured / Uploaded Picture Preview during 1-second scan (locked upright in portrait, never rotated to landscape) */}
           {previewPhotoUri && (
-            <Image
-              source={{ uri: previewPhotoUri }}
-              style={StyleSheet.absoluteFill}
-              resizeMode="cover"
-            />
+            <View style={[StyleSheet.absoluteFill, { justifyContent: "center", alignItems: "center", overflow: "hidden" }]} pointerEvents="none">
+              <Image
+                source={{ uri: previewPhotoUri }}
+                style={
+                  previewIsLandscape && viewfinderSize.width > 0 && viewfinderSize.height > 0
+                    ? {
+                        width: viewfinderSize.height,
+                        height: viewfinderSize.width,
+                        transform: [{ rotate: "90deg" }],
+                      }
+                    : StyleSheet.absoluteFill
+                }
+                resizeMode="cover"
+              />
+            </View>
           )}
 
           {/* ALL SCANNING RESTRICTED BANNER */}
@@ -1844,8 +2140,8 @@ export default function LibrarianScreen() {
                 {previewPhotoUri
                   ? "SCANNING PICTURE..."
                   : activeMode === "Catalog"
-                  ? "PAPER & CATALOG SCANNER"
-                  : "STUDENT ID & RECEIPT SCANNER"}
+                  ? (autoScanEnabled ? "PAPER SCANNER • AUTO ON" : "PAPER & CATALOG SCANNER")
+                  : (processing ? "SCANNING QR CODE..." : "STUDENT ID & RECEIPT SCANNER")}
               </Text>
             </View>
 
@@ -1855,8 +2151,8 @@ export default function LibrarianScreen() {
             <View style={[styles.cornerBracket, styles.bracketBottomLeft]} />
             <View style={[styles.cornerBracket, styles.bracketBottomRight]} />
 
-            {/* Animated Laser Scanning Line (Sweeps up/down when scanning words) */}
-            {(activeMode === "Catalog" || previewPhotoUri) && processing && (
+            {/* Animated Laser Scanning Line (Sweeps up/down when scanning words or QR code) */}
+            {processing && (
               <Animated.View
                 style={[
                   styles.animatedLaserLine,
@@ -1880,13 +2176,17 @@ export default function LibrarianScreen() {
               {previewPhotoUri
                 ? "Scanning picture for 1 second..."
                 : (activeMode === "Catalog"
-                    ? "Align printed or handwritten book details inside frame"
-                    : "Align Student ID or Receipt QR code inside frame")}
+                    ? (autoScanEnabled
+                        ? "Hold still to auto-scan, or tap shutter button"
+                        : "Align printed or handwritten book details inside frame")
+                    : (processing
+                        ? "Reading QR code inside frame..."
+                        : "Align Student ID or Receipt QR code & tap QR button"))}
             </Text>
           </View>
 
-          {/* IN-FLIGHT WORD SCANNING HUD OVERLAY (Only shown when not displaying photo preview) */}
-          {processing && !previewPhotoUri && (
+          {/* IN-FLIGHT WORD SCANNING HUD OVERLAY (Only shown for Paper Catalog OCR when not displaying photo preview) */}
+          {processing && !previewPhotoUri && activeMode === "Catalog" && (
             <View style={styles.processingOverlay}>
               <View style={styles.hudCard}>
                 <ActivityIndicator size="large" color={theme.accentStrong} />
@@ -1904,6 +2204,9 @@ export default function LibrarianScreen() {
                   </View>
                   <View style={styles.hudPill}>
                     <Text style={styles.hudPillText}>Author</Text>
+                  </View>
+                  <View style={styles.hudPill}>
+                    <Text style={styles.hudPillText}>Department Loc.</Text>
                   </View>
                   <View style={styles.hudPill}>
                     <Text style={styles.hudPillText}>Genre</Text>
@@ -2182,17 +2485,21 @@ export default function LibrarianScreen() {
                 allScanningRestricted && { backgroundColor: theme.danger },
               ]}
             >
-              <MaterialCommunityIcons
-                name={
-                  allScanningRestricted
-                    ? "lock"
-                    : activeMode === "Catalog"
-                    ? "camera-iris"
-                    : "qrcode-scan"
-                }
-                size={28}
-                color="#FFFFFF"
-              />
+              {processing && activeMode === "Transaction" ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <MaterialCommunityIcons
+                  name={
+                    allScanningRestricted
+                      ? "lock"
+                      : activeMode === "Catalog"
+                      ? "camera-iris"
+                      : "qrcode-scan"
+                  }
+                  size={28}
+                  color="#FFFFFF"
+                />
+              )}
             </View>
           </TouchableOpacity>
         </Animated.View>
@@ -2372,7 +2679,59 @@ export default function LibrarianScreen() {
                   )}
                 </View>
 
-                {/* 3. GENRE */}
+                {/* 3. DEPARTMENT LOCATION */}
+                <View style={styles.fieldDivider} />
+                <View style={styles.fieldItem}>
+                  <View style={styles.fieldLabelRow}>
+                    <Ionicons name="location-outline" size={14} color={theme.primary} />
+                    <Text style={styles.fieldLabel}>DEPARTMENT LOCATION</Text>
+                  </View>
+                  {isEditingFields ? (
+                    <View style={{ gap: 8 }}>
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.department || "Circulation"}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, department: val }))}
+                        placeholder="Select or enter department location"
+                        placeholderTextColor={theme.muted}
+                      />
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                        {["Circulation", "General Reference", "Filipiniana", "Reserve", "Periodical", "Special Collections"].map(dept => {
+                          const isSelected = (parsedFields.department || "Circulation").toLowerCase() === dept.toLowerCase();
+                          return (
+                            <TouchableOpacity
+                              key={dept}
+                              onPress={() => setParsedFields(prev => ({ ...prev, department: dept }))}
+                              style={[
+                                styles.genrePill,
+                                {
+                                  backgroundColor: isSelected ? theme.primary : theme.primarySoft,
+                                  borderColor: isSelected ? theme.primary : theme.primaryLine,
+                                  borderWidth: 1,
+                                },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.genrePillText,
+                                  { color: isSelected ? "#FFFFFF" : theme.primary },
+                                ]}
+                              >
+                                {dept}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.genrePill}>
+                      <Text style={styles.genrePillText}>{parsedFields.department || "Circulation"}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* 4. GENRE */}
                 <View style={styles.fieldDivider} />
                 <View style={styles.fieldItem}>
                   <View style={styles.fieldLabelRow}>
@@ -2502,7 +2861,7 @@ export default function LibrarianScreen() {
                   <View style={styles.twoColItem}>
                     <View style={styles.fieldLabelRow}>
                       <Ionicons name="calendar-outline" size={14} color={theme.primary} />
-                      <Text style={styles.fieldLabel}>YEAR</Text>
+                      <Text style={styles.fieldLabel}>PUBLISHED YEAR</Text>
                     </View>
                     {isEditingFields ? (
                       <TextInput

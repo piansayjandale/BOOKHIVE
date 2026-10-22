@@ -16,6 +16,10 @@ export type User = {
   status?: string;
   token?: string;
   avatar?: string;
+  schoolIdFront?: string;
+  schoolIdBack?: string;
+  libraryIdFront?: string;
+  libraryIdBack?: string;
   qrCode?: string;
   isNewUser?: boolean;
   permissions?: Record<string, boolean>;
@@ -162,6 +166,10 @@ export function normalizeUserSession(rawData: any): User | null {
   const course = base.course || "General Program";
   const status = base.status || "Active";
   const avatar = base.avatar || "";
+  const schoolIdFront = base.schoolIdFront || base.school_id_front || "";
+  const schoolIdBack = base.schoolIdBack || base.school_id_back || "";
+  const libraryIdFront = base.libraryIdFront || base.library_id_front || "";
+  const libraryIdBack = base.libraryIdBack || base.library_id_back || "";
   const qrCode = base.qrCode || base.qr_code || "";
   const yearLevel = base.yearLevel || base.year_level || "";
   const section = base.section || "";
@@ -181,10 +189,89 @@ export function normalizeUserSession(rawData: any): User | null {
     status: String(status),
     token: userToken ? String(userToken).trim() : undefined,
     avatar: avatar ? String(avatar) : undefined,
+    schoolIdFront: schoolIdFront ? String(schoolIdFront) : undefined,
+    schoolIdBack: schoolIdBack ? String(schoolIdBack) : undefined,
+    libraryIdFront: libraryIdFront ? String(libraryIdFront) : undefined,
+    libraryIdBack: libraryIdBack ? String(libraryIdBack) : undefined,
     qrCode: qrCode ? String(qrCode) : undefined,
     isNewUser: isNewUser !== undefined ? Boolean(isNewUser) : undefined,
     permissions,
   };
+}
+
+export async function safeSaveCurrentUserToStorage(user: User): Promise<void> {
+  const MAX_INLINE_LEN = 2048;
+  const cleanEmail = (user.email || "").trim().toLowerCase();
+  const cleanId = (user.studentId || "").trim().toLowerCase();
+
+  // If all 4 ID photos exist and any are large base64 strings, store them in the dedicated single key
+  if (
+    user.schoolIdFront &&
+    user.schoolIdBack &&
+    user.libraryIdFront &&
+    user.libraryIdBack &&
+    (user.schoolIdFront.length > MAX_INLINE_LEN ||
+      user.schoolIdBack.length > MAX_INLINE_LEN ||
+      user.libraryIdFront.length > MAX_INLINE_LEN ||
+      user.libraryIdBack.length > MAX_INLINE_LEN)
+  ) {
+    const primaryCardKey = cleanEmail
+      ? `STUDENT_ID_CARDS_${cleanEmail}`
+      : cleanId && !cleanId.startsWith("temp-")
+      ? `STUDENT_ID_CARDS_${cleanId}`
+      : "STUDENT_ID_CARDS";
+    const cardPayload = {
+      schoolIdFront: user.schoolIdFront,
+      schoolIdBack: user.schoolIdBack,
+      libraryIdFront: user.libraryIdFront,
+      libraryIdBack: user.libraryIdBack,
+      verifiedAt: new Date().toISOString(),
+      ownerEmail: cleanEmail,
+      ownerStudentId: cleanId,
+    };
+    try {
+      await AsyncStorage.removeItem("STUDENT_ID_CARDS").catch(() => {});
+      await AsyncStorage.setItem(primaryCardKey, JSON.stringify(cardPayload));
+    } catch {
+      // Ignore if storage quota is tight; in-memory state holds the images
+    }
+  }
+
+  const compactUser: User = {
+    ...user,
+    schoolIdFront:
+      user.schoolIdFront && user.schoolIdFront.length <= MAX_INLINE_LEN
+        ? user.schoolIdFront
+        : undefined,
+    schoolIdBack:
+      user.schoolIdBack && user.schoolIdBack.length <= MAX_INLINE_LEN
+        ? user.schoolIdBack
+        : undefined,
+    libraryIdFront:
+      user.libraryIdFront && user.libraryIdFront.length <= MAX_INLINE_LEN
+        ? user.libraryIdFront
+        : undefined,
+    libraryIdBack:
+      user.libraryIdBack && user.libraryIdBack.length <= MAX_INLINE_LEN
+        ? user.libraryIdBack
+        : undefined,
+  };
+
+  try {
+    await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(compactUser));
+  } catch (err) {
+    console.log("Reclaiming storage space for CURRENT_USER:", err);
+    try {
+      await AsyncStorage.removeItem("STUDENT_ID_CARDS");
+      await AsyncStorage.removeItem("STUDENT_PROFILE");
+      await AsyncStorage.setItem(
+        CURRENT_USER_KEY,
+        JSON.stringify({ ...compactUser, avatar: undefined })
+      );
+    } catch (retryErr) {
+      console.log("Failed to save CURRENT_USER to storage:", retryErr);
+    }
+  }
 }
 
 export const getAuthHeaders = async () => {
@@ -352,11 +439,12 @@ export const authService = {
 
         if (normalized && normalized.token) {
 
-          // Persist session to AsyncStorage
-          await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(normalized));
+          // Persist session to AsyncStorage safely without duplicating large base64 ID strings
+          await safeSaveCurrentUserToStorage(normalized);
 
           // Reset and save fresh STUDENT_PROFILE strictly for this logged-in student
           try {
+            const MAX_INLINE_LEN = 2048;
             const userProfile = {
               name: normalized.fullName,
               email: normalized.email,
@@ -369,6 +457,22 @@ export const authService = {
               status: normalized.status || "Active",
               role: normalized.role || "Student",
               avatar: normalized.avatar || "",
+              schoolIdFront:
+                normalized.schoolIdFront && normalized.schoolIdFront.length <= MAX_INLINE_LEN
+                  ? normalized.schoolIdFront
+                  : "",
+              schoolIdBack:
+                normalized.schoolIdBack && normalized.schoolIdBack.length <= MAX_INLINE_LEN
+                  ? normalized.schoolIdBack
+                  : "",
+              libraryIdFront:
+                normalized.libraryIdFront && normalized.libraryIdFront.length <= MAX_INLINE_LEN
+                  ? normalized.libraryIdFront
+                  : "",
+              libraryIdBack:
+                normalized.libraryIdBack && normalized.libraryIdBack.length <= MAX_INLINE_LEN
+                  ? normalized.libraryIdBack
+                  : "",
               qrCode: normalized.qrCode || "",
             };
             await AsyncStorage.setItem("STUDENT_PROFILE", JSON.stringify(userProfile));
@@ -466,7 +570,7 @@ export const authService = {
         if (signupRes.status === 201) {
           const clientUser = normalizeUserSession(signupRes.data);
           if (clientUser) {
-            await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
+            await safeSaveCurrentUserToStorage(clientUser);
             return {
               success: true,
               user: clientUser,
@@ -485,7 +589,7 @@ export const authService = {
           if (loginRes.status === 200 && loginRes.data?.token) {
             const clientUser = normalizeUserSession(loginRes.data);
             if (clientUser) {
-              await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(clientUser));
+              await safeSaveCurrentUserToStorage(clientUser);
               return {
                 success: true,
                 user: clientUser,
@@ -518,8 +622,31 @@ export const authService = {
       }
       const normalized = normalizeUserSession(user);
       if (normalized && normalized.token) {
-        // Update stored session if structure was normalized
-        await AsyncStorage.setItem(CURRENT_USER_KEY, JSON.stringify(normalized));
+        // Hydrate 4 ID photos from scoped STUDENT_ID_CARDS key if omitted from CURRENT_USER
+        if (
+          !normalized.schoolIdFront ||
+          !normalized.schoolIdBack ||
+          !normalized.libraryIdFront ||
+          !normalized.libraryIdBack
+        ) {
+          const cleanEmail = (normalized.email || "").trim().toLowerCase();
+          const cleanId = (normalized.studentId || "").trim().toLowerCase();
+          const cardRaw =
+            (cleanEmail && (await AsyncStorage.getItem(`STUDENT_ID_CARDS_${cleanEmail}`))) ||
+            (cleanId && (await AsyncStorage.getItem(`STUDENT_ID_CARDS_${cleanId}`)));
+          if (cardRaw) {
+            try {
+              const parsedCards = JSON.parse(cardRaw);
+              if (parsedCards?.schoolIdFront) normalized.schoolIdFront = parsedCards.schoolIdFront;
+              if (parsedCards?.schoolIdBack) normalized.schoolIdBack = parsedCards.schoolIdBack;
+              if (parsedCards?.libraryIdFront) normalized.libraryIdFront = parsedCards.libraryIdFront;
+              if (parsedCards?.libraryIdBack) normalized.libraryIdBack = parsedCards.libraryIdBack;
+            } catch {
+              // ignore
+            }
+          }
+        }
+        await safeSaveCurrentUserToStorage(normalized);
         return normalized;
       }
       return null;

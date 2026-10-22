@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   Modal,
   Image,
+  RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../../components/AnimatedScreen';
@@ -26,6 +27,7 @@ import {
   getNotifications,
   NotificationItem,
   isDueToReturn,
+  syncTransactionsWithBackend,
 } from '../../data/store';
 
 export default function ReservationsScreen() {
@@ -73,11 +75,34 @@ export default function ReservationsScreen() {
     return { text, isUrgent, isExpired: false };
   };
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  const onRefresh = React.useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await syncTransactionsWithBackend(true);
+      setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
+      setProfile(getStudentProfile());
+      setNotifications(getNotifications());
+    } catch (e) {
+      console.log('Error refreshing reservations:', e);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
     setActiveReservations(getUpcomingReservations());
     setLibraryCardBooks(getLibraryCardHistory());
     setProfile(getStudentProfile());
     setNotifications(getNotifications());
+
+    // Proactively sync with backend so newest librarian decisions immediately reflect
+    void syncTransactionsWithBackend(true).then(() => {
+      setActiveReservations(getUpcomingReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
+    });
 
     const unsubStore = subscribe(() => {
       setActiveReservations(getUpcomingReservations());
@@ -108,12 +133,21 @@ export default function ReservationsScreen() {
       setLibraryCardBooks(getLibraryCardHistory());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
+
+      // Fetch fresh transactions on screen focus
+      void syncTransactionsWithBackend(true).then(() => {
+        setActiveReservations(getUpcomingReservations());
+        setLibraryCardBooks(getLibraryCardHistory());
+      });
     }, [])
   );
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const reservedBooks = activeReservations.filter((book) => {
+    if (!book) return false;
+    if (book.action === 'Borrow' || (book as any).type === 'Borrow' || book.isPickedUp || book.pickedUpAt) return false;
+    if (book.status === 'Returned' || book.status === 'Completed' || book.status === 'Declined' || book.status === 'Cancelled' || book.status === 'Picked Up') return false;
     const isRes =
       book.action === 'Reserve' ||
       (book as any).type === 'Reservation' ||
@@ -179,7 +213,7 @@ export default function ReservationsScreen() {
   // Build rows for the Library Card table (minimum 16 rows to match the reference design visual)
   // Officially approved borrowed books, active loans, approved reservations, and returned history belong here
   const approvedLibraryCardBooks = useMemo(() => {
-    return libraryCardBooks.filter((item) => {
+    const filtered = libraryCardBooks.filter((item) => {
       if (!item) return false;
       if (item.status === 'Declined' || item.status === 'Cancelled') return false;
       const isRes =
@@ -194,6 +228,21 @@ export default function ReservationsScreen() {
       if (item.status === 'Pending' || item.status === 'Waitlisted') return false;
       if (item.action === 'Borrow' && item.status === 'Upcoming') return false;
       return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const aReturned = !!(a.isReturned || a.status === 'Completed' || a.status === 'Returned' || a.date === 'Returned');
+      const bReturned = !!(b.isReturned || b.status === 'Completed' || b.status === 'Returned' || b.date === 'Returned');
+      if (!aReturned && bReturned) return -1;
+      if (aReturned && !bReturned) return 1;
+
+      const parseDateMs = (book: ReservationBook) => {
+        const d = book.pickedUpAt || book.borrowDate || book.dateReserved || book.pickupDate || (book.date !== 'Returned' ? book.date : undefined);
+        if (!d) return 0;
+        const t = new Date(d).getTime();
+        return isNaN(t) ? 0 : t;
+      };
+      return parseDateMs(b) - parseDateMs(a);
     });
   }, [libraryCardBooks]);
 
@@ -221,26 +270,50 @@ export default function ReservationsScreen() {
         !!item.availableAt)
     );
 
+    const resolveItemDueDate = (book: any): string => {
+      if (!book) return "";
+      const candidate = book.dueDate || book.due_date || (book.returnDate && book.returnDate !== "Returned" && book.returnDate !== "Reservation" ? book.returnDate : undefined);
+      if (candidate && candidate !== "Returned" && candidate !== "Reservation" && candidate !== "7 days" && candidate !== "Pending") {
+        try {
+          const d = new Date(candidate);
+          if (!isNaN(d.getTime())) {
+            return d.toISOString().split("T")[0];
+          }
+          if (typeof candidate === "string" && candidate.includes("-")) {
+            return candidate.split("T")[0];
+          }
+        } catch {}
+      }
+      const startCandidate = book.borrowDate || book.pickupDate || book.dateReserved || (book.date && book.date !== "Returned" && book.date !== "Pending" ? book.date : undefined) || book.requestedAt;
+      if (startCandidate) {
+        try {
+          const d = new Date(startCandidate);
+          if (!isNaN(d.getTime())) {
+            d.setDate(d.getDate() + 7);
+            return d.toISOString().split("T")[0];
+          }
+        } catch {}
+      }
+      const fallback = new Date();
+      fallback.setDate(fallback.getDate() + 7);
+      return fallback.toISOString().split("T")[0];
+    };
+
     let dueReturnText = "";
     let highlightType: 'none' | 'green' | 'violet' | 'red' = 'none';
 
     if (item) {
+      // Due return date always shows the due date for every book regardless of status
+      dueReturnText = resolveItemDueDate(item);
+
       if (isReturned) {
-        dueReturnText = "Returned";
         highlightType = 'none';
       } else if (isReservation) {
         // Active reservations appear in VIOLET indicating reservation status
-        dueReturnText = "Reservation";
         highlightType = "violet";
       } else {
-        const rawDue = item?.dueDate || item?.returnDate;
-        if (rawDue) {
-          dueReturnText = typeof rawDue === 'string' ? rawDue.split('T')[0] : new Date(rawDue).toISOString().split('T')[0];
-        } else {
-          dueReturnText = "7 days";
-        }
         // Green for active loans, Red when due to return today or overdue
-        if (isDueToReturn(item?.dueDate || rawDue || dueReturnText)) {
+        if (isDueToReturn(item?.dueDate || (item as any)?.due_date || dueReturnText)) {
           highlightType = "red";
         } else {
           highlightType = "green";
@@ -252,7 +325,7 @@ export default function ReservationsScreen() {
     if (item) {
       const rawBorrow = item?.borrowDate || item?.pickupDate || item?.dateReserved || (item?.date !== 'Returned' ? item?.date : "") || "";
       if (rawBorrow) {
-        borrowDateText = typeof rawBorrow === 'string' ? rawBorrow.split('T')[0] : new Date(rawBorrow).toISOString().split('T')[0];
+        borrowDateText = typeof rawBorrow === 'string' ? (rawBorrow.includes('T') ? rawBorrow.split('T')[0] : rawBorrow) : new Date(rawBorrow).toISOString().split('T')[0];
       } else {
         borrowDateText = new Date().toISOString().split("T")[0];
       }
@@ -312,13 +385,21 @@ export default function ReservationsScreen() {
         ref={outerScrollRef}
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled={true}
-        bounces={false}
-        overScrollMode="never"
-        scrollEnabled={activeTab !== 'card'}
+        bounces={true}
+        overScrollMode="always"
+        scrollEnabled={true}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#0274BB']}
+            tintColor={isDarkMode ? '#38BDF8' : '#0274BB'}
+          />
+        }
         onLayout={(e) => setOuterViewportHeight(e.nativeEvent.layout.height)}
         onContentSizeChange={(_w, h) => setOuterContentHeight(h)}
         contentContainerStyle={{
-          paddingBottom: activeTab === 'card' ? 16 : 120,
+          paddingBottom: activeTab === 'card' ? 32 : 120,
         }}
       >
         {/* SEGMENTED PILL TAB BAR */}

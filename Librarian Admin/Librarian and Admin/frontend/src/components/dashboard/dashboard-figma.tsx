@@ -65,6 +65,7 @@ const emptyBookForm = {
   title: "",
   author: "",
   isbn: "",
+  publisher: "",
   publicationDate: "2026-09-01",
   department: "Circulation" as Department,
   shelfLocation: "",
@@ -286,9 +287,13 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           if (!dashRes.ok) return null;
           const data = await dashRes.json();
           if (data.summary) {
+            const deptCount = Array.isArray(data.departmentUsage)
+              ? data.departmentUsage.reduce((acc: number, d: any) => acc + (Number(d.count) || Number(d.usage) || 0), 0)
+              : 0;
+            const activeUsers = Math.max(Number(data.summary.totalUsers) || 0, deptCount);
             setSummary({
               totalBooks: Number(data.summary.totalBooks) || 0,
-              totalUsers: Number(data.summary.totalUsers) || 0,
+              totalUsers: activeUsers,
               pendingRequests: Number(data.summary.pendingRequests) || 0,
               activeBorrowedBooks: Number(data.summary.activeBorrowedBooks) || 0,
               totalBorrows: Number(data.summary.totalBorrows) || 0,
@@ -1062,7 +1067,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           )}
         >
           <div className={cn("mb-1 text-[11px] font-bold tracking-[0.15em]", isLight ? "text-slate-600" : "text-[#94A3B8]")}>ACTIVE_USERS</div>
-          <div className={cn("text-[32px] font-black tracking-tight", isLight ? "text-[#0274BB]" : "text-white")}>{summary.totalUsers.toLocaleString()}</div>
+          <div className={cn("text-[32px] font-black tracking-tight", isLight ? "text-[#0274BB]" : "text-white")}>{Math.max(summary.totalUsers, totalStudents).toLocaleString()}</div>
         </motion.div>
 
         {/* Metric 3 */}
@@ -2387,7 +2392,19 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 </label>
               </div>
 
-              {/* Row 7: Summary */}
+              {/* Row 7: Publisher */}
+              <label className="grid gap-1.5">
+                <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Publisher</span>
+                <input
+                  suppressHydrationWarning
+                  className="modal-input"
+                  value={bookForm.publisher}
+                  onChange={(e) => setBookForm((f) => ({ ...f, publisher: e.target.value }))}
+                  placeholder="e.g. Pearson, O'Reilly Media, Scholastic Press"
+                />
+              </label>
+
+              {/* Row 8: Summary */}
               <label className="grid gap-1.5">
                 <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Summary</span>
                 <textarea

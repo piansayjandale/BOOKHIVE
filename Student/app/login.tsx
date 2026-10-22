@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useAuth } from "../data/AuthContext";
+import { loadStudentIdCardsForUser } from "../data/store";
 import AnimatedScreen from "../components/AnimatedScreen";
 import { Ionicons } from "@expo/vector-icons";
 import { useThemeColors } from "../hooks/useThemeColors";
@@ -230,6 +231,20 @@ function LoginScreenContent() {
           return;
         }
 
+        // Check if existing student account already has the 4 ID photos (School ID Front/Back & Library ID Front/Back)
+        const existingIdCards = await loadStudentIdCardsForUser(result.user);
+        if (!existingIdCards) {
+          showAlert(
+            "ID Upload Required",
+            "Welcome back! Please click the Upload School & Library ID button below your profile picture to upload the Front & Back of your School ID and Library ID."
+          );
+          router.replace({
+            pathname: "/(tabs)/profile",
+            params: { requireIdUpload: "1" },
+          });
+          return;
+        }
+
         showAlert(
           "Success",
           "Logged in successfully."
@@ -358,6 +373,16 @@ function LoginScreenContent() {
           >
             <Text style={[styles.loginButtonText, { color: theme.buttonPrimaryText }]}>
               {loading ? "Logging in..." : "Log In"}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => router.replace("/signup")}
+            activeOpacity={0.7}
+            style={{ marginTop: 18 }}
+          >
+            <Text style={{ textAlign: "center", color: isDarkMode ? theme.accentGold : theme.accentBlue, fontWeight: "700", fontSize: 14 }}>
+              Don't have an account? Sign Up
             </Text>
           </TouchableOpacity>
         </View>

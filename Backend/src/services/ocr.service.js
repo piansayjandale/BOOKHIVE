@@ -177,8 +177,30 @@ function normalizeHandwritingAuthor(rawAuthor) {
 
 function normalizeHandwritingGenre(rawGenre, department) {
   let genre = cleanField(rawGenre);
-  if (/^(?:icrion|ticrion|fiction|fic|fict|r\s*ciel\s*eg|ciel)$/i.test(genre.replace(/[^a-zA-Z]/g, ""))) {
+  const cleanAlpha = genre.replace(/[^a-zA-Z]/g, "").toLowerCase();
+  if (/^(?:icrion|ticrion|fiction|fic|fict|fixtion|fixt|r\s*ciel\s*eg|ciel)$/i.test(cleanAlpha)) {
     return "Fiction";
+  }
+  if (/^(?:non-?fiction|nonfic|nonfiction)$/i.test(cleanAlpha)) {
+    return "Non-Fiction";
+  }
+  if (/^(?:sci-?fi|science\s*fiction)$/i.test(cleanAlpha)) {
+    return "Science Fiction";
+  }
+  if (/^(?:ref|reference)$/i.test(cleanAlpha)) {
+    return "Reference";
+  }
+  if (/^(?:fil|filipiniana)$/i.test(cleanAlpha)) {
+    return "Filipiniana";
+  }
+  if (/^(?:bio|biography|memoir|autobiography)$/i.test(cleanAlpha)) {
+    return "Biography / Memoir";
+  }
+  if (/^(?:history|historical)$/i.test(cleanAlpha)) {
+    return "History";
+  }
+  if (/^(?:tech|technology|computer|cs|it)$/i.test(cleanAlpha)) {
+    return "Technology";
   }
   if (!genre && department) return department === "Circulation" ? "Fiction" : department;
   return toTitleCase(genre || (department === "Circulation" ? "Fiction" : "General"));
@@ -197,12 +219,49 @@ function normalizeHandwritingSummary(rawSummary) {
  */
 function extractPublishedYear(text) {
   if (!text) return "";
-  const explicit = text.match(/(?:(?:published|publication|copyright|year|date|pub\s*date|copr\.?)[\s:;*=\-–—!?,.]*(?:in|c|©)?\s*)(19\d\d|20[0-3]\d)/i);
-  if (explicit) return explicit[1];
-  const copyMatch = text.match(/[©c]\s*(19\d\d|20[0-3]\d)/i);
-  if (copyMatch) return copyMatch[1];
-  const generalMatch = text.match(/\b(19[6-9]\d|20[0-2]\d)\b/);
-  if (generalMatch) return generalMatch[1];
+
+  // 1. Explicit line with prefix: Pub Date, Published Year, Date, Copyright, Year, etc.
+  const prefixRegex = /(?:(?:published\s*(?:year|date)?|publication\s*(?:year|date)?|pub\.?\s*(?:date|year)?|copyright\s*(?:year|date)?|date\s*of\s*pub(?:lication)?|year\s*(?:of\s*publication)?|copr\.?|date|year)[\s:;*=\-–—!?,.]*(?:in|c|©)?\s*)([^\r\n]+)/i;
+  const match = text.match(prefixRegex);
+  if (match && match[1]) {
+    const val = match[1].trim();
+    // 4-digit year directly: 1950 - 2035
+    const fourDigit = val.match(/\b(19\d\d|20[0-3]\d)\b/);
+    if (fourDigit) return fourDigit[1];
+
+    // Date formatted as M/D/YY or M/D/YYYY (e.g. 3/29/26, 03/29/2026, 2026-03-29)
+    const slashDate = val.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.](19\d\d|20[0-3]\d|\d{2})\b/);
+    if (slashDate) {
+      const yr = slashDate[1];
+      return yr.length === 2 ? `20${yr}` : yr;
+    }
+
+    const isoDate = val.match(/\b(19\d\d|20[0-3]\d)[\/\-.]\d{1,2}[\/\-.]\d{1,2}\b/);
+    if (isoDate) return isoDate[1];
+
+    // 2-digit year after label (e.g. '26 or 24 or 26)
+    const twoDigit = val.match(/(?:^|['\s])([0-3]\d)\b/);
+    if (twoDigit) return `20${twoDigit[1]}`;
+  }
+
+  // 2. Date pattern anywhere in text: e.g. 3/29/26, 10/12/2024
+  const generalDate = text.match(/\b\d{1,2}[\/\-.]\d{1,2}[\/\-.](19\d\d|20[0-3]\d|\d{2})\b/);
+  if (generalDate) {
+    const yr = generalDate[1];
+    return yr.length === 2 ? `20${yr}` : yr;
+  }
+
+  // 3. Copyright symbol: © 2024 or (c) 2024
+  const copyMatch = text.match(/[©c]\s*(19\d\d|20[0-3]\d|\d{2})/i);
+  if (copyMatch) {
+    const yr = copyMatch[1];
+    return yr.length === 2 ? `20${yr}` : yr;
+  }
+
+  // 4. Standalone 4-digit plausible year
+  const standaloneMatch = text.match(/\b(19[5-9]\d|20[0-3]\d)\b/);
+  if (standaloneMatch) return standaloneMatch[1];
+
   return "";
 }
 
@@ -215,9 +274,12 @@ function extractPages(text) {
 
 function extractPublisher(text) {
   if (!text) return "";
-  const explicit = text.match(/(?:(?:publisher|published\s*by|press|imprint)[\s:;*=\-–—!?,.]{1,4})(.*)/i);
+  const explicit = text.match(/(?:(?:publisher|published\s*by|imprint)[\s:;*=\-–—!?,.]{1,4})([^\r\n]+)/i);
   if (explicit && explicit[1]) {
-    return toTitleCase(cleanField(explicit[1].split(/[\n,;]/)[0]));
+    const cleaned = cleanField(explicit[1].split(/[\n,;]/)[0]);
+    if (cleaned && !/^(?:date|year|yr)\b/i.test(cleaned)) {
+      return toTitleCase(cleaned);
+    }
   }
   const KNOWN_PUBLISHERS = [
     "Penguin", "HarperCollins", "Simon & Schuster", "Macmillan", "Hachette",
@@ -243,7 +305,7 @@ export function extractBookFields(text) {
       title: "",
       author: "",
       genre: "General",
-      department: "General Collection",
+      department: "Circulation",
       isbn: "",
       copies: 1,
       edition: "None",
@@ -287,8 +349,8 @@ export function extractBookFields(text) {
     const line = lines[i];
 
     // 1. Title
-    if (!title && /^(?:(?:book\s*)?title|tite|tile|ttle|titie|the|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:(?:book\s*)?title|tite|tile|ttle|titie|the|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+    if (!title && /^(?:(?:book\s*)?title|tite|tile|ttle|titie|tltle|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:(?:book\s*)?title|tite|tile|ttle|titie|tltle|heading|name\s*of\s*book)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       title = normalizeHandwritingTitle(match[1]);
       detectedLabels++;
       continue;
@@ -303,12 +365,15 @@ export function extractBookFields(text) {
     }
 
     // Department Loc.
-    if (!department && /^(?:department(?:\s*loc\.?)?|dept(?:\s*loc\.?)?|deputies|location|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:department(?:\s*loc\.?)?|dept(?:\s*loc\.?)?|deputies|location|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+    if (!department && /^(?:department(?:\s*loc(?:ation|\.)?)?|dept\.?(?:\s*loc(?:ation|\.)?)?|deputies|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:department(?:\s*loc(?:ation|\.)?)?|dept\.?(?:\s*loc(?:ation|\.)?)?|deputies|departim|section)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       const val = cleanField(match[1]);
       if (/circ/i.test(val)) department = "Circulation";
-      else if (/ref/i.test(val)) department = "Reference";
+      else if (/ref/i.test(val)) department = "General Reference";
       else if (/fil/i.test(val)) department = "Filipiniana";
+      else if (/res/i.test(val)) department = "Reserve";
+      else if (/per/i.test(val)) department = "Periodical";
+      else if (/spec/i.test(val)) department = "Special Collections";
       else department = toTitleCase(val);
       detectedLabels++;
       continue;
@@ -335,7 +400,11 @@ export function extractBookFields(text) {
         .replace(/[^0-9Xx\s-]/g, "")
         .trim();
       if (digits.replace(/[\s-]/g, "").length >= 7) {
-        isbn = digits.replace(/\s+/g, "-");
+        isbn = digits
+          .replace(/[—–]/g, "-")
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-")
+          .replace(/^-+|-+$/g, "");
       }
       detectedLabels++;
       continue;
@@ -365,19 +434,29 @@ export function extractBookFields(text) {
       continue;
     }
 
-    // Publisher
-    if (!publisher && /^(?:publisher|published\s*by|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:publisher|published\s*by|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
-      publisher = toTitleCase(cleanField(match[1]));
-      detectedLabels++;
+    // Published Year / Pub Date (Checked BEFORE Publisher so "Pub. Date" is never misparsed as Publisher)
+    if (!publishedYear && /^(?:published\s*(?:year|date)?|publication\s*(?:year|date)?|pub\.?\s*year|pub\.?\s*date|pub\.?\s*yr|year|copyright\s*(?:year|date)?|date\s*of\s*pub(?:lication)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:published\s*(?:year|date)?|publication\s*(?:year|date)?|pub\.?\s*year|pub\.?\s*date|pub\.?\s*yr|year|copyright\s*(?:year|date)?|date\s*of\s*pub(?:lication)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        publishedYear = extractPublishedYear(match[0]);
+        if (!publishedYear && match[1]) publishedYear = extractPublishedYear(match[1]);
+        detectedLabels++;
+      }
       continue;
     }
 
-    // Published Year
-    if (!publishedYear && /^(?:published\s*year|pub\s*year|year|copyright\s*year|date\s*of\s*pub)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
-      const match = line.match(/^(?:published\s*year|pub\s*year|year|copyright\s*year|date\s*of\s*pub)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
-      publishedYear = extractPublishedYear(match[1]);
-      detectedLabels++;
+    // Publisher
+    if (!publisher && /^(?:publisher|published\s*by|pub(?:\b|\.)(?![\s.:;\-]*date|[\s.:;\-]*year|[\s.:;\-]*yr)|publishing(?:\s*house)?|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:publisher|published\s*by|pub(?:\b|\.)(?![\s.:;\-]*date|[\s.:;\-]*year|[\s.:;\-]*yr)|publishing(?:\s*house)?|imprint|press)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        const candidatePub = cleanField(match[1]);
+        if (candidatePub && !/^(?:date|year|yr)\b/i.test(candidatePub)) {
+          publisher = toTitleCase(candidatePub);
+          detectedLabels++;
+        } else if (candidatePub && !publishedYear) {
+          publishedYear = extractPublishedYear(candidatePub);
+        }
+      }
       continue;
     }
 
@@ -516,7 +595,12 @@ export function extractBookFields(text) {
   }
 
   if (!department) {
-    department = genre === "Fiction" ? "Circulation" : (genre || "General Collection");
+    if (/\bgeneral\s*reference\b|\breference\b/i.test(text) || /ref/i.test(genre)) department = "General Reference";
+    else if (/\bfilipiniana\b/i.test(text) || /fil/i.test(genre)) department = "Filipiniana";
+    else if (/\breserve\b/i.test(text)) department = "Reserve";
+    else if (/\bperiodical\b/i.test(text)) department = "Periodical";
+    else if (/\bspecial\s*collections?\b/i.test(text)) department = "Special Collections";
+    else department = "Circulation";
   }
 
   return {
@@ -631,14 +715,14 @@ Task:
    - title: Main title of the book in Title Case (e.g. "To Kill a Mockingbird", "Clean Code")
    - author: Author's full name (e.g. "Harper Lee", "Robert C. Martin")
    - genre: Subject or genre (e.g. "Fiction", "Computer Science", "Life Story", "History", "Literature")
-   - department: Library department (e.g. "Circulation", "Reference", "Filipiniana", "Reserve")
+   - department: Library department location (one of: "Circulation", "General Reference", "Filipiniana", "Reserve", "Periodical", "Special Collections"; default "Circulation")
    - isbn: ISBN-10 or ISBN-13 (clean digits with hyphens, e.g. "978-0-13-235088-4" or "933-1428-103")
    - copies: Number of copies (integer, default 1)
    - edition: Edition designation (e.g. "1st", "2nd Edition", "Revised Edition", "5th ed.")
    - volume: Volume designation (e.g. "1", "Vol. 2")
    - summary: Synopsis, description, notes, or back-cover blurb
-   - publisher: Publishing house or press (e.g. "Penguin Random House", "O'Reilly Media", "Prentice Hall")
-   - publishedYear: 4-digit publication or copyright year (e.g. "2024", "2008")
+   - publisher: Publishing house or press (e.g. "Penguin Random House", "O'Reilly Media", "Prentice Hall"). Never put "Pub. Date" or a date here.
+   - publishedYear: 4-digit publication or copyright year (e.g. "2026", "2024", "2008") extracted from "Pub. Date", "Published Year", or copyright date
    - pages: Page count (e.g. "464", "320")
    - shelfLocation: Shelf code or call number (e.g. "CIR-08A.3", "QA 76.73")
    - docType: Document type ("Handwritten Intake Slip" | "Printed Book Cover" | "Printed Title / Copyright Page" | "Library Catalog Card" | "General Document")
@@ -710,18 +794,20 @@ Return ONLY a valid JSON object with these keys:
   }
 
   const parsed = JSON.parse(cleaned);
+  const rawPub = (parsed.publisher || "").trim();
+  const cleanPub = /^(?:date|year|yr)\b/i.test(rawPub) ? "" : rawPub;
   return {
     title: parsed.title || "Untitled Scanned Book",
     author: parsed.author || "Unknown Author",
     genre: parsed.genre || "General",
-    department: parsed.department || parsed.genre || "General Collection",
+    department: parsed.department || "Circulation",
     isbn: parsed.isbn || "",
     copies: Math.max(1, parseInt(parsed.copies, 10) || 1),
     edition: parsed.edition || "1st",
     volume: parsed.volume || "1",
     summary: parsed.summary || "",
-    publisher: parsed.publisher || "",
-    publishedYear: parsed.publishedYear || "",
+    publisher: cleanPub,
+    publishedYear: parsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : ""),
     pages: parsed.pages ? String(parsed.pages).replace(/[^0-9]/g, "") : "",
     shelfLocation: parsed.shelfLocation || "Catalog Shelf (Pending Placement)",
     docType: parsed.docType || "Scanned Document",
@@ -744,6 +830,7 @@ export async function scanWithOcrSpace(buffer, cleanBase64) {
     form.append("isOverlayRequired", "false");
     form.append("OCREngine", "2"); // Engine 2 is optimized for handwriting, numbers, and forms
     form.append("detectOrientation", "true");
+    form.append("scale", "true");
 
     let blob;
     if (buffer && buffer.length > 0) {
@@ -826,7 +913,7 @@ export async function tryDecodeQrFromImage(buffer) {
  * 3. Local Sharp (Blue-line cancellation) + Tesseract OCR for offline fallback
  * 4. Database catalog cross-referencing
  */
-export async function processPaperScan(imageBase64OrBuffer, manualTextOverride = null) {
+export async function processPaperScan(imageBase64OrBuffer, manualTextOverride = null, orientationHint = 0) {
   let rawText = (manualTextOverride || "").trim();
   let parsedBook = null;
   let recognitionEngine = "manual";
@@ -850,6 +937,15 @@ export async function processPaperScan(imageBase64OrBuffer, manualTextOverride =
         cleanBase64 = cleanBase64.split(",")[1];
       }
       buffer = Buffer.from(cleanBase64, "base64");
+    }
+
+    if (buffer && Number(orientationHint) === 90) {
+      try {
+        buffer = await sharp(buffer).rotate(90).toBuffer();
+        cleanBase64 = buffer.toString("base64");
+      } catch (rotErr) {
+        console.warn("[OCR Service] Portrait rotation normalization notice:", rotErr.message);
+      }
     }
 
     // Step 0: Check if the uploaded image contains a QR code (e.g. circulation receipt or pickup pass)
@@ -1129,5 +1225,154 @@ function mapBookRow(b) {
     status,
     availability: status,
     confidence: Number(b.confidence || 75),
+  };
+}
+
+
+/**
+ * Universal raw text extractor using Gemini Vision AI, OCR.space, or Sharp + Tesseract
+ */
+export async function extractTextFromImage(bufferOrBase64) {
+  if (!bufferOrBase64) return "";
+  let cleanBase64 = "";
+  let buffer = null;
+
+  if (Buffer.isBuffer(bufferOrBase64)) {
+    buffer = bufferOrBase64;
+    cleanBase64 = buffer.toString("base64");
+  } else if (typeof bufferOrBase64 === "string") {
+    cleanBase64 = bufferOrBase64.trim();
+    if (cleanBase64.includes(",")) {
+      cleanBase64 = cleanBase64.split(",")[1];
+    }
+    try {
+      buffer = Buffer.from(cleanBase64, "base64");
+    } catch {
+      buffer = null;
+    }
+  }
+
+  if (!cleanBase64 && !buffer) return "";
+
+  // 1. Try Gemini Vision if available
+  try {
+    const gemini = await scanWithGeminiVision(cleanBase64);
+    if (gemini?.rawText && gemini.rawText.length > 5) {
+      return gemini.rawText;
+    }
+  } catch {}
+
+  // 2. Try OCR.space
+  try {
+    const ocrSpace = await scanWithOcrSpace(buffer, cleanBase64);
+    if (ocrSpace?.rawText && ocrSpace.rawText.length > 5) {
+      return ocrSpace.rawText;
+    }
+  } catch {}
+
+  // 3. Try Local Tesseract
+  try {
+    const worker = await getWorker();
+    const processed = await sharp(buffer)
+      .rotate()
+      .resize(1600, null, { withoutEnlargement: true })
+      .grayscale()
+      .normalize()
+      .toBuffer();
+    const { data } = await worker.recognize(processed);
+    return data?.text || "";
+  } catch (err) {
+    console.warn("[OCR Service] extractTextFromImage local fallback error:", err.message);
+  }
+
+  return "";
+}
+
+/**
+ * Verifies School ID and Library ID cards (both front and back)
+ * against expected student name and ID number.
+ */
+export async function verifyStudentIdCardsOcr({
+  schoolIdFront,
+  schoolIdBack,
+  libraryIdFront,
+  libraryIdBack,
+  expectedName,
+  expectedIdNumber,
+}) {
+  const [
+    schoolFrontText,
+    schoolBackText,
+    libraryFrontText,
+    libraryBackText,
+  ] = await Promise.all([
+    extractTextFromImage(schoolIdFront),
+    extractTextFromImage(schoolIdBack),
+    extractTextFromImage(libraryIdFront),
+    extractTextFromImage(libraryIdBack),
+  ]);
+
+  const schoolCombined = `${schoolFrontText}\n${schoolBackText}`.toUpperCase();
+  const libraryCombined = `${libraryFrontText}\n${libraryBackText}`.toUpperCase();
+  const allOcrText = `${schoolCombined}\n${libraryCombined}`;
+
+  // 1. Name Verification
+  const normExpectedName = (expectedName || "").toUpperCase().trim();
+  const nameParts = normExpectedName
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w.length >= 2);
+
+  let nameMatched = false;
+  if (normExpectedName && allOcrText.includes(normExpectedName)) {
+    nameMatched = true;
+  } else if (nameParts.length > 0) {
+    const matchedParts = nameParts.filter((part) => allOcrText.includes(part));
+    if (matchedParts.length >= Math.ceil(nameParts.length * 0.5) && matchedParts.some((p) => p.length >= 3)) {
+      nameMatched = true;
+    }
+  }
+
+  // 2. ID Number Verification
+  const normExpectedId = (expectedIdNumber || "").toUpperCase().trim();
+  const idDigitsOnly = normExpectedId.replace(/[^0-9]/g, "");
+
+  let idNumberMatched = false;
+  if (normExpectedId && allOcrText.includes(normExpectedId)) {
+    idNumberMatched = true;
+  } else if (idDigitsOnly.length >= 4) {
+    const cleanOcrDigits = allOcrText
+      .replace(/[Oo]/g, "0")
+      .replace(/[Il|]/g, "1")
+      .replace(/[Ss]/g, "5")
+      .replace(/[Bb]/g, "8")
+      .replace(/[^0-9]/g, "");
+
+    if (cleanOcrDigits.includes(idDigitsOnly)) {
+      idNumberMatched = true;
+    } else if (idDigitsOnly.length >= 6 && cleanOcrDigits.includes(idDigitsOnly.slice(-5))) {
+      idNumberMatched = true;
+    }
+  }
+
+  const success = nameMatched && idNumberMatched;
+
+  return {
+    success,
+    nameMatched,
+    idNumberMatched,
+    schoolIdVerified: Boolean(schoolFrontText || schoolBackText),
+    libraryIdVerified: Boolean(libraryFrontText || libraryBackText),
+    extracted: {
+      schoolId: { rawText: schoolCombined.trim() },
+      libraryId: { rawText: libraryCombined.trim() },
+    },
+    message: success
+      ? "Student identity verified successfully based on School ID and Library ID."
+      : !nameMatched && !idNumberMatched
+      ? "Both the student name and ID number on the uploaded ID cards failed to match the inputted credentials."
+      : !nameMatched
+      ? "The student name on the uploaded ID cards does not match the entered name."
+      : "The student ID number on the uploaded ID cards does not match the entered ID number.",
   };
 }

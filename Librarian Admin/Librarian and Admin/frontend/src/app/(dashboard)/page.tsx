@@ -5,5 +5,5 @@ import { getDashboardPathForRole } from "@/lib/routing";
 
 export default async function HomePage() {
   const session = await getSession();
-  redirect(session ? getDashboardPathForRole(session.role) : "/login");
+  redirect(session ? getDashboardPathForRole(session.role) : "/intro");
 }

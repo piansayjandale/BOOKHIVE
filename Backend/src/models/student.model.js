@@ -217,6 +217,10 @@ export const studentModel = {
           u.section,
           u.status,
           u.avatar,
+          u.school_id_front AS "schoolIdFront",
+          u.school_id_back AS "schoolIdBack",
+          u.library_id_front AS "libraryIdFront",
+          u.library_id_back AS "libraryIdBack",
           u.qr_code AS "qrCode",
           u.last_active AS "lastActive",
           u.created_at AS "createdAt"
@@ -284,6 +288,10 @@ export const studentModel = {
           u.section,
           u.status,
           u.avatar,
+          u.school_id_front AS "schoolIdFront",
+          u.school_id_back AS "schoolIdBack",
+          u.library_id_front AS "libraryIdFront",
+          u.library_id_back AS "libraryIdBack",
           u.qr_code AS "qrCode",
           u.created_at AS "createdAt",
           u.last_active AS "lastActive"
@@ -953,6 +961,10 @@ export const studentModel = {
       const query = `
         SELECT
           t.id,
+          t.student_id AS "studentId",
+          t.student_id AS "student_id",
+          t.student_name AS "studentName",
+          t.user_id AS "userId",
           COALESCE(b.id::text, t.isbn, t.resource_title) AS "bookId",
           COALESCE(b.title, t.resource_title) AS title,
           COALESCE(b.author, 'STI Library') AS author,
@@ -1071,20 +1083,20 @@ export const studentModel = {
         const bLimit = Number(sRes.rows[0]?.borrow_limit || 5);
 
         const countQuery = `
-          SELECT COUNT(*)::int AS "activeCount"
-          FROM transactions
+          SELECT COUNT(DISTINCT COALESCE(NULLIF(t.isbn, ''), LOWER(t.resource_title)))::int AS "activeCount"
+          FROM transactions t
           WHERE (
-            user_id::text = $1
-            OR (student_id IS NOT NULL AND student_id != '' AND lower(student_id) = lower($2))
+            t.user_id::text = $1
+            OR (t.student_id IS NOT NULL AND t.student_id != '' AND lower(t.student_id) = lower($2))
           )
-          AND type = 'Borrow'
-          AND status::text NOT IN ('Returned', 'Declined', 'Cancelled', 'Rejected')
+          AND t.type = 'Borrow'
+          AND t.status::text IN ('Approved', 'Picked Up', 'On Loan')
         `;
         const countRes = await pool.query(countQuery, [userId, studentId]);
         const activeCount = Number(countRes.rows[0]?.activeCount || 0);
 
         if (activeCount >= bLimit) {
-          const limitErr = new Error(`Borrow limit reached. You currently have ${activeCount} active book loans/requests (maximum allowed: ${bLimit}). Please return a book to the library before borrowing another.`);
+          const limitErr = new Error(`Borrow limit reached. You currently have ${activeCount} active book loans (maximum allowed: ${bLimit}). Please return a book to the library before borrowing another.`);
           limitErr.code = "BORROW_LIMIT_REACHED";
           limitErr.statusCode = 400;
           throw limitErr;
@@ -1609,7 +1621,20 @@ export const studentModel = {
 
 
   async updateUserProfile(userId, updates) {
-    const { name, email, idNumber, course, department, yearLevel, section, avatar } = updates;
+    const {
+      name,
+      email,
+      idNumber,
+      course,
+      department,
+      yearLevel,
+      section,
+      avatar,
+      schoolIdFront,
+      schoolIdBack,
+      libraryIdFront,
+      libraryIdBack,
+    } = updates;
     const isUuid = Boolean(userId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId));
 
     try {
@@ -1627,6 +1652,10 @@ export const studentModel = {
             year_level = COALESCE($7, year_level),
             section = COALESCE($8, section),
             avatar = COALESCE($9, avatar),
+            school_id_front = COALESCE($10, school_id_front),
+            school_id_back = COALESCE($11, school_id_back),
+            library_id_front = COALESCE($12, library_id_front),
+            library_id_back = COALESCE($13, library_id_back),
             updated_at = NOW()
           WHERE id = $1
           RETURNING
@@ -1640,7 +1669,11 @@ export const studentModel = {
             year_level AS "yearLevel",
             section,
             status,
-            avatar
+            avatar,
+            school_id_front AS "schoolIdFront",
+            school_id_back AS "schoolIdBack",
+            library_id_front AS "libraryIdFront",
+            library_id_back AS "libraryIdBack"
         `;
         const res = await pool.query(query, [
           userId,
@@ -1651,7 +1684,11 @@ export const studentModel = {
           department ?? null,
           yearLevel ?? null,
           section ?? null,
-          avatar !== undefined ? avatar : null
+          avatar !== undefined ? avatar : null,
+          schoolIdFront !== undefined ? schoolIdFront : null,
+          schoolIdBack !== undefined ? schoolIdBack : null,
+          libraryIdFront !== undefined ? libraryIdFront : null,
+          libraryIdBack !== undefined ? libraryIdBack : null,
         ]);
         rows = res.rows;
       } else if (email || userId) {
@@ -1667,6 +1704,10 @@ export const studentModel = {
             year_level = COALESCE($7, year_level),
             section = COALESCE($8, section),
             avatar = COALESCE($9, avatar),
+            school_id_front = COALESCE($10, school_id_front),
+            school_id_back = COALESCE($11, school_id_back),
+            library_id_front = COALESCE($12, library_id_front),
+            library_id_back = COALESCE($13, library_id_back),
             updated_at = NOW()
           WHERE lower(email) = lower($1) OR id_number = $1
           RETURNING
@@ -1680,7 +1721,11 @@ export const studentModel = {
             year_level AS "yearLevel",
             section,
             status,
-            avatar
+            avatar,
+            school_id_front AS "schoolIdFront",
+            school_id_back AS "schoolIdBack",
+            library_id_front AS "libraryIdFront",
+            library_id_back AS "libraryIdBack"
         `;
         const res = await pool.query(query, [
           targetEmail || userId,
@@ -1691,7 +1736,11 @@ export const studentModel = {
           department ?? null,
           yearLevel ?? null,
           section ?? null,
-          avatar !== undefined ? avatar : null
+          avatar !== undefined ? avatar : null,
+          schoolIdFront !== undefined ? schoolIdFront : null,
+          schoolIdBack !== undefined ? schoolIdBack : null,
+          libraryIdFront !== undefined ? libraryIdFront : null,
+          libraryIdBack !== undefined ? libraryIdBack : null,
         ]);
         rows = res.rows;
       }
@@ -1730,6 +1779,10 @@ export const studentModel = {
       if (yearLevel) memoryUser.yearLevel = yearLevel;
       if (section) memoryUser.section = section;
       if (avatar !== undefined) memoryUser.avatar = avatar;
+      if (schoolIdFront !== undefined) memoryUser.schoolIdFront = schoolIdFront;
+      if (schoolIdBack !== undefined) memoryUser.schoolIdBack = schoolIdBack;
+      if (libraryIdFront !== undefined) memoryUser.libraryIdFront = libraryIdFront;
+      if (libraryIdBack !== undefined) memoryUser.libraryIdBack = libraryIdBack;
 
       if (memoryUser.email) inMemoryUsers.set(memoryUser.email.toLowerCase(), memoryUser);
       if (memoryUser.idNumber) inMemoryUsers.set(memoryUser.idNumber.toLowerCase(), memoryUser);
@@ -1745,6 +1798,11 @@ export const studentModel = {
       department: department || "",
       yearLevel: yearLevel || "",
       section: section || "",
+      avatar: avatar || "",
+      schoolIdFront: schoolIdFront || "",
+      schoolIdBack: schoolIdBack || "",
+      libraryIdFront: libraryIdFront || "",
+      libraryIdBack: libraryIdBack || "",
       role: "Student",
       status: "Active",
     };
@@ -1939,7 +1997,11 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
             u.avatar,
             u.qr_code AS "qrCode",
             u.created_at AS "createdAt",
-            u.last_active AS "lastActive"
+            u.last_active AS "lastActive",
+            u.school_id_front AS "schoolIdFront",
+            u.school_id_back AS "schoolIdBack",
+            u.library_id_front AS "libraryIdFront",
+            u.library_id_back AS "libraryIdBack"
           FROM users u
           WHERE u.qr_code::text = $1
              OR lower(u.id_number) = lower($1)
@@ -2161,14 +2223,14 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
             t.resource_title AS "bookTitle",
             t.requested_at AS "reserveDate",
             t.status,
+            t.type,
             t.available_at AS "availableAt",
             t.expires_at AS "expiresAt"
           FROM transactions t
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
-            AND (
-              (t.type = 'Reservation' AND t.status = 'Approved')
-              OR (t.type = 'Borrow' AND t.status = 'Approved')
-            )
+            AND t.type::text = 'Reservation'
+            AND t.status::text IN ('Approved', 'Pending', 'Reserved')
+            AND t.picked_up_at IS NULL
           ORDER BY t.requested_at DESC
         `;
         const { rows: resRows } = await pool.query(resSql, [String(student.id), String(student.idNumber)]);
@@ -2177,6 +2239,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           bookTitle: r.bookTitle || "Reserved Book",
           reserveDate: r.reserveDate ? new Date(r.reserveDate).toISOString().split('T')[0] : "—",
           status: r.status,
+          type: 'Reservation',
           available: !!r.availableAt,
         }));
       } catch (resErr) {
@@ -2258,6 +2321,10 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           role: student.role || "Student",
           avatar: student.avatar || "",
           qrCode: student.qrCode || `e1a1-${student.idNumber || "default"}`,
+          schoolIdFront: student.schoolIdFront || student.school_id_front || "",
+          schoolIdBack: student.schoolIdBack || student.school_id_back || "",
+          libraryIdFront: student.libraryIdFront || student.library_id_front || "",
+          libraryIdBack: student.libraryIdBack || student.library_id_back || "",
         },
         libraryCard,
         reservedBooks,

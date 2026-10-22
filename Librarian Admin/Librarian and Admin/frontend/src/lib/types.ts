@@ -232,6 +232,33 @@ export interface ReportsPayload {
   };
   departmentLoans?: Array<{ department: Department; borrows: number; percentage: number }>;
   collegeLoans?: CollegeDepartmentBorrowData[];
+  mostCourseBorrowed?: MostCourseBorrowedData;
+  topStudentBorrowers?: TopStudentBorrower[];
+}
+
+export interface CourseBorrowedRanking {
+  course: string;
+  fullTitle: string;
+  borrowCount: number;
+  studentCount?: number;
+  percentage?: number;
+  fill?: string;
+  rank?: number;
+}
+
+export interface MostCourseBorrowedData {
+  topCourse?: string;
+  topCount?: number;
+  courses?: CourseBorrowedRanking[];
+}
+
+export interface TopStudentBorrower {
+  rank: number;
+  name: string;
+  studentId: string;
+  course: string;
+  borrowCount: number;
+  badge?: string;
 }
 
 export interface CollegeDepartmentBorrowData {

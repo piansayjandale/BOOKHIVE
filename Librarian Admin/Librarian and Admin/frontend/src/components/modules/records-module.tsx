@@ -142,6 +142,7 @@ const emptyBookForm = {
   title: "",
   author: "",
   isbn: "",
+  publisher: "",
   publicationDate: "2026-09-01",
   department: "Circulation" as Department,
   shelfLocation: "",
@@ -598,7 +599,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         setExportProgress(Math.round((p / (totalPages || 1)) * 100));
       }
       
-      const headers = ["Title", "Author", "ISBN", "Published Date", "Department", "Call Number", "Summary", "Availability", "Genres", "Copies"];
+      const headers = ["Title", "Author", "ISBN", "Publisher", "Published Date", "Department", "Call Number", "Summary", "Availability", "Genres", "Copies"];
       const csvRows = [headers.join(",")];
       
       for (const book of allBooks) {
@@ -606,6 +607,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
           escapeCSV(book.title || ""),
           escapeCSV(book.author || ""),
           escapeCSV(book.isbn || ""),
+          escapeCSV((book as any).publisher || ""),
           escapeCSV(book.publishedDate || book.publicationDate || ""),
           escapeCSV(book.department || ""),
           escapeCSV(book.shelfLocation || ""),
@@ -668,6 +670,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
             if (header === "title") book.title = cell;
             else if (header === "author") book.author = cell;
             else if (header === "isbn") book.isbn = cell;
+            else if (header === "publisher") book.publisher = cell;
             else if (header === "publicationdate" || header === "publisheddate") book.publicationDate = cell;
             else if (header === "department") book.department = cell;
             else if (header === "shelflocation") book.shelfLocation = cell;
@@ -707,6 +710,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
               title: book.title,
               author: book.author,
               isbn: book.isbn || `N/A-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              publisher: book.publisher || "",
               publicationDate: book.publicationDate || new Date().toISOString().split("T")[0],
               department: matchedDept,
               shelfLocation: book.shelfLocation || "",
@@ -1169,7 +1173,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         <div className="overflow-auto flex-1 h-full">
           <table className="min-w-full text-sm">
             <thead className={cn(
-              "sticky top-0 z-20 backdrop-blur border-b text-[11px] font-bold uppercase tracking-wider",
+              "sticky top-0 z-10 backdrop-blur border-b text-[11px] font-bold uppercase tracking-wider",
               isLight
                 ? "bg-slate-100/95 text-slate-700 border-slate-200"
                 : "bg-[#0F1D29]/95 text-slate-400 border-white/10"
@@ -1440,7 +1444,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
             <div className="overflow-auto flex-1 h-full">
               <table className="min-w-full text-sm">
                 <thead className={cn(
-                  "sticky top-0 z-20 backdrop-blur border-b text-[11px] font-bold uppercase tracking-wider",
+                  "sticky top-0 z-10 backdrop-blur border-b text-[11px] font-bold uppercase tracking-wider",
                   isLight
                     ? "bg-slate-100/95 text-slate-700 border-slate-200"
                     : "bg-[#0F1D29]/95 text-slate-400 border-white/10"
@@ -2068,7 +2072,19 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
               </div>
 
-              {/* Row 7: Summary */}
+              {/* Row 7: Publisher */}
+              <label className="grid gap-1.5">
+                <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Publisher</span>
+                <input
+                  suppressHydrationWarning
+                  className="modal-input"
+                  value={form.publisher}
+                  onChange={(e) => setForm((f) => ({ ...f, publisher: e.target.value }))}
+                  placeholder="e.g. Pearson, O'Reilly Media, Scholastic Press"
+                />
+              </label>
+
+              {/* Row 8: Summary */}
               <label className="grid gap-1.5">
                 <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Summary</span>
                 <textarea

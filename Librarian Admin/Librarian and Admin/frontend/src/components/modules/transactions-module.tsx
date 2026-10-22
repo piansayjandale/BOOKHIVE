@@ -611,6 +611,7 @@ export function TransactionsModule() {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape" && confirmModalData) {
         setConfirmModalData(null);
+    setDeclineComment("");
       }
     }
     window.addEventListener("keydown", handleKeyDown);
@@ -1600,8 +1601,9 @@ export function TransactionsModule() {
   const handleConfirmDecision = async () => {
     if (!confirmModalData) return;
     const { id, nextStatus, transaction } = confirmModalData;
-    const comment = declineComment.trim() ? declineComment.trim() : undefined;
+    const comment = nextStatus === "Declined" && declineComment.trim() ? declineComment.trim() : undefined;
     setConfirmModalData(null);
+    setDeclineComment("");
     await handleUpdateStatus(id, nextStatus, comment, transaction);
   };
 
@@ -2400,7 +2402,10 @@ export function TransactionsModule() {
                           <button
                             suppressHydrationWarning
                             type="button"
-                            onClick={() => setConfirmModalData({ id: txn.id, nextStatus: "Approved", transaction: txn })}
+                            onClick={() => {
+                              setDeclineComment("");
+                              setConfirmModalData({ id: txn.id, nextStatus: "Approved", transaction: txn });
+                            }}
                             className={cn(
                               "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs sm:text-sm font-bold transition active:scale-95 cursor-pointer",
                               isLight
@@ -2721,29 +2726,27 @@ export function TransactionsModule() {
               </div>
             </div>
 
-            {/* Reason / Remarks for Approving or Declining */}
-            <div className="flex flex-col gap-1.5">
-              <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>
-                {confirmModalData.nextStatus === "Declined" ? "Reason for Decline" : "Librarian Comment / Remarks"}{" "}
-                <span className="text-slate-400 font-normal">(Optional)</span>
-              </label>
-              <textarea
-                value={declineComment}
-                onChange={(e) => setDeclineComment(e.target.value)}
-                placeholder={
-                  confirmModalData.nextStatus === "Declined"
-                    ? "e.g., Book currently undergoing binding repair, hold quota exceeded..."
-                    : "e.g., Approved in queue #1, please claim at Circulation Desk when notified..."
-                }
-                rows={3}
-                className={cn(
-                  "w-full rounded-xl p-3 text-xs sm:text-sm border transition focus:outline-none focus:ring-2",
-                  isLight
-                    ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400 focus:border-[#0274BB] focus:ring-[#0274BB]/20"
-                    : "bg-[#0c1424] border-slate-700 text-white placeholder-slate-500 focus:border-[#FCD400] focus:ring-[#FCD400]/20"
-                )}
-              />
-            </div>
+            {/* Reason / Remarks for Declining (only intended for decline) */}
+            {confirmModalData.nextStatus === "Declined" && (
+              <div className="flex flex-col gap-1.5">
+                <label className={cn("text-xs font-bold", isLight ? "text-slate-700" : "text-slate-300")}>
+                  Reason for Decline{" "}
+                  <span className="text-slate-400 font-normal">(Optional)</span>
+                </label>
+                <textarea
+                  value={declineComment}
+                  onChange={(e) => setDeclineComment(e.target.value)}
+                  placeholder="e.g., Book currently undergoing binding repair, hold quota exceeded..."
+                  rows={3}
+                  className={cn(
+                    "w-full rounded-xl p-3 text-xs sm:text-sm border transition focus:outline-none focus:ring-2",
+                    isLight
+                      ? "bg-white border-slate-200 text-slate-800 placeholder-slate-400 focus:border-[#0274BB] focus:ring-[#0274BB]/20"
+                      : "bg-[#0c1424] border-slate-700 text-white placeholder-slate-500 focus:border-[#FCD400] focus:ring-[#FCD400]/20"
+                  )}
+                />
+              </div>
+            )}
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-3 pt-2">
