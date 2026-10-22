@@ -21,9 +21,10 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const search = searchParams.get("search") ?? "";
   const role = searchParams.get("role") ?? "All";
+  const status = searchParams.get("status") ?? undefined;
   const page = Math.max(1, parseInt(searchParams.get("page") ?? "1", 10));
   const pageSize = Math.min(100, Math.max(1, parseInt(searchParams.get("pageSize") ?? "10", 10)));
-  const data = await adminRepository.listUsers({ search, role, page, pageSize });
+  const data = await adminRepository.listUsers({ search, role, status, page, pageSize });
   return NextResponse.json(data);
 }
 

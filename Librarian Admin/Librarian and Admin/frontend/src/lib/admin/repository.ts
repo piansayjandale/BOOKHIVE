@@ -149,8 +149,8 @@ function inferCategory(book: BookRecord) {
 
 function toAdminUser(user: SystemUser, state: AdminState): AdminUserRecord {
   const extra = state.userExtras[user.id] ?? {
-    idNumber: deterministicIdNumber(user.email, "USR"),
-    course: inferCourse(user.role, user.department),
+    idNumber: user.idNumber || deterministicIdNumber(user.email, "USR"),
+    course: user.course || inferCourse(user.role, user.department),
   };
 
   state.userExtras[user.id] = extra;
@@ -236,16 +236,20 @@ async function buildInitialState(): Promise<AdminState> {
   const profiles: Record<string, ProfileState> = {};
 
   for (const user of users) {
-    const defaultIdNumber =
-      user.role === "Admin"
-        ? "ADM-2026-0001"
-        : user.role === "Librarian"
-          ? `LIB-2026-${user.id.slice(-3)}`
-          : `STU-2026-${user.id.slice(-3)}`;
+    const userRole = String(user.role);
+    const assignedIdNumber =
+      user.idNumber ||
+      (userRole === "Super Admin" || userRole === "SUPER_ADMIN"
+        ? "SUP-2026-0001"
+        : userRole === "Admin"
+          ? "ADM-2026-0001"
+          : userRole.includes("Librarian")
+            ? `LIB-2026-${user.id.slice(-3)}`
+            : `STU-2026-${user.id.slice(-3)}`);
 
     userExtras[user.id] = {
-      idNumber: defaultIdNumber,
-      course: inferCourse(user.role, user.department),
+      idNumber: assignedIdNumber,
+      course: user.course || inferCourse(user.role, user.department),
     };
 
     const defaultPassword =
@@ -467,11 +471,11 @@ export const adminRepository = {
       const userCountRes = await pool.query<{ count: string }>(`
         SELECT COUNT(*)::int AS count
         FROM users
-        WHERE LOWER(role::text) = 'student' OR role IS NULL
+        WHERE status IS NULL OR status != 'Archived'
       `);
-      const studentCount = parseInt(userCountRes.rows[0]?.count ?? "0", 10);
-      if (studentCount > 0) {
-        totalUsers = studentCount;
+      const activeCount = parseInt(userCountRes.rows[0]?.count ?? "0", 10);
+      if (activeCount > 0) {
+        totalUsers = activeCount;
       } else {
         totalUsers = await countAccountUsers();
       }
@@ -488,7 +492,7 @@ export const adminRepository = {
           COALESCE(status, 'Active') AS status,
           COALESCE(last_active, created_at, NOW()) AS "lastActive"
         FROM users
-        WHERE LOWER(role::text) = 'student' OR role IS NULL
+        WHERE status IS NULL OR status != 'Archived'
         ORDER BY created_at DESC
         LIMIT 5
       `);
@@ -530,7 +534,8 @@ export const adminRepository = {
       const deptRes = await pool.query(`
         SELECT u.department, u.course, COUNT(*)::int AS count
         FROM users u
-        WHERE LOWER(u.role::text) = 'student' OR u.role IS NULL
+        WHERE (LOWER(u.role::text) = 'student' OR u.role IS NULL)
+          AND (u.status IS NULL OR u.status != 'Archived')
         GROUP BY u.department, u.course
       `);
       const counts: Record<string, number> = { CICT: 0, COE: 0, CBMA: 0, CAS: 0, CED: 0, CHTM: 0, CCJE: 0 };
@@ -626,15 +631,27 @@ export const adminRepository = {
       }
     } catch (err) {
       console.warn("DB getDepartmentUsage fallback:", err);
-      const departmentMap = new Map<Department, number>();
-      for (const transaction of transactions) {
-        departmentMap.set(transaction.department, (departmentMap.get(transaction.department) ?? 0) + 1);
+      const counts: Record<string, number> = { CICT: 0, COE: 0, CBMA: 0, CAS: 0, CED: 0, CHTM: 0, CCJE: 0 };
+      const users = getAllUsers(state).filter((u) => u.role === "Student" && u.status !== "Archived");
+      for (const u of users) {
+        const combined = `${u.department || ""} ${u.course || ""}`.toUpperCase();
+        if (combined.includes("COE") || combined.includes("ENGINEERING")) counts.COE++;
+        else if (combined.includes("CBMA") || combined.includes("BUSINESS")) counts.CBMA++;
+        else if (combined.includes("CAS") || combined.includes("ARTS") || combined.includes("COMM") || combined.includes("WNU STI")) counts.CAS++;
+        else if (combined.includes("CED") || combined.includes("EDUCATION")) counts.CED++;
+        else if (combined.includes("CHTM") || combined.includes("TOURISM") || combined.includes("HOSPITALITY") || combined.includes("BSTM")) counts.CHTM++;
+        else if (combined.includes("CCJE") || combined.includes("CRIM")) counts.CCJE++;
+        else counts.CICT++;
       }
-      departmentUsage = Array.from(departmentMap.entries()).map(([department, usage]) => ({
-        department,
-        usage,
-        count: usage,
-      }));
+      departmentUsage = [
+        { department: "College of Information and Communications Technology (CICT)", key: "CICT", code: "CICT", mascot: "Red Sentinels", usage: counts.CICT, count: counts.CICT, color: "#EF4444" },
+        { department: "College of Engineering (COE)", key: "COE", code: "COE", mascot: "Orange Erudites", usage: counts.COE, count: counts.COE, color: "#FF6B00" },
+        { department: "College of Business Management and Accountancy (CBMA)", key: "CBMA", code: "CBMA", mascot: "Yellow Tycoons", usage: counts.CBMA, count: counts.CBMA, color: "#EAB308" },
+        { department: "College of Arts and Sciences (CAS)", key: "CAS", code: "CAS", mascot: "Green Titans", usage: counts.CAS, count: counts.CAS, color: "#10B981" },
+        { department: "College of Education (CED)", key: "CED", code: "CED", mascot: "Blue Guardians", usage: counts.CED, count: counts.CED, color: "#3B82F6" },
+        { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", code: "CHTM", mascot: "Pink Vikings", usage: counts.CHTM, count: counts.CHTM, color: "#EC4899" },
+        { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", code: "CCJE", mascot: "Purple Wizards", usage: counts.CCJE, count: counts.CCJE, color: "#8B5CF6" },
+      ];
     }
 
     // 2. Live Top Borrowed Books from database transactions + catalog metadata
@@ -804,6 +821,7 @@ export const adminRepository = {
   async listUsers(options: {
     search?: string;
     role?: string;
+    status?: string;
     page?: number;
     pageSize?: number;
   }): Promise<AdminUsersPayload> {
@@ -816,6 +834,7 @@ export const adminRepository = {
     const state = await getAdminState();
     const search = options.search?.trim().toLowerCase() ?? "";
     const role = options.role ?? "All";
+    const status = options.status;
     const page = Math.max(1, options.page ?? 1);
     const pageSize = Math.max(1, Math.min(100, options.pageSize ?? 10));
 
@@ -823,8 +842,12 @@ export const adminRepository = {
       const matchesSearch =
         !search ||
         `${user.name} ${user.idNumber} ${user.email} ${user.department} ${user.course}`.toLowerCase().includes(search);
-      const matchesRole = role === "All" || user.role === role;
-      return matchesSearch && matchesRole;
+      const matchesRole = role === "All" || user.role.toLowerCase() === role.toLowerCase();
+      const matchesStatus =
+        !status ||
+        status === "All" ||
+        (status === "Archived" ? user.status === "Archived" || user.status === "Suspended" : user.status !== "Archived");
+      return matchesSearch && matchesRole && matchesStatus;
     });
 
     const start = (page - 1) * pageSize;

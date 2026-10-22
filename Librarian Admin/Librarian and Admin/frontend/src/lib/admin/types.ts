@@ -30,7 +30,7 @@ export interface AdminUserRecord {
   role: Role;
   department: Department;
   course: string;
-  status: "Active" | "Suspended";
+  status: "Active" | "Suspended" | "Archived" | (string & {});
   lastActive: string;
   qrCode?: string;
 }

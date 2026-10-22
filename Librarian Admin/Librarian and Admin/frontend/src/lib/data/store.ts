@@ -147,10 +147,18 @@ export const store = {
       (transaction) => transaction.type === "Borrow" && transaction.status === "Approved",
     ).length;
 
+    let liveActiveUsers = 0;
+    try {
+      const userRes = await pool.query<{ count: string }>(
+        "SELECT COUNT(*)::int AS count FROM users WHERE status IS NULL OR status = 'Active'"
+      );
+      liveActiveUsers = parseInt(userRes.rows[0]?.count ?? "0", 10);
+    } catch {}
+
     return {
       metrics: {
         totalBooks: await catalogRepository.countBooks(),
-        activeUsers: state.users.filter((user) => user.status === "Active").length,
+        activeUsers: liveActiveUsers > 0 ? liveActiveUsers : state.users.filter((user) => user.status === "Active").length,
         pendingRequests: state.transactions.filter((transaction) => transaction.status === "Pending").length,
         approvedRequests,
         returnedRequests,

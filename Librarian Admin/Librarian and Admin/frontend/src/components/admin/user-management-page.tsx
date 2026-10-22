@@ -28,6 +28,8 @@ const STATUS_STYLE: Record<string, string> = {
 
 function RoleBadge({ role }: { role: string }) {
   const styles: Record<string, string> = {
+    "Super Admin": "bg-purple-500/10 text-purple-400 border-purple-500/20",
+    SUPER_ADMIN: "bg-purple-500/10 text-purple-400 border-purple-500/20",
     Admin: "bg-amber-500/10 text-amber-400 border-amber-500/20",
     Librarian: "bg-sky-500/10 text-sky-400 border-sky-500/20",
     Student: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
@@ -236,6 +238,7 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
               className="min-w-[150px] rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] px-3 py-2.5 text-sm text-white focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
             >
               <option value="All">All Roles</option>
+              <option value="Super Admin">Super Admin</option>
               <option value="Admin">Admin</option>
               <option value="Technical Librarian">Technical Librarian</option>
               <option value="Circulation Librarian">Circulation Librarian</option>

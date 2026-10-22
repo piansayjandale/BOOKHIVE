@@ -19,7 +19,8 @@ export type Department =
   | "Filipiniana"
   | "Reserve"
   | "Periodical"
-  | "Special Collections";
+  | "Special Collections"
+  | (string & {});
 
 export type BookAvailability = "Available" | "Limited" | "Reserved";
 
@@ -122,6 +123,7 @@ export interface BookRecord {
 
 export interface TransactionRecord {
   id: string;
+  userId?: string;
   studentName: string;
   studentId: string;
   resourceTitle: string;
@@ -133,6 +135,8 @@ export interface TransactionRecord {
   department: Department;
   durationDays: number;
   returnedAt?: string;
+  decidedBy?: string;
+  decidedAt?: string;
   updatedAt?: string;
   queuePosition?: number | string;
   availableAt?: string | null;
@@ -176,7 +180,9 @@ export interface SystemUser {
   email: string;
   role: Role;
   department: Department;
-  status: "Active" | "Suspended";
+  course?: string;
+  idNumber?: string;
+  status: "Active" | "Suspended" | "Archived" | (string & {});
   permissions?: Partial<Record<string, boolean>>;
   lastActive: string;
 }
