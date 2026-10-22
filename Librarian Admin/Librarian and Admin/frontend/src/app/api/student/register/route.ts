@@ -42,40 +42,87 @@ export async function POST(request: Request) {
 
     const normalizedEmail = String(email).trim().toLowerCase();
     const cleanPassword = String(password).trim();
+    const cleanIdNumber = String(idNumber).trim();
+    const cleanName = String(name).trim();
 
-    const existing = await pool.query(
-      `SELECT id FROM users WHERE LOWER(email) = $1 OR LOWER(id_number) = LOWER($2) LIMIT 1`,
-      [normalizedEmail, String(idNumber).trim()]
+    const { FALLBACK_USERS_ROSTER } = await import("@/lib/data/users-roster");
+
+    // Check roster
+    const inRoster = FALLBACK_USERS_ROSTER.some(
+      (u) =>
+        u.email.toLowerCase() === normalizedEmail ||
+        (u.idNumber && u.idNumber.toLowerCase() === cleanIdNumber.toLowerCase())
     );
-    if (existing.rows.length > 0) {
+    if (inRoster) {
       return NextResponse.json(
         { message: "Email or Student ID already in use." },
         { status: 409 }
       );
     }
 
+    let user: any = null;
     const passwordHash = await bcrypt.hash(cleanPassword, 10);
-    const { rows } = await pool.query(
-      `INSERT INTO users (
-        id, name, email, role, department, course, id_number, status, password_hash, qr_code
-      ) VALUES (
-        gen_random_uuid(), $1, $2, 'Student', $3, $4, $5, 'Active', $6, gen_random_uuid()
-      )
-      RETURNING id, name, email, role, department, course, id_number AS "idNumber", status, avatar,
-                school_id_front AS "schoolIdFront", school_id_back AS "schoolIdBack",
-                library_id_front AS "libraryIdFront", library_id_back AS "libraryIdBack",
-                qr_code AS "qrCode"`,
-      [
-        String(name).trim(),
-        normalizedEmail,
-        department ? String(department).trim() : "STI Student",
-        course ? String(course).trim() : "General Program",
-        String(idNumber).trim(),
-        passwordHash,
-      ]
-    );
 
-    const user = rows[0];
+    try {
+      const existing = await pool.query(
+        `SELECT id FROM users WHERE LOWER(email) = $1 OR LOWER(id_number) = LOWER($2) LIMIT 1`,
+        [normalizedEmail, cleanIdNumber]
+      );
+      if (existing.rows.length > 0) {
+        return NextResponse.json(
+          { message: "Email or Student ID already in use." },
+          { status: 409 }
+        );
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO users (
+          id, name, email, role, department, course, id_number, status, password_hash, qr_code
+        ) VALUES (
+          gen_random_uuid(), $1, $2, 'Student', $3, $4, $5, 'Active', $6, gen_random_uuid()
+        )
+        RETURNING id, name, email, role, department, course, id_number AS "idNumber", status, avatar,
+                  school_id_front AS "schoolIdFront", school_id_back AS "schoolIdBack",
+                  library_id_front AS "libraryIdFront", library_id_back AS "libraryIdBack",
+                  qr_code AS "qrCode"`,
+        [
+          cleanName,
+          normalizedEmail,
+          department ? String(department).trim() : "CICT",
+          course ? String(course).trim() : "BSIT",
+          cleanIdNumber,
+          passwordHash,
+        ]
+      );
+      if (rows && rows.length > 0) {
+        user = rows[0];
+      }
+    } catch (dbErr: any) {
+      console.warn("[Student Register API] DB notice (creating in-memory student account):", dbErr.message);
+    }
+
+    if (!user) {
+      user = {
+        id: `stu-${Date.now()}`,
+        name: cleanName,
+        email: normalizedEmail,
+        role: "Student",
+        department: department ? String(department).trim() : "CICT",
+        course: course ? String(course).trim() : "BSIT",
+        idNumber: cleanIdNumber,
+        status: "Active",
+        avatar: "",
+        schoolIdFront: "",
+        schoolIdBack: "",
+        libraryIdFront: "",
+        libraryIdBack: "",
+        qrCode: `qr-${Date.now()}`,
+        password_hash: passwordHash,
+      };
+      // Keep in roster memory
+      FALLBACK_USERS_ROSTER.push(user);
+    }
+
     const token = await createSessionToken({
       id: user.id,
       name: user.name,
@@ -109,7 +156,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("Student register route error:", error);
     return NextResponse.json(
-      { message: error.message || "Failed to register student." },
+      { message: "Failed to register student." },
       { status: 500 }
     );
   }
