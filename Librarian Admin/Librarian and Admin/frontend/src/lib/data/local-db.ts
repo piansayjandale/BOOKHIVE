@@ -523,8 +523,9 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     sqlLower.startsWith("update books") ||
     sqlLower.startsWith("delete from books")
   ) {
-    // Let /api/transactions (which has FROM transactions t ... LEFT JOIN LATERAL (SELECT ... FROM books b)) pass through to transactions!
-    if (!sqlLower.includes("from transactions")) {
+    // Let /api/transactions (which has FROM transactions t LEFT JOIN users u) pass through to transactions!
+    const isTransactionsMainTable = sqlLower.includes("from transactions t left join users");
+    if (!isTransactionsMainTable) {
       const books = getLocalBooksRows();
       const { borrowedByIsbn, reservedByIsbn } = computeBookLoanCounts(state);
 
