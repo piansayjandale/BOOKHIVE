@@ -2,6 +2,7 @@
   base = "Librarian Admin/Librarian and Admin/frontend"
   command = "npm run build"
   publish = ".next"
+  ignore = "false"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
