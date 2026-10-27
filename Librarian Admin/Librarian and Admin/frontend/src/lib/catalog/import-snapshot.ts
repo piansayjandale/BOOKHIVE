@@ -45,7 +45,6 @@ function normalizeSnapshotBook(value: unknown, idx: number): BookRecord | null {
   const isbn = String(item.isbn || `BOOK-${idx}`);
   const id = String(item.id || isbn || `book-${idx}`);
   const department = (item.department || "Circulation") as BookRecord["department"];
-  const category = String(item.category || item.department || "General");
 
   return {
     id,
@@ -59,10 +58,21 @@ function normalizeSnapshotBook(value: unknown, idx: number): BookRecord | null {
     publicationDate: String(item.publicationDate || "2024-01-01"),
     availability: (item.availability || "Available") as BookRecord["availability"],
     borrowCount: Number(item.borrowCount || 0),
-    aiScore: Number(item.aiScore || 4.5),
+    aiScore: Number(item.aiScore || 75),
     copies: Number(item.copies || 1),
     archived: Boolean(item.archived || false),
-  };
+    accessionNumber: item.accessionNumber ? String(item.accessionNumber) : `ACC-2026-${String(idx + 1).padStart(4, "0")}`,
+    volume: item.volume ? String(item.volume) : "Single Volume / None",
+    edition: item.edition ? String(item.edition) : "Single Edition / None",
+    series: item.series ? String(item.series) : "",
+    publisher: item.publisher ? String(item.publisher) : "",
+    language: item.language ? String(item.language) : "English",
+    pages: Number(item.pages || 0),
+    rating: Number(item.rating || 4.5),
+    price: Number(item.price || 0),
+    coverImg: item.coverImg ? String(item.coverImg) : "",
+    ...(item.createdAt ? { createdAt: String(item.createdAt) } : {}),
+  } as BookRecord;
 }
 
 export function readCatalogImportSnapshot(): BookRecord[] {

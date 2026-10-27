@@ -22,11 +22,11 @@ export type Department =
   | "Special Collections"
   | (string & {});
 
-export type BookAvailability = "Available" | "Limited" | "Reserved";
+export type BookAvailability = "Available" | "Limited" | "Reserved" | "Unavailable";
 
-export type TransactionType = "Borrow" | "Return" | "Reservation";
+export type TransactionType = "Borrow" | "Return" | "Reservation" | (string & {});
 
-export type TransactionStatus = "Pending" | "Approved" | "Declined" | "Returned" | "Cancelled";
+export type TransactionStatus = "Pending" | "Approved" | "Declined" | "Returned" | "Cancelled" | "Borrowed" | "Overdue" | (string & {});
 
 
 export type ActivityLevel = "info" | "success" | "warning";
@@ -121,6 +121,9 @@ export interface BookRecord {
   accessionNumber?: string;
   series?: string;
   price?: number | string;
+  pages?: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface TransactionRecord {
@@ -167,7 +170,7 @@ export interface HistoryEntry {
   actor: string;
   action: string;
   target: string;
-  module: "Records" | "Transactions" | "Settings" | "Accounts" | "Announcements";
+  module: "Records" | "Transactions" | "Settings" | "Accounts" | "Announcements" | "Reminders" | "Auth" | (string & {});
   timestamp: string;
   detail: string;
 }
