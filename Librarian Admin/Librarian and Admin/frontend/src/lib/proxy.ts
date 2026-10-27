@@ -4,6 +4,13 @@ import { SESSION_COOKIE } from "@/lib/auth";
 import { BACKEND_URL } from "@/lib/config";
 
 export async function proxyToBackend(path: string, request: Request, customBody?: string) {
+  if (!BACKEND_URL || BACKEND_URL.includes("onrender.com")) {
+    return NextResponse.json(
+      { message: "Backend proxy unavailable; using direct database handler." },
+      { status: 503 },
+    );
+  }
+
   const cookieStore = await cookies();
   const token =
     cookieStore.get("bookhive_backend_token")?.value ||

@@ -6,6 +6,7 @@ import { Search, ChevronLeft, ChevronRight, Inbox, RotateCcw } from "lucide-reac
 import { useNotice } from "@/components/providers/notice-provider";
 import { AdminPageHeader, AdminSection, AdminTable } from "@/components/admin/shared";
 import { DepartmentBadge } from "@/components/ui/department-badge";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminBookRecord, AdminBooksPayload, AdminUserRecord, AdminUsersPayload } from "@/lib/admin/types";
 import { cn, formatDate } from "@/lib/utils";
@@ -201,8 +202,13 @@ export function ArchiveManagementPage({ tabs }: { tabs?: ReactNode }) {
                 (booksPayload?.books ?? []).map((book) => (
                   <tr key={book.id} className="border-b border-[var(--line)] transition hover:bg-white/[0.03]">
                     <td className="px-5 py-4 max-w-md">
-                      <p className="text-sm font-semibold text-white leading-snug">{book.title}</p>
-                      <p className="mt-1 text-xs text-[var(--topbar-muted)] leading-relaxed">{book.author}</p>
+                      <div className="flex items-center gap-3.5">
+                        <BookCoverImage book={book} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-white leading-snug">{book.title}</p>
+                          <p className="mt-1 text-xs text-[var(--topbar-muted)] leading-relaxed">{book.author}</p>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-5 py-4 whitespace-nowrap">
                       <DepartmentBadge department={book.department} />

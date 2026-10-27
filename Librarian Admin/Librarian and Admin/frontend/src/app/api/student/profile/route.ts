@@ -9,6 +9,25 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
+function extractAuthSub(request: Request): string {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const token = authHeader.slice(7);
+      const parts = token.split(".");
+      if (parts.length === 3) {
+        const payload = JSON.parse(
+          Buffer.from(parts[1], "base64url").toString("utf-8")
+        );
+        return payload.sub || payload.id || payload.email || "";
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return "";
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
@@ -18,23 +37,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const studentId = searchParams.get("studentId");
     const email = searchParams.get("email");
-
-    const authHeader = request.headers.get("authorization");
-    let authSub = "";
-    if (authHeader?.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.slice(7);
-        const parts = token.split(".");
-        if (parts.length === 3) {
-          const payload = JSON.parse(
-            Buffer.from(parts[1], "base64url").toString("utf-8")
-          );
-          authSub = payload.sub || payload.id || payload.email || "";
-        }
-      } catch {
-        // ignore
-      }
-    }
+    const authSub = extractAuthSub(request);
 
     const target = studentId || email || authSub;
 
@@ -52,6 +55,7 @@ export async function GET(request: Request) {
             department,
             course,
             year_level AS "yearLevel",
+            section,
             avatar,
             qr_code AS "qrCode",
             status,
@@ -88,7 +92,6 @@ export async function GET(request: Request) {
     }
 
     if (!user) {
-      // Return default active student placeholder if lookup was generic
       user = {
         name: "Student",
         email: "student@stiwnu.edu.ph",
@@ -115,12 +118,16 @@ export async function PUT(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const {
+      id,
+      userId,
       studentId,
       idNumber,
       email,
       name,
       department,
       course,
+      yearLevel,
+      section,
       avatar,
       schoolIdFront,
       schoolIdBack,
@@ -128,37 +135,73 @@ export async function PUT(request: Request) {
       libraryIdBack,
     } = body;
 
-    const target = studentId || idNumber || email;
+    const authSub = extractAuthSub(request);
+    const target = authSub || id || userId || studentId || idNumber || email;
+    const nextIdNumber = idNumber || studentId || null;
+
+    let updatedUser: any = null;
     if (target) {
-      await pool.query(
+      const updateRes = await pool.query(
         `UPDATE users
          SET 
            name = COALESCE(NULLIF($1, ''), name),
-           department = COALESCE(NULLIF($2, ''), department),
-           course = COALESCE(NULLIF($3, ''), course),
-           avatar = COALESCE(NULLIF($4, ''), avatar),
-           school_id_front = COALESCE(NULLIF($5, ''), school_id_front),
-           school_id_back = COALESCE(NULLIF($6, ''), school_id_back),
-           library_id_front = COALESCE(NULLIF($7, ''), library_id_front),
-           library_id_back = COALESCE(NULLIF($8, ''), library_id_back),
+           email = COALESCE(NULLIF($2, ''), email),
+           id_number = COALESCE(NULLIF($3, ''), id_number),
+           department = COALESCE(NULLIF($4, ''), department),
+           course = COALESCE(NULLIF($5, ''), course),
+           year_level = COALESCE(NULLIF($6, ''), year_level),
+           section = COALESCE(NULLIF($7, ''), section),
+           avatar = COALESCE(NULLIF($8, ''), avatar),
+           school_id_front = COALESCE(NULLIF($9, ''), school_id_front),
+           school_id_back = COALESCE(NULLIF($10, ''), school_id_back),
+           library_id_front = COALESCE(NULLIF($11, ''), library_id_front),
+           library_id_back = COALESCE(NULLIF($12, ''), library_id_back),
            updated_at = NOW()
-         WHERE LOWER(id_number) = LOWER($9) OR LOWER(email) = LOWER($9) OR id::text = $9`,
+         WHERE id::text = $13 OR LOWER(id_number) = LOWER($13) OR LOWER(email) = LOWER($13)
+         RETURNING
+           id::text AS "id",
+           name,
+           email,
+           role,
+           id_number AS "idNumber",
+           id_number AS "studentId",
+           department,
+           course,
+           year_level AS "yearLevel",
+           section,
+           avatar,
+           qr_code AS "qrCode",
+           status,
+           school_id_front AS "schoolIdFront",
+           school_id_back AS "schoolIdBack",
+           library_id_front AS "libraryIdFront",
+           library_id_back AS "libraryIdBack"`,
         [
-          name,
-          department,
-          course,
-          avatar,
-          schoolIdFront,
-          schoolIdBack,
-          libraryIdFront,
-          libraryIdBack,
+          name ?? null,
+          email ?? null,
+          nextIdNumber,
+          department ?? null,
+          course ?? null,
+          yearLevel ?? null,
+          section ?? null,
+          avatar ?? null,
+          schoolIdFront ?? null,
+          schoolIdBack ?? null,
+          libraryIdFront ?? null,
+          libraryIdBack ?? null,
           target,
         ]
       );
+      updatedUser = updateRes.rows[0] || null;
     }
 
     return NextResponse.json(
-      { message: "Profile updated successfully.", success: true },
+      {
+        user: updatedUser,
+        profile: updatedUser,
+        message: "Profile updated successfully.",
+        success: true,
+      },
       { status: 200, headers: corsHeaders }
     );
   } catch (err: any) {

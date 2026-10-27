@@ -360,9 +360,11 @@ export default function SearchScreen() {
     fileUri?: string;
     fileKeywords?: string;
   }>();
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<React.ComponentRef<typeof TextInput>>(null);
   const insets = useSafeAreaInsets();
   const { isDarkMode, theme } = useThemeColors();
+  const handledParamQRef = useRef<string | null>(null);
+  const handledParamFileRef = useRef<string | null>(null);
   const [searchText, setSearchText] = useState("");
   const [books, setBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -915,13 +917,16 @@ export default function SearchScreen() {
   const toggleFilterMode = (newValue: boolean) => {
     setIsPrefixFilter(newValue);
     setCurrentPage(1);
+    const currentQuery = searchText.trim();
     if (!newValue || selectedFile !== null) {
-      performAiSearch(searchText, selectedFile);
+      if (currentQuery.length > 0 || selectedFile !== null) {
+        performAiSearch(currentQuery, selectedFile);
+      }
     } else {
       setAiAnalysis(null);
       setAiBooks(null);
-      if (searchText.trim().length > 0) {
-        fetchBooks(searchText.trim(), true);
+      if (currentQuery.length > 0) {
+        fetchBooks(currentQuery, true);
       }
     }
   };
@@ -929,7 +934,8 @@ export default function SearchScreen() {
   // HANDLE INCOMING ROUTE PARAMS (FROM HOME SCREEN SEARCH BAR)
   useEffect(() => {
     let isCancelled = false;
-    if (fileName && typeof fileName === "string") {
+    if (fileName && typeof fileName === "string" && handledParamFileRef.current !== fileName) {
+      handledParamFileRef.current = fileName;
       const kwList = fileKeywords ? fileKeywords.split(",") : [];
       const loadParamFile = async () => {
         let base64 = "";
@@ -959,7 +965,8 @@ export default function SearchScreen() {
       };
       loadParamFile();
     }
-    if (q && typeof q === "string" && q.trim().length > 0) {
+    if (q && typeof q === "string" && q.trim().length > 0 && handledParamQRef.current !== q) {
+      handledParamQRef.current = q;
       const incomingQuery = q.trim();
       setSearchText(incomingQuery);
       if (!fileName) {
@@ -977,7 +984,7 @@ export default function SearchScreen() {
     return () => {
       isCancelled = true;
     };
-  }, [q, autoFocus, fileName, fileUri, fileKeywords, fetchBooks, performAiSearch, isPrefixFilter]);
+  }, [q, autoFocus, fileName, fileUri, fileKeywords]);
 
   // LIVE SEARCH & PROMPT HISTORY EFFECT
   useEffect(() => {
@@ -1306,7 +1313,7 @@ export default function SearchScreen() {
             {/* UNCOLLAPSED TITLE (EMPTY STATE ONLY) */}
             {!isSearchActive && (
               <Text style={[styles.heroTitle, { color: theme.sectionTitle }]}>
-                Search our entire digital ecosystem with AI intelligence.
+                Find resources across the entire STI WNU digital ecosystem.
               </Text>
             )}
 
@@ -1318,13 +1325,14 @@ export default function SearchScreen() {
                 borderColor: theme.cardBorder,
                 marginTop: isSearchActive ? 12 : 20,
                 alignItems: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? "flex-start" : "center",
-                minHeight: !isPrefixFilter ? Math.max(56, inputHeight + 14) : 56,
+                minHeight: !isPrefixFilter ? Math.max(54, inputHeight + 12) : 54,
+                borderRadius: 27,
               }
             ]}>
               <Feather
                 name="search"
                 size={18}
-                color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                color={isDarkMode ? theme.accentGold : "#94A3B8"}
                 style={{ marginTop: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? 6 : 0 }}
               />
 
@@ -1332,7 +1340,7 @@ export default function SearchScreen() {
                 ref={inputRef}
                 value={searchText}
                 onChangeText={handleSearchTextChange}
-                placeholder={isPrefixFilter ? "Search by title prefix (e.g. B, BR)..." : "Ask BookHive or search prompt/keywords..."}
+                placeholder={isPrefixFilter ? "Search by Title, Author, ISBN, or catalog keywords..." : "Search by Title, Author, ISBN, or ask a question..."}
                 placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
                 style={[
                   styles.input,
@@ -1371,11 +1379,11 @@ export default function SearchScreen() {
                 <Feather
                   name="paperclip"
                   size={18}
-                  color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                  color={isDarkMode ? theme.accentGold : "#64748B"}
                 />
               </TouchableOpacity>
 
-              {/* ANALYZE BUTTON (Matches Web System) */}
+              {/* ACTION BUTTON (Matches Web System) */}
               <TouchableOpacity
                 onPress={() => {
                   if (!isPrefixFilter && searchText.trim().length >= 2) {
@@ -1385,23 +1393,25 @@ export default function SearchScreen() {
                 }}
                 activeOpacity={0.85}
                 style={{
-                  backgroundColor: isDarkMode ? theme.accentGold : theme.buttonPrimaryBg,
-                  paddingHorizontal: 11,
-                  paddingVertical: 5.5,
-                  borderRadius: 14,
-                  justifyContent: "center",
+                  backgroundColor: isDarkMode ? theme.accentGold : "#FCD400",
+                  paddingHorizontal: 13,
+                  paddingVertical: 7,
+                  borderRadius: 18,
+                  flexDirection: "row",
                   alignItems: "center",
-                  marginRight: 4,
+                  gap: 4,
+                  marginRight: 2,
                   marginTop: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? 4 : 0,
                 }}
               >
+                <Feather name={isPrefixFilter ? "search" : "zap"} size={11} color="#0B1A2C" />
                 <Text style={{
-                  color: isDarkMode ? "#090D16" : theme.buttonPrimaryText,
+                  color: "#0B1A2C",
                   fontWeight: "800",
-                  fontSize: 11,
-                  letterSpacing: 0.5,
+                  fontSize: 10.5,
+                  letterSpacing: 0.4,
                 }}>
-                  ANALYZE
+                  {isPrefixFilter ? "SEARCH" : "ANALYZE"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1415,10 +1425,10 @@ export default function SearchScreen() {
               gap: 5,
             }}>
               <Ionicons
-                name={isPrefixFilter ? "funnel-outline" : "sparkles-outline"}
-                size={12}
+                name={isPrefixFilter ? "checkmark-circle-outline" : "sparkles-outline"}
+                size={13}
                 color={isPrefixFilter
-                  ? (isDarkMode ? theme.accentGold : theme.accentBlue)
+                  ? (isDarkMode ? theme.accentGold : theme.brandBlue)
                   : (isDarkMode ? "#38BDF8" : "#0284C7")}
               />
               <Text style={{
@@ -1427,8 +1437,8 @@ export default function SearchScreen() {
                 fontWeight: "600",
               }}>
                 {isPrefixFilter
-                  ? "Title Prefix Filter: Matches first letters of title (A-Z)"
-                  : "AI Prompt Mode: Natural language prompts, authors & keywords"}
+                  ? "Filter Mode is ON: Searches books strictly by title prefix & keywords. AI prompts bypassed."
+                  : "AI Mode is ON: Natural language prompts, authors & keywords enabled."}
               </Text>
             </View>
 

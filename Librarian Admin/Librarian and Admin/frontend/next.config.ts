@@ -1,13 +1,38 @@
 import type { NextConfig } from "next";
 import fs from "fs";
 import path from "path";
+import os from "os";
 
-const devOrigins = (
-  process.env.ALLOWED_DEV_ORIGINS || "192.168.1.28,localhost:3000"
-)
+// Dynamically collect all local IPv4 addresses for allowed dev origins
+const localIps: string[] = [];
+try {
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family === "IPv4" && !net.internal) {
+        localIps.push(`${net.address}:3000`, `${net.address}:5000`, net.address);
+      }
+    }
+  }
+} catch {
+  // Ignore
+}
+
+const envDevOrigins = (process.env.ALLOWED_DEV_ORIGINS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+
+const devOrigins = Array.from(
+  new Set([
+    "localhost:3000",
+    "127.0.0.1:3000",
+    "localhost:5000",
+    "127.0.0.1:5000",
+    ...localIps,
+    ...envDevOrigins,
+  ])
+);
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["pg"],

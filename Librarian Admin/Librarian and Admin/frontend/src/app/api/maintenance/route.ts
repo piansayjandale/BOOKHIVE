@@ -1,7 +1,2 @@
-import { proxyToBackend } from "@/lib/proxy";
-
+export { GET } from "@/app/api/super-admin/maintenance/route";
 export const runtime = "nodejs";
-
-export async function GET(request: Request) {
-  return proxyToBackend("/api/maintenance", request);
-}

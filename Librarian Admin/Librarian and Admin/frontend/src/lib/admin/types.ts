@@ -56,6 +56,8 @@ export interface AdminBookRecord {
   coverImg?: string;
   edition?: string;
   volume?: string;
+  series?: string;
+  price?: number | string;
 }
 
 export interface AdminDashboardPayload {

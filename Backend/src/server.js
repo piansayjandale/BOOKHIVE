@@ -47,7 +47,7 @@ if (!process.env.VERCEL) {
 
     // Self Keep-Alive Heartbeat for Render Free Instances:
     // Pinging /health every 10 minutes prevents the container from spinning down due to inactivity
-    const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || "https://bookhive-backend-13kk.onrender.com";
+    const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
     if (RENDER_EXTERNAL_URL && !RENDER_EXTERNAL_URL.includes("localhost") && !RENDER_EXTERNAL_URL.includes("127.0.0.1")) {
       const PING_INTERVAL = 10 * 60 * 1000; // 10 minutes
       setInterval(async () => {

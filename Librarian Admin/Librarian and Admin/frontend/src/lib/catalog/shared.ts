@@ -27,6 +27,10 @@ export interface CatalogBookInput {
   availability?: BookAvailability;
   aiScore?: number;
   copies?: number;
+  price?: number | string;
+  accessionNumber?: string;
+  volume?: string;
+  edition?: string;
 }
 
 const departmentKeywordMap: Record<Department, string[]> = {

@@ -25,13 +25,25 @@ function cleanUrl(url: string): string {
   return (url || "").trim().replace(/\/+$/, "");
 }
 
+function resolveApiUrl(url: string): string {
+  let cleaned = cleanUrl(url);
+  // If the browser is accessing via a LAN IP (e.g. 192.168.x.x) and the configured API targets localhost,
+  // dynamically replace localhost with the browser hostname so network clients communicate with the backend.
+  if (typeof window !== "undefined" && window.location) {
+    const hostname = window.location.hostname;
+    const isLocalhost = hostname === "localhost" || hostname === "127.0.0.1";
+    if (!isLocalhost && cleaned.includes("localhost")) {
+      cleaned = cleaned.replace("localhost", hostname);
+    }
+  }
+  return cleaned.endsWith("/api") ? cleaned : `${cleaned}/api`;
+}
+
 /**
  * Full API Base URL (guaranteed to include /api)
  * Example: "http://localhost:5000/api" or "https://api.yourdomain.com/api"
  */
-export const API_URL = cleanUrl(rawApiUrl).endsWith("/api")
-  ? cleanUrl(rawApiUrl)
-  : `${cleanUrl(rawApiUrl)}/api`;
+export const API_URL = resolveApiUrl(rawApiUrl);
 
 /**
  * Root Backend Origin URL (without trailing /api, for Socket.IO, WebSocket, or proxies appending /api)

@@ -4,20 +4,13 @@ const path = require("path");
 
 const NETWORK_SECURITY_CONFIG_XML = `<?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Default: Strictly enforce HTTPS for all production domains (e.g. Render, Supabase, Neon) -->
-    <base-config cleartextTrafficPermitted="false">
+    <!-- Default: Allow cleartext HTTP for local development, LAN Wi-Fi, and Android emulator loopbacks -->
+    <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
+            <certificates src="user" />
         </trust-anchors>
     </base-config>
-
-    <!-- Cleartext HTTP permitted strictly for local development and Android emulator loopbacks -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-        <domain includeSubdomains="true">10.0.2.2</domain>
-        <domain includeSubdomains="true">10.0.3.2</domain>
-    </domain-config>
 </network-security-config>
 `;
 

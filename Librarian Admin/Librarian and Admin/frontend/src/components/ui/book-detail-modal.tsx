@@ -8,6 +8,7 @@ import { generateApaCitation, formatDate, cn } from "@/lib/utils";
 import type { BookAvailability, BookRecord } from "@/lib/types";
 import { generateAccessionNumber } from "@/lib/catalog/call-number";
 import { useTheme } from "@/components/providers/theme-provider";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 
 export interface BorrowHistoryEntry {
   id?: string;
@@ -40,10 +41,17 @@ export interface BookDetailPayload {
   publishedDate?: string;
   volume?: string;
   edition?: string;
+  series?: string;
+  price?: number | string;
   summary?: string;
   relevance?: number;
   copies?: number;
   accessionNumber?: string;
+  coverImg?: string | null;
+  coverImage?: string | null;
+  coverUrl?: string | null;
+  cover_img?: string | null;
+  rawText?: string | null;
   borrowHistory?: BorrowHistoryEntry[];
 }
 
@@ -542,7 +550,7 @@ export function BookDetailModal({
           )}
         >
           {/* Header */}
-          <div className={cn("relative px-6 py-5 border-b", isLight ? "border-slate-200 bg-white" : "border-white/[0.06] bg-transparent")}>
+          <div className={cn("relative px-6 py-4 border-b", isLight ? "border-slate-200 bg-white" : "border-white/[0.06] bg-transparent")}>
             <div className="flex items-center justify-between gap-4">
               <span className={cn("text-[10px] font-black uppercase tracking-[0.25em]", isLight ? "text-[#0274BB]" : "text-[#FFD600]")}>
                 BOOK ARCHIVE DETAILS
@@ -561,52 +569,68 @@ export function BookDetailModal({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            
-            <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="min-w-0 flex-1 text-left">
-                <h2 className={cn("text-xl font-bold tracking-tight leading-tight line-clamp-2", isLight ? "text-slate-900" : "text-white")}>
-                  {book.title}
-                </h2>
-                <p className={cn("mt-1 text-xs font-semibold", isLight ? "text-slate-600" : "text-white/50")}>
-                  By {book.author}
-                </p>
-                {typeof book.relevance === "number" && (
-                  <div className="mt-2.5 flex items-center gap-2">
-                    <span className={cn(
-                      "text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border",
-                      isLight
-                        ? "bg-[#0274BB]/10 text-[#0274BB] border-[#0274BB]/25"
-                        : "bg-[#FFD600]/10 text-[#FFD600] border-[#FFD600]/20"
-                    )}>
-                      AI Match Score
-                    </span>
-                    <span className={cn("text-xs font-black", isLight ? "text-slate-800" : "text-white/90")}>
-                      {book.relevance}% Relevance
-                    </span>
-                  </div>
-                )}
-              </div>
-              <div className="flex-shrink-0 self-start sm:self-center">
-                <span
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-black tracking-widest uppercase",
-                    availabilityClasses(copyStats.status, isLight)
-                  )}
-                >
-                  <span className="inline-block h-2 w-2 rounded-full bg-current animate-pulse" />
-                  {copyStats.status}
-                </span>
-              </div>
-            </div>
           </div>
 
           {/* Content Area */}
           <div className={cn(
-            "space-y-4 sm:space-y-5 px-6 py-5 max-h-[70vh] overflow-y-auto pr-2 scrollbar-thin",
+            "space-y-4 sm:space-y-5 px-6 py-5 max-h-[76vh] overflow-y-auto pr-2 scrollbar-thin",
             isLight
               ? "scrollbar-thumb-slate-300 scrollbar-track-transparent text-slate-800"
               : "scrollbar-thumb-white/10 scrollbar-track-transparent text-white"
           )}>
+            {/* Book Cover Picture Above + Book Information Below */}
+            <div className={cn(
+              "rounded-2xl border p-5 transition-colors",
+              isLight
+                ? "border-slate-200 bg-slate-50/80"
+                : "border-white/[0.08] bg-white/[0.02]"
+            )}>
+              <div className="flex flex-col items-center justify-center pb-4 border-b border-dashed border-current/10">
+                <BookCoverImage
+                  book={book}
+                  isHero
+                  size="lg"
+                  className="w-32 h-[178px] shadow-2xl ring-1 ring-white/15"
+                />
+              </div>
+
+              <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="min-w-0 flex-1 text-left">
+                  <h2 className={cn("text-xl font-bold tracking-tight leading-tight line-clamp-2", isLight ? "text-slate-900" : "text-white")}>
+                    {book.title}
+                  </h2>
+                  <p className={cn("mt-1 text-xs font-semibold", isLight ? "text-slate-600" : "text-white/50")}>
+                    By {book.author}
+                  </p>
+                  {typeof book.relevance === "number" && (
+                    <div className="mt-2.5 flex items-center gap-2">
+                      <span className={cn(
+                        "text-[9px] font-black uppercase tracking-wider rounded px-1.5 py-0.5 border",
+                        isLight
+                          ? "bg-[#0274BB]/10 text-[#0274BB] border-[#0274BB]/25"
+                          : "bg-[#FFD600]/10 text-[#FFD600] border-[#FFD600]/20"
+                      )}>
+                        AI Match Score
+                      </span>
+                      <span className={cn("text-xs font-black", isLight ? "text-slate-800" : "text-white/90")}>
+                        {book.relevance}% Relevance
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <div className="flex-shrink-0 self-start sm:self-center">
+                  <span
+                    className={cn(
+                      "inline-flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-black tracking-widest uppercase",
+                      availabilityClasses(copyStats.status, isLight)
+                    )}
+                  >
+                    <span className="inline-block h-2 w-2 rounded-full bg-current animate-pulse" />
+                    {copyStats.status}
+                  </span>
+                </div>
+              </div>
+            </div>
             {/* Dedicated Copy Inventory & Availability Section */}
             <div className={cn(
               "rounded-2xl border p-4 text-left transition-colors",
@@ -747,8 +771,8 @@ export function BookDetailModal({
             {/* Standard Key-Value Grid */}
             <div className="grid gap-3 sm:grid-cols-2">
               <Detail label="ISBN" value={book.isbn} icon={Tag} isMono isLight={isLight} />
-              <Detail label="Department" value={book.department} icon={Info} isLight={isLight} />
-              <Detail label="Genre" value={book.genres || book.category || "General Collection"} icon={Tag} isLight={isLight} />
+              <Detail label="Section" value={book.department} icon={Info} isLight={isLight} />
+              <Detail label="Classification" value={book.genres || book.category || "General Collection"} icon={Tag} isLight={isLight} />
               <Detail
                 label="Call Number"
                 value={book.callNumber || book.shelfLocation || "Unavailable"}
@@ -775,6 +799,14 @@ export function BookDetailModal({
                 isMono
                 isLight={isLight}
               />
+              {book.series ? (
+                <Detail
+                  label="Series"
+                  value={book.series}
+                  icon={Layers}
+                  isLight={isLight}
+                />
+              ) : null}
               <Detail
                 label="Volume"
                 value={book.volume || "Single Volume / None"}
@@ -785,6 +817,12 @@ export function BookDetailModal({
                 label="Edition"
                 value={book.edition || "Single Edition / None"}
                 icon={Bookmark}
+                isLight={isLight}
+              />
+              <Detail
+                label="Price"
+                value={book.price !== undefined && book.price !== null && Number(book.price) > 0 ? "₱" + Number(book.price).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—"}
+                icon={Tag}
                 isLight={isLight}
               />
               <Detail

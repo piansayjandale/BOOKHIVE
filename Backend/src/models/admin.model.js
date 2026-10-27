@@ -675,6 +675,8 @@ export const adminModel = {
           COALESCE(NULLIF(NULLIF(t.student_name, ''), 'Student'), u.name, 'Student') AS "studentName",
           COALESCE(NULLIF(NULLIF(t.student_id, ''), 'N/A'), u.id_number, 'N/A') AS "studentId",
           t.resource_title AS "resourceTitle",
+          b.author AS "author",
+          b.cover_img AS "coverUrl",
           t.isbn,
           t.department,
           COALESCE(u.department, t.department) AS "userDepartment",
@@ -725,7 +727,14 @@ export const adminModel = {
           END AS "available"
         FROM transactions t
         LEFT JOIN users u ON (t.user_id = u.id OR (t.student_id IS NOT NULL AND t.student_id != 'N/A' AND lower(t.student_id) = lower(u.id_number)))
-        LEFT JOIN books b ON (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+        LEFT JOIN LATERAL (
+          SELECT author, cover_img, department
+          FROM books b
+          WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
+             OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))
+          ORDER BY (CASE WHEN t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn THEN 0 ELSE 1 END)
+          LIMIT 1
+        ) b ON true
         ${whereClause}
         ORDER BY t.requested_at DESC
       `;
@@ -824,7 +833,7 @@ export const adminModel = {
           decided_by = $3,
           decided_at = NOW(),
           comment = $4,
-          due_date = CASE WHEN $2 = 'Declined' THEN NULL ELSE COALESCE($5::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7))) END
+          due_date = CASE WHEN $2 IN ('Declined', 'Cancelled') THEN NULL ELSE COALESCE($5::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7))) END
           ${extraConversionSql}
           ${approvalPickupSql}
         WHERE id::text = $1::text
@@ -876,7 +885,7 @@ export const adminModel = {
               decided_by = $2,
               decided_at = NOW(),
               comment = $3,
-              due_date = CASE WHEN $1 = 'Declined' THEN NULL ELSE COALESCE($4::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7))) END
+              due_date = CASE WHEN $1 IN ('Declined', 'Cancelled') THEN NULL ELSE COALESCE($4::timestamptz, due_date, NOW() + (INTERVAL '1 day' * COALESCE((SELECT borrow_duration_days FROM system_settings WHERE id = 1 LIMIT 1), 7))) END
               ${extraConversionSql}
               ${approvalPickupSql}
             WHERE id IN (
@@ -1117,6 +1126,8 @@ export const adminModel = {
           t.student_name AS "studentName",
           t.student_id AS "studentId",
           t.resource_title AS "resourceTitle",
+          b.author AS "author",
+          b.cover_img AS "coverUrl",
           t.isbn,
           t.department,
           t.type,
@@ -1154,6 +1165,7 @@ export const adminModel = {
   async listBooks(options = {}) {
     try {
       const search = options.search?.trim() ?? "";
+      const searchField = String(options.searchField || options.filterType || "title").toLowerCase();
       const department = options.department ?? "All";
       const limit = options.limit ?? 120;
       const offset = options.offset ?? 0;
@@ -1174,16 +1186,29 @@ export const adminModel = {
         whereClauses.push("b.archived_at IS NULL");
       }
 
+      let searchFilterParamIndex = null;
+      let exactSearchParamIndex = null;
+      let prefixSearchParamIndex = null;
+
       if (search) {
         filters.push(`%${search.toLowerCase()}%`);
-        const searchParamIndex = filters.length;
-        whereClauses.push(`(
-          lower(b.title) LIKE $${searchParamIndex}
-          OR lower(b.author) LIKE $${searchParamIndex}
-          OR lower(b.isbn) LIKE $${searchParamIndex}
-          OR lower(b.summary) LIKE $${searchParamIndex}
-          OR lower(b.genres) LIKE $${searchParamIndex}
-        )`);
+        searchFilterParamIndex = filters.length;
+
+        if (searchField === "title") {
+          whereClauses.push(`lower(b.title) LIKE $${searchFilterParamIndex}`);
+        } else if (searchField === "author") {
+          whereClauses.push(`lower(b.author) LIKE $${searchFilterParamIndex}`);
+        } else if (searchField === "isbn") {
+          whereClauses.push(`lower(b.isbn) LIKE $${searchFilterParamIndex}`);
+        } else {
+          whereClauses.push(`(
+            lower(b.title) LIKE $${searchFilterParamIndex}
+            OR lower(b.author) LIKE $${searchFilterParamIndex}
+            OR lower(b.isbn) LIKE $${searchFilterParamIndex}
+            OR lower(b.summary) LIKE $${searchFilterParamIndex}
+            OR lower(b.genres) LIKE $${searchFilterParamIndex}
+          )`);
+        }
       }
 
       const whereClause = whereClauses.length > 0 ? "WHERE " + whereClauses.join(" AND ") : "";
@@ -1192,13 +1217,36 @@ export const adminModel = {
       const { rows: totalRows } = await pool.query(totalQuery, filters);
       const total = totalRows[0]?.total ?? 0;
 
+      // Query daily books added count
+      const { rows: todayRows } = await pool.query(
+        `SELECT COUNT(*)::int as count FROM books WHERE created_at >= CURRENT_DATE`
+      ).catch(() => ({ rows: [{ count: 0 }] }));
+      const addedToday = todayRows[0]?.count ?? 0;
+
+      if (search) {
+        filters.push(search.toLowerCase());
+        exactSearchParamIndex = filters.length;
+        filters.push(`${search.toLowerCase()}%`);
+        prefixSearchParamIndex = filters.length;
+      }
+
       filters.push(limit);
       const limitParamIndex = filters.length;
       filters.push(offset);
       const offsetParamIndex = filters.length;
 
       let orderClause = "ORDER BY b.borrow_count DESC, b.title ASC";
-      if (options.sortBy === "recent" || options.sortBy === "newest") {
+      if (search) {
+        orderClause = `ORDER BY 
+          CASE 
+            WHEN lower(b.title) = $${exactSearchParamIndex} THEN 1 
+            WHEN lower(b.title) LIKE $${prefixSearchParamIndex} THEN 2 
+            WHEN lower(b.title) LIKE $${searchFilterParamIndex} THEN 3 
+            ELSE 4 
+          END, 
+          b.borrow_count DESC, 
+          b.title ASC`;
+      } else if (options.sortBy === "recent" || options.sortBy === "newest") {
         orderClause = "ORDER BY b.created_at DESC, b.id DESC";
       }
 
@@ -1233,6 +1281,7 @@ export const adminModel = {
       return {
         books: rows.map(mapBookRow),
         total,
+        addedToday,
       };
     } catch (error) {
       console.error("DB listBooks failed:", error.message);
@@ -1258,13 +1307,15 @@ export const adminModel = {
           published_date, summary, apa_citation, availability, borrow_count,
           source, source_book_id, publication_date, series, genres, language,
           publisher, pages, rating, num_ratings, liked_percent, cover_img,
-          bbe_score, bbe_votes, ai_score, copies, volume, edition, accession_number
+          bbe_score, bbe_votes, ai_score, copies, volume, edition, accession_number,
+          price
         ) VALUES (
           $1, $2, $3, $4, $5, $6,
           COALESCE($7::date, NOW()::date), $8, $9, $10, $11,
           $12, $13, $14, $15, $16, $17,
           $18, $19, $20, $21, $22, $23,
-          $24, $25, $26, $27, $28, $29, $30
+          $24, $25, $26, $27, $28, $29, $30,
+          $31
         )
         RETURNING *
       `;
@@ -1299,7 +1350,8 @@ export const adminModel = {
         input.copies ?? 1,
         input.volume ?? "Vol. 1",
         input.edition ?? "1st Edition",
-        input.accessionNumber ?? null
+        input.accessionNumber ?? null,
+        input.price ? Number(String(input.price).replace(/,/g, "")) : 0.00
       ];
       
       const { rows } = await pool.query(query, values);
@@ -1816,10 +1868,33 @@ export const adminModel = {
     try {
       const search = options.search?.trim() ?? "";
       const moduleName = options.module ?? "All";
+      const actor = options.actor?.trim() ?? "";
 
       const filters = [];
       let whereClauses = [];
       
+      let actorWhereHistory = "";
+      let actorWhereSearch = "";
+
+      if (actor) {
+        const parts = actor.split(/\s+/).filter(p => p.length > 2 && !p.includes("."));
+        const surname = parts[parts.length - 1];
+        if (surname && surname.toLowerCase() !== actor.toLowerCase()) {
+          whereClauses.push(`(lower(actor) LIKE $${filters.length + 1} OR lower(actor) LIKE $${filters.length + 2})`);
+          filters.push(`%${actor.toLowerCase()}%`, `%${surname.toLowerCase()}%`);
+          const safeActor = actor.toLowerCase().replace(/'/g, "''");
+          const safeSurname = surname.toLowerCase().replace(/'/g, "''");
+          actorWhereHistory = `WHERE (lower(actor) LIKE '%${safeActor}%' OR lower(actor) LIKE '%${safeSurname}%')`;
+          actorWhereSearch = `WHERE (lower(actor_name) LIKE '%${safeActor}%' OR lower(actor_name) LIKE '%${safeSurname}%')`;
+        } else {
+          whereClauses.push(`lower(actor) LIKE $${filters.length + 1}`);
+          filters.push(`%${actor.toLowerCase()}%`);
+          const safeActor = actor.toLowerCase().replace(/'/g, "''");
+          actorWhereHistory = `WHERE lower(actor) LIKE '%${safeActor}%'`;
+          actorWhereSearch = `WHERE lower(actor_name) LIKE '%${safeActor}%'`;
+        }
+      }
+
       if (moduleName !== "All") {
         if (moduleName === "Pickups Only" || moduleName === "Pickups") {
           whereClauses.push(`(lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`);
@@ -1850,11 +1925,53 @@ export const adminModel = {
         FROM history_logs
         ${whereClause}
         ORDER BY created_at DESC
-        LIMIT 180
+        LIMIT 1000
       `;
       
       const { rows } = await pool.query(query, filters);
-      return rows;
+
+      // Query real-time summary counts across all modules and tables (scoped by actor if provided)
+      const histAnd = actorWhereHistory ? `${actorWhereHistory} AND` : "WHERE";
+      const searchAnd = actorWhereSearch ? `${actorWhereSearch} AND` : "WHERE";
+
+      const [
+        totalRes,
+        recordsRes,
+        txTableRes,
+        txPickupsRes,
+        histPickupsRes,
+        histTxRes,
+        searchLogsRes,
+        filterSearchRes,
+        aiSearchRes
+      ] = await Promise.all([
+        pool.query(`SELECT COUNT(*)::int as c FROM history_logs ${actorWhereHistory}`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM history_logs ${histAnd} module = 'Records'`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM history_logs ${histAnd} module = 'Transactions' AND NOT (lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM history_logs ${histAnd} (lower(module) LIKE '%pick%' OR lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM history_logs ${histAnd} (lower(module) LIKE '%pick%' OR lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM history_logs ${histAnd} module = 'Transactions' AND NOT (lower(action) LIKE '%pick%' OR lower(detail) LIKE '%pick%')`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM ai_search_logs ${actorWhereSearch}`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM ai_search_logs ${searchAnd} (mode = 'filter' OR mode = 'prefix')`).catch(() => ({ rows: [{ c: 0 }] })),
+        pool.query(`SELECT COUNT(*)::int as c FROM ai_search_logs ${searchAnd} (mode = 'ai' OR mode IS NULL)`).catch(() => ({ rows: [{ c: 0 }] })),
+      ]);
+
+      const counts = {
+        total: totalRes.rows[0]?.c ?? rows.length,
+        records: recordsRes.rows[0]?.c ?? 0,
+        transactions: txTableRes.rows[0]?.c ?? 0,
+        pickups: txPickupsRes.rows[0]?.c ?? 0,
+        historyPickups: histPickupsRes.rows[0]?.c ?? 0,
+        historyTransactions: histTxRes.rows[0]?.c ?? 0,
+        search: searchLogsRes.rows[0]?.c ?? 0,
+        filterSearches: filterSearchRes.rows[0]?.c ?? 0,
+        aiSearches: aiSearchRes.rows[0]?.c ?? 0,
+      };
+
+      return {
+        history: rows,
+        counts,
+      };
     } catch (error) {
       console.error("DB listHistoryLogs failed:", error.message);
       return [];
@@ -2615,8 +2732,22 @@ export const adminModel = {
     }
   },
 
-  async getSearchLogs() {
+  async getSearchLogs(options = {}) {
     try {
+      const actor = (typeof options === "string" ? options : options?.actor)?.trim() ?? "";
+      let whereClause = "";
+      const params = [];
+      if (actor) {
+        const parts = actor.split(/\s+/).filter(p => p.length > 2 && !p.includes("."));
+        const surname = parts[parts.length - 1];
+        if (surname && surname.toLowerCase() !== actor.toLowerCase()) {
+          whereClause = "WHERE (lower(actor_name) LIKE $1 OR lower(actor_name) LIKE $2)";
+          params.push(`%${actor.toLowerCase()}%`, `%${surname.toLowerCase()}%`);
+        } else {
+          whereClause = "WHERE lower(actor_name) LIKE $1";
+          params.push(`%${actor.toLowerCase()}%`);
+        }
+      }
       const query = `
         SELECT
           id::text,
@@ -2631,10 +2762,11 @@ export const adminModel = {
           matches_found AS "matchesFound",
           created_at AS "createdAt"
         FROM ai_search_logs
+        ${whereClause}
         ORDER BY created_at DESC
-        LIMIT 60
+        LIMIT 1000
       `;
-      const { rows } = await pool.query(query);
+      const { rows } = await pool.query(query, params);
       return rows.map(row => ({
         ...row,
         createdAt: typeof row.createdAt === 'string' ? row.createdAt : (row.createdAt?.toISOString() ?? new Date().toISOString())
@@ -3508,6 +3640,7 @@ function mapBookRow(row) {
     volume: row.volume ?? "Vol. 1",
     edition: row.edition ?? "1st Edition",
     accessionNumber: row.accession_number ?? "",
+    price: row.price !== null && row.price !== undefined ? Number(row.price) : 0,
   };
 }
 

@@ -124,6 +124,21 @@ class SocketService {
           this.notifyTransactionDecided(data);
         });
 
+        this.socket.on("transaction:cancelled", (data: any) => {
+          console.log("[SocketService] Received transaction:cancelled event:", data);
+          this.notifyTransactionDecided({ ...(typeof data === "object" ? data : {}), status: "Cancelled" });
+        });
+
+        this.socket.on("reservation:cancelled", (data: any) => {
+          console.log("[SocketService] Received reservation:cancelled event:", data);
+          this.notifyTransactionDecided({ ...(typeof data === "object" ? data : {}), status: "Cancelled" });
+        });
+
+        this.socket.on("RESERVATION_CANCELLED", (data: any) => {
+          console.log("[SocketService] Received RESERVATION_CANCELLED event:", data);
+          this.notifyTransactionDecided({ ...(typeof data === "object" ? data : {}), status: "Cancelled" });
+        });
+
         this.socket.on("announcement:published", (data: any) => {
           console.log("[SocketService] Received announcement:published event:", data?.title);
           this.notifyAnnouncementPublished(data);
@@ -252,6 +267,12 @@ class SocketService {
               eventName === "loan:status-changed"
             ) {
               this.notifyTransactionDecided(eventData);
+            } else if (
+              eventName === "reservation:cancelled" ||
+              eventName === "transaction:cancelled" ||
+              eventName === "RESERVATION_CANCELLED"
+            ) {
+              this.notifyTransactionDecided({ ...(typeof eventData === "object" ? eventData : {}), status: "Cancelled" });
             } else if (eventName === "announcement:published") {
               this.notifyAnnouncementPublished(eventData);
             } else if (eventName === "announcement:deleted" || eventName === "announcement:removed") {

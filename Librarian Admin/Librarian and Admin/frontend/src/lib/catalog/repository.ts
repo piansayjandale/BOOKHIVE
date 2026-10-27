@@ -117,6 +117,11 @@ function createInsertedBookInput(
     aiScore,
     coverImg: input.coverImg ?? "",
     copies: input.copies ?? 1,
+    series: input.series ?? "",
+    price: input.price ? Number(String(input.price).replace(/,/g, "")) : 0,
+    accessionNumber: input.accessionNumber ?? "",
+    volume: input.volume ?? "Single Volume / None",
+    edition: input.edition ?? "Single Edition / None",
   };
 }
 
@@ -287,12 +292,14 @@ function sortCatalogBooks(left: BookRecord, right: BookRecord) {
 
 function listSeedCatalogBooks(options: {
   search?: string;
+  searchField?: string;
   department?: string;
   limit?: number;
   offset?: number;
   includeArchived?: boolean;
 }) {
   const search = options.search?.trim().toLowerCase() ?? "";
+  const searchField = (options.searchField || "title").toLowerCase();
   const department = options.department ?? "All";
   const limit = options.limit ?? 120;
   const offset = options.offset ?? 0;
@@ -304,6 +311,16 @@ function listSeedCatalogBooks(options: {
     .filter((book) => {
       if (!search) {
         return true;
+      }
+
+      if (searchField === "title") {
+        return book.title.toLowerCase().includes(search);
+      }
+      if (searchField === "author") {
+        return book.author.toLowerCase().includes(search);
+      }
+      if (searchField === "isbn") {
+        return (book.isbn || "").toLowerCase().includes(search);
       }
 
       return `${book.title} ${book.author} ${book.isbn} ${book.summary} ${book.genres ?? ""}`
@@ -576,6 +593,7 @@ export const catalogRepository = {
 
   async listBooks(options: {
     search?: string;
+    searchField?: string;
     department?: string;
     limit?: number;
     offset?: number;
@@ -589,10 +607,20 @@ export const catalogRepository = {
       await ensureCuratedSeedBooks();
       const database = await getCatalogDb();
       const search = options.search?.trim() ?? "";
+      const searchField = (options.searchField || "title").toLowerCase();
       const department = options.department ?? "All";
       const limit = options.limit ?? 120;
       const offset = options.offset ?? 0;
       const includeArchived = options.includeArchived ?? false;
+
+      // Query daily books added count
+      let addedToday = 0;
+      try {
+        const todayRes = await database.query<{ total: string }>(
+          `SELECT COUNT(*)::int as total FROM books WHERE created_at >= CURRENT_DATE`
+        );
+        addedToday = parseInt(todayRes.rows[0]?.total ?? "0", 10);
+      } catch {}
 
       if (!search) {
         const filters: unknown[] = [];
@@ -616,53 +644,83 @@ export const catalogRepository = {
         return {
           total: parseInt(total.rows[0]?.total ?? "0", 10),
           books: rows.rows.map(mapBookRow),
+          addedToday,
         };
       }
 
       const likeSearch = `%${search.toLowerCase()}%`;
-      const totalFilters: unknown[] = [likeSearch, likeSearch, likeSearch, likeSearch, likeSearch];
-      const listFilters: unknown[] = [likeSearch, likeSearch, likeSearch, likeSearch, likeSearch];
-      let departmentClause = "";
+      const archiveClause = includeArchived ? "" : "AND archived_at IS NULL";
 
+      let whereSearchClause = "";
+      let totalFilters: unknown[] = [];
+      let listFilters: unknown[] = [];
+
+      if (searchField === "title") {
+        totalFilters = [likeSearch];
+        listFilters = [likeSearch];
+        whereSearchClause = "lower(title) LIKE $1";
+      } else if (searchField === "author") {
+        totalFilters = [likeSearch];
+        listFilters = [likeSearch];
+        whereSearchClause = "lower(author) LIKE $1";
+      } else if (searchField === "isbn") {
+        totalFilters = [likeSearch];
+        listFilters = [likeSearch];
+        whereSearchClause = "lower(isbn) LIKE $1";
+      } else {
+        totalFilters = [likeSearch, likeSearch, likeSearch, likeSearch, likeSearch];
+        listFilters = [likeSearch, likeSearch, likeSearch, likeSearch, likeSearch];
+        whereSearchClause = `(
+          lower(title) LIKE $1
+          OR lower(author) LIKE $2
+          OR lower(isbn) LIKE $3
+          OR lower(summary) LIKE $4
+          OR lower(genres) LIKE $5
+        )`;
+      }
+
+      let departmentClause = "";
       if (department !== "All") {
-        departmentClause = "AND department = $6";
+        const deptParamIndex = totalFilters.length + 1;
+        departmentClause = `AND department = $${deptParamIndex}`;
         totalFilters.push(department);
         listFilters.push(department);
       }
-
-      const archiveClause = includeArchived ? "" : "AND archived_at IS NULL";
 
       const total = await database.query<{ total: string }>(
         `
           SELECT COUNT(*) as total
           FROM books
-          WHERE (
-            lower(title) LIKE $1
-            OR lower(author) LIKE $2
-            OR lower(isbn) LIKE $3
-            OR lower(summary) LIKE $4
-            OR lower(genres) LIKE $5
-          )
+          WHERE ${whereSearchClause}
           ${departmentClause}
           ${archiveClause}
         `,
         totalFilters,
       );
 
+      // Ordering: exact title match first, then prefix match, then substring match
+      const exactSearch = search.toLowerCase();
+      const prefixSearch = `${search.toLowerCase()}%`;
+      const exactParamIndex = listFilters.length + 1;
+      const prefixParamIndex = listFilters.length + 2;
+      listFilters.push(exactSearch, prefixSearch);
+
       const rows = await database.query<BookRow>(
         `
           SELECT *
           FROM books
-          WHERE (
-            lower(title) LIKE $1
-            OR lower(author) LIKE $2
-            OR lower(isbn) LIKE $3
-            OR lower(summary) LIKE $4
-            OR lower(genres) LIKE $5
-          )
+          WHERE ${whereSearchClause}
           ${departmentClause}
           ${archiveClause}
-          ORDER BY borrow_count DESC, title ASC
+          ORDER BY 
+            CASE 
+              WHEN lower(title) = $${exactParamIndex} THEN 1
+              WHEN lower(title) LIKE $${prefixParamIndex} THEN 2
+              WHEN lower(title) LIKE $1 THEN 3
+              ELSE 4
+            END,
+            borrow_count DESC, 
+            title ASC
           LIMIT $${listFilters.length + 1} OFFSET $${listFilters.length + 2}
         `,
         [...listFilters, limit, offset],
@@ -671,6 +729,7 @@ export const catalogRepository = {
       return {
         total: parseInt(total.rows[0]?.total ?? "0", 10),
         books: rows.rows.map(mapBookRow),
+        addedToday,
       };
     } catch (error) {
       console.error("Catalog listBooks failed:", error);

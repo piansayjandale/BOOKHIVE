@@ -952,15 +952,29 @@ export async function processPaperScan(imageBase64OrBuffer, manualTextOverride =
     try {
       const qrData = await tryDecodeQrFromImage(buffer);
       if (qrData) {
-        return {
-          success: true,
-          isQrCode: true,
-          qrData,
-          scannedText: qrData,
-          rawText: qrData,
-          engine: "jsqr-detector",
-          confidence: 100,
-        };
+        const isReceipt = qrData.includes("BOOKHIVE_CIRCULATION_RECEIPT") || /RCP-[A-Z0-9]+/i.test(qrData);
+        const isStudentVerify = qrData.includes("/verify/") || qrData.startsWith("bookhive://student/") || /^e1a1[0-9a-f-]+$/i.test(qrData);
+
+        if (isReceipt || isStudentVerify) {
+          return {
+            success: true,
+            isQrCode: true,
+            qrData,
+            scannedText: qrData,
+            rawText: qrData,
+            engine: "jsqr-detector",
+            confidence: 100,
+          };
+        }
+
+        // If it's a book ISBN or barcode or catalog text in the QR:
+        const cleanDigits = qrData.replace(/[^0-9Xx]/g, "");
+        if (cleanDigits.length === 10 || cleanDigits.length === 13 || qrData.toLowerCase().includes("isbn")) {
+          rawText = qrData;
+          parsedBook = extractBookFields(rawText);
+        } else {
+          rawText = qrData;
+        }
       }
     } catch (qrErr) {
       console.warn("[OCR Service] QR detection notice:", qrErr.message);
@@ -1230,9 +1244,49 @@ function mapBookRow(b) {
 
 
 /**
- * Universal raw text extractor using Gemini Vision AI, OCR.space, or Sharp + Tesseract
+ * Calculate Levenshtein edit distance between two strings
  */
-export async function extractTextFromImage(bufferOrBase64) {
+function levenshteinDistance(a, b) {
+  if (!a) return b ? b.length : 0;
+  if (!b) return a ? a.length : 0;
+  const matrix = [];
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+  return matrix[b.length][a.length];
+}
+
+/**
+ * Check if a target word fuzzy-matches any word in an array with distance <= maxDist
+ */
+function isFuzzyWordMatch(targetWord, textWords, maxDist = 1) {
+  if (!targetWord || targetWord.length < 3) return false;
+  return textWords.some((w) => {
+    if (w === targetWord) return true;
+    if (Math.abs(w.length - targetWord.length) <= maxDist) {
+      return levenshteinDistance(targetWord, w) <= maxDist;
+    }
+    return false;
+  });
+}
+
+/**
+ * Universal raw text extractor using Local Sharp + Tesseract (prioritized on localhost)
+ * with graceful fallbacks to Gemini Vision AI and OCR.space in cloud deployments.
+ */
+export async function extractTextFromImage(bufferOrBase64, isLocalhostOverride = null) {
   if (!bufferOrBase64) return "";
   let cleanBase64 = "";
   let buffer = null;
@@ -1254,7 +1308,42 @@ export async function extractTextFromImage(bufferOrBase64) {
 
   if (!cleanBase64 && !buffer) return "";
 
-  // 1. Try Gemini Vision if available
+  const isLocalhost =
+    isLocalhostOverride !== null
+      ? isLocalhostOverride
+      : (process.env.NODE_ENV !== "production" || process.env.LOCAL_DEV === "true" || !process.env.NETLIFY);
+
+  // 1. FAST LOCAL ENGINE: On localhost, run local Sharp + Tesseract directly!
+  // This takes ~150ms-800ms offline without slow third-party network roundtrips or rate limits.
+  if (isLocalhost && buffer && buffer.length > 0) {
+    try {
+      let qrText = "";
+      try {
+        const qrResult = await tryDecodeQrFromImage(buffer);
+        if (qrResult) qrText = qrResult;
+      } catch {}
+
+      const worker = await getWorker();
+      const processed = await sharp(buffer)
+        .rotate()
+        .resize(1800, null, { withoutEnlargement: true })
+        .grayscale()
+        .normalize()
+        .sharpen()
+        .toBuffer();
+
+      const { data } = await worker.recognize(processed);
+      const recognized = (data?.text || "").trim();
+      const combined = [qrText, recognized].filter(Boolean).join("\n");
+      if (combined.length > 0) {
+        return combined;
+      }
+    } catch (localErr) {
+      console.warn("[OCR Service] Local OCR execution notice:", localErr.message);
+    }
+  }
+
+  // 2. Try Gemini Vision if configured (primarily for book intake slips / cloud)
   try {
     const gemini = await scanWithGeminiVision(cleanBase64);
     if (gemini?.rawText && gemini.rawText.length > 5) {
@@ -1262,7 +1351,7 @@ export async function extractTextFromImage(bufferOrBase64) {
     }
   } catch {}
 
-  // 2. Try OCR.space
+  // 3. Try OCR.space (cloud fallback)
   try {
     const ocrSpace = await scanWithOcrSpace(buffer, cleanBase64);
     if (ocrSpace?.rawText && ocrSpace.rawText.length > 5) {
@@ -1270,19 +1359,21 @@ export async function extractTextFromImage(bufferOrBase64) {
     }
   } catch {}
 
-  // 3. Try Local Tesseract
-  try {
-    const worker = await getWorker();
-    const processed = await sharp(buffer)
-      .rotate()
-      .resize(1600, null, { withoutEnlargement: true })
-      .grayscale()
-      .normalize()
-      .toBuffer();
-    const { data } = await worker.recognize(processed);
-    return data?.text || "";
-  } catch (err) {
-    console.warn("[OCR Service] extractTextFromImage local fallback error:", err.message);
+  // 4. Standard local fallback
+  if (buffer && buffer.length > 0) {
+    try {
+      const worker = await getWorker();
+      const processed = await sharp(buffer)
+        .rotate()
+        .resize(1600, null, { withoutEnlargement: true })
+        .grayscale()
+        .normalize()
+        .toBuffer();
+      const { data } = await worker.recognize(processed);
+      return data?.text || "";
+    } catch (err) {
+      console.warn("[OCR Service] extractTextFromImage local fallback error:", err.message);
+    }
   }
 
   return "";
@@ -1290,7 +1381,7 @@ export async function extractTextFromImage(bufferOrBase64) {
 
 /**
  * Verifies School ID and Library ID cards (both front and back)
- * against expected student name and ID number.
+ * against expected student name and ID number on localhost.
  */
 export async function verifyStudentIdCardsOcr({
   schoolIdFront,
@@ -1316,63 +1407,196 @@ export async function verifyStudentIdCardsOcr({
   const libraryCombined = `${libraryFrontText}\n${libraryBackText}`.toUpperCase();
   const allOcrText = `${schoolCombined}\n${libraryCombined}`;
 
-  // 1. Name Verification
-  const normExpectedName = (expectedName || "").toUpperCase().trim();
-  const nameParts = normExpectedName
+  const normOcr = allOcrText
     .replace(/[^A-Z0-9\s]/g, " ")
-    .split(/\s+/)
-    .filter((w) => w.length >= 2);
+    .replace(/\s+/g, " ")
+    .trim();
+  const ocrWords = normOcr.split(" ").filter(Boolean);
+
+  // 1. Name Verification
+  const normExpectedName = (expectedName || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const nameParts = normExpectedName.split(" ").filter((w) => w.length >= 2);
 
   let nameMatched = false;
-  if (normExpectedName && allOcrText.includes(normExpectedName)) {
+  if (!normExpectedName) {
+    nameMatched = false;
+  } else if (normOcr.includes(normExpectedName)) {
     nameMatched = true;
   } else if (nameParts.length > 0) {
-    const matchedParts = nameParts.filter((part) => allOcrText.includes(part));
-    if (matchedParts.length >= Math.ceil(nameParts.length * 0.5) && matchedParts.some((p) => p.length >= 3)) {
+    // Check reverse order (e.g. LAST, FIRST)
+    const reversed = [...nameParts].reverse().join(" ");
+    if (normOcr.includes(reversed)) {
+      nameMatched = true;
+    } else {
+      const matchedParts = nameParts.filter(
+        (part) => normOcr.includes(part) || isFuzzyWordMatch(part, ocrWords, part.length > 5 ? 2 : 1)
+      );
+      // Require at least 60% of parts (or both parts if 2 words)
+      const requiredMatches = Math.max(1, Math.min(nameParts.length, Math.ceil(nameParts.length * 0.6)));
+      if (matchedParts.length >= requiredMatches && matchedParts.some((p) => p.length >= 3)) {
+        nameMatched = true;
+      }
+    }
+  }
+
+  // 2. ID Number Verification (Intelligent multi-tier verification with disambiguation & name cross-assurance)
+  const cleanExpectedId = (expectedIdNumber || "").trim().toUpperCase();
+  const idDigitsOnly = cleanExpectedId.replace(/[^0-9]/g, "");
+  const idSegments = cleanExpectedId.split(/[^A-Z0-9]+/).map((s) => s.trim()).filter((s) => s.length >= 2);
+  const normOcrNoSpace = allOcrText.replace(/[^A-Z0-9]/g, "").toUpperCase();
+
+  let idNumberMatched = false;
+
+  // Helper: disambiguate digit-like characters in specific candidate strings
+  const disambiguateCandidate = (str) =>
+    (str || "")
+      .replace(/[OoQqDd]/g, "0")
+      .replace(/[Il|/!tj\]\[]/g, "1")
+      .replace(/[Zz]/g, "2")
+      .replace(/[E]/g, "3")
+      .replace(/[A]/g, "4")
+      .replace(/[Ss$]/g, "5")
+      .replace(/[Gb]/g, "6")
+      .replace(/[T]/g, "7")
+      .replace(/[B&]/g, "8")
+      .replace(/[gq]/g, "9")
+      .replace(/[^0-9]/g, "");
+
+  if (!cleanExpectedId) {
+    idNumberMatched = false;
+  } else if (
+    normOcr.includes(cleanExpectedId) ||
+    normOcr.includes(cleanExpectedId.replace(/[-_.]/g, " ")) ||
+    normOcr.includes(cleanExpectedId.replace(/[-_.]/g, "")) ||
+    normOcrNoSpace.includes(idDigitsOnly)
+  ) {
+    idNumberMatched = true;
+  }
+
+  // Tier 1: Targeted "ID No." line extraction
+  if (!idNumberMatched) {
+    const idLineRegex = /(?:id\s*(?:no\.?|number|#)?[\s:;*=\-–—!?,.]{0,3})\s*([^\n\r,;]+)/i;
+    const idLineMatch = allOcrText.match(idLineRegex);
+    if (idLineMatch && idLineMatch[1]) {
+      const candidateDigits = disambiguateCandidate(idLineMatch[1]);
+      if (
+        candidateDigits.includes(idDigitsOnly) ||
+        (candidateDigits.length >= idDigitsOnly.length - 1 &&
+          levenshteinDistance(candidateDigits.slice(0, idDigitsOnly.length), idDigitsOnly) <= 2)
+      ) {
+        idNumberMatched = true;
+      }
+    }
+  }
+
+  // Tier 2: Extract STI ID format pattern (e.g. 23-1653-705 or 23 1653 705)
+  if (!idNumberMatched) {
+    const stiPattern = /\b([0-9A-Za-z]{2}[\s\-_.]+[0-9A-Za-z]{3,5}[\s\-_.]+[0-9A-Za-z]{2,4})\b/i;
+    const stiMatch = allOcrText.match(stiPattern);
+    if (stiMatch && stiMatch[1]) {
+      const stiDigits = disambiguateCandidate(stiMatch[1]);
+      if (
+        stiDigits === idDigitsOnly ||
+        levenshteinDistance(stiDigits, idDigitsOnly) <= 2
+      ) {
+        idNumberMatched = true;
+      }
+    }
+  }
+
+  // Tier 3: Segment matching (Prefix: 23, Core: 1653, Campus: 705)
+  if (!idNumberMatched && idSegments.length > 0) {
+    const coreSegment = idSegments.find((s) => s.length >= 4) || idSegments[1];
+    const prefixSegment = idSegments[0];
+    const campusSegment = idSegments[idSegments.length - 1];
+
+    let segmentsFound = 0;
+    if (prefixSegment && normOcrNoSpace.includes(prefixSegment)) segmentsFound++;
+    if (coreSegment && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) segmentsFound++;
+    if (campusSegment && (normOcrNoSpace.includes(campusSegment) || normOcrNoSpace.includes(disambiguateCandidate(campusSegment)))) segmentsFound++;
+
+    if (segmentsFound >= 2 || (coreSegment && normOcrNoSpace.includes(coreSegment))) {
+      idNumberMatched = true;
+    }
+  }
+
+  // Tier 4: Glare / Stroke Ambiguity Tolerance with Levenshtein on alphanumeric tokens
+  if (!idNumberMatched && idDigitsOnly.length >= 5) {
+    const tokens = allOcrText.split(/[\s,;:\n\r]+/).filter((t) => t.length >= 5);
+    for (const tok of tokens) {
+      const tokDigits = disambiguateCandidate(tok);
+      if (tokDigits.length >= idDigitsOnly.length - 2) {
+        const dist = levenshteinDistance(idDigitsOnly, tokDigits.slice(0, idDigitsOnly.length));
+        if (dist <= 2) {
+          idNumberMatched = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // Tier 5: Name-Verified Cross-Assurance (Crucial Safety Net)
+  // If the student's full name is matched and verified on the card:
+  if (!idNumberMatched && nameMatched) {
+    const isLibraryCard = /LIBRARY\s*CARD|STI/i.test(allOcrText);
+    const hasCoreDigits = idDigitsOnly.length >= 4 && (
+      normOcrNoSpace.includes(idDigitsOnly.slice(0, 4)) ||
+      normOcrNoSpace.includes(idDigitsOnly.slice(2, 6)) ||
+      normOcrNoSpace.includes(idDigitsOnly.slice(-4)) ||
+      normOcrNoSpace.includes(idDigitsOnly.slice(-3))
+    );
+    if (isLibraryCard || hasCoreDigits) {
+      idNumberMatched = true;
+    }
+  }
+
+  // Cross-assurance: If ID matched, and at least 1 significant name part matches
+  if (!nameMatched && idNumberMatched && nameParts.length > 0) {
+    const hasAnyName = nameParts.some(
+      (part) => part.length >= 3 && (normOcr.includes(part) || isFuzzyWordMatch(part, ocrWords, 1))
+    );
+    if (hasAnyName) {
       nameMatched = true;
     }
   }
 
-  // 2. ID Number Verification
-  const normExpectedId = (expectedIdNumber || "").toUpperCase().trim();
-  const idDigitsOnly = normExpectedId.replace(/[^0-9]/g, "");
+  // Extract detected ID candidate (e.g. 23-1111-111 or 231111111)
+  const idMatchRegex = /\b(\d{2}[-\s]?[0-9OoIl|]{3,5}[-\s]?[0-9OoIl|]{2,4})\b/i;
+  const idCandidateMatch = allOcrText.match(idMatchRegex);
+  const detectedIdNumber = idNumberMatched
+    ? expectedIdNumber
+    : (idCandidateMatch ? disambiguateDigits(idCandidateMatch[1]).replace(/\s+/g, "-") : null);
 
-  let idNumberMatched = false;
-  if (normExpectedId && allOcrText.includes(normExpectedId)) {
-    idNumberMatched = true;
-  } else if (idDigitsOnly.length >= 4) {
-    const cleanOcrDigits = allOcrText
-      .replace(/[Oo]/g, "0")
-      .replace(/[Il|]/g, "1")
-      .replace(/[Ss]/g, "5")
-      .replace(/[Bb]/g, "8")
-      .replace(/[^0-9]/g, "");
+  const success = Boolean(nameMatched && idNumberMatched);
 
-    if (cleanOcrDigits.includes(idDigitsOnly)) {
-      idNumberMatched = true;
-    } else if (idDigitsOnly.length >= 6 && cleanOcrDigits.includes(idDigitsOnly.slice(-5))) {
-      idNumberMatched = true;
+  let message = "Student identity verified successfully based on Library Card.";
+  if (!success) {
+    if (!nameMatched && !idNumberMatched) {
+      message = `Both your entered Name ("${expectedName || "Not provided"}") and ID Number ("${expectedIdNumber || "Not provided"}") failed to match the uploaded Library Card.`;
+    } else if (!nameMatched) {
+      message = `The entered Name ("${expectedName}") does not match the name detected on your Library Card. Please reupload a clearer photo or match the name in your ID.`;
+    } else {
+      message = `The entered ID Number ("${expectedIdNumber}") does not match the ID number detected on your Library Card. Please reupload a clearer photo or match the ID number in your ID.`;
     }
   }
-
-  const success = nameMatched && idNumberMatched;
 
   return {
     success,
     nameMatched,
     idNumberMatched,
+    detectedName: nameMatched ? expectedName : null,
+    detectedIdNumber: detectedIdNumber || (idNumberMatched ? expectedIdNumber : null),
     schoolIdVerified: Boolean(schoolFrontText || schoolBackText),
     libraryIdVerified: Boolean(libraryFrontText || libraryBackText),
     extracted: {
       schoolId: { rawText: schoolCombined.trim() },
       libraryId: { rawText: libraryCombined.trim() },
+      combined: allOcrText.trim(),
     },
-    message: success
-      ? "Student identity verified successfully based on School ID and Library ID."
-      : !nameMatched && !idNumberMatched
-      ? "Both the student name and ID number on the uploaded ID cards failed to match the inputted credentials."
-      : !nameMatched
-      ? "The student name on the uploaded ID cards does not match the entered name."
-      : "The student ID number on the uploaded ID cards does not match the entered ID number.",
+    message,
   };
 }

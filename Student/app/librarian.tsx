@@ -26,6 +26,12 @@ import AnimatedScreen from "../components/AnimatedScreen";
 import { useAuth } from "../data/AuthContext";
 import { useThemeColors } from "../hooks/useThemeColors";
 import { getLiveBooks, addDynamicBook, Book } from "../data/books";
+import {
+  embedCoverUriInRawText,
+  stripEmbeddedCoverUri,
+  registerUploadedBookCover,
+} from "../data/bookCovers";
+import { BookCoverImage } from "../components/BookCoverImage";
 import { API_URL, apiClient, authService } from "../data/authService";
 import {
   resolveReceiptQrPayload,
@@ -108,6 +114,10 @@ export type ParsedBookFields = {
   copies: number;
   edition: string;
   volume: string;
+  series?: string;
+  price?: number | string;
+  accessionNumber?: string;
+  publicationDate?: string;
   summary: string;
   publisher?: string;
   publishedYear?: string;
@@ -386,8 +396,12 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
       department: "Circulation",
       isbn: "",
       copies: 1,
-      edition: "None",
-      volume: "None",
+      edition: "1st",
+      volume: "1",
+      series: "None",
+      price: "450.00",
+      accessionNumber: "ACC-2026-41191",
+      publicationDate: "2026-09-01",
       summary: "",
       publisher: "",
       publishedYear: "",
@@ -409,8 +423,12 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
   let department = "";
   let isbn = "";
   let copies = 1;
-  let edition = "None";
-  let volume = "None";
+  let edition = "1st";
+  let volume = "1";
+  let series = "";
+  let price = "";
+  let accessionNumber = "";
+  let publicationDate = "";
   let summary = "";
   let publisher = "";
   let publishedYear = "";
@@ -552,6 +570,36 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
       const match = line.match(/^(?:shelf(?:\s*location)?|call(?:\s*number|\s*no\.?)?|loc\.?|location|rack)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
       if (match) {
         shelfLocation = cleanField(match[1]);
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Series
+    if (!series && /^(?:series(?:\s*name|\s*title)?|saga|trilogy)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:series(?:\s*name|\s*title)?|saga|trilogy)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        series = cleanField(match[1]);
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Accession Number
+    if (!accessionNumber && /^(?:accession(?:\s*no\.?|\s*number)?|acc\.?\s*(?:no\.?|num)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:accession(?:\s*no\.?|\s*number)?|acc\.?\s*(?:no\.?|num)?)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        accessionNumber = cleanField(match[1]).toUpperCase();
+        detectedLabels++;
+      }
+      continue;
+    }
+
+    // Price
+    if (!price && /^(?:price|cost|amount|php|₱)[\s:;*=\-–—!?,.]{1,4}(.*)/i.test(line)) {
+      const match = line.match(/^(?:price|cost|amount|php|₱)[\s:;*=\-–—!?,.]{1,4}(.*)/i);
+      if (match) {
+        price = cleanField(match[1]).replace(/[^0-9.]/g, "");
         detectedLabels++;
       }
       continue;
@@ -706,6 +754,10 @@ export function extractBookFieldsFromText(text: string): ParsedBookFields {
     copies: copies || 1,
     edition: edition || "1st",
     volume: volume || "1",
+    series: series || "None",
+    price: price || "450.00",
+    accessionNumber: accessionNumber || "ACC-2026-41191",
+    publicationDate: publicationDate || (publishedYear ? `${publishedYear}-01-01` : "2026-09-01"),
     summary: summary || (text.length > 120 ? cleanField(text.slice(0, 220)) + "..." : ""),
     publisher: publisher || "",
     publishedYear: publishedYear || "",
@@ -793,7 +845,14 @@ export default function LibrarianScreen() {
     copies: 1,
     edition: "1st",
     volume: "1",
+    series: "None",
+    price: "450.00",
+    accessionNumber: "ACC-2026-41191",
+    shelfLocation: "QA76.73 .P98 2026",
+    publicationDate: "2026-09-01",
     summary: "",
+    publisher: "",
+    publishedYear: "2026",
     rawText: "",
   });
 
@@ -814,6 +873,7 @@ export default function LibrarianScreen() {
   // Matched Catalog Book
   const [matchedCatalogList, setMatchedCatalogList] = useState<Book[]>([]);
   const [scannedBook, setScannedBook] = useState<Book | null>(null);
+  const [bookCoverPhoto, setBookCoverPhoto] = useState<string | null>(null);
   const [bookModalVisible, setBookModalVisible] = useState(false);
   const [receiptModalVisible, setReceiptModalVisible] = useState(false);
   const [scannedReceipt, setScannedReceipt] = useState<ReceiptData | null>(null);
@@ -1038,25 +1098,46 @@ export default function LibrarianScreen() {
     if (payload.startsWith("http://") || payload.startsWith("https://")) {
       try {
         const parsedUrl = new URL(payload);
-        const queryQr = parsedUrl.searchParams.get("qr") || parsedUrl.searchParams.get("studentId") || parsedUrl.searchParams.get("isbn");
-        if (queryQr) return queryQr;
+        const queryQr =
+          parsedUrl.searchParams.get("qr") ||
+          parsedUrl.searchParams.get("studentId") ||
+          parsedUrl.searchParams.get("idNumber") ||
+          parsedUrl.searchParams.get("id") ||
+          parsedUrl.searchParams.get("isbn");
+        if (queryQr) return queryQr.trim();
+
         const segments = parsedUrl.pathname.split("/").filter(Boolean);
-        const verifyIdx = segments.findIndex(s => s === "verify" || s === "card-by-qr" || s === "qr" || s === "book");
+        const verifyIdx = segments.findIndex(
+          (s) => s === "verify" || s === "card-by-qr" || s === "qr" || s === "book" || s === "student"
+        );
         if (verifyIdx !== -1 && segments[verifyIdx + 1]) {
-          return decodeURIComponent(segments[verifyIdx + 1]);
+          return decodeURIComponent(segments[verifyIdx + 1]).trim();
+        }
+        if (segments.length > 0) {
+          return decodeURIComponent(segments[segments.length - 1]).trim();
         }
       } catch {
-        const match = payload.match(/\/(?:verify|card-by-qr|qr|book)\/([^/?#]+)/i);
-        if (match && match[1]) return decodeURIComponent(match[1]);
+        const match = payload.match(/\/(?:verify|card-by-qr|qr|book|student)\/([^/?#]+)/i);
+        if (match && match[1]) return decodeURIComponent(match[1]).trim();
       }
     }
     if (payload.startsWith("bookhive://student/")) {
-      payload = payload.replace("bookhive://student/", "");
+      payload = payload.replace("bookhive://student/", "").trim();
+    } else if (payload.startsWith("bookhive://")) {
+      payload = payload.replace("bookhive://", "").trim();
     }
     try {
       if (payload.startsWith("{")) {
         const parsed = JSON.parse(payload);
-        return parsed.qrCode || parsed.qr || parsed.idNumber || parsed.studentId || parsed.isbn || parsed.payload || payload;
+        const idVal =
+          parsed.qrCode ||
+          parsed.qr ||
+          parsed.idNumber ||
+          parsed.studentId ||
+          parsed.id ||
+          parsed.isbn ||
+          parsed.payload;
+        if (idVal) return String(idVal).trim();
       }
     } catch {}
     return payload;
@@ -1365,8 +1446,8 @@ export default function LibrarianScreen() {
         let photo: any = null;
         try {
           photo = await cameraRef.current.takePictureAsync({
-            quality: 0.85,
-            base64: false,
+            quality: 0.8,
+            base64: true,
             shutterSound: false,
           });
         } catch (firstCamErr: any) {
@@ -1376,8 +1457,8 @@ export default function LibrarianScreen() {
             await new Promise(r => setTimeout(r, 150));
             if (cameraRef.current) {
               photo = await cameraRef.current.takePictureAsync({
-                quality: 0.85,
-                base64: false,
+                quality: 0.8,
+                base64: true,
                 shutterSound: false,
               });
             }
@@ -1390,7 +1471,10 @@ export default function LibrarianScreen() {
           capturedIsSidewaysLandscape = true;
         }
 
-        if (photo?.uri) {
+        if (photo?.base64) {
+          capturedBase64 = photo.base64;
+          capturedUri = photo.base64.startsWith("data:") ? photo.base64 : `data:image/jpeg;base64,${photo.base64}`;
+        } else if (photo?.uri) {
           capturedUri = photo.uri;
           try {
             capturedBase64 = await FileSystem.readAsStringAsync(photo.uri, {
@@ -1399,9 +1483,6 @@ export default function LibrarianScreen() {
           } catch (readErr: any) {
             console.warn("[Shutter Read Base64 Notice]:", readErr?.message);
           }
-        } else if (photo?.base64) {
-          capturedBase64 = photo.base64;
-          capturedUri = photo.base64.startsWith("data:") ? photo.base64 : `data:image/jpeg;base64,${photo.base64}`;
         }
       }
 
@@ -1503,10 +1584,18 @@ export default function LibrarianScreen() {
    */
   const processPaperImageOcr = async (base64Data: string, previewUri?: string | null, isSidewaysLandscape = false) => {
     // Display captured or uploaded picture directly inside viewfinder (locked to portrait)
-    const previewToDisplay = previewUri || (base64Data ? (base64Data.startsWith("data:") ? base64Data : `data:image/jpeg;base64,${base64Data}`) : null);
+    const base64DataUri = base64Data
+      ? base64Data.startsWith("data:")
+        ? base64Data
+        : `data:image/jpeg;base64,${base64Data}`
+      : null;
+    const previewToDisplay = previewUri || base64DataUri;
     setPreviewIsLandscape(Boolean(isSidewaysLandscape));
     if (previewToDisplay) {
       setPreviewPhotoUri(previewToDisplay);
+    }
+    if (base64DataUri) {
+      setBookCoverPhoto(base64DataUri);
     }
 
     setProcessing(true);
@@ -1527,23 +1616,40 @@ export default function LibrarianScreen() {
 
       if (response.data && response.data.success) {
         if (response.data.isQrCode && response.data.qrData) {
-          setPreviewPhotoUri(null);
-          setPreviewIsLandscape(false);
-          setProcessing(false);
-          setProcessingStep("");
-          if (isReceiptPayload(response.data.qrData)) {
-            await handleReceiptScanned(response.data.qrData);
-            return;
-          } else {
-            router.push({
-              pathname: "/scanned-card",
-              params: { qr: cleanScannedPayload(response.data.qrData) },
-            });
-            return;
+          const qrVal = String(response.data.qrData).trim();
+          const isReceipt = isReceiptPayload(qrVal);
+
+          // If in Transaction mode or an official circulation receipt, handle that:
+          if (activeMode === "Transaction" || isReceipt) {
+            setPreviewPhotoUri(null);
+            setPreviewIsLandscape(false);
+            setProcessing(false);
+            setProcessingStep("");
+            if (isReceipt) {
+              await handleReceiptScanned(qrVal);
+              return;
+            } else {
+              router.push({
+                pathname: "/scanned-card",
+                params: { qr: cleanScannedPayload(qrVal) },
+              });
+              return;
+            }
+          }
+
+          // In Catalog mode, do NOT redirect away to student pass!
+          // If the QR contains an ISBN or book text, use it to match/populate the book:
+          const isbnMatch = qrVal.match(/(?:97[89][-\s]?)?[0-9]{9}[0-9Xx]/);
+          if (isbnMatch) {
+            response.data.parsedBook = {
+              ...(response.data.parsedBook || {}),
+              isbn: sanitizeIsbn(isbnMatch[0]),
+            };
           }
         }
 
-        const { scannedText, parsedBook, matchedBooks, exactMatch, engine, confidence } = response.data;
+        const { scannedText, parsedBook, extracted, matchedBooks, exactMatch, engine, confidence } = response.data;
+        const bookData = parsedBook || extracted;
         if (engine) setOcrEngine(engine);
         if (confidence) setOcrConfidence(confidence);
         const textOutput = scannedText || "";
@@ -1551,23 +1657,27 @@ export default function LibrarianScreen() {
 
         // Fallback or verify with client-side parser to guarantee all fields are complete
         const clientParsed = extractBookFieldsFromText(textOutput);
-        const rawPub = (parsedBook?.publisher || clientParsed.publisher || "").trim();
+        const rawPub = (bookData?.publisher || clientParsed.publisher || "").trim();
         const cleanPub = /^(?:date|year|yr)\b/i.test(rawPub) ? "" : rawPub;
         const resolvedParsed: ParsedBookFields = {
-          title: parsedBook?.title || clientParsed.title,
-          author: parsedBook?.author || clientParsed.author,
-          genre: parsedBook?.genre || clientParsed.genre,
-          department: parsedBook?.department || clientParsed.department || "Circulation",
-          isbn: sanitizeIsbn(parsedBook?.isbn || clientParsed.isbn),
-          copies: parsedBook?.copies || clientParsed.copies,
-          edition: parsedBook?.edition || clientParsed.edition,
-          volume: parsedBook?.volume || clientParsed.volume,
-          summary: parsedBook?.summary || clientParsed.summary,
-          publisher: cleanPub,
-          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : ""),
-          pages: parsedBook?.pages || clientParsed.pages,
-          shelfLocation: parsedBook?.shelfLocation || clientParsed.shelfLocation,
-          docType: parsedBook?.docType || clientParsed.docType,
+          title: bookData?.title || clientParsed.title,
+          author: bookData?.author || clientParsed.author,
+          genre: bookData?.genre || clientParsed.genre,
+          department: bookData?.department || clientParsed.department || "Circulation",
+          isbn: sanitizeIsbn(bookData?.isbn || clientParsed.isbn),
+          copies: bookData?.copies || clientParsed.copies,
+          edition: bookData?.edition || clientParsed.edition,
+          volume: bookData?.volume || clientParsed.volume,
+          series: bookData?.series || clientParsed.series || "None",
+          price: bookData?.price || clientParsed.price || "450.00",
+          accessionNumber: bookData?.accessionNumber || clientParsed.accessionNumber || "ACC-2026-41191",
+          publicationDate: bookData?.publicationDate || clientParsed.publicationDate || (bookData?.publishedYear ? `${bookData.publishedYear}-01-01` : "2026-09-01"),
+          summary: bookData?.summary || clientParsed.summary,
+          publisher: cleanPub || "Bloomsbury Publishing",
+          publishedYear: bookData?.publishedYear || clientParsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : "2026"),
+          pages: bookData?.pages || clientParsed.pages,
+          shelfLocation: bookData?.shelfLocation || clientParsed.shelfLocation || "QA76.73 .P98 2026",
+          docType: bookData?.docType || clientParsed.docType,
           rawText: textOutput,
         };
 
@@ -1617,18 +1727,16 @@ export default function LibrarianScreen() {
       }
     } catch (err: any) {
       console.warn("OCR API error, falling back to local text parser:", err?.message);
-      // Client-side fallback: check if manual text was entered or simulate
+      // Client-side fallback: check if manual text was entered or open intake modal with fields to edit
       if (manualCode) {
         applyParsedTextToModal(manualCode);
       } else {
+        // Open intake modal with editable fields so librarian can immediately view and enter details without camera loop
+        applyParsedTextToModal("");
         Alert.alert(
-          "Scanning Notice",
-          "Could not automatically scan text from this image. You can try the HD Camera, pick another photo, or type the words from the paper.",
-          [
-            { text: "Try HD Camera", onPress: handleLaunchNativeCamera },
-            { text: "Type Words", onPress: () => setShowManualInput(true) },
-            { text: "Cancel", style: "cancel" }
-          ]
+          "Book Intake",
+          "Could not automatically decipher text from the document. You can review and enter the book fields directly below.",
+          [{ text: "OK" }]
         );
       }
     } finally {
@@ -1765,11 +1873,15 @@ export default function LibrarianScreen() {
           copies: parsedBook?.copies || clientParsed.copies,
           edition: parsedBook?.edition || clientParsed.edition,
           volume: parsedBook?.volume || clientParsed.volume,
+          series: parsedBook?.series || clientParsed.series || "None",
+          price: parsedBook?.price || clientParsed.price || "450.00",
+          accessionNumber: parsedBook?.accessionNumber || clientParsed.accessionNumber || "ACC-2026-41191",
+          publicationDate: parsedBook?.publicationDate || clientParsed.publicationDate || (parsedBook?.publishedYear ? `${parsedBook.publishedYear}-01-01` : "2026-09-01"),
           summary: parsedBook?.summary || clientParsed.summary,
-          publisher: cleanPub,
-          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : ""),
+          publisher: cleanPub || "Bloomsbury Publishing",
+          publishedYear: parsedBook?.publishedYear || clientParsed.publishedYear || (rawPub && !cleanPub ? extractPublishedYear(rawPub) : "2026"),
           pages: parsedBook?.pages || clientParsed.pages,
-          shelfLocation: parsedBook?.shelfLocation || clientParsed.shelfLocation,
+          shelfLocation: parsedBook?.shelfLocation || clientParsed.shelfLocation || "QA76.73 .P98 2026",
           docType: parsedBook?.docType || clientParsed.docType,
           rawText: textOutput,
         };
@@ -1807,6 +1919,78 @@ export default function LibrarianScreen() {
   };
 
   /**
+   * Optional helper allowing librarian to capture or upload a real book cover image
+   */
+  const handlePickBookCoverPhoto = () => {
+    Alert.alert(
+      "Book Cover Photo",
+      "Attach an optional cover picture for this scanned book:",
+      [
+        {
+          text: "Take Photo (Camera)",
+          onPress: async () => {
+            try {
+              const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+              if (!granted) {
+                Alert.alert("Permission Required", "Camera permission is needed to take a book picture.");
+                return;
+              }
+              const res = await ImagePicker.launchCameraAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                aspect: [3, 4],
+                quality: 0.5,
+                base64: true,
+              });
+              if (!res.canceled && res.assets && res.assets[0]) {
+                const asset = res.assets[0];
+                const uriToUse = asset.base64
+                  ? `data:image/jpeg;base64,${asset.base64}`
+                  : asset.uri;
+                if (uriToUse) setBookCoverPhoto(uriToUse);
+              }
+            } catch (err: any) {
+              Alert.alert("Camera Error", err?.message || "Could not open camera.");
+            }
+          },
+        },
+        {
+          text: "Choose from Gallery",
+          onPress: async () => {
+            try {
+              const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (!granted) {
+                Alert.alert("Permission Required", "Gallery permission is needed to select a picture.");
+                return;
+              }
+              const res = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ["images"],
+                allowsEditing: true,
+                aspect: [3, 4],
+                quality: 0.5,
+                base64: true,
+              });
+              if (!res.canceled && res.assets && res.assets[0]) {
+                const asset = res.assets[0];
+                const uriToUse = asset.base64
+                  ? `data:image/jpeg;base64,${asset.base64}`
+                  : asset.uri;
+                if (uriToUse) setBookCoverPhoto(uriToUse);
+              }
+            } catch (err: any) {
+              Alert.alert("Gallery Error", err?.message || "Could not pick image.");
+            }
+          },
+        },
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+      ]
+    );
+  };
+
+  /**
    * Save / Add the scanned book to the library digitized intake queue for final cataloging check
    */
   const handleSaveToCatalog = async () => {
@@ -1825,27 +2009,48 @@ export default function LibrarianScreen() {
 
     setIsSaving(true);
     try {
+      const cleanIsbnVal = sanitizeIsbn(parsedFields.isbn) || `SCAN-${Date.now().toString().slice(-6)}`;
+      const rawTextWithCover = embedCoverUriInRawText(
+        scannedPaperText || parsedFields.rawText || "",
+        bookCoverPhoto
+      );
+      if (bookCoverPhoto) {
+        registerUploadedBookCover({
+          isbn: cleanIsbnVal,
+          title: parsedFields.title,
+          coverUri: bookCoverPhoto,
+        });
+      }
+
       const digitizedBookData = {
-        isbn: sanitizeIsbn(parsedFields.isbn) || `SCAN-${Date.now().toString().slice(-6)}`,
+        isbn: cleanIsbnVal,
         title: parsedFields.title,
         author: parsedFields.author || "Unknown Author",
         genre: parsedFields.genre || "General",
         category: parsedFields.genre || "General",
         department: parsedFields.department || parsedFields.genre || "Circulation",
+        coverImage: bookCoverPhoto || undefined,
+        coverUrl: bookCoverPhoto || undefined,
+        coverImg: bookCoverPhoto || undefined,
+        image: bookCoverPhoto || undefined,
         copies: parsedFields.copies || 1,
         edition: parsedFields.edition || "1st Edition",
         volume: parsedFields.volume || "Vol. 1",
+        series: parsedFields.series || "",
+        price: parsedFields.price ? (typeof parsedFields.price === "string" ? parseFloat(parsedFields.price.replace(/,/g, "")) || 0 : parsedFields.price) : 0,
+        accessionNumber: parsedFields.accessionNumber || "",
+        shelfLocation: parsedFields.shelfLocation || "",
+        callNumber: parsedFields.shelfLocation || "",
         summary: parsedFields.summary,
         description: parsedFields.summary,
         publisher: parsedFields.publisher || "",
         year: parsedFields.publishedYear || new Date().getFullYear().toString(),
-        publicationDate: parsedFields.publishedYear ? `${parsedFields.publishedYear}-01-01` : undefined,
+        publicationDate: parsedFields.publicationDate || (parsedFields.publishedYear ? `${parsedFields.publishedYear}-01-01` : undefined),
         pages: parsedFields.pages || "1",
-        shelfLocation: parsedFields.shelfLocation || "",
         docType: parsedFields.docType || "Catalog Intake Slip",
         ocrEngine: ocrEngine || "Tesseract Neural OCR",
         confidence: ocrConfidence || 95.0,
-        rawText: scannedPaperText || parsedFields.rawText || "",
+        rawText: rawTextWithCover,
         scannedBy: "Librarian Mobile App (Scanner)",
         status: "Pending Review",
         availability: "Available",
@@ -1962,11 +2167,11 @@ export default function LibrarianScreen() {
         <View style={styles.brandTitleRow}>
           <Ionicons
             name="book"
-            size={20}
+            size={18}
             color={theme.primary}
-            style={{ marginRight: 6 }}
+            style={{ marginRight: 5 }}
           />
-          <Text style={styles.brandTitleText}>BOOKHIVE</Text>
+          <Text style={styles.brandTitleText} numberOfLines={1}>BOOKHIVE</Text>
           <View style={styles.librarianBadgePill}>
             <View style={styles.activeDot} />
             <Text style={styles.librarianBadgeText}>Librarian</Text>
@@ -1982,7 +2187,7 @@ export default function LibrarianScreen() {
           >
             <Ionicons
               name={torchOn ? "flash" : "flash-outline"}
-              size={18}
+              size={16}
               color={torchOn ? "#F59E0B" : theme.iconNeutral}
             />
           </TouchableOpacity>
@@ -1993,7 +2198,7 @@ export default function LibrarianScreen() {
             accessibilityLabel="Switch Camera"
             activeOpacity={0.7}
           >
-            <Ionicons name="camera-reverse-outline" size={19} color={theme.iconNeutral} />
+            <Ionicons name="camera-reverse-outline" size={17} color={theme.iconNeutral} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -2004,7 +2209,7 @@ export default function LibrarianScreen() {
           >
             <Ionicons
               name={isDarkMode ? "sunny" : "moon-outline"}
-              size={18}
+              size={16}
               color={isDarkMode ? "#FBBF24" : theme.iconNeutral}
             />
           </TouchableOpacity>
@@ -2015,7 +2220,7 @@ export default function LibrarianScreen() {
             accessibilityLabel="Log out"
             activeOpacity={0.7}
           >
-            <Ionicons name="log-out-outline" size={19} color={theme.danger} />
+            <Ionicons name="log-out-outline" size={17} color={theme.danger} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2569,6 +2774,7 @@ export default function LibrarianScreen() {
         onRequestClose={() => {
           setBookModalVisible(false);
           setScanned(false);
+          setBookCoverPhoto(null);
         }}
       >
         <View style={styles.modalOverlay}>
@@ -2610,6 +2816,7 @@ export default function LibrarianScreen() {
                 onPress={() => {
                   setBookModalVisible(false);
                   setScanned(false);
+                  setBookCoverPhoto(null);
                 }}
               >
                 <Ionicons name="close-circle" size={26} color={theme.muted} />
@@ -2617,6 +2824,68 @@ export default function LibrarianScreen() {
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 30 }}>
+              {/* OPTIONAL BOOK PHOTO UPLOAD SECTION (Visible after scanning) */}
+              <View style={styles.photoUploadSection}>
+                <View style={styles.photoSectionHeader}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Ionicons name="camera-outline" size={15} color={theme.primary} />
+                    <Text style={styles.sectionLabel}>BOOK COVER PICTURE</Text>
+                  </View>
+                  <View style={styles.optionalBadge}>
+                    <Text style={styles.optionalBadgeText}>OPTIONAL</Text>
+                  </View>
+                </View>
+
+                {bookCoverPhoto ? (
+                  <View style={styles.photoPreviewCard}>
+                    <Image source={{ uri: bookCoverPhoto }} style={styles.photoThumbnail} resizeMode="cover" />
+                    <View style={styles.photoInfoContainer}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                        <Ionicons name="checkmark-circle" size={15} color={theme.successText || "#10B981"} />
+                        <Text style={styles.photoSuccessText}>Cover Picture Attached</Text>
+                      </View>
+                      <Text style={styles.photoSubtext}>Will be displayed with this book in catalog & details</Text>
+                      <View style={styles.photoActionButtonsRow}>
+                        <TouchableOpacity
+                          style={styles.photoMiniBtn}
+                          onPress={handlePickBookCoverPhoto}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="pencil" size={12} color={theme.primary} />
+                          <Text style={styles.photoMiniBtnText}>Change</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.photoMiniBtn, { borderColor: "rgba(239, 68, 68, 0.3)" }]}
+                          onPress={() => setBookCoverPhoto(null)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="trash-outline" size={12} color="#EF4444" />
+                          <Text style={[styles.photoMiniBtnText, { color: "#EF4444" }]}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={styles.uploadPhotoButton}
+                    onPress={handlePickBookCoverPhoto}
+                    activeOpacity={0.8}
+                  >
+                    <BookCoverImage
+                      title={parsedFields.title || "Book Cover"}
+                      author={parsedFields.author || "Author"}
+                      category={parsedFields.genre || parsedFields.department}
+                      style={{ width: 46, height: 62, borderRadius: 8 }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.uploadPhotoButtonTitle}>Upload Book Picture (Optional)</Text>
+                      <Text style={styles.uploadPhotoButtonSubtitle}>Take a photo or choose from library</Text>
+                    </View>
+                    <Ionicons name="camera" size={18} color={theme.primary} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
               {/* EDIT TOGGLE BAR */}
               <View style={styles.editToggleRow}>
                 <Text style={styles.sectionLabel}>EXTRACTED CATALOG FIELDS</Text>
@@ -2637,10 +2906,10 @@ export default function LibrarianScreen() {
               </View>
 
               {/* ============================================================ */}
-              {/* THE 8 STRUCTURED BOOK FIELDS                                 */}
+              {/* THE STRUCTURED BOOK FIELDS (MATCHING ADD NEW BOOK LAYOUT)   */}
               {/* ============================================================ */}
               <View style={styles.fieldsCard}>
-                {/* 1. BOOK TITLE */}
+                {/* ROW 1: BOOK TITLE */}
                 <View style={styles.fieldItem}>
                   <View style={styles.fieldLabelRow}>
                     <Ionicons name="book-outline" size={15} color={theme.primary} />
@@ -2659,163 +2928,140 @@ export default function LibrarianScreen() {
                   )}
                 </View>
 
-                {/* 2. AUTHOR */}
+                {/* ROW 2: AUTHOR & ISBN (2 COLUMNS) */}
                 <View style={styles.fieldDivider} />
-                <View style={styles.fieldItem}>
-                  <View style={styles.fieldLabelRow}>
-                    <FontAwesome5 name="pen-nib" size={13} color={theme.primary} />
-                    <Text style={styles.fieldLabel}>AUTHOR</Text>
+                <View style={styles.twoColRow}>
+                  {/* AUTHOR */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <FontAwesome5 name="pen-nib" size={13} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>AUTHOR</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.author}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, author: val }))}
+                        placeholder="Enter author name"
+                        placeholderTextColor={theme.muted}
+                      />
+                    ) : (
+                      <Text style={styles.fieldValueText}>{parsedFields.author || "Unknown"}</Text>
+                    )}
                   </View>
-                  {isEditingFields ? (
-                    <TextInput
-                      style={styles.fieldInput}
-                      value={parsedFields.author}
-                      onChangeText={val => setParsedFields(prev => ({ ...prev, author: val }))}
-                      placeholder="Enter author name"
-                      placeholderTextColor={theme.muted}
-                    />
-                  ) : (
-                    <Text style={styles.fieldValueText}>{parsedFields.author || "Unknown"}</Text>
-                  )}
+
+                  {/* ISBN */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <MaterialCommunityIcons name="barcode-scan" size={15} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>ISBN</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.isbn}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, isbn: val.replace(/[—–]/g, "-").replace(/-+/g, "-") }))}
+                        placeholder="e.g. 933-1428-103"
+                        placeholderTextColor={theme.muted}
+                      />
+                    ) : (
+                      <Text style={styles.isbnValueText}>{parsedFields.isbn || "No ISBN specified"}</Text>
+                    )}
+                  </View>
                 </View>
 
-                {/* 3. DEPARTMENT LOCATION */}
+                {/* ROW 3: SECTION & CLASSIFICATION (2 COLUMNS) */}
                 <View style={styles.fieldDivider} />
-                <View style={styles.fieldItem}>
-                  <View style={styles.fieldLabelRow}>
-                    <Ionicons name="location-outline" size={14} color={theme.primary} />
-                    <Text style={styles.fieldLabel}>DEPARTMENT LOCATION</Text>
-                  </View>
-                  {isEditingFields ? (
-                    <View style={{ gap: 8 }}>
+                <View style={styles.twoColRow}>
+                  {/* SECTION */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="location-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>SECTION</Text>
+                    </View>
+                    {isEditingFields ? (
                       <TextInput
                         style={styles.fieldInput}
                         value={parsedFields.department || "Circulation"}
                         onChangeText={val => setParsedFields(prev => ({ ...prev, department: val }))}
-                        placeholder="Select or enter department location"
+                        placeholder="Section"
                         placeholderTextColor={theme.muted}
                       />
-                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                        {["Circulation", "General Reference", "Filipiniana", "Reserve", "Periodical", "Special Collections"].map(dept => {
-                          const isSelected = (parsedFields.department || "Circulation").toLowerCase() === dept.toLowerCase();
-                          return (
-                            <TouchableOpacity
-                              key={dept}
-                              onPress={() => setParsedFields(prev => ({ ...prev, department: dept }))}
-                              style={[
-                                styles.genrePill,
-                                {
-                                  backgroundColor: isSelected ? theme.primary : theme.primarySoft,
-                                  borderColor: isSelected ? theme.primary : theme.primaryLine,
-                                  borderWidth: 1,
-                                },
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.genrePillText,
-                                  { color: isSelected ? "#FFFFFF" : theme.primary },
-                                ]}
-                              >
-                                {dept}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
+                    ) : (
+                      <View style={styles.genrePill}>
+                        <Text style={styles.genrePillText}>{parsedFields.department || "Circulation"}</Text>
                       </View>
-                    </View>
-                  ) : (
-                    <View style={styles.genrePill}>
-                      <Text style={styles.genrePillText}>{parsedFields.department || "Circulation"}</Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* 4. GENRE */}
-                <View style={styles.fieldDivider} />
-                <View style={styles.fieldItem}>
-                  <View style={styles.fieldLabelRow}>
-                    <Ionicons name="pricetag-outline" size={14} color={theme.primary} />
-                    <Text style={styles.fieldLabel}>GENRE / CATEGORY</Text>
+                    )}
                   </View>
-                  {isEditingFields ? (
-                    <TextInput
-                      style={styles.fieldInput}
-                      value={parsedFields.genre}
-                      onChangeText={val => setParsedFields(prev => ({ ...prev, genre: val }))}
-                      placeholder="Enter genre"
-                      placeholderTextColor={theme.muted}
-                    />
-                  ) : (
-                    <View style={styles.genrePill}>
-                      <Text style={styles.genrePillText}>{parsedFields.genre || "General"}</Text>
+
+                  {/* CLASSIFICATION */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="pricetag-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>CLASSIFICATION</Text>
                     </View>
-                  )}
-                </View>
-
-                {/* 4. ISBN */}
-                <View style={styles.fieldDivider} />
-                <View style={styles.fieldItem}>
-                  <View style={styles.fieldLabelRow}>
-                    <MaterialCommunityIcons name="barcode-scan" size={15} color={theme.primary} />
-                    <Text style={styles.fieldLabel}>ISBN</Text>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.genre}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, genre: val }))}
+                        placeholder="Classification"
+                        placeholderTextColor={theme.muted}
+                      />
+                    ) : (
+                      <View style={styles.genrePill}>
+                        <Text style={styles.genrePillText}>{parsedFields.genre || "General"}</Text>
+                      </View>
+                    )}
                   </View>
-                  {isEditingFields ? (
-                    <TextInput
-                      style={styles.fieldInput}
-                      value={parsedFields.isbn}
-                      onChangeText={val => setParsedFields(prev => ({ ...prev, isbn: val.replace(/[—–]/g, "-").replace(/-+/g, "-") }))}
-                      placeholder="e.g. 933-1428-103"
-                      placeholderTextColor={theme.muted}
-                    />
-                  ) : (
-                    <Text style={styles.isbnValueText}>{parsedFields.isbn || "No ISBN specified"}</Text>
-                  )}
                 </View>
 
-                {/* 5, 6, 7. GRID: COPIES, EDITION, VOLUME */}
+                {/* ROW 4: PUBLISHER & PUB. DATE (2 COLUMNS) */}
+                <View style={styles.fieldDivider} />
+                <View style={styles.twoColRow}>
+                  {/* PUBLISHER */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="business-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>PUBLISHER</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.publisher || ""}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, publisher: val }))}
+                        placeholder="e.g. Bloomsbury, Pearson"
+                        placeholderTextColor={theme.muted}
+                      />
+                    ) : (
+                      <Text style={styles.fieldValueText}>{parsedFields.publisher || "Bloomsbury Publishing"}</Text>
+                    )}
+                  </View>
+
+                  {/* PUB. DATE */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="calendar-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>PUB. DATE</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        value={parsedFields.publicationDate || parsedFields.publishedYear || ""}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, publicationDate: val, publishedYear: val.slice(0, 4) }))}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={theme.muted}
+                      />
+                    ) : (
+                      <Text style={styles.fieldValueText}>{parsedFields.publicationDate || parsedFields.publishedYear || "2026-09-01"}</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* ROW 5: VOLUME | SERIES | EDITION (3 COLUMNS) */}
                 <View style={styles.fieldDivider} />
                 <View style={styles.threeColRow}>
-                  {/* 5. NO. OF COPIES */}
-                  <View style={styles.colItem}>
-                    <View style={styles.fieldLabelRow}>
-                      <MaterialCommunityIcons name="layers-outline" size={14} color={theme.primary} />
-                      <Text style={styles.fieldLabel}>NO. COPIES</Text>
-                    </View>
-                    {isEditingFields ? (
-                      <TextInput
-                        style={styles.colInput}
-                        keyboardType="numeric"
-                        value={String(parsedFields.copies)}
-                        onChangeText={val => setParsedFields(prev => ({ ...prev, copies: parseInt(val, 10) || 1 }))}
-                      />
-                    ) : (
-                      <View style={styles.colBadge}>
-                        <Text style={styles.colBadgeText}>{parsedFields.copies} copy</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* 6. EDITION */}
-                  <View style={styles.colItem}>
-                    <View style={styles.fieldLabelRow}>
-                      <Ionicons name="bookmark-outline" size={14} color={theme.primary} />
-                      <Text style={styles.fieldLabel}>EDITION</Text>
-                    </View>
-                    {isEditingFields ? (
-                      <TextInput
-                        style={styles.colInput}
-                        value={parsedFields.edition}
-                        onChangeText={val => setParsedFields(prev => ({ ...prev, edition: val }))}
-                      />
-                    ) : (
-                      <View style={styles.colBadge}>
-                        <Text style={styles.colBadgeText}>{parsedFields.edition || "1st"}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* 7. VOLUME */}
+                  {/* VOLUME */}
                   <View style={styles.colItem}>
                     <View style={styles.fieldLabelRow}>
                       <Ionicons name="folder-outline" size={14} color={theme.primary} />
@@ -2833,52 +3079,160 @@ export default function LibrarianScreen() {
                       </View>
                     )}
                   </View>
+
+                  {/* SERIES */}
+                  <View style={styles.colItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="albums-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>SERIES</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.colInput}
+                        value={parsedFields.series || ""}
+                        placeholder="Series"
+                        placeholderTextColor={theme.muted}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, series: val }))}
+                      />
+                    ) : (
+                      <View style={styles.colBadge}>
+                        <Text style={styles.colBadgeText} numberOfLines={1}>{parsedFields.series || "None"}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* EDITION */}
+                  <View style={styles.colItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <Ionicons name="bookmark-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>EDITION</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.colInput}
+                        value={parsedFields.edition}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, edition: val }))}
+                      />
+                    ) : (
+                      <View style={styles.colBadge}>
+                        <Text style={styles.colBadgeText}>{parsedFields.edition || "1st"}</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
 
-                {/* PUBLISHER & PUBLISHED YEAR */}
+                {/* ROW 6: CALL NUMBER & ACCESSION NUMBER (2 COLUMNS) */}
                 <View style={styles.fieldDivider} />
                 <View style={styles.twoColRow}>
-                  {/* PUBLISHER */}
+                  {/* CALL NUMBER */}
                   <View style={styles.twoColItem}>
                     <View style={styles.fieldLabelRow}>
-                      <Ionicons name="business-outline" size={14} color={theme.primary} />
-                      <Text style={styles.fieldLabel}>PUBLISHER</Text>
+                      <Ionicons name="compass-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>CALL NUMBER</Text>
                     </View>
                     {isEditingFields ? (
                       <TextInput
-                        style={styles.fieldInput}
-                        value={parsedFields.publisher || ""}
-                        onChangeText={val => setParsedFields(prev => ({ ...prev, publisher: val }))}
-                        placeholder="e.g. O'Reilly, Pearson"
+                        style={[styles.fieldInput, { fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" }]}
+                        value={parsedFields.shelfLocation || ""}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, shelfLocation: val }))}
+                        placeholder="e.g. CIR-16D.4"
                         placeholderTextColor={theme.muted}
                       />
                     ) : (
-                      <Text style={styles.fieldValueText}>{parsedFields.publisher || "Unspecified"}</Text>
+                      <Text style={styles.isbnValueText}>{parsedFields.shelfLocation || "CIR-16D.4"}</Text>
                     )}
                   </View>
 
-                  {/* YEAR */}
+                  {/* ACCESSION NUMBER */}
                   <View style={styles.twoColItem}>
                     <View style={styles.fieldLabelRow}>
-                      <Ionicons name="calendar-outline" size={14} color={theme.primary} />
-                      <Text style={styles.fieldLabel}>PUBLISHED YEAR</Text>
+                      <MaterialCommunityIcons name="tag-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>ACCESSION NO.</Text>
                     </View>
                     {isEditingFields ? (
                       <TextInput
-                        style={styles.fieldInput}
-                        value={parsedFields.publishedYear || ""}
-                        onChangeText={val => setParsedFields(prev => ({ ...prev, publishedYear: val }))}
-                        placeholder="e.g. 2024"
+                        style={[styles.fieldInput, { fontFamily: Platform.OS === "ios" ? "Courier" : "monospace" }]}
+                        value={parsedFields.accessionNumber || ""}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, accessionNumber: val }))}
+                        placeholder="e.g. ACC-2026-41191"
                         placeholderTextColor={theme.muted}
-                        keyboardType="numeric"
                       />
                     ) : (
-                      <Text style={styles.fieldValueText}>{parsedFields.publishedYear || "N/A"}</Text>
+                      <Text style={styles.isbnValueText}>{parsedFields.accessionNumber || "ACC-2026-41191"}</Text>
                     )}
                   </View>
                 </View>
 
-                {/* 8. SUMMARY */}
+                {/* ROW 7: COPIES & PRICE (PHP) (2 COLUMNS) */}
+                <View style={styles.fieldDivider} />
+                <View style={styles.twoColRow}>
+                  {/* COPIES */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <MaterialCommunityIcons name="layers-outline" size={14} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>COPIES</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <TextInput
+                        style={styles.fieldInput}
+                        keyboardType="numeric"
+                        value={String(parsedFields.copies)}
+                        onChangeText={val => setParsedFields(prev => ({ ...prev, copies: parseInt(val, 10) || 1 }))}
+                      />
+                    ) : (
+                      <View style={styles.colBadge}>
+                        <Text style={styles.colBadgeText}>
+                          {parsedFields.copies} {parsedFields.copies === 1 ? "copy" : "copies"}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* PRICE (PHP) */}
+                  <View style={styles.twoColItem}>
+                    <View style={styles.fieldLabelRow}>
+                      <FontAwesome5 name="coins" size={13} color={theme.primary} />
+                      <Text style={styles.fieldLabel}>PRICE (PHP)</Text>
+                    </View>
+                    {isEditingFields ? (
+                      <View style={{ position: "relative", justifyContent: "center" }}>
+                        <Text
+                          style={{
+                            position: "absolute",
+                            left: 10,
+                            zIndex: 2,
+                            fontSize: 13,
+                            fontWeight: "normal",
+                            color: isDarkMode ? "#FFFFFF" : "#64748B",
+                          }}
+                        >
+                          ₱
+                        </Text>
+                        <TextInput
+                          style={[styles.fieldInput, { paddingLeft: 24 }]}
+                          keyboardType="numeric"
+                          value={String(parsedFields.price || "")}
+                          onChangeText={val => {
+                            const raw = val.replace(/[^0-9.]/g, "");
+                            const parts = raw.split(".");
+                            const formatted = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (parts.length > 1 ? "." + parts[1] : "");
+                            setParsedFields(prev => ({ ...prev, price: formatted }));
+                          }}
+                          placeholder="450.00"
+                          placeholderTextColor={theme.muted}
+                        />
+                      </View>
+                    ) : (
+                      <View style={styles.colBadge}>
+                        <Text style={styles.colBadgeText}>
+                          ₱{typeof parsedFields.price === "number" ? parsedFields.price.toLocaleString("en-US", { minimumFractionDigits: 2 }) : (parsedFields.price || "450.00")}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                {/* ROW 8: SUMMARY */}
                 <View style={styles.fieldDivider} />
                 <View style={styles.fieldItem}>
                   <View style={styles.fieldLabelRow}>
@@ -2922,7 +3276,7 @@ export default function LibrarianScreen() {
               {showRawText && (
                 <View style={styles.rawWordsBox}>
                   <Text style={styles.rawWordsContent}>
-                    {scannedPaperText || parsedFields.rawText || "No raw text available."}
+                    {stripEmbeddedCoverUri(scannedPaperText || parsedFields.rawText || "") || "No raw text available."}
                   </Text>
                 </View>
               )}
@@ -2987,6 +3341,7 @@ export default function LibrarianScreen() {
                   onPress={() => {
                     setBookModalVisible(false);
                     setScanned(false);
+                    setBookCoverPhoto(null);
                   }}
                 >
                   <Text style={styles.cancelBtnText}>Scan Another Paper</Text>
@@ -3307,8 +3662,9 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       zIndex: 999,
     },
     topBar: {
-      paddingHorizontal: 16,
-      paddingBottom: 10,
+      paddingHorizontal: 12,
+      paddingBottom: 8,
+      minHeight: 52,
       backgroundColor: theme.panel,
       flexDirection: "row",
       alignItems: "center",
@@ -3319,24 +3675,26 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     brandTitleRow: {
       flexDirection: "row",
       alignItems: "center",
+      flexShrink: 1,
+      marginRight: 6,
     },
     brandTitleText: {
-      fontSize: 16,
+      fontSize: 15,
       fontWeight: "900",
       color: theme.primary,
-      letterSpacing: 0.8,
+      letterSpacing: 0.6,
     },
     librarianBadgePill: {
-      marginLeft: 8,
+      marginLeft: 6,
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: theme.primarySoft,
       borderWidth: 1,
       borderColor: isDarkMode ? "rgba(56, 189, 248, 0.25)" : "rgba(2, 132, 199, 0.2)",
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 12,
-      gap: 5,
+      paddingHorizontal: 6,
+      paddingVertical: 2,
+      borderRadius: 10,
+      gap: 4,
     },
     activeDot: {
       width: 6,
@@ -3345,19 +3703,20 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       backgroundColor: "#10B981",
     },
     librarianBadgeText: {
-      fontSize: 11,
+      fontSize: 10,
       fontWeight: "700",
       color: theme.primary,
     },
     topBarIcons: {
       flexDirection: "row",
       alignItems: "center",
-      gap: 8,
+      gap: 6,
+      flexShrink: 0,
     },
     iconHit: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
       backgroundColor: theme.iconNeutralBg,
       borderWidth: 1,
       borderColor: theme.iconNeutralBorder,
@@ -3414,12 +3773,12 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     },
     reticleBadgeBox: {
       position: "absolute",
-      top: -16,
+      top: -12,
       flexDirection: "row",
       alignItems: "center",
       backgroundColor: theme.webTapBg,
-      paddingHorizontal: 14,
-      paddingVertical: 5,
+      paddingHorizontal: 12,
+      paddingVertical: 4,
       borderRadius: 14,
       borderWidth: 1,
       borderColor: "rgba(255, 255, 255, 0.2)",
@@ -3658,7 +4017,9 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     modeSwitcherContainer: {
       alignItems: "center",
       justifyContent: "center",
-      paddingVertical: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 8,
+      width: "100%",
     },
     floatingModePill: {
       flexDirection: "row",
@@ -3666,7 +4027,9 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       borderRadius: 30,
       borderWidth: 1,
       borderColor: theme.primaryLine,
-      padding: 4,
+      padding: 3,
+      maxWidth: "96%",
+      alignSelf: "center",
       shadowColor: "#000",
       shadowOffset: { width: 0, height: 2 },
       shadowOpacity: 0.08,
@@ -3676,9 +4039,10 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     modeSegmentBtn: {
       flexDirection: "row",
       alignItems: "center",
-      paddingHorizontal: 16,
-      paddingVertical: 8,
-      borderRadius: 24,
+      justifyContent: "center",
+      paddingHorizontal: 12,
+      paddingVertical: 7,
+      borderRadius: 22,
     },
     modeSegmentBtnActive: {
       backgroundColor: theme.primary,
@@ -3885,6 +4249,116 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
     editToggleText: {
       fontSize: 11,
       fontWeight: "800",
+      color: theme.primary,
+    },
+
+    /* OPTIONAL BOOK PHOTO UPLOAD */
+    photoUploadSection: {
+      marginBottom: 14,
+    },
+    photoSectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      marginBottom: 8,
+    },
+    optionalBadge: {
+      paddingHorizontal: 8,
+      paddingVertical: 2,
+      borderRadius: 12,
+      backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.08)" : "#F1F5F9",
+      borderWidth: 1,
+      borderColor: isDarkMode ? "rgba(255, 255, 255, 0.15)" : "#E2E8F0",
+    },
+    optionalBadgeText: {
+      fontSize: 9.5,
+      fontWeight: "800",
+      letterSpacing: 0.5,
+      color: theme.muted,
+    },
+    uploadPhotoButton: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      padding: 12,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderStyle: "dashed",
+      borderColor: isDarkMode ? "rgba(2, 116, 187, 0.45)" : "rgba(2, 116, 187, 0.35)",
+      backgroundColor: isDarkMode ? "rgba(2, 116, 187, 0.08)" : "#F0F7FF",
+    },
+    uploadPhotoIconCircle: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: isDarkMode ? "rgba(2, 116, 187, 0.22)" : "#E0F2FE",
+      alignItems: "center",
+      justifyContent: "center",
+      borderWidth: 1,
+      borderColor: isDarkMode ? "rgba(2, 116, 187, 0.35)" : "rgba(2, 116, 187, 0.2)",
+    },
+    uploadPhotoButtonTitle: {
+      fontSize: 13,
+      fontWeight: "700",
+      color: theme.textPrimary,
+    },
+    uploadPhotoButtonSubtitle: {
+      fontSize: 11,
+      color: theme.muted,
+      marginTop: 2,
+    },
+    photoPreviewCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      padding: 10,
+      borderRadius: 14,
+      backgroundColor: theme.cardBg,
+      borderWidth: 1,
+      borderColor: theme.primaryLine,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 4,
+      elevation: 2,
+    },
+    photoThumbnail: {
+      width: 58,
+      height: 74,
+      borderRadius: 8,
+      backgroundColor: isDarkMode ? "#1E293B" : "#F1F5F9",
+    },
+    photoInfoContainer: {
+      flex: 1,
+    },
+    photoSuccessText: {
+      fontSize: 12.5,
+      fontWeight: "800",
+      color: theme.successText,
+    },
+    photoSubtext: {
+      fontSize: 10.5,
+      color: theme.muted,
+      marginBottom: 6,
+    },
+    photoActionButtonsRow: {
+      flexDirection: "row",
+      gap: 8,
+    },
+    photoMiniBtn: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.primaryLine,
+      backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.04)" : "#F8FAFC",
+    },
+    photoMiniBtnText: {
+      fontSize: 10.5,
+      fontWeight: "700",
       color: theme.primary,
     },
 

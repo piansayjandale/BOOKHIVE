@@ -62,6 +62,8 @@ coverage/
 **/coverage/
 .cache/
 **/.cache/
+*.traineddata
+**/*.traineddata
 
 # ------------------------------------------------------------------------------
 # 6. Operating System & IDE Files

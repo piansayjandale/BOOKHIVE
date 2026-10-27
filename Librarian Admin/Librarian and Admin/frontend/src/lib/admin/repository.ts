@@ -198,6 +198,10 @@ function toAdminBook(book: BookRecord, state: AdminState): AdminBookRecord {
     summary: book.summary,
     genres: book.genres ?? "",
     copies: book.copies ?? 1,
+    edition: book.edition,
+    volume: book.volume,
+    series: book.series,
+    price: book.price,
   };
 }
 
@@ -964,21 +968,23 @@ export const adminRepository = {
 
   async listBooks(options: {
     search?: string;
+    searchField?: string;
     department?: string;
     category?: string;
     status?: string;
     page?: number;
     pageSize?: number;
     sortBy?: string;
-  }): Promise<AdminBooksPayload> {
+  }): Promise<AdminBooksPayload & { addedToday?: number }> {
     const state = await getAdminState();
     const search = options.search?.trim().toLowerCase() ?? "";
+    const searchField = options.searchField || "title";
     const department = options.department ?? "All";
     const category = options.category ?? "All";
     const status = options.status ?? "All";
     const page = Math.max(1, options.page ?? 1);
     const pageSize = Math.max(1, Math.min(200, options.pageSize ?? 10));
-    const catalogResult = await store.listBooks(search, department, 100000, 0, true);
+    const catalogResult = await store.listBooks(search, department, 100000, 0, true, searchField);
     const baseBooks: AdminBookRecord[] = catalogResult.books.map(
       (book: BookRecord) => toAdminBook(book, state),
     );
@@ -989,8 +995,21 @@ export const adminRepository = {
         if (status === "Archived") return book.archived;
         if (status === "Active") return !book.archived;
         return true;
-      })
-      .sort((left: AdminBookRecord, right: AdminBookRecord) => left.title.localeCompare(right.title));
+      });
+
+    if (search) {
+      filtered.sort((left, right) => {
+        const lTitle = left.title.toLowerCase();
+        const rTitle = right.title.toLowerCase();
+        if (lTitle === search && rTitle !== search) return -1;
+        if (rTitle === search && lTitle !== search) return 1;
+        if (lTitle.startsWith(search) && !rTitle.startsWith(search)) return -1;
+        if (rTitle.startsWith(search) && !lTitle.startsWith(search)) return 1;
+        return lTitle.localeCompare(rTitle);
+      });
+    } else {
+      filtered.sort((left: AdminBookRecord, right: AdminBookRecord) => left.title.localeCompare(right.title));
+    }
 
     const total = catalogResult.total > filtered.length && category === "All" && status === "All"
       ? catalogResult.total
@@ -1003,6 +1022,7 @@ export const adminRepository = {
       total,
       page,
       pageSize,
+      addedToday: (catalogResult as any).addedToday ?? 0,
     };
   },
 

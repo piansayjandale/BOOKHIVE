@@ -38,6 +38,8 @@ export type ReservationBook = {
   isReturned?: boolean;
   pickedUpAt?: string;
   isPickedUp?: boolean;
+  rawTimestamp?: number;
+  requestedAt?: string;
 };
 
 
@@ -99,13 +101,15 @@ export type UserProfile = {
 };
 
 export type StudentIdCardsData = {
-  schoolIdFront: string;
-  schoolIdBack: string;
-  libraryIdFront: string;
-  libraryIdBack: string;
+  schoolIdFront?: string;
+  schoolIdBack?: string;
+  libraryIdFront?: string;
+  libraryIdBack?: string;
   verifiedAt?: string;
   ownerEmail?: string;
   ownerStudentId?: string;
+  orientation?: "portrait" | "landscape";
+  rotations?: Record<string, number>;
 };
 
 export const hasAllFourIdPhotos = (
@@ -185,11 +189,11 @@ export const saveStudentIdCardsToStorage = async (
     (cleanId && inMemoryIdCardsByUser[cleanId]) ||
     null;
 
-  const pickLightUri = (incoming: string, prev?: string) => {
+  const pickLightUri = (incoming?: string, prev?: string) => {
     if (prev && prev.startsWith("file://") && incoming && incoming.startsWith("data:")) {
       return prev;
     }
-    return incoming;
+    return incoming || prev;
   };
 
   const payload: StudentIdCardsData = {
@@ -200,6 +204,8 @@ export const saveStudentIdCardsToStorage = async (
     verifiedAt: cards.verifiedAt || existing?.verifiedAt || new Date().toISOString(),
     ownerEmail: cleanEmail,
     ownerStudentId: cleanId,
+    orientation: cards.orientation || existing?.orientation || "portrait",
+    rotations: { ...(existing?.rotations || {}), ...(cards.rotations || {}) },
   };
 
   // Always cache in memory immediately so session lookups never fail
@@ -259,6 +265,10 @@ export const loadStudentIdCardsForUser = async (
 
   // 1. Check direct fields on passed object
   if (hasAllFourIdPhotos(userOrProfile)) {
+    const fallbackMemory =
+      (targetEmail && inMemoryIdCardsByUser[targetEmail]) ||
+      (targetStudentId && inMemoryIdCardsByUser[targetStudentId]) ||
+      null;
     return {
       schoolIdFront: String(userOrProfile!.schoolIdFront),
       schoolIdBack: String(userOrProfile!.schoolIdBack),
@@ -266,6 +276,8 @@ export const loadStudentIdCardsForUser = async (
       libraryIdBack: String(userOrProfile!.libraryIdBack),
       ownerEmail: targetEmail,
       ownerStudentId: targetStudentId,
+      orientation: (userOrProfile as any)?.orientation || fallbackMemory?.orientation || "portrait",
+      rotations: (userOrProfile as any)?.rotations || fallbackMemory?.rotations || {},
     };
   }
 
@@ -333,6 +345,50 @@ export const loadStudentIdCardsForUser = async (
   }
 
   return null;
+};
+
+export const rotateIdCardSlot = async (
+  slotKey: string,
+  email?: string,
+  studentId?: string,
+  deltaDegrees = 90
+): Promise<number> => {
+  const cleanEmail = (email || cachedProfile.email || "").trim().toLowerCase();
+  const cleanId = (studentId || cachedProfile.studentId || "").trim().toLowerCase();
+  const existingCards = await loadStudentIdCardsForUser({ email: cleanEmail, studentId: cleanId });
+  const cards: StudentIdCardsData = existingCards || {};
+
+  const currentRotations = cards.rotations || {};
+  const currentAngle = currentRotations[slotKey] || 0;
+  const newAngle = (currentAngle + deltaDegrees) % 360;
+  const updatedRotations = { ...currentRotations, [slotKey]: newAngle };
+
+  const updatedCards: StudentIdCardsData = {
+    ...cards,
+    rotations: updatedRotations,
+  };
+
+  await saveStudentIdCardsToStorage(updatedCards, cleanEmail, cleanId);
+  return newAngle;
+};
+
+export const toggleIdCardsOrientation = async (
+  email?: string,
+  studentId?: string
+): Promise<"portrait" | "landscape"> => {
+  const cleanEmail = (email || cachedProfile.email || "").trim().toLowerCase();
+  const cleanId = (studentId || cachedProfile.studentId || "").trim().toLowerCase();
+  const existingCards = await loadStudentIdCardsForUser({ email: cleanEmail, studentId: cleanId });
+  const cards: StudentIdCardsData = existingCards || {};
+  const currentOrientation = cards.orientation || "portrait";
+  const newOrientation = currentOrientation === "portrait" ? "landscape" : "portrait";
+
+  const updatedCards: StudentIdCardsData = {
+    ...cards,
+    orientation: newOrientation,
+  };
+  await saveStudentIdCardsToStorage(updatedCards, cleanEmail, cleanId);
+  return newOrientation;
 };
 
 export type AnnouncementItem = {
@@ -874,6 +930,64 @@ export const formatBorrowDateTime = (dateStr?: string | Date) => {
   }
 };
 
+/**
+ * Robust millisecond parser for ANY date representation:
+ * - Native ISO 8601 timestamps (e.g. 2026-10-25T23:31:00.000Z)
+ * - Formatted date-time strings with AM/PM (e.g. "2026-10-25 11:31 pm", "2026-10-24 1:02 am")
+ * - Plain dates (e.g. "2026-10-25")
+ * Compatible with Hermes JS engine on Android where non-ISO Date parsing returns NaN.
+ */
+export const parseDateToMs = (dateInput?: string | number | Date | null): number => {
+  if (!dateInput) return 0;
+  if (typeof dateInput === 'number') return isNaN(dateInput) ? 0 : dateInput;
+  if (dateInput instanceof Date) {
+    const t = dateInput.getTime();
+    return isNaN(t) ? 0 : t;
+  }
+  const str = String(dateInput).trim();
+  if (
+    !str ||
+    str.toLowerCase() === 'returned' ||
+    str.toLowerCase() === 'pending' ||
+    str.toLowerCase() === 'not set' ||
+    str.toLowerCase() === 'reservation'
+  ) {
+    return 0;
+  }
+
+  // 1. Try standard Date.parse (works for ISO-8601 like 2026-10-25T23:31:00.000Z)
+  const nativeParsed = Date.parse(str);
+  if (!isNaN(nativeParsed) && nativeParsed > 0) {
+    return nativeParsed;
+  }
+
+  // 2. Parse "YYYY-MM-DD hh:mm am/pm" or "YYYY-MM-DD hh:mm:ss" or "YYYY-MM-DD"
+  // Example: "2026-10-25 11:31 pm" or "2026-10-24 1:02 am"
+  const match = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?)?/i);
+  if (match) {
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10) - 1;
+    const day = parseInt(match[3], 10);
+    let hour = match[4] ? parseInt(match[4], 10) : 0;
+    const minute = match[5] ? parseInt(match[5], 10) : 0;
+    const second = match[6] ? parseInt(match[6], 10) : 0;
+    const meridian = match[7] ? match[7].toLowerCase() : null;
+
+    if (meridian === 'pm' && hour < 12) {
+      hour += 12;
+    } else if (meridian === 'am' && hour === 12) {
+      hour = 0;
+    }
+
+    const d = new Date(year, month, day, hour, minute, second);
+    const t = d.getTime();
+    if (!isNaN(t)) return t;
+  }
+
+  const fallback = new Date(str).getTime();
+  return isNaN(fallback) ? 0 : fallback;
+};
+
 export const parseDateOnly = (dateStr?: string | Date | null): { year: number; month: number; day: number } | null => {
   if (!dateStr) return null;
   if (typeof dateStr === "string") {
@@ -954,24 +1068,31 @@ export const syncTransactionsWithBackend = async (force = false): Promise<void> 
         const dbHistory = response.data.history;
 
         const mappedList: ReservationBook[] = dbHistory.map((tx: any) => {
-          const isTxReturned = tx.status === 'Returned' || tx.status === 'Completed';
-          const isTxApproved = tx.status === 'Approved' || tx.status === 'On Loan';
-          const isTxPending = tx.status === 'Pending';
-          const isTxPickedUp = !isTxPending && Boolean(tx.pickedUpAt || tx.picked_up_at || tx.isPickedUp);
+          const rawStatus = (tx.status || "").trim();
+          const isTxReturned = rawStatus === 'Returned' || rawStatus === 'Completed';
+          const isTxApproved = rawStatus === 'Approved' || rawStatus === 'On Loan';
+          const isTxPending = rawStatus === 'Pending';
+          const isTxCancelled = rawStatus === 'Cancelled';
+          const isTxDeclined = rawStatus === 'Declined' || rawStatus === 'Rejected';
+          const isTxPickedUp = !isTxPending && !isTxCancelled && !isTxDeclined && Boolean(tx.pickedUpAt || tx.picked_up_at || tx.isPickedUp);
           
-          let displayStatus = isTxPending ? "Pending" : "Upcoming";
-          if (isTxReturned) {
-            displayStatus = "Completed";
-          } else if (tx.status === 'Declined') {
+          let displayStatus: string;
+          if (isTxCancelled) {
+            displayStatus = "Cancelled";
+          } else if (isTxDeclined) {
             displayStatus = "Declined";
-          } else if (isTxPending) {
-            displayStatus = "Pending";
+          } else if (isTxReturned) {
+            displayStatus = "Completed";
           } else if (isTxPickedUp) {
             displayStatus = "Picked Up";
           } else if (tx.type === 'Reservation') {
-            displayStatus = tx.status === 'Approved' ? 'Approved' : (tx.status === 'Declined' ? 'Declined' : 'Pending');
+            displayStatus = isTxApproved ? 'Approved' : (isTxPending ? 'Pending' : (rawStatus || 'Pending'));
           } else if (isTxApproved) {
             displayStatus = "Approved";
+          } else if (isTxPending) {
+            displayStatus = "Pending";
+          } else {
+            displayStatus = rawStatus || "Upcoming";
           }
 
           const borrowDateTime = tx.pickedUpAt
@@ -981,6 +1102,9 @@ export const syncTransactionsWithBackend = async (force = false): Promise<void> 
                 : (tx.requested_at
                     ? formatBorrowDateTime(tx.requested_at)
                     : (tx.borrowDate || (tx.date && tx.date !== 'Returned' ? tx.date : undefined))));
+
+          const rawDateStr = tx.pickedUpAt || tx.picked_up_at || tx.requestedAt || tx.requested_at || tx.borrowDate || tx.dueDate;
+          const rawTimestamp = parseDateToMs(rawDateStr) || Date.now();
 
           const returnDateTime = tx.returnedAt
             ? new Date(tx.returnedAt).toISOString().split('T')[0]
@@ -1002,6 +1126,8 @@ export const syncTransactionsWithBackend = async (force = false): Promise<void> 
 
           return {
             id: tx.id,
+            rawTimestamp,
+            requestedAt: tx.requestedAt || tx.requested_at || undefined,
             studentId: tx.studentId || tx.student_id || undefined,
             studentName: tx.studentName || tx.student_name || undefined,
             isbn: tx.isbn || undefined,
@@ -1060,8 +1186,12 @@ export const syncTransactionsWithBackend = async (force = false): Promise<void> 
         await AsyncStorage.setItem("STUDENT_HISTORY", JSON.stringify(cachedHistory));
         notify();
       }
-    } catch (error) {
-      console.log("Error syncing transactions with backend:", error);
+    } catch (error: any) {
+      if (error?.response?.status === 401) {
+        lastTxFetchTime = Date.now() + 60000;
+      } else {
+        console.log("Error syncing transactions with backend:", error);
+      }
     }
   })().finally(() => {
     inFlightTxSyncPromise = null;
@@ -1070,19 +1200,16 @@ export const syncTransactionsWithBackend = async (force = false): Promise<void> 
   return inFlightTxSyncPromise;
 };
 
-// Synchronous getters (return current cache immediately and start background API sync)
+// Synchronous getters (return current in-memory cache immediately)
 export const getStudentProfile = () => {
-  syncProfileWithBackend();
   return cachedProfile;
 };
 
 export const getReservations = () => {
-  syncTransactionsWithBackend();
   return cachedReservations;
 };
 
 export const getUpcomingReservations = () => {
-  syncTransactionsWithBackend();
   return cachedReservations.filter((item) => {
     if (item.status === "Completed" || item.status === "Declined" || item.status === "Cancelled") return false;
     const isRes = item.action === "Reserve" || (item as any).type === "Reservation";
@@ -1092,12 +1219,45 @@ export const getUpcomingReservations = () => {
 };
 
 export const getReservationHistory = () => {
-  syncTransactionsWithBackend();
   return cachedHistory;
 };
 
+export const getPendingTransactions = (): ReservationBook[] => {
+  const seenIds = new Set<string>();
+  const list: ReservationBook[] = [];
+
+  const checkItem = (item: ReservationBook) => {
+    if (!item || !item.id || seenIds.has(item.id)) return;
+    const isReturned = !!(
+      item.isReturned === true ||
+      item.status === 'Completed' ||
+      item.status === 'Returned' ||
+      item.date === 'Returned' ||
+      (item as any).returnedAt
+    );
+    if (isReturned) return;
+    if (item.status === 'Declined' || item.status === 'Cancelled' || item.status === 'Rejected') return;
+
+    const isPending =
+      item.status === 'Pending' ||
+      item.status === 'Waitlisted' ||
+      item.status === 'Upcoming' ||
+      (item as any).status === 'Pending Approval' ||
+      (item as any).status === 'Pending Request';
+
+    if (isPending) {
+      seenIds.add(item.id);
+      list.push(item);
+    }
+  };
+
+  (cachedHistory || []).forEach(checkItem);
+  (cachedReservations || []).forEach(checkItem);
+
+  return list;
+};
+
 export const getBorrowedBooks = (): ReservationBook[] => {
-  syncTransactionsWithBackend();
   const libraryCardList = getLibraryCardHistory();
   const allReservations = cachedReservations || [];
   const allHistory = cachedHistory || [];
@@ -1163,7 +1323,6 @@ export const getBorrowedBooks = (): ReservationBook[] => {
 };
 
 export const getReservedBooks = (): ReservationBook[] => {
-  syncTransactionsWithBackend();
   const libraryCardList = getLibraryCardHistory();
   const allReservations = cachedReservations || [];
   const allHistory = cachedHistory || [];
@@ -1210,7 +1369,6 @@ export const getReservedBooks = (): ReservationBook[] => {
 
 // Returns complete library card records (active borrowed books, active reservations, and returned history) so books never disappear
 export const getLibraryCardHistory = (): ReservationBook[] => {
-  syncTransactionsWithBackend();
   const seenIds = new Set<string>();
   const list: ReservationBook[] = [];
 
@@ -1280,10 +1438,8 @@ export const getLibraryCardHistory = (): ReservationBook[] => {
     if (aReturned && !bReturned) return 1;
 
     const parseDateMs = (book: ReservationBook) => {
-      const d = book.pickedUpAt || book.borrowDate || book.dateReserved || book.pickupDate || (book.date !== 'Returned' ? book.date : undefined);
-      if (!d) return 0;
-      const t = new Date(d).getTime();
-      return isNaN(t) ? 0 : t;
+      const d = book.rawTimestamp || book.requestedAt || book.pickedUpAt || book.borrowDate || book.dateReserved || book.pickupDate || (book.date !== 'Returned' ? book.date : undefined);
+      return parseDateToMs(d);
     };
     return parseDateMs(b) - parseDateMs(a);
   });
@@ -1331,7 +1487,6 @@ export const syncSystemSettingsWithBackend = async (force = false): Promise<Syst
 };
 
 export const getSystemSettings = (): SystemSettings => {
-  void syncSystemSettingsWithBackend();
   return cachedSystemSettings;
 };
 
@@ -1351,7 +1506,6 @@ const normalizeStudentId = (id?: string) => (id || "").replace(/[^a-zA-Z0-9]/g, 
 
 // Returns the student's current active borrowed books count strictly matching the active borrowed loans on the Library Card ledger
 export const getActiveBorrowCount = (targetStudentId?: string): number => {
-  syncTransactionsWithBackend();
   const libraryCardList = getLibraryCardHistory();
   const allHistory = cachedHistory || [];
   const allReservations = cachedReservations || [];
@@ -1439,7 +1593,6 @@ export const getActiveBorrowCount = (targetStudentId?: string): number => {
 
 // Returns the student's current active reserved books count
 export const getActiveReservationCount = (targetStudentId?: string): number => {
-  syncTransactionsWithBackend();
   const libraryCardList = getLibraryCardHistory();
   const allHistory = cachedHistory || [];
   const allReservations = cachedReservations || [];
@@ -1506,7 +1659,6 @@ export const getActiveReservationCount = (targetStudentId?: string): number => {
 
 // Returns list of active borrowed books that are currently due or overdue for return
 export const getOverdueBooks = (targetStudentId?: string): ReservationBook[] => {
-  syncTransactionsWithBackend();
   const libraryCardList = getLibraryCardHistory();
   const allHistory = cachedHistory || [];
   const allReservations = cachedReservations || [];
@@ -1612,6 +1764,8 @@ export const addReservation = async (reservation: any) => {
   }
 
   // Instantly push to local cache for reactive UX (only for Borrow; Pending Reservations stay hidden until Librarian approves)
+  if (!reservation.rawTimestamp) reservation.rawTimestamp = Date.now();
+  if (!reservation.requestedAt) reservation.requestedAt = new Date().toISOString();
   const existing = cachedReservations.find((item) => item.id === reservation.id);
   if (!existing) {
     if (reservation.action === 'Borrow') {
@@ -2139,8 +2293,12 @@ export const syncNotifications = async (force = false) => {
       }
     }
 
-  } catch (error) {
-    console.log("Error syncing notifications with backend:", error);
+  } catch (error: any) {
+    if (error?.response?.status === 401) {
+      lastNotificationsSyncTime = Date.now() + 60000;
+    } else {
+      console.log("Error syncing notifications with backend:", error);
+    }
   }
 };
 
@@ -2210,9 +2368,6 @@ export const checkAndAddDueNotifications = () => {
 };
 
 export const getNotifications = () => {
-  checkAndAddDueNotifications();
-  syncNotifications();
-  cachedNotifications = deduplicateNotifications(cachedNotifications);
   return cachedNotifications;
 };
 
@@ -2302,13 +2457,16 @@ export const syncAnnouncementsWithBackend = async (force = false) => {
       await AsyncStorage.setItem("STUDENT_ANNOUNCEMENTS", JSON.stringify(cachedAnnouncements));
       notify();
     }
-  } catch (error) {
-    console.log("Error syncing announcements with backend:", error);
+  } catch (error: any) {
+    if (error?.response?.status === 401) {
+      lastAnnouncementsFetchTime = Date.now() + 60000;
+    } else {
+      console.log("Error syncing announcements with backend:", error);
+    }
   }
 };
 
 export const getAnnouncements = () => {
-  syncAnnouncementsWithBackend();
   return cachedAnnouncements;
 };
 
@@ -3367,6 +3525,17 @@ export type ScannedStudentCardData = {
     bookTitle: string;
     reserveDate: string;
     status: string;
+    type?: string;
+    available?: boolean;
+  }[];
+  pendingBooks?: {
+    id: string;
+    bookTitle: string;
+    isbn?: string;
+    type: string;
+    status: string;
+    requestedAt: string;
+    dueDate?: string;
   }[];
   violations: {
     id: string;
@@ -3379,18 +3548,98 @@ export type ScannedStudentCardData = {
   }[];
 };
 
+export function extractIdentifierFromQr(rawPayload: string): string {
+  if (!rawPayload || typeof rawPayload !== "string") return "";
+  let payload = rawPayload.trim();
+
+  // 1. If it's a URL (e.g. http://.../verify/23-1653-705 or https://bookhive01.netlify.app/card-by-qr/23-1653-705)
+  if (payload.startsWith("http://") || payload.startsWith("https://")) {
+    try {
+      const parsedUrl = new URL(payload);
+      const queryParam =
+        parsedUrl.searchParams.get("qr") ||
+        parsedUrl.searchParams.get("studentId") ||
+        parsedUrl.searchParams.get("idNumber") ||
+        parsedUrl.searchParams.get("id");
+      if (queryParam) return queryParam.trim();
+
+      const segments = parsedUrl.pathname.split("/").filter(Boolean);
+      const verifyIdx = segments.findIndex(
+        (s) => s === "verify" || s === "card-by-qr" || s === "qr" || s === "student"
+      );
+      if (verifyIdx !== -1 && segments[verifyIdx + 1]) {
+        return decodeURIComponent(segments[verifyIdx + 1]).trim();
+      }
+      if (segments.length > 0) {
+        return decodeURIComponent(segments[segments.length - 1]).trim();
+      }
+    } catch {
+      const match = payload.match(/\/(?:verify|card-by-qr|qr|student)\/([^/?#]+)/i);
+      if (match && match[1]) return decodeURIComponent(match[1]).trim();
+    }
+  }
+
+  // 2. Custom App Scheme
+  if (payload.startsWith("bookhive://student/")) {
+    payload = payload.replace("bookhive://student/", "").trim();
+  } else if (payload.startsWith("bookhive://")) {
+    payload = payload.replace("bookhive://", "").trim();
+  }
+
+  // 3. JSON payload
+  if (payload.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(payload);
+      const idVal =
+        parsed.qrCode ||
+        parsed.qr ||
+        parsed.idNumber ||
+        parsed.studentId ||
+        parsed.id ||
+        parsed.payload;
+      if (idVal) return String(idVal).trim();
+    } catch {}
+  }
+
+  return payload;
+}
+
 export const fetchStudentCardAndViolations = async (qrPayload: string): Promise<ScannedStudentCardData | null> => {
   if (!qrPayload) return null;
-  const cleanId = qrPayload.trim();
+  const cleanId = extractIdentifierFromQr(qrPayload);
+  if (!cleanId) return null;
 
   try {
     const headers = await getAuthHeaders();
-    const response = await axios.get(`${API_URL}/api/student/card-by-qr/${encodeURIComponent(cleanId)}`, headers);
+    const response = await axios.get(
+      `${API_URL}/api/student/card-by-qr/${encodeURIComponent(cleanId)}`,
+      { ...headers, timeout: 15000 }
+    );
     if (response.status === 200 && response.data?.student) {
       return response.data;
     }
-  } catch (error) {
-    console.warn("fetchStudentCardAndViolations backend lookup failed, falling back:", error);
+  } catch (error: any) {
+    console.warn("fetchStudentCardAndViolations backend lookup notice:", error?.message);
+    if (error?.response?.status === 404) {
+      return null;
+    }
+  }
+
+  // Offline / Network Unavailable Fallback:
+  // ONLY return local cachedProfile if cleanId explicitly matches cachedProfile.
+  // NEVER silently return activeUser or cachedProfile for an unrelated student!
+  const cleanAlpha = cleanId.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  const cachedAlpha = (cachedProfile.studentId || "").replace(/[^a-z0-9]/gi, "").toLowerCase();
+
+  const matchesCached =
+    Boolean(cachedProfile.studentId && cleanId.toLowerCase() === cachedProfile.studentId.toLowerCase()) ||
+    Boolean(cachedProfile.email && cleanId.toLowerCase() === cachedProfile.email.toLowerCase()) ||
+    Boolean(cachedProfile.qrCode && cleanId.toLowerCase() === cachedProfile.qrCode.toLowerCase()) ||
+    Boolean(cachedAlpha && cleanAlpha && cleanAlpha === cachedAlpha);
+
+  if (!matchesCached) {
+    // If not matching the current student cache and not found on backend, return null!
+    return null;
   }
 
   // Retrieve active authenticated session if available
@@ -3401,15 +3650,15 @@ export const fetchStudentCardAndViolations = async (qrPayload: string): Promise<
     // Ignore error
   }
 
-  const studentName = activeUser?.fullName || cachedProfile.name || (cleanId === "23-1111-111" ? "Yana Brich R. Palmares" : "Student");
-  const studentId = activeUser?.studentId || cachedProfile.studentId || cleanId;
-  const course = activeUser?.course || cachedProfile.course || "Library Services";
-  const dept = activeUser?.department || cachedProfile.department || "CICT";
-  const email = activeUser?.email || cachedProfile.email || "librarian@stiwnu.edu.ph";
-  const avatar = activeUser?.avatar || cachedProfile.avatar || "";
-  const qrCode = activeUser?.qrCode || cachedProfile.qrCode || cleanId;
+  const studentName = cachedProfile.name || activeUser?.fullName || "Student";
+  const studentId = cachedProfile.studentId || activeUser?.studentId || cleanId;
+  const course = cachedProfile.course || activeUser?.course || "Library Services";
+  const dept = cachedProfile.department || activeUser?.department || "CICT";
+  const email = cachedProfile.email || activeUser?.email || "librarian@stiwnu.edu.ph";
+  const avatar = cachedProfile.avatar || activeUser?.avatar || "";
+  const qrCode = cachedProfile.qrCode || activeUser?.qrCode || cleanId;
 
-  // Local fallback simulation if offline or demo user
+  // Local fallback simulation if legitimately matching cached user
   const matchingBorrowed = cachedReservations
     .filter((b) =>
       b.status === "Approved" ||
@@ -3487,43 +3736,32 @@ export const fetchStudentCardAndViolations = async (qrPayload: string): Promise<
       course: course,
       avatar: avatar,
       qrCode: qrCode,
-      role: activeUser?.role || cachedProfile.role || "Student",
-      schoolIdFront: activeUser?.schoolIdFront || cachedProfile.schoolIdFront || "",
-      schoolIdBack: activeUser?.schoolIdBack || cachedProfile.schoolIdBack || "",
-      libraryIdFront: activeUser?.libraryIdFront || cachedProfile.libraryIdFront || "",
-      libraryIdBack: activeUser?.libraryIdBack || cachedProfile.libraryIdBack || "",
+      role: cachedProfile.role || activeUser?.role || "Student",
+      schoolIdFront: cachedProfile.schoolIdFront || activeUser?.schoolIdFront || "",
+      schoolIdBack: cachedProfile.schoolIdBack || activeUser?.schoolIdBack || "",
+      libraryIdFront: cachedProfile.libraryIdFront || activeUser?.libraryIdFront || "",
+      libraryIdBack: cachedProfile.libraryIdBack || activeUser?.libraryIdBack || "",
     },
-    libraryCard: matchingBorrowed.length > 0 ? matchingBorrowed : [
-      {
-        id: "demo-tx-yana",
-        bookTitle: "Yana Brich Daily Life",
-        borrowDate: "2026-09-19",
-        dueReturnDate: "2026-09-26",
-        status: "Approved",
-      },
-      {
-        id: "demo-tx-1",
-        bookTitle: "Clean Code: A Handbook of Agile Software Craftsmanship",
-        borrowDate: "2026-05-10",
-        dueReturnDate: "2026-05-24",
-        status: "Approved",
-      },
-      {
-        id: "demo-tx-2",
-        bookTitle: "Introduction to Algorithms, Fourth Edition",
-        borrowDate: "2026-05-01",
-        dueReturnDate: "2026-05-15",
-        status: "Approved",
-      }
-    ],
-    reservedBooks: [
-      {
-        id: "demo-res-1",
-        bookTitle: "Design Patterns: Elements of Reusable Object-Oriented Software",
-        reserveDate: "2026-09-20",
-        status: "Reserved",
-      }
-    ],
+    libraryCard: matchingBorrowed,
+    reservedBooks: cachedReservations
+      .filter((b) => b.action === "Reserve" || b.status === "Reserved")
+      .map((b) => ({
+        id: b.id,
+        bookTitle: b.title,
+        reserveDate: b.pickupDate || b.date || "2026-09-20",
+        status: b.status || "Reserved",
+      })),
+    pendingBooks: cachedReservations
+      .filter((b) => b.status === "Pending" || b.status === "Waitlisted")
+      .map((b) => ({
+        id: b.id,
+        bookTitle: b.title,
+        isbn: b.isbn || "",
+        type: (b.action === "Reserve" || (b as any).type === "Reservation") ? "Reservation" : "Borrow",
+        status: b.status || "Pending",
+        requestedAt: b.pickupDate || b.date || "2026-09-19",
+        dueDate: b.dueDate || b.returnDate || "—",
+      })),
     violations: [],
   };
 };

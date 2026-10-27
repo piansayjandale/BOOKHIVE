@@ -27,6 +27,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useNotice } from "@/components/providers/notice-provider";
 import { AdminPageHeader, AdminSection } from "@/components/admin/shared";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import { DepartmentBadge } from "@/components/ui/department-badge";
 import { requestJson } from "@/lib/admin/client";
 import type { PromptSearchPayload, PromptSearchLog } from "@/lib/admin/types";
@@ -596,12 +597,17 @@ export function AiSearchPage() {
                           onClick={() => setSelectedBook(result)}
                           className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
                         >
-                          <td className="px-5 py-3.5 max-w-[280px]">
-                            <div className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors truncate">
-                              {result.title}
-                            </div>
-                            <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
-                              By <span className="font-semibold text-slate-800 dark:text-slate-200">{result.author}</span>
+                          <td className="px-5 py-3.5 max-w-[330px]">
+                            <div className="flex items-center gap-3.5">
+                              <BookCoverImage book={result} size="sm" />
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors truncate">
+                                  {result.title}
+                                </div>
+                                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                                  By <span className="font-semibold text-slate-800 dark:text-slate-200">{result.author}</span>
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="px-5 py-3.5 whitespace-nowrap">
@@ -694,8 +700,10 @@ export function AiSearchPage() {
                         </span>
                       </div>
 
-                      {/* Title & Metadata */}
-                      <div>
+                      {/* Title & Metadata with Cover Preview on left */}
+                      <div className="flex items-start gap-4">
+                        <BookCoverImage book={result} size="md" className="mt-0.5" />
+                        <div className="min-w-0 flex-1">
                         <h3 className="text-lg font-bold tracking-tight text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors duration-200 line-clamp-2 leading-snug text-left">
                           {result.title}
                         </h3>
@@ -732,6 +740,7 @@ export function AiSearchPage() {
                               </span>
                             )}
                           </div>
+                        </div>
                         </div>
                       </div>
 

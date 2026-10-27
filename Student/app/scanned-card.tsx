@@ -16,7 +16,7 @@ import AnimatedScreen from '../components/AnimatedScreen';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '../hooks/useThemeColors';
-import { fetchStudentCardAndViolations, ScannedStudentCardData, isDueToReturn, loadStudentIdCardsForUser } from '../data/store';
+import { fetchStudentCardAndViolations, extractIdentifierFromQr, ScannedStudentCardData, isDueToReturn, loadStudentIdCardsForUser, rotateIdCardSlot, StudentIdCardsData, parseDateToMs } from '../data/store';
 import { API_URL, getAuthHeaders } from '../data/authService';
 import socketService from '../services/socketService';
 import axios from 'axios';
@@ -44,21 +44,21 @@ export default function ScannedCardScreen() {
   const [data, setData] = useState<ScannedStudentCardData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Tab navigation: 'return' | 'libraryCard' | 'reserved'
-  const [activeTab, setActiveTab] = useState<'return' | 'libraryCard' | 'reserved'>(() => {
+  // Tab navigation: 'return' | 'libraryCard' | 'pending' | 'reserved'
+  const [activeTab, setActiveTab] = useState<'return' | 'libraryCard' | 'pending' | 'reserved'>(() => {
     if (!canReturns) return 'libraryCard';
     return 'return';
   });
   const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
   const [isReturning, setIsReturning] = useState(false);
   const [showIdCards, setShowIdCards] = useState(false);
-  const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{ title: string; uri: string } | null>(null);
-  const [loadedIdCards, setLoadedIdCards] = useState<{
-    schoolIdFront?: string;
-    schoolIdBack?: string;
-    libraryIdFront?: string;
-    libraryIdBack?: string;
+  const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{
+    title: string;
+    uri: string;
+    slotKey?: "schoolIdFront" | "schoolIdBack" | "libraryIdFront" | "libraryIdBack";
+    rotation?: number;
   } | null>(null);
+  const [loadedIdCards, setLoadedIdCards] = useState<StudentIdCardsData | null>(null);
 
   // Automatically adjust activeTab if return is restricted
   useEffect(() => {
@@ -67,7 +67,8 @@ export default function ScannedCardScreen() {
     }
   }, [canReturns, activeTab]);
 
-  const qrPayload = params.qr || params.studentId || "";
+  const rawQrParam = params.qr || params.studentId || "";
+  const qrPayload = useMemo(() => extractIdentifierFromQr(rawQrParam), [rawQrParam]);
 
   useEffect(() => {
     let isMounted = true;
@@ -88,22 +89,30 @@ export default function ScannedCardScreen() {
             setData(result);
             setSelectedBookIds([]);
 
-            let cards: any = {
+            let cards: StudentIdCardsData = {
               schoolIdFront: result.student.schoolIdFront,
               schoolIdBack: result.student.schoolIdBack,
               libraryIdFront: result.student.libraryIdFront,
               libraryIdBack: result.student.libraryIdBack,
+              ownerEmail: result.student.email,
+              ownerStudentId: result.student.studentId || result.student.idNumber,
             };
 
-            // If not present in API payload, check user profile storage
-            if (!cards.schoolIdFront && !cards.libraryIdFront) {
-              try {
-                const localCards = await loadStudentIdCardsForUser(result.student);
-                if (localCards) {
-                  cards = localCards;
-                }
-              } catch {}
-            }
+            try {
+              const localCards = await loadStudentIdCardsForUser(result.student);
+              if (localCards) {
+                cards = {
+                  ...localCards,
+                  ...cards,
+                  schoolIdFront: cards.schoolIdFront || localCards.schoolIdFront,
+                  schoolIdBack: cards.schoolIdBack || localCards.schoolIdBack,
+                  libraryIdFront: cards.libraryIdFront || localCards.libraryIdFront,
+                  libraryIdBack: cards.libraryIdBack || localCards.libraryIdBack,
+                  orientation: localCards.orientation || cards.orientation || "portrait",
+                  rotations: { ...(localCards.rotations || {}), ...(cards.rotations || {}) },
+                };
+              }
+            } catch {}
 
             setLoadedIdCards(cards);
           } else {
@@ -136,6 +145,51 @@ export default function ScannedCardScreen() {
     if (item?.status === 'Pending' || item?.status === 'Waitlisted' || item?.status === 'Declined' || item?.status === 'Cancelled' || item?.status === 'Returned' || item?.status === 'Completed' || item?.status === 'Picked Up') return false;
     return true;
   });
+
+  const pendingBooks = useMemo(() => {
+    const list: any[] = [];
+    const seenIds = new Set<string>();
+
+    if (Array.isArray(data?.pendingBooks)) {
+      data.pendingBooks.forEach((item) => {
+        if (item && item.id && !seenIds.has(String(item.id))) {
+          seenIds.add(String(item.id));
+          list.push(item);
+        }
+      });
+    }
+
+    // Also include any pending transactions from reservedBooks or libraryCard if not already captured
+    (data?.reservedBooks || []).forEach((item: any) => {
+      if (item && (item.status === 'Pending' || item.status === 'Waitlisted') && !seenIds.has(String(item.id))) {
+        seenIds.add(String(item.id));
+        list.push({
+          id: item.id,
+          bookTitle: item.bookTitle,
+          type: item.type || 'Reservation',
+          status: item.status || 'Pending',
+          requestedAt: item.reserveDate || item.requestedAt || '—',
+          dueDate: item.dueDate || '—',
+        });
+      }
+    });
+
+    (data?.libraryCard || []).forEach((item: any) => {
+      if (item && (item.status === 'Pending' || item.status === 'Waitlisted') && !seenIds.has(String(item.id))) {
+        seenIds.add(String(item.id));
+        list.push({
+          id: item.id,
+          bookTitle: item.bookTitle,
+          type: item.type || (item.action === 'Reserve' ? 'Reservation' : 'Borrow'),
+          status: item.status || 'Pending',
+          requestedAt: item.borrowDate || item.requestedAt || '—',
+          dueDate: item.dueReturnDate || item.dueDate || '—',
+        });
+      }
+    });
+
+    return list;
+  }, [data]);
   const violations = data?.violations || [];
 
   const studentFullName = student?.fullName || student?.name || "Student";
@@ -227,6 +281,34 @@ export default function ScannedCardScreen() {
       }
     } catch {}
     return dateStr;
+  };
+
+  const isCardsPortrait = (loadedIdCards?.orientation || "portrait") === "portrait";
+
+  const handleRotateScannedCardPhoto = async () => {
+    if (!enlargedIdPhoto) return;
+    const targetSlot = enlargedIdPhoto.slotKey;
+    const currentRot = (enlargedIdPhoto.rotation || 0) + 90;
+    const nextRot = currentRot % 360;
+
+    setEnlargedIdPhoto((prev) => (prev ? { ...prev, rotation: nextRot } : null));
+
+    if (targetSlot) {
+      setLoadedIdCards((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rotations: {
+            ...(prev.rotations || {}),
+            [targetSlot]: nextRot,
+          },
+        };
+      });
+
+      const targetEmail = data?.student?.email;
+      const targetStudentId = data?.student?.studentId || data?.student?.idNumber;
+      await rotateIdCardSlot(targetSlot, targetEmail, targetStudentId, 90);
+    }
   };
 
   const toggleBookSelection = (id: string) => {
@@ -401,7 +483,7 @@ export default function ScannedCardScreen() {
   };
 
   const approvedLibraryCard = useMemo(() => {
-    return libraryCard.filter(item => {
+    const filtered = libraryCard.filter(item => {
       if (!item || item.status === 'Declined' || item.status === 'Cancelled') return false;
       const isRes =
         (item as any)?.type === "Reservation" ||
@@ -415,6 +497,19 @@ export default function ScannedCardScreen() {
       }
       if (item.status === 'Pending' || item.status === 'Upcoming') return false;
       return true;
+    });
+
+    return filtered.sort((a, b) => {
+      const aReturned = a?.status === "Returned" || a?.status === "Completed";
+      const bReturned = b?.status === "Returned" || b?.status === "Completed";
+      if (!aReturned && bReturned) return -1;
+      if (aReturned && !bReturned) return 1;
+
+      const parseDateMs = (book: any) => {
+        const d = book?.rawTimestamp || book?.requestedAt || book?.pickedUpAt || book?.borrowDate || book?.dateReserved || book?.pickupDate || book?.date;
+        return parseDateToMs(d);
+      };
+      return parseDateMs(b) - parseDateMs(a);
     });
   }, [libraryCard]);
 
@@ -529,7 +624,10 @@ export default function ScannedCardScreen() {
         bounces={false}
         overScrollMode="never"
         contentContainerStyle={{
-          paddingBottom: Math.max(insets.bottom + 36, activeTab === 'libraryCard' ? 48 : 120),
+          paddingBottom: Math.max(
+            insets.bottom + 36,
+            activeTab === 'libraryCard' || activeTab === 'pending' || activeTab === 'reserved' ? 48 : 120
+          ),
         }}
       >
         {loading ? (
@@ -683,11 +781,25 @@ export default function ScannedCardScreen() {
                     <View style={styles.idCardsGrid}>
                       {/* School ID Front */}
                       <TouchableOpacity
-                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        style={[
+                          styles.idCardBox,
+                          {
+                            minHeight: isCardsPortrait ? 195 : 115,
+                            backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF',
+                            borderColor: isDarkMode ? '#283850' : '#CBD5E1',
+                          },
+                        ]}
                         activeOpacity={0.8}
                         onPress={() => {
                           const uri = loadedIdCards?.schoolIdFront || student?.schoolIdFront;
-                          if (uri) setEnlargedIdPhoto({ title: "School ID • Front", uri });
+                          if (uri) {
+                            setEnlargedIdPhoto({
+                              title: "School ID • Front",
+                              uri,
+                              slotKey: "schoolIdFront",
+                              rotation: loadedIdCards?.rotations?.schoolIdFront || 0,
+                            });
+                          }
                         }}
                       >
                         <View style={styles.idCardBoxHeader}>
@@ -697,11 +809,17 @@ export default function ScannedCardScreen() {
                         {(loadedIdCards?.schoolIdFront || student?.schoolIdFront) ? (
                           <Image
                             source={{ uri: loadedIdCards?.schoolIdFront || student?.schoolIdFront }}
-                            style={styles.idCardThumbnail}
+                            style={[
+                              styles.idCardThumbnail,
+                              { height: isCardsPortrait ? 160 : 90 },
+                              Boolean(loadedIdCards?.rotations?.schoolIdFront)
+                                ? { transform: [{ rotate: `${loadedIdCards?.rotations?.schoolIdFront}deg` }] }
+                                : null,
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
-                          <View style={styles.idPlaceholderBox}>
+                          <View style={[styles.idPlaceholderBox, { height: isCardsPortrait ? 160 : 90 }]}>
                             <Ionicons name="image-outline" size={24} color={theme.textMuted} />
                             <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
                           </View>
@@ -710,11 +828,25 @@ export default function ScannedCardScreen() {
 
                       {/* School ID Back */}
                       <TouchableOpacity
-                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        style={[
+                          styles.idCardBox,
+                          {
+                            minHeight: isCardsPortrait ? 195 : 115,
+                            backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF',
+                            borderColor: isDarkMode ? '#283850' : '#CBD5E1',
+                          },
+                        ]}
                         activeOpacity={0.8}
                         onPress={() => {
                           const uri = loadedIdCards?.schoolIdBack || student?.schoolIdBack;
-                          if (uri) setEnlargedIdPhoto({ title: "School ID • Back", uri });
+                          if (uri) {
+                            setEnlargedIdPhoto({
+                              title: "School ID • Back",
+                              uri,
+                              slotKey: "schoolIdBack",
+                              rotation: loadedIdCards?.rotations?.schoolIdBack || 0,
+                            });
+                          }
                         }}
                       >
                         <View style={styles.idCardBoxHeader}>
@@ -724,11 +856,17 @@ export default function ScannedCardScreen() {
                         {(loadedIdCards?.schoolIdBack || student?.schoolIdBack) ? (
                           <Image
                             source={{ uri: loadedIdCards?.schoolIdBack || student?.schoolIdBack }}
-                            style={styles.idCardThumbnail}
+                            style={[
+                              styles.idCardThumbnail,
+                              { height: isCardsPortrait ? 160 : 90 },
+                              Boolean(loadedIdCards?.rotations?.schoolIdBack)
+                                ? { transform: [{ rotate: `${loadedIdCards?.rotations?.schoolIdBack}deg` }] }
+                                : null,
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
-                          <View style={styles.idPlaceholderBox}>
+                          <View style={[styles.idPlaceholderBox, { height: isCardsPortrait ? 160 : 90 }]}>
                             <Ionicons name="image-outline" size={24} color={theme.textMuted} />
                             <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
                           </View>
@@ -741,11 +879,25 @@ export default function ScannedCardScreen() {
                     <View style={styles.idCardsGrid}>
                       {/* Library ID Front */}
                       <TouchableOpacity
-                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        style={[
+                          styles.idCardBox,
+                          {
+                            minHeight: isCardsPortrait ? 195 : 115,
+                            backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF',
+                            borderColor: isDarkMode ? '#283850' : '#CBD5E1',
+                          },
+                        ]}
                         activeOpacity={0.8}
                         onPress={() => {
                           const uri = loadedIdCards?.libraryIdFront || student?.libraryIdFront;
-                          if (uri) setEnlargedIdPhoto({ title: "Library ID • Front", uri });
+                          if (uri) {
+                            setEnlargedIdPhoto({
+                              title: "Library ID • Front",
+                              uri,
+                              slotKey: "libraryIdFront",
+                              rotation: loadedIdCards?.rotations?.libraryIdFront || 0,
+                            });
+                          }
                         }}
                       >
                         <View style={styles.idCardBoxHeader}>
@@ -755,11 +907,17 @@ export default function ScannedCardScreen() {
                         {(loadedIdCards?.libraryIdFront || student?.libraryIdFront) ? (
                           <Image
                             source={{ uri: loadedIdCards?.libraryIdFront || student?.libraryIdFront }}
-                            style={styles.idCardThumbnail}
+                            style={[
+                              styles.idCardThumbnail,
+                              { height: isCardsPortrait ? 160 : 90 },
+                              Boolean(loadedIdCards?.rotations?.libraryIdFront)
+                                ? { transform: [{ rotate: `${loadedIdCards?.rotations?.libraryIdFront}deg` }] }
+                                : null,
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
-                          <View style={styles.idPlaceholderBox}>
+                          <View style={[styles.idPlaceholderBox, { height: isCardsPortrait ? 160 : 90 }]}>
                             <Ionicons name="image-outline" size={24} color={theme.textMuted} />
                             <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
                           </View>
@@ -768,11 +926,25 @@ export default function ScannedCardScreen() {
 
                       {/* Library ID Back */}
                       <TouchableOpacity
-                        style={[styles.idCardBox, { backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF', borderColor: isDarkMode ? '#283850' : '#CBD5E1' }]}
+                        style={[
+                          styles.idCardBox,
+                          {
+                            minHeight: isCardsPortrait ? 195 : 115,
+                            backgroundColor: isDarkMode ? '#0F1829' : '#FFFFFF',
+                            borderColor: isDarkMode ? '#283850' : '#CBD5E1',
+                          },
+                        ]}
                         activeOpacity={0.8}
                         onPress={() => {
                           const uri = loadedIdCards?.libraryIdBack || student?.libraryIdBack;
-                          if (uri) setEnlargedIdPhoto({ title: "Library ID • Back", uri });
+                          if (uri) {
+                            setEnlargedIdPhoto({
+                              title: "Library ID • Back",
+                              uri,
+                              slotKey: "libraryIdBack",
+                              rotation: loadedIdCards?.rotations?.libraryIdBack || 0,
+                            });
+                          }
                         }}
                       >
                         <View style={styles.idCardBoxHeader}>
@@ -782,11 +954,17 @@ export default function ScannedCardScreen() {
                         {(loadedIdCards?.libraryIdBack || student?.libraryIdBack) ? (
                           <Image
                             source={{ uri: loadedIdCards?.libraryIdBack || student?.libraryIdBack }}
-                            style={styles.idCardThumbnail}
+                            style={[
+                              styles.idCardThumbnail,
+                              { height: isCardsPortrait ? 160 : 90 },
+                              Boolean(loadedIdCards?.rotations?.libraryIdBack)
+                                ? { transform: [{ rotate: `${loadedIdCards?.rotations?.libraryIdBack}deg` }] }
+                                : null,
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
-                          <View style={styles.idPlaceholderBox}>
+                          <View style={[styles.idPlaceholderBox, { height: isCardsPortrait ? 160 : 90 }]}>
                             <Ionicons name="image-outline" size={24} color={theme.textMuted} />
                             <Text style={[styles.idPlaceholderText, { color: theme.textMuted }]}>No Photo</Text>
                           </View>
@@ -801,11 +979,21 @@ export default function ScannedCardScreen() {
             {/* SECTION 2: DYNAMIC SECTION TITLE WITH TABS */}
             <View style={styles.returnSectionBlock}>
               <Text style={[styles.returnSectionHeading, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
-                {activeTab === 'return' ? 'Return Books' : activeTab === 'libraryCard' ? 'Library Card' : 'Reserved Books'}
+                {activeTab === 'return'
+                  ? 'Return Books'
+                  : activeTab === 'libraryCard'
+                  ? 'Library Card'
+                  : activeTab === 'pending'
+                  ? 'Pending Books'
+                  : 'Reserved Books'}
               </Text>
 
-              {/* THREE TAB PILLS (Return, Library Card, Reserved Books) */}
-              <View style={styles.tabsRow}>
+              {/* FOUR TAB PILLS (Return, Library Card, Pending Books, Reserved Books) */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.tabsRow}
+              >
                 <TouchableOpacity
                   style={[
                     styles.tabPill,
@@ -861,6 +1049,29 @@ export default function ScannedCardScreen() {
                   </Text>
                 </TouchableOpacity>
 
+                {/* Pill 3: Pending Books (In between Library Card and Reserved Books) */}
+                <TouchableOpacity
+                  style={[
+                    styles.tabPill,
+                    activeTab === 'pending'
+                      ? [styles.tabPillActive, !isDarkMode && { backgroundColor: theme.accentBlue }]
+                      : [styles.tabPillInactive, !isDarkMode && { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }],
+                  ]}
+                  onPress={() => setActiveTab('pending')}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.tabPillText,
+                      activeTab === 'pending'
+                        ? [styles.tabPillTextActive, !isDarkMode && { color: '#FFFFFF' }]
+                        : [styles.tabPillTextInactive, !isDarkMode && { color: theme.textSecondary }],
+                    ]}
+                  >
+                    Pending Books
+                  </Text>
+                </TouchableOpacity>
+
                 <TouchableOpacity
                   style={[
                     styles.tabPill,
@@ -893,7 +1104,7 @@ export default function ScannedCardScreen() {
                     {canReservations ? "Reserved Books" : "Reserved 🔒"}
                   </Text>
                 </TouchableOpacity>
-              </View>
+              </ScrollView>
 
               {/* ========================================================= */}
               {/* TAB 1: RETURN VIEW (Matches Image 2)                      */}
@@ -1321,7 +1532,124 @@ export default function ScannedCardScreen() {
               )}
 
               {/* ========================================================= */}
-              {/* TAB 3: RESERVED BOOKS VIEW                                */}
+              {/* TAB 3: PENDING BOOKS VIEW (View-Only)                     */}
+              {/* ========================================================= */}
+              {activeTab === 'pending' && (
+                <View style={styles.tabContentContainer}>
+                  {/* View-Only Notice Banner */}
+                  <View
+                    style={[
+                      styles.readOnlyNoticeBox,
+                      {
+                        backgroundColor: isDarkMode ? 'rgba(250, 204, 21, 0.08)' : 'rgba(2, 116, 187, 0.06)',
+                        borderColor: isDarkMode ? 'rgba(250, 204, 21, 0.25)' : 'rgba(2, 116, 187, 0.2)',
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="information-circle-outline"
+                      size={18}
+                      color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                    />
+                    <Text
+                      style={[
+                        styles.readOnlyNoticeText,
+                        { color: isDarkMode ? '#FDE047' : '#0274BB' },
+                      ]}
+                    >
+                      View Only: Pending requests waiting for librarian response or approval.
+                    </Text>
+                  </View>
+
+                  {pendingBooks.length === 0 ? (
+                    <View
+                      style={[
+                        styles.emptyReturnCard,
+                        {
+                          backgroundColor: isDarkMode ? '#131E33' : '#F8FAFC',
+                          borderColor: isDarkMode ? '#24334C' : '#CBD5E1',
+                        },
+                      ]}
+                    >
+                      <Ionicons name="time-outline" size={40} color={theme.accentGold} />
+                      <Text style={[styles.emptyReturnTitle, { color: theme.textPrimary }]}>
+                        No Pending Books
+                      </Text>
+                      <Text style={[styles.emptyReturnSub, { color: theme.textSecondary }]}>
+                        Student does not have any pending book borrow or reservation requests awaiting librarian response.
+                      </Text>
+                    </View>
+                  ) : (
+                    pendingBooks.map((item, idx) => {
+                      const isReservation =
+                        item.type === 'Reservation' ||
+                        item.action === 'Reserve' ||
+                        String(item.type).toLowerCase() === 'reservation';
+
+                      return (
+                        <View
+                          key={`pending-${item.id || idx}`}
+                          style={[
+                            styles.returnBookCard,
+                            {
+                              backgroundColor: isDarkMode ? '#131E33' : '#F8FAFC',
+                              borderColor: isDarkMode ? '#24334C' : '#CBD5E1',
+                            },
+                          ]}
+                        >
+                          <View style={styles.returnBookCardTop}>
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                              <Text
+                                style={[styles.returnBookTitle, { color: theme.textPrimary }]}
+                                numberOfLines={2}
+                              >
+                                {item.bookTitle}
+                              </Text>
+                            </View>
+                            <View
+                              style={[
+                                styles.dueBadge,
+                                {
+                                  backgroundColor: isReservation ? '#8B5CF6' : '#F59E0B',
+                                },
+                              ]}
+                            >
+                              <Text style={styles.dueBadgeText}>
+                                {isReservation ? 'RESERVE PENDING' : 'BORROW PENDING'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.returnBookDatesCol}>
+                            <Text
+                              style={[
+                                styles.returnBookDateText,
+                                { color: theme.textSecondary },
+                              ]}
+                            >
+                              Requested Date: {formatDisplayDate(item.requestedAt || item.borrowDate || item.reserveDate)}
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
+                              <Ionicons name="hourglass-outline" size={14} color={isDarkMode ? '#FCD34D' : '#D97706'} />
+                              <Text
+                                style={[
+                                  styles.returnBookDateText,
+                                  { color: isDarkMode ? '#FCD34D' : '#D97706', fontWeight: '700' },
+                                ]}
+                              >
+                                Awaiting Librarian Response
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      );
+                    })
+                  )}
+                </View>
+              )}
+
+              {/* ========================================================= */}
+              {/* TAB 4: RESERVED BOOKS VIEW                                */}
               {/* ========================================================= */}
               {activeTab === 'reserved' && (
                 <View style={styles.tabContentContainer}>
@@ -1396,22 +1724,71 @@ export default function ScannedCardScreen() {
         onRequestClose={() => setEnlargedIdPhoto(null)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={[styles.enlargedModalCard, { backgroundColor: isDarkMode ? '#0B132B' : '#FFFFFF', borderColor: isDarkMode ? '#22324D' : '#E2E8F0', borderWidth: 1 }]}>
+          <View
+            style={[
+              styles.enlargedModalCard,
+              {
+                backgroundColor: isDarkMode ? '#0B132B' : '#FFFFFF',
+                borderColor: isDarkMode ? '#22324D' : '#E2E8F0',
+                borderWidth: 1,
+                maxWidth: isCardsPortrait ? 330 : 420,
+              },
+            ]}
+          >
             <View style={styles.enlargedModalHeader}>
               <Text style={[styles.enlargedModalTitle, { color: theme.textPrimary }]}>
                 {enlargedIdPhoto?.title}
               </Text>
-              <TouchableOpacity
-                onPress={() => setEnlargedIdPhoto(null)}
-                style={[styles.enlargedCloseBtn, { backgroundColor: isDarkMode ? '#1A2942' : '#F1F5F9' }]}
-              >
-                <Ionicons name="close" size={20} color={theme.textPrimary} />
-              </TouchableOpacity>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={handleRotateScannedCardPhoto}
+                  style={[
+                    styles.enlargedRotateBtn,
+                    {
+                      backgroundColor: isDarkMode
+                        ? 'rgba(250, 204, 21, 0.15)'
+                        : 'rgba(2, 116, 187, 0.1)',
+                    },
+                  ]}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name="refresh"
+                    size={15}
+                    color={isDarkMode ? '#FACC15' : '#0274BB'}
+                  />
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontWeight: '700',
+                      color: isDarkMode ? '#FACC15' : '#0274BB',
+                      marginLeft: 4,
+                    }}
+                  >
+                    Rotate
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setEnlargedIdPhoto(null)}
+                  style={[
+                    styles.enlargedCloseBtn,
+                    { backgroundColor: isDarkMode ? '#1A2942' : '#F1F5F9' },
+                  ]}
+                >
+                  <Ionicons name="close" size={20} color={theme.textPrimary} />
+                </TouchableOpacity>
+              </View>
             </View>
             {enlargedIdPhoto?.uri && (
               <Image
                 source={{ uri: enlargedIdPhoto.uri }}
-                style={styles.enlargedImage}
+                style={[
+                  styles.enlargedImage,
+                  {
+                    height: isCardsPortrait ? 420 : 260,
+                    transform: [{ rotate: `${enlargedIdPhoto.rotation || 0}deg` }],
+                  },
+                ]}
                 resizeMode="contain"
               />
             )}
@@ -1588,6 +1965,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
+  enlargedRotateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
   enlargedCloseBtn: {
     padding: 6,
     borderRadius: 16,
@@ -1723,6 +2107,23 @@ const styles = StyleSheet.create({
     marginTop: 4,
     minHeight: 320,
     justifyContent: 'space-between',
+  },
+
+  readOnlyNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 12,
+    gap: 8,
+  },
+  readOnlyNoticeText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    flex: 1,
+    lineHeight: 18,
   },
 
   /* SELECTION TOOLBAR FOR MULTI-RETURN */

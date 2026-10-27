@@ -18,6 +18,7 @@ import { useAuth } from '../../data/AuthContext';
 import { getBackendUrl } from '../../data/authService';
 import QRCode from 'react-native-qrcode-svg';
 import socketService from '../../services/socketService';
+import StudentIdCardsPopup from '../../components/StudentIdCardsPopup';
 import {
   getUpcomingReservations,
   getLibraryCardHistory,
@@ -28,6 +29,7 @@ import {
   NotificationItem,
   isDueToReturn,
   syncTransactionsWithBackend,
+  parseDateToMs,
 } from '../../data/store';
 
 export default function ReservationsScreen() {
@@ -37,10 +39,11 @@ export default function ReservationsScreen() {
   const { isDarkMode, theme } = useThemeColors();
   
   const [activeTab, setActiveTab] = useState<'card' | 'reserved'>('card');
-  const outerScrollRef = useRef<ScrollView>(null);
+  const outerScrollRef = useRef<React.ComponentRef<typeof ScrollView>>(null);
   const [outerViewportHeight, setOuterViewportHeight] = useState(0);
   const [outerContentHeight, setOuterContentHeight] = useState(0);
   const [showQrModal, setShowQrModal] = useState(false);
+  const [showIdCardsModal, setShowIdCardsModal] = useState(false);
   const [activeReservations, setActiveReservations] = useState<ReservationBook[]>(
     getUpcomingReservations()
   );
@@ -237,10 +240,8 @@ export default function ReservationsScreen() {
       if (aReturned && !bReturned) return 1;
 
       const parseDateMs = (book: ReservationBook) => {
-        const d = book.pickedUpAt || book.borrowDate || book.dateReserved || book.pickupDate || (book.date !== 'Returned' ? book.date : undefined);
-        if (!d) return 0;
-        const t = new Date(d).getTime();
-        return isNaN(t) ? 0 : t;
+        const d = (book as any).rawTimestamp || (book as any).requestedAt || book.pickedUpAt || book.borrowDate || book.dateReserved || book.pickupDate || (book.date !== 'Returned' ? book.date : undefined);
+        return parseDateToMs(d);
       };
       return parseDateMs(b) - parseDateMs(a);
     });
@@ -468,7 +469,7 @@ export default function ReservationsScreen() {
         {activeTab === 'card' ? (
           /* TAB 1: LIBRARY CARD VIEW (Matches image_1adceb.png) */
           <View style={[styles.libraryCardContainer, { backgroundColor: isDarkMode ? '#131E33' : '#F1F5F9', borderColor: isDarkMode ? '#24334C' : theme.cardBorder }]}>
-            {/* CARD TITLE & QR CODE GENERATOR TRIGGER */}
+            {/* CARD TITLE & ID CARDS POPUP TRIGGER */}
             <View style={styles.cardTopHeader}>
               <View style={{ width: 32 }} />
               <Text style={[styles.cardMainTitle, { color: isDarkMode ? '#FFFFFF' : theme.accentBlue }]}>
@@ -476,7 +477,7 @@ export default function ReservationsScreen() {
               </Text>
               <TouchableOpacity
                 style={[
-                  styles.qrScanIconBtn,
+                  styles.idCardIconBtn,
                   !isDarkMode && {
                     backgroundColor: theme.badgeYellowBg,
                     borderColor: theme.badgeYellowBorder,
@@ -485,13 +486,14 @@ export default function ReservationsScreen() {
                     padding: 5,
                   }
                 ]}
-                onPress={() => setShowQrModal(true)}
+                onPress={() => setShowIdCardsModal(true)}
                 activeOpacity={0.7}
+                accessibilityLabel="View Student & Library IDs"
               >
                 <MaterialCommunityIcons
-                  name="qrcode-scan"
+                  name="card-account-details-outline"
                   size={24}
-                  color={isDarkMode ? '#FFFFFF' : '#0274BB'}
+                  color={isDarkMode ? theme.accentGold : '#0274BB'}
                 />
               </TouchableOpacity>
             </View>
@@ -1021,6 +1023,14 @@ export default function ReservationsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* STUDENT & LIBRARY ID CARDS POPUP */}
+      {showIdCardsModal && (
+        <StudentIdCardsPopup
+          visible={showIdCardsModal}
+          onClose={() => setShowIdCardsModal(false)}
+        />
+      )}
     </AnimatedScreen>
   );
 }
@@ -1134,6 +1144,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   qrScanIconBtn: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  idCardIconBtn: {
     padding: 4,
     justifyContent: 'center',
     alignItems: 'center',

@@ -443,10 +443,10 @@ html[data-theme="light"] {
   button.btn-confirm-archive,
   button.btn-confirm-archive span,
   button.btn-confirm-archive svg,
-  button[class*="bg-orange-500"]:not(:disabled),
-  button[class*="bg-orange-500"]:not(:disabled) *,
-  button[class*="bg-orange-600"]:not(:disabled),
-  button[class*="bg-orange-600"]:not(:disabled) *,
+  button[class~="bg-orange-500"]:not(:disabled):not(.record-archive-btn):not([class*="bg-orange-50"]):not([class*="bg-orange-100"]):not([class*="hover:bg-orange"]),
+  button[class~="bg-orange-500"]:not(:disabled):not(.record-archive-btn):not([class*="bg-orange-50"]):not([class*="bg-orange-100"]):not([class*="hover:bg-orange"]) *:not(.record-archive-btn *),
+  button[class~="bg-orange-600"]:not(:disabled):not(.record-archive-btn):not([class*="bg-orange-50"]):not([class*="bg-orange-100"]):not([class*="hover:bg-orange"]),
+  button[class~="bg-orange-600"]:not(:disabled):not(.record-archive-btn):not([class*="bg-orange-50"]):not([class*="bg-orange-100"]):not([class*="hover:bg-orange"]) *:not(.record-archive-btn *),
   .btn-purge,
   .btn-purge *,
   button.btn-purge,
@@ -696,19 +696,43 @@ html[data-theme="light"] {
   .border-l-\[\#DC2626\] { border-left-color: #DC2626 !important; border-left-width: 6px !important; }
 
   /* Archive action button in light mode */
-  button.border-orange-300:not(aside *) {
+  button.border-orange-300:not(aside *),
+  button.record-archive-btn:not(aside *),
+  button[title="Archive"]:not(aside *) {
     border-color: #fdba74 !important;
   }
-  button.bg-orange-50:not(aside *) {
+  button.bg-orange-50:not(aside *),
+  button.record-archive-btn:not(aside *),
+  button[title="Archive"]:not(aside *) {
     background-color: #fff7ed !important;
   }
-  button.text-orange-600:not(aside *) {
-    color: #ea580c !important;
+  button.text-orange-600:not(aside *),
+  button.text-orange-700:not(aside *),
+  button.record-archive-btn:not(aside *),
+  button[title="Archive"]:not(aside *) {
+    color: #c2410c !important;
   }
-  button.hover\:bg-orange-500:hover:not(aside *) {
-    background-color: #f97316 !important;
+  button.border-orange-300:not(aside *) svg,
+  button.bg-orange-50:not(aside *) svg,
+  button.text-orange-600:not(aside *) svg,
+  button.text-orange-700:not(aside *) svg,
+  button.record-archive-btn:not(aside *) svg,
+  button[title="Archive"]:not(aside *) svg {
+    color: #c2410c !important;
+    stroke: #c2410c !important;
+  }
+  button.hover\:bg-orange-500:hover:not(aside *),
+  button.record-archive-btn:hover:not(aside *),
+  button[title="Archive"]:hover:not(aside *) {
+    background-color: #ea580c !important;
     border-color: #ea580c !important;
     color: #ffffff !important;
+  }
+  button.hover\:bg-orange-500:hover:not(aside *) svg,
+  button.record-archive-btn:hover:not(aside *) svg,
+  button[title="Archive"]:hover:not(aside *) svg {
+    color: #ffffff !important;
+    stroke: #ffffff !important;
   }
 
   /* Violet letter separator & badges in light mode */
@@ -1797,4 +1821,58 @@ button.btn-confirm-archive span,
 .btn-confirm-archive * {
   color: #ffffff !important;
   fill: #ffffff !important;
+}
+
+/* Record Archive Button - High Visibility */
+.record-archive-btn {
+  border-radius: 0.5rem !important;
+  transition: all 0.15s ease !important;
+}
+
+html[data-theme="light"] .record-archive-btn,
+.record-archive-btn.record-archive-btn-light {
+  border: 1px solid #fdba74 !important;
+  background-color: #fff7ed !important;
+  color: #c2410c !important;
+}
+
+html[data-theme="light"] .record-archive-btn svg,
+.record-archive-btn.record-archive-btn-light svg {
+  color: #c2410c !important;
+  stroke: #c2410c !important;
+}
+
+html[data-theme="light"] .record-archive-btn:hover,
+.record-archive-btn.record-archive-btn-light:hover {
+  background-color: #ea580c !important;
+  border-color: #ea580c !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="light"] .record-archive-btn:hover svg,
+.record-archive-btn.record-archive-btn-light:hover svg {
+  color: #ffffff !important;
+  stroke: #ffffff !important;
+}
+
+html[data-theme="dark"] .record-archive-btn {
+  border: 1px solid rgba(249, 115, 22, 0.25) !important;
+  background-color: rgba(249, 115, 22, 0.08) !important;
+  color: #fb923c !important;
+}
+
+html[data-theme="dark"] .record-archive-btn svg {
+  color: #fb923c !important;
+  stroke: #fb923c !important;
+}
+
+html[data-theme="dark"] .record-archive-btn:hover {
+  background-color: rgba(249, 115, 22, 0.2) !important;
+  border-color: rgba(249, 115, 22, 0.45) !important;
+  color: #fdba74 !important;
+}
+
+html[data-theme="dark"] .record-archive-btn:hover svg {
+  color: #fdba74 !important;
+  stroke: #fdba74 !important;
 }

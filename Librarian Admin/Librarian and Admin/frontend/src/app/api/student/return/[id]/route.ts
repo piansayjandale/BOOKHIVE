@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
+import { getSession } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -37,7 +38,6 @@ async function handleReturn(
   }
 
   try {
-    // Direct PostgreSQL return update
     let { rows } = await pool.query(
       `UPDATE transactions
        SET status = 'Returned',
@@ -142,6 +142,24 @@ async function handleReturn(
     } catch {
       // non-fatal
     }
+
+    const session = await getSession().catch(() => null);
+    const actorLabel = session ? `${session.role} ${session.name}` : "BookHive Librarian";
+    try {
+      await pool.query(
+        `INSERT INTO history_logs (actor, action, target, module, detail)
+         VALUES ($1, 'Returned transaction', $2, 'Transactions', $3)`,
+        [
+          actorLabel,
+          tx.student_name || "Student",
+          `${tx.resource_title || "Book"} returned by ${tx.student_name || "Student"}.`,
+        ]
+      );
+      await pool.query(
+        `INSERT INTO activity_logs (message, level) VALUES ($1, 'success')`,
+        [`${tx.student_name || "Student"} returned '${tx.resource_title || "Book"}'`]
+      );
+    } catch {}
 
     return NextResponse.json({
       message: "Book returned successfully.",

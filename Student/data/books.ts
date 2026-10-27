@@ -26,6 +26,8 @@ export type Book = {
   accession_number?: string;
   accessionNumber?: string;
   cover_img?: string;
+  coverImg?: string;
+  coverImage?: string;
   coverUrl?: string;
   rating?: number | string;
   publisher?: string;
@@ -246,6 +248,10 @@ export const addDynamicBook = (newBook: any) => {
     available: newBook.available !== false && newBook.availability !== "Unavailable",
     status: newBook.status || "Available",
     rating: newBook.rating || 4.5,
+    cover_img: newBook.cover_img || newBook.coverImg || newBook.coverImage || newBook.coverUrl || newBook.image || undefined,
+    coverImg: newBook.coverImg || newBook.coverImage || newBook.cover_img || newBook.coverUrl || newBook.image || undefined,
+    coverImage: newBook.coverImage || newBook.coverUrl || newBook.cover_img || newBook.coverImg || newBook.image || undefined,
+    coverUrl: newBook.coverUrl || newBook.coverImage || newBook.cover_img || newBook.coverImg || newBook.image || undefined,
   };
 
   // Prepend new book item to catalog feed & invalidate prefix index

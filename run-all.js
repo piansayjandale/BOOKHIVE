@@ -7,18 +7,29 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Detect the local IPv4 address, prioritizing physical adapters (Wi-Fi, Ethernet)
+// Detect the local IPv4 address, prioritizing Windows Mobile Hotspot and physical Wi-Fi/Ethernet adapters
 function getLocalIp() {
   const interfaces = os.networkInterfaces();
   let fallbackIp = '127.0.0.1';
-  let bestIp = null;
   
+  // 0. TOP PRIORITY: Windows Mobile Hotspot adapter (Windows default subnet: 192.168.137.X)
+  for (const name of Object.keys(interfaces)) {
+    for (const net of interfaces[name] || []) {
+      if (net.family === 'IPv4' && !net.internal) {
+        if (net.address.startsWith('192.168.137.')) {
+          console.log(`\x1b[32m[System] Detected active Windows Mobile Hotspot (${name}): ${net.address}\x1b[0m`);
+          return net.address;
+        }
+      }
+    }
+  }
+
+  let bestIp = null;
   const nameKeys = Object.keys(interfaces);
   
   // First pass: look for a physical Wi-Fi/WLAN or Ethernet adapter
   for (const name of nameKeys) {
-    const isVirtual = name.toLowerCase().includes('virtual') || 
-                      name.toLowerCase().includes('vbox') || 
+    const isVirtual = name.toLowerCase().includes('vbox') || 
                       name.toLowerCase().includes('vmware') || 
                       name.toLowerCase().includes('vethernet') || 
                       name.toLowerCase().includes('docker') || 
@@ -26,8 +37,11 @@ function getLocalIp() {
                       
     if (isVirtual) continue;
     
-    for (const net of interfaces[name]) {
+    for (const net of interfaces[name] || []) {
       if (net.family === 'IPv4' && !net.internal) {
+        // Skip unassigned APIPA addresses (169.254.x.x)
+        if (net.address.startsWith('169.254.')) continue;
+
         if (name.toLowerCase().includes('wi-fi') || 
             name.toLowerCase().includes('wlan') || 
             name.toLowerCase().includes('wireless') || 
@@ -44,10 +58,10 @@ function getLocalIp() {
   
   if (bestIp) return bestIp;
   
-  // Second pass: fallback to any non-internal IPv4
+  // Second pass: fallback to any non-internal IPv4 (excluding 169.254.x.x)
   for (const name of nameKeys) {
-    for (const net of interfaces[name]) {
-      if (net.family === 'IPv4' && !net.internal) {
+    for (const net of interfaces[name] || []) {
+      if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
         return net.address;
       }
     }
@@ -68,11 +82,35 @@ try {
   console.error(`\x1b[31m[System] Failed to write backendConfig.json: ${err.message}\x1b[0m`);
 }
 
+// Background monitor to automatically update backendConfig.json when network changes
+setInterval(() => {
+  const currentIp = getLocalIp();
+  try {
+    const existing = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, 'utf8')) : {};
+    if (existing.localIp !== currentIp) {
+      fs.writeFileSync(configPath, JSON.stringify({ localIp: currentIp }, null, 2));
+      console.log(`\x1b[33m[System] Network adapter IP updated to: ${currentIp}\x1b[0m`);
+    }
+  } catch {}
+}, 10000);
+
 const useTunnel = process.argv.includes('--tunnel');
 const useLan = process.argv.includes('--lan');
 const useWeb = process.argv.includes('--web');
+const isHotspot = localIp.startsWith('192.168.137.');
+const useOffline = process.argv.includes('--offline') || isHotspot;
 
-console.log(`\x1b[36m[System] Student Mobile mode: ${useWeb ? 'Web' : (useTunnel ? 'Tunnel (--tunnel)' : 'LAN (Default)')}\x1b[0m`);
+const mobileMode = useWeb
+  ? 'Web'
+  : (useTunnel
+      ? 'Tunnel (--tunnel)'
+      : (useOffline ? `LAN Offline${isHotspot ? ' (Windows Hotspot)' : ' (--offline)'}` : 'LAN (Default)'));
+
+console.log(`\x1b[36m[System] Student Mobile mode: ${mobileMode}\x1b[0m`);
+if (isHotspot) {
+  console.log(`\x1b[32m[System] Windows Mobile Hotspot detected (${localIp})! Connect your phone to your PC's Hotspot Wi-Fi.\x1b[0m`);
+  console.log(`\x1b[32m[System] Running in 100% offline mode: zero routers and zero internet required.\x1b[0m`);
+}
 console.log(`\x1b[36m[System] Multi-device Tip: To scan on multiple iOS devices simultaneously, make sure the devices and PC share the same Expo account (run 'npm run expo:login' if needed).\x1b[0m`);
 console.log(`\x1b[33m[System] Note: If your phone fails to load or gives "Failed to download remote update", make sure both devices are on the same Wi-Fi, or run 'npm run dev:tunnel'.\x1b[0m`);
 
@@ -92,13 +130,20 @@ const services = [
     command: 'npm',
     args: ['run', 'frontend:dev'],
     color: '\x1b[36m', // Cyan
-    env: { NODE_OPTIONS: '--max-old-space-size=2048' }
+    env: { 
+      NODE_OPTIONS: '--max-old-space-size=2048',
+      ALLOWED_DEV_ORIGINS: `localhost:3000,127.0.0.1:3000,${localIp}:3000,${localIp}:5000,localhost:5000`
+    }
   },
   {
     name: 'Student Mobile',
     dir: path.join(__dirname, 'Student'),
     command: 'npm',
-    args: useWeb ? ['run', 'web'] : (useTunnel ? ['run', 'start:tunnel'] : ['run', 'start:lan']),
+    args: useWeb
+      ? ['run', 'web']
+      : (useTunnel
+          ? ['run', 'start:tunnel']
+          : (useOffline ? ['run', 'start:offline'] : ['run', 'start:lan'])),
     color: '\x1b[35m' // Magenta
   }
 ];

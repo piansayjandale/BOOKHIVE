@@ -22,7 +22,7 @@ import { pool } from "../db/pool.js";
 import { adminModel } from "../models/admin.model.js";
 import { superAdminModel } from "../models/super-admin.model.js";
 import { studentModel } from "../models/student.model.js";
-import { emitBookAdded, emitBorrowRequest, emitTransactionDecided, emitBookReturned, emitTransactionPickedUp, emitAnnouncementPublished, emitAnnouncementDeleted, emitSettingsUpdated } from "../socket.js";
+import { emitBookAdded, emitBorrowRequest, emitTransactionDecided, emitBookReturned, emitTransactionPickedUp, emitAnnouncementPublished, emitAnnouncementDeleted, emitSettingsUpdated, emitReservationCancelled } from "../socket.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
 
@@ -449,6 +449,7 @@ export const adminController = {
   async listBooks(req, res) {
     try {
       const search = String(req.query.search ?? "");
+      const searchField = String(req.query.searchField || req.query.filterType || "title");
       const department = String(req.query.department ?? "All");
       const page = Math.max(1, Number(req.query.page ?? 1));
       const pageSize = Math.min(200, Math.max(1, Number(req.query.pageSize ?? 120)));
@@ -456,15 +457,16 @@ export const adminController = {
       const archivedOnly = req.query.archivedOnly === "true";
       const sortBy = String(req.query.sortBy ?? "");
 
-      const result = await adminModel.listBooks({ search, department, limit: pageSize, offset, archivedOnly, sortBy }).catch((err) => {
+      const result = await adminModel.listBooks({ search, searchField, department, limit: pageSize, offset, archivedOnly, sortBy }).catch((err) => {
         console.warn("[adminController.listBooks] Safe query fallback:", err.message);
-        return { books: [], total: 0 };
+        return { books: [], total: 0, addedToday: 0 };
       });
       return res.json({
         books: result?.books || [],
         total: result?.total || 0,
         page,
         pageSize,
+        addedToday: result?.addedToday ?? 0,
       });
     } catch (err) {
       console.warn("[adminController.listBooks] Safe fallback:", err.message);
@@ -473,6 +475,7 @@ export const adminController = {
         total: 0,
         page: 1,
         pageSize: 120,
+        addedToday: 0,
       });
     }
   },
@@ -781,8 +784,16 @@ export const adminController = {
   async listHistoryLogs(req, res) {
     const search = String(req.query.search ?? "");
     const moduleName = String(req.query.module ?? "All");
-    const logs = await adminModel.listHistoryLogs({ search, module: moduleName });
-    return res.json({ history: logs });
+    const actor = req.query.actor ? String(req.query.actor) : (req.user?.name || "");
+    const result = await adminModel.listHistoryLogs({ search, module: moduleName, actor });
+    if (Array.isArray(result)) {
+      return res.json({ history: result, logs: result });
+    }
+    return res.json({
+      history: result?.history || [],
+      logs: result?.history || [],
+      counts: result?.counts || null,
+    });
   },
 
   // --- Transaction approval workflow ---
@@ -870,7 +881,7 @@ export const adminController = {
       return res.json({ transaction, ok: true });
     }
 
-    if (!status || !['Approved', 'Declined', 'Returned'].includes(status)) {
+    if (!status || !['Approved', 'Declined', 'Returned', 'Cancelled'].includes(status)) {
       return res.status(400).json({ message: 'Invalid status.' });
     }
 
@@ -895,6 +906,8 @@ export const adminController = {
     emitTransactionDecided(transaction);
     if (status === "Returned") {
       emitBookReturned(transaction);
+    } else if (status === "Cancelled") {
+      emitReservationCancelled(transaction);
     }
     void eventDispatcher.dispatchTransactionDecision(transaction);
     invalidateDashboardCache();
@@ -908,14 +921,14 @@ export const adminController = {
     });
     await adminModel.addActivityLog(
       `${transaction.type} ${status.toLowerCase()} for ${transaction.studentId}`,
-      status === "Declined" ? "warning" : "success",
+      status === "Declined" || status === "Cancelled" ? "warning" : "success",
       actorName
     );
 
     // Automated Return-to-Reservation Notification & 24h Timer:
-    // If a book is returned or a pending borrow is declined (freeing up a copy), promote the next waitlisted reservation
+    // If a book is returned or a pending borrow is declined/cancelled (freeing up a copy), promote the next waitlisted reservation
     let promotedTransaction = null;
-    if (status === "Returned" || status === "Declined") {
+    if (status === "Returned" || status === "Declined" || status === "Cancelled") {
       try {
         promotedTransaction = await reservationTimerService.promoteNextReservation(transaction.isbn, transaction.resourceTitle);
       } catch (notifyErr) {
@@ -1133,7 +1146,8 @@ export const adminController = {
   },
 
   async getPromptSearchLogs(req, res) {
-    const logs = await adminModel.getSearchLogs();
+    const actor = req.query.actor ? String(req.query.actor) : (req.user?.name || "");
+    const logs = await adminModel.getSearchLogs({ actor });
     return res.json({ logs });
   },
 

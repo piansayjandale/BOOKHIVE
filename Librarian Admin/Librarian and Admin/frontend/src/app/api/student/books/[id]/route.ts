@@ -35,13 +35,23 @@ export async function GET(
         department,
         category,
         shelf_location AS "shelfLocation",
+        shelf_location AS "shelf",
         summary,
+        summary AS "description",
         rating,
         cover_img AS "coverImg",
         cover_img AS "cover_img",
+        cover_img AS "coverUrl",
+        cover_img AS "coverImage",
         genres,
         language,
         publisher,
+        publication_date AS "publicationDate",
+        published_date AS "publishedDate",
+        pages,
+        volume,
+        edition,
+        accession_number AS "accessionNumber",
         borrow_count AS "borrowCount",
         copies,
         availability
@@ -105,7 +115,7 @@ export async function GET(
 
     const ledger = txRes.rows || [];
     const counts = countRes.rows[0] || {};
-    const activeLoan = ledger.find((t: any) => t.type === 'Borrow' && t.status === 'Approved') || null;
+    const activeLoan = ledger.find((t: any) => t.type === "Borrow" && t.status === "Approved") || null;
     const borrowedCount = Number(counts.borrowedCount || 0);
     const heldCount = Number(counts.heldCount || 0);
     const waitlistCount = Number(counts.waitlistCount || 0);
@@ -117,7 +127,11 @@ export async function GET(
     const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
     const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
     const isAvailable = availableCopies > 0;
-    const status = isAvailable ? 'Available' : (reservedCount > 0 ? 'Reserved' : 'Unavailable');
+    const status = isAvailable ? "Available" : reservedCount > 0 ? "Reserved" : "Unavailable";
+
+    const pubDate =
+      book?.publicationDate ||
+      (book?.publishedDate ? new Date(book.publishedDate).toISOString().split("T")[0] : "");
 
     const resultBook = {
       ...(book || {
@@ -128,9 +142,13 @@ export async function GET(
         department: "Circulation",
         category: "General",
         summary: "",
+        description: "",
         rating: 4.8,
         borrowCount: 0,
       }),
+      publicationDate: pubDate,
+      publishedDate: pubDate,
+      year: pubDate ? String(pubDate).substring(0, 4) : "",
       totalCopies,
       copies: totalCopies,
       borrowedCount,

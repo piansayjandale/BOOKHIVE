@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios, { AxiosError, AxiosInstance, InternalAxiosRequestConfig } from "axios";
 import Constants from "expo-constants";
-import { Alert, Platform, ToastAndroid } from "react-native";
+import { Alert, Platform, ToastAndroid, NativeModules } from "react-native";
 import backendConfig from "../data/backendConfig.json";
 
 // =============================================================================
@@ -51,7 +51,10 @@ export const DEV_API_PORT =
  * and SSL handshakes. A 60-second timeout ensures the app gracefully waits for
  * the backend to wake up instead of prematurely failing with an immediate network error.
  */
-export const API_TIMEOUT_MS = 60000;
+export const API_TIMEOUT_MS =
+  process.env.EXPO_PUBLIC_USE_PRODUCTION === "true" || !__DEV__
+    ? 60000
+    : 35000;
 
 export const TIMEOUT_USER_MESSAGE =
   "Connecting to server, please wait a moment...";
@@ -71,36 +74,69 @@ function normalizeUrl(url: string): string {
  * Resolves local backend URL for development (LAN IP, Android emulator, or localhost).
  */
 export const getLocalBackendUrl = (): string => {
-  // 1. Dynamic Expo Go hostUri (for live testing on physical phones over Wi-Fi)
-  try {
-    const hostUri =
-      Constants.expoConfig?.hostUri ||
-      (Constants as any).expoGoConfig?.debuggerHost ||
-      (Constants as any).expoGoConfig?.developer?.debuggerHost;
+  // 0. Web browser (Expo web)
+  if (Platform.OS === "web" && typeof window !== "undefined" && window.location) {
+    const hostname = window.location.hostname || "localhost";
+    return `http://${hostname}:${DEV_API_PORT}`;
+  }
 
-    if (hostUri && typeof hostUri === "string") {
-      const cleanHost = hostUri.replace(/^[a-z]+:\/\//i, "");
-      const host = cleanHost.split(":")[0];
-      const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(host);
-      if (isIp) {
-        return `http://${host}:${DEV_API_PORT}`;
+  // 1. Check NativeModules SourceCode scriptURL (The exact URL from which the JS bundle was served over Wi-Fi)
+  try {
+    const scriptURL = (NativeModules as any)?.SourceCode?.scriptURL;
+    if (scriptURL && typeof scriptURL === "string") {
+      const match = scriptURL.match(/^https?:\/\/([^:/]+)/);
+      if (match && match[1]) {
+        const host = match[1];
+        if (host !== "localhost" && host !== "127.0.0.1") {
+          return `http://${host}:${DEV_API_PORT}`;
+        }
       }
     }
   } catch (err) {
-    console.warn("[API Config] Could not parse dynamic hostUri:", err);
+    console.warn("[API Config] Could not parse scriptURL:", err);
   }
 
-  // 2. Android Emulator loopback
-  if (Platform.OS === "android") {
+  // 2. Dynamic Expo Go hostUri / debuggerHost / linkingUri (for live testing on physical phones over Wi-Fi)
+  try {
+    const candidateUris = [
+      Constants.expoConfig?.hostUri,
+      (Constants as any).expoGoConfig?.debuggerHost,
+      (Constants as any).expoGoConfig?.developer?.debuggerHost,
+      (Constants as any).manifest?.debuggerHost,
+      (Constants as any).manifest2?.extra?.expoClient?.hostUri,
+      (Constants as any).manifest2?.extra?.expoGo?.debuggerHost,
+      Constants.linkingUri,
+      (Constants as any).experienceUrl,
+    ];
+
+    for (const rawUri of candidateUris) {
+      if (rawUri && typeof rawUri === "string") {
+        const cleanHost = rawUri.replace(/^[a-z]+:\/\//i, "");
+        const host = cleanHost.split("/")[0].split(":")[0];
+        const isIp = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(host);
+        if (isIp && host !== "127.0.0.1") {
+          return `http://${host}:${DEV_API_PORT}`;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[API Config] Could not parse dynamic candidateUris:", err);
+  }
+
+  // 3. Android Emulator loopback (strictly for Android Studio Emulator when NOT on a physical device)
+  if (Platform.OS === "android" && !Constants.isDevice) {
     return LOCAL_ANDROID_EMULATOR_URL;
   }
 
-  // 3. Pre-detected local IP from backendConfig.json
+  // 4. Pre-detected local LAN IP from backendConfig.json (written by run-all.js)
   if (backendConfig && (backendConfig as any).localIp) {
-    return `http://${(backendConfig as any).localIp}:${DEV_API_PORT}`;
+    const configuredIp = (backendConfig as any).localIp;
+    if (configuredIp && configuredIp !== "127.0.0.1") {
+      return `http://${configuredIp}:${DEV_API_PORT}`;
+    }
   }
 
-  // 4. Default localhost
+  // 5. Default localhost
   return LOCAL_DEV_URL;
 };
 
@@ -143,17 +179,57 @@ export const getApiUrl = (): string => `${getBackendUrl()}/api`;
  * Dynamic string wrapper for backward compatibility with existing codebase.
  * Evaluates to getBackendUrl() in template literals: `${API_URL}/api/...`
  */
-export const API_URL = {
-  toString() {
-    return getBackendUrl();
+export const API_URL = Object.assign(
+  {
+    toString() {
+      return getBackendUrl();
+    },
+    valueOf() {
+      return getBackendUrl();
+    },
+    [Symbol.toPrimitive]() {
+      return getBackendUrl();
+    },
+    replace(...args: [any, any]) {
+      return getBackendUrl().replace(...args);
+    },
+    startsWith(searchString: string, position?: number) {
+      return getBackendUrl().startsWith(searchString, position);
+    },
+    endsWith(searchString: string, endPosition?: number) {
+      return getBackendUrl().endsWith(searchString, endPosition);
+    },
+    includes(searchString: string, position?: number) {
+      return getBackendUrl().includes(searchString, position);
+    },
+    indexOf(searchString: string, position?: number) {
+      return getBackendUrl().indexOf(searchString, position);
+    },
+    split(separator: string | RegExp, limit?: number) {
+      return getBackendUrl().split(separator, limit);
+    },
+    slice(start?: number, end?: number) {
+      return getBackendUrl().slice(start, end);
+    },
+    substring(start: number, end?: number) {
+      return getBackendUrl().substring(start, end);
+    },
+    toLowerCase() {
+      return getBackendUrl().toLowerCase();
+    },
+    toUpperCase() {
+      return getBackendUrl().toUpperCase();
+    },
+    trim() {
+      return getBackendUrl().trim();
+    },
   },
-  valueOf() {
-    return getBackendUrl();
-  },
-  [Symbol.toPrimitive]() {
-    return getBackendUrl();
-  },
-} as unknown as string;
+  {
+    get length() {
+      return getBackendUrl().length;
+    },
+  }
+) as unknown as string;
 
 // =============================================================================
 // Global Error Notification (Debounced)

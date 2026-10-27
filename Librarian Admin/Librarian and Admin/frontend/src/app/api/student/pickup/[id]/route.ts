@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
+import { getSession } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -86,6 +87,24 @@ async function handlePickup(
       resource_title: body?.resourceTitle || "Book",
       isbn: body?.isbn || "",
     };
+
+    const session = await getSession().catch(() => null);
+    const actorLabel = session ? `${session.role} ${session.name}` : "BookHive Librarian";
+    try {
+      await pool.query(
+        `INSERT INTO history_logs (actor, action, target, module, detail)
+         VALUES ($1, 'Marked book as picked up', $2, 'Transactions', $3)`,
+        [
+          actorLabel,
+          tx.student_name || body?.studentName || "Student",
+          `${tx.resource_title || body?.resourceTitle || "Book"} picked up by ${tx.student_name || body?.studentName || "Student"}.`,
+        ]
+      );
+      await pool.query(
+        `INSERT INTO activity_logs (message, level) VALUES ($1, 'success')`,
+        [`Book picked up by ${tx.student_name || body?.studentName || "Student"}`]
+      );
+    } catch {}
 
     return NextResponse.json({
       success: true,

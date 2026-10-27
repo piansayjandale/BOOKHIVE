@@ -1,3 +1,5 @@
+import { getUniqueBookCover } from "../../data/bookCovers";
+import { BookCoverImage } from "../../components/BookCoverImage";
 import React from "react";
 import {
   View,
@@ -169,90 +171,154 @@ const STOP_WORDS = new Set([
   "recommended", "looking", "for", "about", "describe", "detail", "details", "analyse", "analyze"
 ]);
 
-function BookCoverImage({
-  uri,
-  title,
-  author,
-  style,
-  iconSize = 22,
-  showText = false,
-}: {
-  uri?: string | null;
-  title: string;
-  author: string;
-  style: any;
-  iconSize?: number;
-  showText?: boolean;
-}) {
-  const [imageError, setImageError] = React.useState(false);
+function getCategoryThemedPalette(category?: string, title?: string, isDarkMode: boolean = false) {
+  const norm = ((category || "") + " " + (title || "")).toLowerCase();
 
-  if (uri && !imageError) {
-    return (
-      <Image
-        source={{ uri }}
-        style={style}
-        resizeMode="cover"
-        onError={() => setImageError(true)}
-      />
-    );
+  if (
+    norm.includes("tech") ||
+    norm.includes("computer") ||
+    norm.includes("algorithm") ||
+    norm.includes("program") ||
+    norm.includes("data") ||
+    norm.includes("network") ||
+    norm.includes("software") ||
+    norm.includes("code") ||
+    norm.includes("systems")
+  ) {
+    return {
+      bg: isDarkMode ? "#082F49" : "#E0F2FE",
+      spine: "#0284C7",
+      ribbon: "#38BDF8",
+      border: isDarkMode ? "#0C4A6E" : "#BAE6FD",
+      iconBg: isDarkMode ? "rgba(56, 189, 248, 0.22)" : "rgba(2, 132, 199, 0.12)",
+      iconColor: isDarkMode ? "#38BDF8" : "#0284C7",
+      iconName: "code-tags" as const,
+      tag: "TECH",
+    };
+  }
+  if (
+    norm.includes("fiction") ||
+    norm.includes("novel") ||
+    norm.includes("literature") ||
+    norm.includes("story") ||
+    norm.includes("wayward") ||
+    norm.includes("harry") ||
+    norm.includes("fantasy")
+  ) {
+    return {
+      bg: isDarkMode ? "#2E1065" : "#F3E8FF",
+      spine: "#7C3AED",
+      ribbon: "#C084FC",
+      border: isDarkMode ? "#4C1D95" : "#DDD6FE",
+      iconBg: isDarkMode ? "rgba(192, 132, 252, 0.22)" : "rgba(124, 58, 237, 0.12)",
+      iconColor: isDarkMode ? "#C084FC" : "#7C3AED",
+      iconName: "feather" as const,
+      tag: "FICTION",
+    };
+  }
+  if (
+    norm.includes("filipiniana") ||
+    norm.includes("philippine") ||
+    norm.includes("rizal") ||
+    norm.includes("history") ||
+    norm.includes("tagalog")
+  ) {
+    return {
+      bg: isDarkMode ? "#451A03" : "#FEF3C7",
+      spine: "#D97706",
+      ribbon: "#FCD400",
+      border: isDarkMode ? "#78350F" : "#FDE68A",
+      iconBg: isDarkMode ? "rgba(252, 212, 0, 0.22)" : "rgba(217, 119, 6, 0.12)",
+      iconColor: isDarkMode ? "#FCD400" : "#D97706",
+      iconName: "bank" as const,
+      tag: "FILIPINIANA",
+    };
+  }
+  if (
+    norm.includes("periodical") ||
+    norm.includes("magazine") ||
+    norm.includes("journal") ||
+    norm.includes("news")
+  ) {
+    return {
+      bg: isDarkMode ? "#134E4A" : "#CCFBF1",
+      spine: "#0D9488",
+      ribbon: "#2DD4BF",
+      border: isDarkMode ? "#115E59" : "#99F6E4",
+      iconBg: isDarkMode ? "rgba(45, 212, 191, 0.22)" : "rgba(13, 148, 136, 0.12)",
+      iconColor: isDarkMode ? "#2DD4BF" : "#0D9488",
+      iconName: "newspaper-variant-outline" as const,
+      tag: "PERIODICAL",
+    };
+  }
+  if (
+    norm.includes("math") ||
+    norm.includes("science") ||
+    norm.includes("physics") ||
+    norm.includes("biology") ||
+    norm.includes("chemistry") ||
+    norm.includes("calculus") ||
+    norm.includes("discrete")
+  ) {
+    return {
+      bg: isDarkMode ? "#064E3B" : "#D1FAE5",
+      spine: "#059669",
+      ribbon: "#34D399",
+      border: isDarkMode ? "#065F46" : "#A7F3D0",
+      iconBg: isDarkMode ? "rgba(52, 211, 153, 0.22)" : "rgba(5, 150, 105, 0.12)",
+      iconColor: isDarkMode ? "#34D399" : "#059669",
+      iconName: "atom" as const,
+      tag: "SCIENCE",
+    };
+  }
+  if (
+    norm.includes("reference") ||
+    norm.includes("encyclopedia") ||
+    norm.includes("dictionary") ||
+    norm.includes("general")
+  ) {
+    return {
+      bg: isDarkMode ? "#1E1B4B" : "#EEF2FF",
+      spine: "#4F46E5",
+      ribbon: "#818CF8",
+      border: isDarkMode ? "#312E81" : "#C7D2FE",
+      iconBg: isDarkMode ? "rgba(129, 140, 248, 0.22)" : "rgba(79, 70, 229, 0.12)",
+      iconColor: isDarkMode ? "#818CF8" : "#4F46E5",
+      iconName: "book-open-page-variant" as const,
+      tag: "REFERENCE",
+    };
+  }
+  if (
+    norm.includes("special") ||
+    norm.includes("archive") ||
+    norm.includes("rare")
+  ) {
+    return {
+      bg: isDarkMode ? "#3B0764" : "#FDF4FF",
+      spine: "#9333EA",
+      ribbon: "#E879F9",
+      border: isDarkMode ? "#581C87" : "#F5D0FE",
+      iconBg: isDarkMode ? "rgba(232, 121, 249, 0.22)" : "rgba(147, 51, 234, 0.12)",
+      iconColor: isDarkMode ? "#E879F9" : "#9333EA",
+      iconName: "star-four-points" as const,
+      tag: "SPECIAL",
+    };
   }
 
-  const { isDarkMode, theme } = useThemeColors();
-
-  return (
-    <View
-      style={[
-        style,
-        styles.fallbackCoverContainer,
-        { backgroundColor: theme.bookCoverBg, borderColor: theme.bookCoverBorder },
-      ]}
-    >
-      {/* Decorative top-right gold bookmark ribbon */}
-      <View
-        style={{
-          position: "absolute",
-          top: 0,
-          right: 8,
-          width: 7,
-          height: 13,
-          backgroundColor: isDarkMode ? theme.accentGold : "#FCD400",
-          borderBottomLeftRadius: 3,
-          borderBottomRightRadius: 3,
-        }}
-      />
-
-      {/* Yellow highlight container for book icon */}
-      <View
-        style={{
-          width: Math.max(30, iconSize + 12),
-          height: Math.max(30, iconSize + 12),
-          borderRadius: Math.round((iconSize + 12) / 2),
-          backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.18)" : "#FEF08A",
-          borderColor: isDarkMode ? "rgba(255, 215, 0, 0.45)" : "#FDE047",
-          borderWidth: 1.5,
-          justifyContent: "center",
-          alignItems: "center",
-          shadowColor: "#FCD400",
-          shadowOffset: { width: 0, height: 1.5 },
-          shadowOpacity: isDarkMode ? 0.3 : 0.25,
-          shadowRadius: 2.5,
-          elevation: 2,
-        }}
-      >
-        <MaterialCommunityIcons
-          name="book-open-page-variant"
-          size={iconSize}
-          color={isDarkMode ? theme.accentGold : "#0274BB"}
-        />
-      </View>
-      {showText && (
-        <Text style={[styles.fallbackCoverTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-          {title}
-        </Text>
-      )}
-    </View>
-  );
+  // Default Circulation
+  return {
+    bg: isDarkMode ? "#0E1729" : "#F0F7FF",
+    spine: "#0274BB",
+    ribbon: "#FCD400",
+    border: isDarkMode ? "#1E2E47" : "#BAE6FD",
+    iconBg: isDarkMode ? "rgba(2, 116, 187, 0.22)" : "rgba(2, 116, 187, 0.1)",
+    iconColor: isDarkMode ? "#60A5FA" : "#0274BB",
+    iconName: "book-open-outline" as const,
+    tag: "BOOK",
+  };
 }
+
+
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -280,12 +346,19 @@ export default function HomeScreen() {
   );
   const [libraryPoints, setLibraryPoints] = React.useState<number>(getLibraryPoints());
 
+  const dismissedAnnouncementsRef = React.useRef<Set<string>>(new Set());
+  const checkedAnnouncementIdRef = React.useRef<string | null>(null);
+
   const dismissAnnouncementModal = React.useCallback(() => {
-    if (selectedAnnouncement?.id) {
-      AsyncStorage.setItem(`@seen_ann_popup_${selectedAnnouncement.id}`, "true").catch(() => {});
-    }
-    setSelectedAnnouncement(null);
-  }, [selectedAnnouncement]);
+    setSelectedAnnouncement((prev) => {
+      if (prev === null) return null;
+      if (prev.id) {
+        dismissedAnnouncementsRef.current.add(prev.id);
+        AsyncStorage.setItem(`@seen_ann_popup_${prev.id}`, "true").catch(() => {});
+      }
+      return null;
+    });
+  }, []);
 
   React.useEffect(() => {
     setAnnouncements(getAnnouncements());
@@ -294,8 +367,8 @@ export default function HomeScreen() {
     setBorrowHistory(getReservationHistory());
     setNotifications(getNotifications());
     setLibraryPoints(getLibraryPoints());
-    void syncAnnouncementsWithBackend(true);
-    void syncTransactionsWithBackend(true).then(() => {
+    void syncAnnouncementsWithBackend(false);
+    void syncTransactionsWithBackend(false).then(() => {
       setActiveReservations(getUpcomingReservations());
       setLibraryCardBooks(getLibraryCardHistory());
       setBorrowHistory(getReservationHistory());
@@ -320,11 +393,11 @@ export default function HomeScreen() {
       setLibraryCardBooks(getLibraryCardHistory());
     });
 
-    // Poll notifications & announcements every 10 seconds to sync in real-time
+    // Poll notifications & announcements every 15 seconds to sync in real-time
     const interval = setInterval(() => {
       getNotifications();
-      void syncAnnouncementsWithBackend(true);
-    }, 10000);
+      void syncAnnouncementsWithBackend(false);
+    }, 15000);
 
     return () => {
       unsubscribe();
@@ -338,9 +411,14 @@ export default function HomeScreen() {
   React.useEffect(() => {
     if (announcements.length > 0) {
       const latest = announcements[0];
+      if (!latest || !latest.id) return;
+      if (checkedAnnouncementIdRef.current === latest.id || dismissedAnnouncementsRef.current.has(latest.id)) {
+        return;
+      }
+      checkedAnnouncementIdRef.current = latest.id;
       AsyncStorage.getItem(`@seen_ann_popup_${latest.id}`)
         .then((seen) => {
-          if (!seen) {
+          if (!seen && !dismissedAnnouncementsRef.current.has(latest.id)) {
             setSelectedAnnouncement(latest);
           }
         })
@@ -395,7 +473,7 @@ export default function HomeScreen() {
           pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
           language: book.language || "EN",
           description: book.summary || book.description || "",
-          coverImage: book.coverUrl || book.coverImage || book.cover || null,
+          coverImage: book.coverUrl || book.coverImage || book.cover || getUniqueBookCover(book),
           copies: String(book.copies !== undefined && book.copies !== null ? book.copies : 1),
           volume: book.volume || "Single Volume / None",
           edition: book.edition || "Single Edition / None",
@@ -429,7 +507,7 @@ export default function HomeScreen() {
       language: "EN",
       description: "Wayward Son is the spellbinding sequel to Carry On.",
       department: "Circulation",
-      coverImage: null,
+      coverImage: getUniqueBookCover("Wayward Son", "Tom Pollack"),
       borrowCount: 1,
     },
     {
@@ -446,7 +524,7 @@ export default function HomeScreen() {
       language: "Filipino",
       description: "A daily life of Yana and Brich together.",
       department: "Filipiniana",
-      coverImage: null,
+      coverImage: getUniqueBookCover("Yana Brich Daily Life", "Brich"),
       borrowCount: 1,
     },
     {
@@ -463,7 +541,7 @@ export default function HomeScreen() {
       language: "English",
       description: "A Girl sharing her experience playing MLBB",
       department: "Special Collections",
-      coverImage: null,
+      coverImage: getUniqueBookCover("Brichoox Gaming Experience", "Brich"),
       borrowCount: 1,
     },
     {
@@ -480,7 +558,7 @@ export default function HomeScreen() {
       language: "EN",
       description: "Set in a gripping modern world of witchcraft and intrigue.",
       department: "Circulation",
-      coverImage: null,
+      coverImage: getUniqueBookCover("Charmed", "Michelle Krys"),
       borrowCount: 1,
     },
     {
@@ -497,14 +575,19 @@ export default function HomeScreen() {
       language: "EN",
       description: "A compelling romance novel by Elizabeth Reyes.",
       department: "Circulation",
-      coverImage: null,
+      coverImage: getUniqueBookCover("Gio", "Elizabeth Reyes"),
       borrowCount: 1,
     },
   ]);
 
+  const allBooksRef = React.useRef(allBooks);
+  allBooksRef.current = allBooks;
+  const trendingBooksRef = React.useRef(trendingBooks);
+  trendingBooksRef.current = trendingBooks;
+
   const fetchBooksPayload = React.useCallback(async (forceLoading = false) => {
     // Only show full loading spinner if there are no books currently rendered
-    if (forceLoading && allBooks.length === 0) {
+    if (forceLoading && allBooksRef.current.length === 0) {
       setIsLoadingBooks(true);
     }
     try {
@@ -551,7 +634,7 @@ export default function HomeScreen() {
             pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
             language: book.language || "EN",
             description: book.summary || book.description || "",
-            coverImage: book.coverUrl || book.coverImage || book.cover || book.imageUrl || book.image || null,
+            coverImage: book.coverUrl || book.coverImage || book.cover || book.imageUrl || book.image || getUniqueBookCover(book),
             copies: String(book.copies !== undefined && book.copies !== null ? book.copies : 1),
             volume: book.volume || "Single Volume / None",
             edition: book.edition || "Single Edition / None",
@@ -564,7 +647,7 @@ export default function HomeScreen() {
         setAllBooks(mappedBooks);
         setCachedAllBooks(mappedBooks);
         setNewArrivals(mappedBooks);
-      } else if (allBooks.length === 0 && Array.isArray(localBooks) && localBooks.length > 0) {
+      } else if (allBooksRef.current.length === 0 && Array.isArray(localBooks) && localBooks.length > 0) {
         const fallback = localBooks.slice(0, 100).map((book: any, idx: number) => {
           const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
           const pseudoRating = (4.2 + (charSum % 8) / 10).toFixed(1);
@@ -610,7 +693,7 @@ export default function HomeScreen() {
             pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
             language: book.language || "English",
             description: book.summary || book.description || "",
-            coverImage: book.coverImg || book.coverUrl || book.coverImage || null,
+            coverImage: book.coverImg || book.coverUrl || book.coverImage || getUniqueBookCover(book),
             copies: String(book.copies !== undefined && book.copies !== null ? book.copies : 1),
             volume: book.volume || "Single Volume / None",
             edition: book.edition || "Single Edition / None",
@@ -619,7 +702,7 @@ export default function HomeScreen() {
           };
         });
         setTrendingBooks(mappedTrending.slice(0, 5));
-      } else if (mappedBooks.length > 0 && trendingBooks.length === 0) {
+      } else if (mappedBooks.length > 0 && trendingBooksRef.current.length === 0) {
         setTrendingBooks(mappedBooks.slice(0, 5));
       }
     } catch (error) {
@@ -627,7 +710,7 @@ export default function HomeScreen() {
     } finally {
       setIsLoadingBooks(false);
     }
-  }, [allBooks.length, trendingBooks.length]);
+  }, []);
 
   // Real-time socket updates: automatically refresh when new books are added or borrowed
   React.useEffect(() => {
@@ -876,21 +959,17 @@ export default function HomeScreen() {
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
+  const lastFocusFetchTimeRef = React.useRef<number>(0);
   useFocusEffect(
     React.useCallback(() => {
-      // Force sync state and backend when tab comes into focus
-      setActiveReservations(getUpcomingReservations());
-      setLibraryCardBooks(getLibraryCardHistory());
-      setBorrowHistory(getReservationHistory());
-      setNotifications(getNotifications());
-      setLibraryPoints(getLibraryPoints());
-      syncAnnouncementsWithBackend(true);
-      fetchBooksPayload();
-      void syncTransactionsWithBackend(true).then(() => {
-        setActiveReservations(getUpcomingReservations());
-        setLibraryCardBooks(getLibraryCardHistory());
-        setBorrowHistory(getReservationHistory());
-      });
+      const now = Date.now();
+      // Fast tab switching: avoid re-fetching heavy payload if focused within last 15 seconds
+      if (now - lastFocusFetchTimeRef.current > 15000) {
+        lastFocusFetchTimeRef.current = now;
+        syncAnnouncementsWithBackend(false);
+        void syncTransactionsWithBackend(false);
+        fetchBooksPayload();
+      }
     }, [fetchBooksPayload])
   );
 
@@ -1061,17 +1140,28 @@ export default function HomeScreen() {
             activeOpacity={0.7}
             accessibilityLabel="Open profile"
           >
-            <MaterialCommunityIcons
-              name="account-circle-outline"
-              size={26}
-              color={isDarkMode ? theme.accentGold : theme.accentBlue}
-            />
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.12)" : "rgba(2, 116, 187, 0.08)",
+              borderWidth: 1,
+              borderColor: isDarkMode ? "rgba(255, 215, 0, 0.25)" : "rgba(2, 116, 187, 0.15)",
+              justifyContent: "center",
+              alignItems: "center"
+            }}>
+              <MaterialCommunityIcons
+                name="account-circle-outline"
+                size={22}
+                color={isDarkMode ? theme.accentGold : theme.brandBlue}
+              />
+            </View>
           </TouchableOpacity>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
             <Ionicons
               name="bookmark"
-              size={17}
+              size={18}
               color={isDarkMode ? theme.accentGold : "#FCD400"}
             />
             <Text style={[styles.headerTitle, { color: theme.headerTitle }]}>
@@ -1087,11 +1177,22 @@ export default function HomeScreen() {
               toggleTheme();
             }}
           >
-            <Ionicons
-              name={isDarkMode ? "sunny-outline" : "moon-outline"}
-              size={22}
-              color={isDarkMode ? theme.accentGold : theme.accentBlue}
-            />
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isDarkMode ? "#17233D" : "#F1F5F9",
+              borderWidth: 1,
+              borderColor: theme.cardBorder,
+              justifyContent: "center",
+              alignItems: "center"
+            }}>
+              <Ionicons
+                name={isDarkMode ? "sunny-outline" : "moon-outline"}
+                size={18}
+                color={isDarkMode ? theme.accentGold : "#64748B"}
+              />
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1100,11 +1201,22 @@ export default function HomeScreen() {
               router.push("/notifications")
             }
           >
-            <Ionicons
-              name="notifications-outline"
-              size={24}
-              color={isDarkMode ? theme.accentGold : theme.accentBlue}
-            />
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isDarkMode ? "#17233D" : "#F1F5F9",
+              borderWidth: 1,
+              borderColor: theme.cardBorder,
+              justifyContent: "center",
+              alignItems: "center"
+            }}>
+              <Ionicons
+                name="notifications-outline"
+                size={19}
+                color={isDarkMode ? theme.accentGold : "#64748B"}
+              />
+            </View>
             {unreadCount > 0 && (
               <View style={styles.badgeContainerRelative}>
                 <Text style={styles.badgeText}>
@@ -1180,13 +1292,13 @@ export default function HomeScreen() {
               <Feather
                 name="search"
                 size={18}
-                color={isDarkMode ? theme.accentGold : theme.accentBlue}
+                color={isDarkMode ? theme.accentGold : "#94A3B8"}
                 style={styles.searchIcon}
               />
             </TouchableOpacity>
             <TextInput
               style={[styles.searchInput, { color: isDarkMode ? theme.textPrimary : "#0F172A" }]}
-              placeholder="Search books & suggestions..."
+              placeholder="Search books, authors, ISBN..."
               placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
               value={searchText}
               onChangeText={handleSearchTextChange}
@@ -1207,27 +1319,28 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <TouchableOpacity style={{ padding: 4 }} onPress={handlePickDocument} activeOpacity={0.7}>
-                  <Feather name="paperclip" size={18} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
+                <TouchableOpacity style={{ padding: 6 }} onPress={handlePickDocument} activeOpacity={0.7}>
+                  <Feather name="paperclip" size={17} color={isDarkMode ? theme.accentGold : "#64748B"} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleHomeSearchSubmit()}
                   activeOpacity={0.8}
                   style={{
-                    backgroundColor: isDarkMode ? theme.accentGold : theme.buttonPrimaryBg,
-                    paddingHorizontal: 9,
-                    paddingVertical: 4.5,
-                    borderRadius: 12,
+                    backgroundColor: isDarkMode ? theme.accentGold : "#FCD400",
+                    paddingHorizontal: 13,
+                    paddingVertical: 7,
+                    borderRadius: 18,
                     flexDirection: "row",
                     alignItems: "center",
-                    gap: 3,
+                    gap: 4,
                   }}
                 >
+                  <Feather name="search" size={11} color="#0B1A2C" />
                   <Text style={{
-                    color: isDarkMode ? "#090D16" : theme.buttonPrimaryText,
+                    color: "#0B1A2C",
                     fontSize: 10.5,
                     fontWeight: "800",
-                    letterSpacing: 0.3,
+                    letterSpacing: 0.4,
                   }}>
                     SEARCH
                   </Text>
@@ -1281,22 +1394,23 @@ export default function HomeScreen() {
               {
                 backgroundColor: theme.cardBg,
                 borderColor: theme.cardBorder,
-                borderTopColor: isDarkMode ? theme.cardBorder : theme.accentBlue,
-                borderTopWidth: isDarkMode ? 1 : 2.5,
               }
             ]}
           >
             <View style={styles.newStatHeader}>
               <View style={[
                 styles.statIconBadge,
-                { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : "rgba(2, 116, 187, 0.10)" }
+                { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE" }
               ]}>
-                <Ionicons name="book-outline" size={14} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
+                <Ionicons name="book-outline" size={15} color={isDarkMode ? "#38BDF8" : "#0274BB"} />
               </View>
-              <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>BOOKS BORROWED</Text>
+              <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>BORROWED</Text>
             </View>
-            <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
+            <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : "#0274BB" }]}>
               {activeBorrowedCount}
+            </Text>
+            <Text style={{ fontSize: 10.5, color: theme.textSecondary, marginTop: 2, fontWeight: "500" }}>
+              Active on loan
             </Text>
           </TouchableOpacity>
 
@@ -1308,8 +1422,6 @@ export default function HomeScreen() {
               {
                 backgroundColor: theme.cardBg,
                 borderColor: theme.cardBorder,
-                borderTopColor: isDarkMode ? theme.cardBorder : theme.accentGold,
-                borderTopWidth: isDarkMode ? 1 : 2.5,
               }
             ]}
           >
@@ -1318,12 +1430,15 @@ export default function HomeScreen() {
                 styles.statIconBadge,
                 { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg }
               ]}>
-                <MaterialCommunityIcons name="qrcode-scan" size={14} color={isDarkMode ? theme.accentGold : "#0274BB"} />
+                <MaterialCommunityIcons name="qrcode-scan" size={15} color={isDarkMode ? theme.accentGold : "#854D0E"} />
               </View>
-              <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>BOOKS RESERVED</Text>
+              <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>RESERVED</Text>
             </View>
-            <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>
+            <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : "#0274BB" }]}>
               {activeReservedCount}
+            </Text>
+            <Text style={{ fontSize: 10.5, color: theme.textSecondary, marginTop: 2, fontWeight: "500" }}>
+              Awaiting pickup
             </Text>
           </TouchableOpacity>
         </View>
@@ -1331,18 +1446,31 @@ export default function HomeScreen() {
         {/* ANNOUNCEMENTS */}
         {announcements.length > 0 && (
           <View style={styles.announcementsContainer}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 20, marginBottom: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 20, marginBottom: 12 }}>
               <View style={{
-                width: 24,
-                height: 24,
-                borderRadius: 7,
-                backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg,
+                width: 28,
+                height: 28,
+                borderRadius: 8,
+                backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : "#FEF9C3",
                 justifyContent: "center",
                 alignItems: "center"
               }}>
-                <Ionicons name="megaphone" size={13} color={isDarkMode ? theme.accentGold : "#0274BB"} />
+                <Ionicons name="megaphone" size={14} color={isDarkMode ? theme.accentGold : "#854D0E"} />
               </View>
-              <Text style={[styles.announcementsTitle, { color: theme.sectionTitle, marginTop: 0 }]}>System Announcements</Text>
+              <View>
+                <Text style={{
+                  fontSize: 9.5,
+                  fontWeight: "800",
+                  letterSpacing: 1.1,
+                  textTransform: "uppercase",
+                  color: isDarkMode ? theme.accentGold : theme.brandBlue,
+                }}>
+                  ACTIVE CAMPUS NOTICE
+                </Text>
+                <Text style={[styles.announcementsTitle, { color: theme.sectionTitle, marginTop: 1, paddingHorizontal: 0, marginBottom: 0, fontSize: 15 }]}>
+                  System Announcements ({announcements.length} Active)
+                </Text>
+              </View>
             </View>
             <ScrollView
               horizontal
@@ -1351,6 +1479,8 @@ export default function HomeScreen() {
             >
               {announcements.map((item) => {
                 const priorityStyle = getAnnouncementPriorityStyle(item.priority);
+                const isUrgent = item.priority === 'Urgent';
+                const isImportant = item.priority === 'Important';
                 return (
                   <TouchableOpacity
                     key={item.id}
@@ -1359,28 +1489,42 @@ export default function HomeScreen() {
                     style={[
                       styles.announcementCard,
                       priorityStyle,
-                      !isDarkMode && {
+                      {
                         backgroundColor: theme.cardBg,
                         borderColor: theme.cardBorder,
+                        borderLeftWidth: 4,
+                        borderLeftColor: isUrgent ? "#EF4444" : (isImportant ? "#F59E0B" : (isDarkMode ? "#38BDF8" : "#0274BB")),
                       },
                     ]}
                   >
                     <View style={styles.announcementHeader}>
-                      <Ionicons 
-                        name={item.priority === 'Urgent' ? "alert-circle" : (item.priority === 'Important' ? "warning" : "information-circle")} 
-                        size={16} 
-                        color={item.priority === 'Urgent' ? "#EF4444" : (item.priority === 'Important' ? "#F59E0B" : "#3B82F6")} 
-                      />
-                      <Text style={[
-                        styles.announcementPriority,
-                        item.priority === 'Urgent' && { color: '#EF4444' },
-                        item.priority === 'Important' && { color: '#F59E0B' },
-                      ]}>
-                        {item.priority}
+                      <View style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 12,
+                        backgroundColor: isUrgent
+                          ? (isDarkMode ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2")
+                          : (isImportant
+                            ? (isDarkMode ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7")
+                            : (isDarkMode ? "rgba(56, 189, 248, 0.18)" : "#E0F2FE")),
+                      }}>
+                        <Text style={[
+                          styles.announcementPriority,
+                          {
+                            color: isUrgent ? "#DC2626" : (isImportant ? "#D97706" : (isDarkMode ? "#38BDF8" : "#0274BB")),
+                            fontSize: 9.5,
+                            fontWeight: "800",
+                          }
+                        ]}>
+                          {item.priority}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: 10.5, fontWeight: "500", color: theme.textSecondary }}>
+                        To: {(item as any).audience || "All Users"}
                       </Text>
                     </View>
-                    <Text style={[styles.announcementTitleText, { color: isDarkMode ? theme.textPrimary : theme.accentBlue }]}>{item.title}</Text>
-                    <Text style={[styles.announcementBody, { color: theme.textSecondary }]} numberOfLines={3}>{item.content}</Text>
+                    <Text style={[styles.announcementTitleText, { color: isDarkMode ? theme.textPrimary : theme.brandBlue }]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={[styles.announcementBody, { color: theme.textSecondary }]} numberOfLines={2}>{item.content}</Text>
                     <View style={[styles.announcementFooter, { borderTopColor: theme.cardBorder }]}>
                       <Text style={[styles.announcementAuthor, { color: theme.textSecondary }]}>By {item.author}</Text>
                       <Text style={[styles.announcementDate, { color: theme.textSecondary }]}>
@@ -1472,6 +1616,7 @@ export default function HomeScreen() {
                       uri={book.coverImage}
                       title={book.title}
                       author={book.author}
+                      category={book.category}
                       style={styles.carouselCoverImage}
                       iconSize={32}
                       showText={true}
@@ -1536,28 +1681,41 @@ export default function HomeScreen() {
 
         {/* CATEGORY SECTIONS */}
         {[
-          "New Arrivals",
-          "Recommended Books",
-          "Circulation",
-          "General References",
-          "Filipiniana",
-          "Periodicals",
-          "Special Collections",
-        ].map((categoryTitle, cIndex) => {
+          { title: "New Arrivals", icon: "sparkles", iconColor: "#F59E0B", tag: "NEW" },
+          { title: "Recommended Books", icon: "flame", iconColor: "#EF4444", tag: "TOP PICK" },
+          { title: "Circulation", icon: "book-outline", iconColor: "#0284C7", tag: "MAIN" },
+          { title: "General References", icon: "bookmark-outline", iconColor: "#6366F1", tag: "REF" },
+          { title: "Filipiniana", icon: "flag-outline", iconColor: "#D97706", tag: "LOCAL" },
+          { title: "Periodicals", icon: "newspaper-outline", iconColor: "#0D9488", tag: "JOURNAL" },
+          { title: "Special Collections", icon: "star-outline", iconColor: "#8B5CF6", tag: "SPECIAL" },
+        ].map((categoryConfig, cIndex) => {
+          const categoryTitle = categoryConfig.title;
           const categoryBooks = getCategoryBooks(categoryTitle);
 
           return (
             <View key={cIndex} style={styles.categorySection}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 20, marginBottom: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 20, marginBottom: 8 }}>
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      backgroundColor: isDarkMode ? `${categoryConfig.iconColor}25` : `${categoryConfig.iconColor}15`,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Ionicons name={categoryConfig.icon as any} size={15} color={categoryConfig.iconColor} />
+                  </View>
                   <Text style={[styles.sectionTitle, { color: theme.sectionTitle, fontSize: 16 }]}>
                     {categoryTitle}
                   </Text>
-                  {categoryTitle === "New Arrivals" && (
+                  {categoryConfig.tag && (
                     <View
                       style={{
-                        backgroundColor: theme.badgeYellowBg,
-                        borderColor: theme.badgeYellowBorder,
+                        backgroundColor: isDarkMode ? `${categoryConfig.iconColor}22` : `${categoryConfig.iconColor}12`,
+                        borderColor: isDarkMode ? `${categoryConfig.iconColor}50` : `${categoryConfig.iconColor}35`,
                         borderWidth: 1,
                         borderRadius: 6,
                         paddingHorizontal: 6,
@@ -1566,42 +1724,14 @@ export default function HomeScreen() {
                     >
                       <Text
                         style={{
-                          color: theme.badgeYellowText,
+                          color: categoryConfig.iconColor,
                           fontSize: 9,
                           fontWeight: "800",
                           fontFamily: "monospace",
                           letterSpacing: 0.5,
                         }}
                       >
-                        NEW
-                      </Text>
-                    </View>
-                  )}
-                  {categoryTitle === "Recommended Books" && (
-                    <View
-                      style={{
-                        backgroundColor: theme.badgeYellowBg,
-                        borderColor: theme.badgeYellowBorder,
-                        borderWidth: 1,
-                        borderRadius: 6,
-                        paddingHorizontal: 6,
-                        paddingVertical: 1.5,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 3,
-                      }}
-                    >
-                      <Ionicons name="star" size={8} color={theme.badgeYellowText} />
-                      <Text
-                        style={{
-                          color: theme.badgeYellowText,
-                          fontSize: 9,
-                          fontWeight: "800",
-                          fontFamily: "monospace",
-                          letterSpacing: 0.5,
-                        }}
-                      >
-                        TOP PICK
+                        {categoryConfig.tag}
                       </Text>
                     </View>
                   )}
@@ -1659,24 +1789,25 @@ export default function HomeScreen() {
                   showsHorizontalScrollIndicator={false}
                   contentContainerStyle={styles.categoryCardsRow}
                 >
-                  {categoryBooks.map((book, cardIdx) => (
-                    <TouchableOpacity
-                      key={cardIdx}
-                      activeOpacity={0.85}
-                      style={[
-                        styles.categoryCard,
-                        { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
-                      ]}
-                      onPress={() => {
-                        const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
-                        const isAvail = book.isAvailable !== undefined 
-                          ? Boolean(book.isAvailable) 
-                          : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
-                        const availCopies = book.availableCopies !== undefined 
-                          ? Number(book.availableCopies) 
-                          : (isAvail ? bookCopies : 0);
+                  {categoryBooks.map((book, cardIdx) => {
+                    const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+                    const isAvail = book.isAvailable !== undefined 
+                      ? Boolean(book.isAvailable) 
+                      : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
+                    const availCopies = book.availableCopies !== undefined 
+                      ? Number(book.availableCopies) 
+                      : (isAvail ? bookCopies : 0);
 
-                        router.push({
+                    return (
+                      <TouchableOpacity
+                        key={cardIdx}
+                        activeOpacity={0.85}
+                        style={[
+                          styles.categoryCard,
+                          { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
+                        ]}
+                        onPress={() => {
+                          router.push({
                           pathname: "/book-details",
                           params: {
                             id: book.id,
@@ -1701,6 +1832,8 @@ export default function HomeScreen() {
                             volume: book.volume,
                             edition: book.edition,
                             accessionNumber: book.accessionNumber,
+                            coverImage: book.coverImage || undefined,
+                            coverUrl: book.coverImage || undefined,
                           },
                         });
                       }}
@@ -1709,20 +1842,28 @@ export default function HomeScreen() {
                         uri={book.coverImage}
                         title={book.title}
                         author={book.author}
+                        category={book.category || categoryTitle}
                         style={styles.categoryCardImage}
-                        iconSize={18}
+                        iconSize={20}
                         showText={false}
                       />
                       <View style={styles.categoryCardTextOverlay}>
-                        <Text style={[styles.categoryCardTitle, { color: theme.textPrimary }]} numberOfLines={1}>
+                        <Text style={[styles.categoryCardTitle, { color: theme.textPrimary }]} numberOfLines={2}>
                           {book.title}
                         </Text>
                         <Text style={[styles.categoryCardAuthor, { color: theme.textSecondary }]} numberOfLines={1}>
                           {book.author}
                         </Text>
+                        <View style={styles.categoryCardAvailabilityRow}>
+                          <View style={[styles.cardAvailDot, { backgroundColor: isAvail ? "#10B981" : "#EF4444" }]} />
+                          <Text style={[styles.cardAvailText, { color: isAvail ? (isDarkMode ? "#34D399" : "#059669") : (isDarkMode ? "#F87171" : "#DC2626") }]}>
+                            {isAvail ? `${availCopies} avail` : "Borrowed"}
+                          </Text>
+                        </View>
                       </View>
                     </TouchableOpacity>
-                  ))}
+                  );
+                })}
                 </ScrollView>
               )}
             </View>
@@ -1733,84 +1874,86 @@ export default function HomeScreen() {
       </ScrollView>
 
       {/* ANNOUNCEMENT DETAIL MODAL */}
-      <Modal
-        visible={selectedAnnouncement !== null}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={dismissAnnouncementModal}
-      >
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={dismissAnnouncementModal}
+      {selectedAnnouncement !== null && (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={dismissAnnouncementModal}
         >
           <TouchableOpacity
-            style={[styles.announcementModalContent, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+            style={styles.modalBackdrop}
             activeOpacity={1}
+            onPress={dismissAnnouncementModal}
           >
-            {/* Header */}
-            <View style={[styles.modalAnnHeader, { borderBottomColor: theme.cardBorder }]}>
-              <View style={styles.modalAnnHeaderLeft}>
-                <Ionicons
-                  name={
-                    selectedAnnouncement?.priority === 'Urgent'
-                      ? "alert-circle"
-                      : selectedAnnouncement?.priority === 'Important'
-                      ? "warning"
-                      : "information-circle"
-                  }
-                  size={20}
-                  color={
-                    selectedAnnouncement?.priority === 'Urgent'
-                      ? "#EF4444"
-                      : selectedAnnouncement?.priority === 'Important'
-                      ? "#F59E0B"
-                      : "#3B82F6"
-                  }
-                />
-                <Text style={[
-                  styles.modalAnnPriority,
-                  selectedAnnouncement?.priority === 'Urgent' && { color: '#EF4444' },
-                  selectedAnnouncement?.priority === 'Important' && { color: '#F59E0B' },
-                ]}>
-                  {selectedAnnouncement?.priority}
+            <TouchableOpacity
+              style={[styles.announcementModalContent, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}
+              activeOpacity={1}
+            >
+              {/* Header */}
+              <View style={[styles.modalAnnHeader, { borderBottomColor: theme.cardBorder }]}>
+                <View style={styles.modalAnnHeaderLeft}>
+                  <Ionicons
+                    name={
+                      selectedAnnouncement?.priority === 'Urgent'
+                        ? "alert-circle"
+                        : selectedAnnouncement?.priority === 'Important'
+                        ? "warning"
+                        : "information-circle"
+                    }
+                    size={20}
+                    color={
+                      selectedAnnouncement?.priority === 'Urgent'
+                        ? "#EF4444"
+                        : selectedAnnouncement?.priority === 'Important'
+                        ? "#F59E0B"
+                        : "#3B82F6"
+                    }
+                  />
+                  <Text style={[
+                    styles.modalAnnPriority,
+                    selectedAnnouncement?.priority === 'Urgent' && { color: '#EF4444' },
+                    selectedAnnouncement?.priority === 'Important' && { color: '#F59E0B' },
+                  ]}>
+                    {selectedAnnouncement?.priority}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={dismissAnnouncementModal}>
+                  <Ionicons name="close" size={24} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              {/* Title */}
+              <Text style={[styles.modalAnnTitle, { color: theme.textPrimary }]}>
+                {selectedAnnouncement?.title}
+              </Text>
+
+              {/* Body */}
+              <ScrollView style={styles.modalAnnBodyScroll} showsVerticalScrollIndicator={true}>
+                <Text style={[styles.modalAnnBodyText, { color: theme.textSecondary }]}>
+                  {selectedAnnouncement?.content}
+                </Text>
+              </ScrollView>
+
+              {/* Footer */}
+              <View style={[styles.modalAnnFooter, { borderTopColor: theme.cardBorder }]}>
+                <Text style={[styles.modalAnnAuthor, { color: theme.textSecondary }]}>By {selectedAnnouncement?.author}</Text>
+                <Text style={[styles.modalAnnDate, { color: theme.textSecondary }]}>
+                  {selectedAnnouncement ? new Date(selectedAnnouncement.updatedAt).toLocaleDateString() : ""}
                 </Text>
               </View>
-              <TouchableOpacity onPress={dismissAnnouncementModal}>
-                <Ionicons name="close" size={24} color="#64748B" />
+
+              {/* Close button */}
+              <TouchableOpacity
+                style={[styles.modalAnnCloseButton, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}
+                onPress={dismissAnnouncementModal}
+              >
+                <Text style={[styles.modalAnnCloseButtonText, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>Got it • Close</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* Title */}
-            <Text style={[styles.modalAnnTitle, { color: theme.textPrimary }]}>
-              {selectedAnnouncement?.title}
-            </Text>
-
-            {/* Body */}
-            <ScrollView style={styles.modalAnnBodyScroll} showsVerticalScrollIndicator={true}>
-              <Text style={[styles.modalAnnBodyText, { color: theme.textSecondary }]}>
-                {selectedAnnouncement?.content}
-              </Text>
-            </ScrollView>
-
-            {/* Footer */}
-            <View style={[styles.modalAnnFooter, { borderTopColor: theme.cardBorder }]}>
-              <Text style={[styles.modalAnnAuthor, { color: theme.textSecondary }]}>By {selectedAnnouncement?.author}</Text>
-              <Text style={[styles.modalAnnDate, { color: theme.textSecondary }]}>
-                {selectedAnnouncement ? new Date(selectedAnnouncement.updatedAt).toLocaleDateString() : ""}
-              </Text>
-            </View>
-
-            {/* Close button */}
-            <TouchableOpacity
-              style={[styles.modalAnnCloseButton, { backgroundColor: theme.background, borderColor: theme.cardBorder }]}
-              onPress={dismissAnnouncementModal}
-            >
-              <Text style={[styles.modalAnnCloseButtonText, { color: isDarkMode ? theme.accentGold : theme.accentBlue }]}>Got it • Close</Text>
             </TouchableOpacity>
           </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        </Modal>
+      )}
     </AnimatedScreen>
   );
 }
@@ -1940,7 +2083,7 @@ const styles = StyleSheet.create({
   newStatsRow: {
     flexDirection: "row",
     paddingHorizontal: 20,
-    marginTop: 16,
+    marginTop: 14,
     gap: 12,
   },
 
@@ -1948,16 +2091,21 @@ const styles = StyleSheet.create({
     flex: 1,
     borderRadius: 16,
     paddingVertical: 14,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    elevation: 2,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
 
   statIconBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
+    width: 28,
+    height: 28,
+    borderRadius: 8,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -1966,21 +2114,19 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 4,
+    marginBottom: 6,
   },
 
   newStatLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#8E9DAE",
-    fontFamily: "monospace",
-    letterSpacing: 0.3,
+    fontSize: 10.5,
+    fontWeight: "800",
+    letterSpacing: 0.6,
   },
 
   newStatNumber: {
     fontSize: 32,
     fontWeight: "900",
-    textAlign: "center",
+    lineHeight: 36,
   },
 
   sectionHeaderMonospace: {
@@ -2500,14 +2646,17 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   searchBarWrapper: {
-    height: 58,
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
+    height: 52,
+    borderRadius: 26,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "#1E293B",
+    elevation: 2,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
   },
   searchIcon: {
     marginRight: 10,
@@ -2673,12 +2822,12 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
-    paddingBottom: 24,
-    height: 170,
+    paddingBottom: 20,
+    height: 165,
   },
   carouselCoverImage: {
-    width: 90,
-    height: 125,
+    width: 95,
+    height: 132,
     borderRadius: 10,
     overflow: "hidden",
   },
@@ -2690,9 +2839,9 @@ const styles = StyleSheet.create({
   carouselCategoryBadge: {
     backgroundColor: "rgba(255, 215, 0, 0.15)",
     alignSelf: "flex-start",
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 3,
-    borderRadius: 6,
+    borderRadius: 12,
     marginBottom: 6,
   },
   carouselCategoryText: {
@@ -2730,27 +2879,51 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 215, 0, 0.3)",
   },
   categoryCard: {
-    width: 130,
-    height: 115,
+    width: 128,
+    height: 198,
     borderRadius: 14,
     borderWidth: 1,
     overflow: "hidden",
+    elevation: 2,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
   },
   categoryCardImage: {
     width: "100%",
-    height: 72,
+    height: 124,
   },
   categoryCardTextOverlay: {
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    justifyContent: "center",
+    paddingTop: 5,
+    paddingBottom: 6,
+    flex: 1,
+    justifyContent: "space-between",
   },
   categoryCardTitle: {
-    fontSize: 11,
+    fontSize: 11.5,
     fontWeight: "700",
+    lineHeight: 15,
   },
   categoryCardAuthor: {
+    fontSize: 9.5,
+    marginTop: 1,
+  },
+  categoryCardAvailabilityRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 3,
+  },
+  cardAvailDot: {
+    width: 5.5,
+    height: 5.5,
+    borderRadius: 3,
+  },
+  cardAvailText: {
     fontSize: 9,
+    fontWeight: "700",
   },
   fallbackCoverContainer: {
     backgroundColor: "#0B162C",

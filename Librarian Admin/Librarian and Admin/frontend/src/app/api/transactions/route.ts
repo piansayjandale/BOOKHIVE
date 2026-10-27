@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
+import { getSession } from "@/lib/auth";
 import { hasExplicitDatabaseUrl, pool } from "@/lib/db";
 import { store } from "@/lib/data/store";
 
@@ -50,6 +51,8 @@ async function queryDbTransactions(
       t.student_name AS "studentName",
       t.student_id AS "studentId",
       t.resource_title AS "resourceTitle",
+      b.author AS "author",
+      b.cover_img AS "coverUrl",
       t.isbn,
       t.department,
       COALESCE(u.department, t.department) AS "userDepartment",
@@ -89,7 +92,14 @@ async function queryDbTransactions(
       END as "queuePosition"
     FROM transactions t
     LEFT JOIN users u ON t.user_id = u.id
-    LEFT JOIN books b ON (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
+    LEFT JOIN LATERAL (
+      SELECT author, cover_img, department
+      FROM books b
+      WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn)
+         OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))
+      ORDER BY (CASE WHEN t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = b.isbn THEN 0 ELSE 1 END)
+      LIMIT 1
+    ) b ON true
     ${whereClause}
     ORDER BY t.requested_at DESC
   `;
@@ -99,7 +109,6 @@ async function queryDbTransactions(
 }
 
 export async function GET(request: Request) {
-  // 1. First attempt: proxy to Express direct /api/transactions
   try {
     const proxyRes = await proxyToBackend("/api/transactions", request);
     if (proxyRes.ok) {
@@ -109,7 +118,6 @@ export async function GET(request: Request) {
     console.warn("Proxy to /api/transactions failed:", err);
   }
 
-  // 2. Second attempt: proxy to Express /api/admin/transactions if DB is not explicit
   if (!hasExplicitDatabaseUrl) {
     try {
       const proxyRes = await proxyToBackend("/api/admin/transactions", request);
@@ -121,7 +129,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // 3. Fallback: Query PostgreSQL directly
   try {
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") ?? "";
@@ -192,11 +199,83 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const rawBody = await request.text();
   try {
-    const proxyRes = await proxyToBackend("/api/transactions", request);
+    const proxyRes = await proxyToBackend("/api/transactions", request, rawBody);
     if (proxyRes.ok) {
       return proxyRes;
     }
   } catch {}
-  return proxyToBackend("/api/admin/transactions", request);
+  try {
+    const adminProxyRes = await proxyToBackend("/api/admin/transactions", request, rawBody);
+    if (adminProxyRes.ok) {
+      return adminProxyRes;
+    }
+  } catch {}
+
+  try {
+    const body = rawBody ? JSON.parse(rawBody) : {};
+    const status = body.status || "Pending";
+    const durationDays = Number(body.durationDays || 7);
+    const dueDate =
+      status === "Approved"
+        ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+        : null;
+
+    const { rows } = await pool.query(
+      `INSERT INTO transactions (
+         user_id, student_name, student_id, resource_title, isbn, department, type, status, duration_days, due_date
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING
+         id,
+         user_id AS "userId",
+         student_name AS "studentName",
+         student_id AS "studentId",
+         resource_title AS "resourceTitle",
+         isbn,
+         department,
+         type,
+         status,
+         requested_at AS "requestedAt",
+         due_date AS "dueDate",
+         duration_days AS "durationDays"`,
+      [
+        body.userId || null,
+        body.studentName || "Student",
+        body.studentId || "N/A",
+        body.resourceTitle || body.title || "Book",
+        body.isbn || "N/A",
+        body.department || "Circulation",
+        body.type || "Borrow",
+        status,
+        durationDays,
+        dueDate,
+      ]
+    );
+
+    const transaction = rows[0];
+    const session = await getSession().catch(() => null);
+    const actorLabel = session ? `${session.role} ${session.name}` : "BookHive Librarian";
+
+    try {
+      await pool.query(
+        `INSERT INTO history_logs (actor, action, target, module, detail)
+         VALUES ($1, 'Created transaction', $2, 'Transactions', $3)`,
+        [
+          actorLabel,
+          transaction.studentName,
+          `${transaction.type} request opened for ${transaction.resourceTitle}.`,
+        ]
+      );
+      await pool.query(
+        `INSERT INTO activity_logs (message, level) VALUES ($1, 'info')`,
+        [`${transaction.type} request created for ${transaction.studentName}`]
+      );
+    } catch {}
+
+    return NextResponse.json({ transaction }, { status: 201 });
+  } catch (err: any) {
+    console.error("Direct DB createTransaction error:", err);
+    return NextResponse.json({ message: err?.message || "Failed to create transaction." }, { status: 500 });
+  }
 }

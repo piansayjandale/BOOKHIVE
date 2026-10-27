@@ -24,6 +24,7 @@ import { MetricCard } from "@/components/ui/metric-card";
 import { Panel } from "@/components/ui/panel";
 import { VirtualizedList } from "@/components/ui/virtualized-list";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import { useLiveActivity } from "@/lib/hooks/use-live-activity";
 import type {
   DashboardPayload,
@@ -282,8 +283,10 @@ export function DashboardHome() {
                             </span>
                           </div>
 
-                          {/* Title & Metadata */}
-                          <div>
+                          {/* Title & Metadata with Cover Preview */}
+                          <div className="flex items-start gap-3.5">
+                            <BookCoverImage book={result} size="sm" className="mt-0.5" />
+                            <div className="min-w-0 flex-1">
                             <h3 className="text-base font-bold tracking-tight text-white group-hover:text-[#FFD600] transition-colors duration-200 line-clamp-2 leading-snug text-left">
                               {result.title}
                             </h3>
@@ -307,6 +310,7 @@ export function DashboardHome() {
                                   </span>
                                 )}
                               </div>
+                            </div>
                             </div>
                           </div>
 
@@ -490,8 +494,13 @@ function BorrowQueue({
                   <p className="mt-1 text-sm text-white/55">{request.studentId}</p>
                 </td>
                 <td className="py-4 pr-4">
-                  <p className="font-medium text-white">{request.resourceTitle}</p>
-                  <p className="mt-1 text-sm text-white/55">{request.isbn}</p>
+                  <div className="flex items-center gap-3.5">
+                    <BookCoverImage book={{ title: request.resourceTitle, isbn: request.isbn, department: request.department }} size="sm" />
+                    <div className="min-w-0">
+                      <p className="font-medium text-white">{request.resourceTitle}</p>
+                      <p className="mt-1 text-sm text-white/55">{request.isbn}</p>
+                    </div>
+                  </div>
                 </td>
                 <td className="py-4 pr-4">
                   <div className="inline-flex items-center gap-2 rounded-full border border-white/8 bg-white/5 px-3 py-1.5 text-sm text-white/65">
@@ -560,10 +569,11 @@ function TrendingRecords({
             )}
           >
             <div className="flex items-start justify-between gap-4">
-              <div className="flex gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-black/20 text-lg font-semibold text-white/80">
+              <div className="flex items-center gap-3.5">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-black/20 text-base font-semibold text-white/80">
                   {index + 1}
                 </div>
+                <BookCoverImage book={book} size="xs" />
                 <div>
                   <p className="font-semibold text-white">{book.title}</p>
                   <p className="mt-1 text-sm text-white/55">{book.author}</p>

@@ -1,3 +1,5 @@
+import { getUniqueBookCover } from "../../data/bookCovers";
+import { BookCoverImage } from "../../components/BookCoverImage";
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
@@ -12,6 +14,7 @@ import {
   BackHandler,
   Animated,
   Easing,
+  Image,
 } from "react-native";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -49,6 +52,153 @@ import {
 import { useThemeColors } from "../../hooks/useThemeColors";
 import { useAuth } from "../../data/AuthContext";
 import { socketService } from "../../services/socketService";
+
+function getCategoryThemedPalette(category?: string, title?: string, isDarkMode: boolean = false) {
+  const norm = ((category || "") + " " + (title || "")).toLowerCase();
+
+  if (
+    norm.includes("tech") ||
+    norm.includes("computer") ||
+    norm.includes("algorithm") ||
+    norm.includes("program") ||
+    norm.includes("data") ||
+    norm.includes("network") ||
+    norm.includes("software") ||
+    norm.includes("code") ||
+    norm.includes("systems")
+  ) {
+    return {
+      bg: isDarkMode ? "#082F49" : "#E0F2FE",
+      spine: "#0284C7",
+      ribbon: "#38BDF8",
+      border: isDarkMode ? "#0C4A6E" : "#BAE6FD",
+      iconBg: isDarkMode ? "rgba(56, 189, 248, 0.22)" : "rgba(2, 132, 199, 0.12)",
+      iconColor: isDarkMode ? "#38BDF8" : "#0284C7",
+      iconName: "code-tags" as const,
+      tag: "TECH",
+    };
+  }
+  if (
+    norm.includes("fiction") ||
+    norm.includes("novel") ||
+    norm.includes("literature") ||
+    norm.includes("story") ||
+    norm.includes("wayward") ||
+    norm.includes("harry") ||
+    norm.includes("fantasy")
+  ) {
+    return {
+      bg: isDarkMode ? "#2E1065" : "#F3E8FF",
+      spine: "#7C3AED",
+      ribbon: "#C084FC",
+      border: isDarkMode ? "#4C1D95" : "#DDD6FE",
+      iconBg: isDarkMode ? "rgba(192, 132, 252, 0.22)" : "rgba(124, 58, 237, 0.12)",
+      iconColor: isDarkMode ? "#C084FC" : "#7C3AED",
+      iconName: "feather" as const,
+      tag: "FICTION",
+    };
+  }
+  if (
+    norm.includes("filipiniana") ||
+    norm.includes("philippine") ||
+    norm.includes("rizal") ||
+    norm.includes("history") ||
+    norm.includes("tagalog")
+  ) {
+    return {
+      bg: isDarkMode ? "#451A03" : "#FEF3C7",
+      spine: "#D97706",
+      ribbon: "#FCD400",
+      border: isDarkMode ? "#78350F" : "#FDE68A",
+      iconBg: isDarkMode ? "rgba(252, 212, 0, 0.22)" : "rgba(217, 119, 6, 0.12)",
+      iconColor: isDarkMode ? "#FCD400" : "#D97706",
+      iconName: "bank" as const,
+      tag: "FILIPINIANA",
+    };
+  }
+  if (
+    norm.includes("periodical") ||
+    norm.includes("magazine") ||
+    norm.includes("journal") ||
+    norm.includes("news")
+  ) {
+    return {
+      bg: isDarkMode ? "#134E4A" : "#CCFBF1",
+      spine: "#0D9488",
+      ribbon: "#2DD4BF",
+      border: isDarkMode ? "#115E59" : "#99F6E4",
+      iconBg: isDarkMode ? "rgba(45, 212, 191, 0.22)" : "rgba(13, 148, 136, 0.12)",
+      iconColor: isDarkMode ? "#2DD4BF" : "#0D9488",
+      iconName: "newspaper-variant-outline" as const,
+      tag: "PERIODICAL",
+    };
+  }
+  if (
+    norm.includes("math") ||
+    norm.includes("science") ||
+    norm.includes("physics") ||
+    norm.includes("biology") ||
+    norm.includes("chemistry") ||
+    norm.includes("calculus") ||
+    norm.includes("discrete")
+  ) {
+    return {
+      bg: isDarkMode ? "#064E3B" : "#D1FAE5",
+      spine: "#059669",
+      ribbon: "#34D399",
+      border: isDarkMode ? "#065F46" : "#A7F3D0",
+      iconBg: isDarkMode ? "rgba(52, 211, 153, 0.22)" : "rgba(5, 150, 105, 0.12)",
+      iconColor: isDarkMode ? "#34D399" : "#059669",
+      iconName: "atom" as const,
+      tag: "SCIENCE",
+    };
+  }
+  if (
+    norm.includes("reference") ||
+    norm.includes("encyclopedia") ||
+    norm.includes("dictionary") ||
+    norm.includes("general")
+  ) {
+    return {
+      bg: isDarkMode ? "#1E1B4B" : "#EEF2FF",
+      spine: "#4F46E5",
+      ribbon: "#818CF8",
+      border: isDarkMode ? "#312E81" : "#C7D2FE",
+      iconBg: isDarkMode ? "rgba(129, 140, 248, 0.22)" : "rgba(79, 70, 229, 0.12)",
+      iconColor: isDarkMode ? "#818CF8" : "#4F46E5",
+      iconName: "book-open-page-variant" as const,
+      tag: "REFERENCE",
+    };
+  }
+  if (
+    norm.includes("special") ||
+    norm.includes("archive") ||
+    norm.includes("rare")
+  ) {
+    return {
+      bg: isDarkMode ? "#3B0764" : "#FDF4FF",
+      spine: "#9333EA",
+      ribbon: "#E879F9",
+      border: isDarkMode ? "#581C87" : "#F5D0FE",
+      iconBg: isDarkMode ? "rgba(232, 121, 249, 0.22)" : "rgba(147, 51, 234, 0.12)",
+      iconColor: isDarkMode ? "#E879F9" : "#9333EA",
+      iconName: "star-four-points" as const,
+      tag: "SPECIAL",
+    };
+  }
+
+  // Default Circulation
+  return {
+    bg: isDarkMode ? "#0E1729" : "#F0F7FF",
+    spine: "#0274BB",
+    ribbon: "#FCD400",
+    border: isDarkMode ? "#1E2E47" : "#BAE6FD",
+    iconBg: isDarkMode ? "rgba(2, 116, 187, 0.22)" : "rgba(2, 116, 187, 0.1)",
+    iconColor: isDarkMode ? "#60A5FA" : "#0274BB",
+    iconName: "book-open-outline" as const,
+    tag: "BOOK",
+  };
+}
 
 export default function BookDetailsScreen() {
   const router = useRouter();
@@ -274,6 +424,25 @@ export default function BookDetailsScreen() {
     (params.accessionNumber as string) ||
     (params.accession as string) ||
     `ACC-${year}-${String(Math.abs((title.length * 37 + (author.length || 5) * 19 + totalCopies * 13) % 89000) + 10000).padStart(5, "0")}`;
+
+  const publisher =
+    liveBookData?.publisher ||
+    (params.publisher as string) ||
+    "Bloomsbury Publishing";
+
+  const series =
+    liveBookData?.series ||
+    (params.series as string) ||
+    (title.toLowerCase().includes("wayward") ? "Wayward Son Series" : "BookHive Series");
+
+  const rawPrice =
+    liveBookData?.price !== undefined && liveBookData?.price !== null
+      ? String(liveBookData.price)
+      : (params.price as string) || "450.00";
+
+  const displayPrice = String(rawPrice).startsWith("₱")
+    ? String(rawPrice)
+    : `₱${Number(String(rawPrice).replace(/[^0-9.]/g, "") || "450").toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Copies distribution aligned with backend and web system
   const unavailableCopies = liveBookData?.borrowedCount !== undefined
@@ -661,11 +830,117 @@ export default function BookDetailsScreen() {
     });
   };
 
-  const detailBoxBg = isDarkMode ? "rgba(255, 214, 0, 0.12)" : "#E0F2FE";
-  const detailBoxBorder = isDarkMode ? "rgba(255, 214, 0, 0.2)" : "rgba(2, 116, 187, 0.22)";
-  const detailBoxIconColor = isDarkMode ? "#FFD700" : "#0274BB";
-  const detailCardBorder = isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.16)";
-  const detailLabelColor = isDarkMode ? theme.textSecondary : "#0274BB";
+  const coverUri =
+    (params.coverImage as string) ||
+    (params.coverUrl as string) ||
+    (params.cover as string) ||
+    (params.imageUrl as string) ||
+    liveBookData?.coverImage ||
+    liveBookData?.coverUrl ||
+    liveBookData?.cover ||
+    liveBookData?.imageUrl ||
+    getUniqueBookCover({ title, author, isbn, id: String(id || "") });
+
+  const palette = getCategoryThemedPalette(category || departmentParam, title, isDarkMode);
+
+  const detailMetadataList = [
+    {
+      label: "ISBN",
+      value: isbn || "9781450755634",
+      icon: "barcode-outline",
+      isMono: true,
+      light: { bg: "#EEF2FF", border: "#C7D2FE", color: "#4F46E5" },
+      dark: { bg: "rgba(99, 102, 241, 0.2)", border: "rgba(99, 102, 241, 0.35)", color: "#818CF8" },
+    },
+    {
+      label: "SECTION",
+      value: departmentParam || "Circulation",
+      icon: "folder-outline",
+      isMono: false,
+      light: { bg: "#ECFDF5", border: "#A7F3D0", color: "#059669" },
+      dark: { bg: "rgba(16, 185, 129, 0.2)", border: "rgba(16, 185, 129, 0.35)", color: "#34D399" },
+    },
+    {
+      label: "CLASSIFICATION",
+      value: category || "Fiction",
+      icon: "bookmark-outline",
+      isMono: false,
+      light: { bg: "#F0F9FF", border: "#BAE6FD", color: "#0284C7" },
+      dark: { bg: "rgba(2, 132, 199, 0.2)", border: "rgba(2, 132, 199, 0.35)", color: "#38BDF8" },
+    },
+    {
+      label: "CALL NUMBER",
+      value: shelf || "CIR-16D.4",
+      icon: "compass-outline",
+      isMono: true,
+      light: { bg: "#FAF5FF", border: "#E9D5FF", color: "#7C3AED" },
+      dark: { bg: "rgba(124, 58, 237, 0.2)", border: "rgba(124, 58, 237, 0.35)", color: "#C084FC" },
+    },
+    {
+      label: "PUBLISHER",
+      value: publisher || "Bloomsbury Publishing",
+      icon: "business-outline",
+      isMono: false,
+      light: { bg: "#F8FAFC", border: "#CBD5E1", color: "#475569" },
+      dark: { bg: "rgba(148, 163, 184, 0.2)", border: "rgba(148, 163, 184, 0.35)", color: "#94A3B8" },
+    },
+    {
+      label: "PUB. DATE",
+      value: pubDateFormatted || year || "Jan 1, 2011",
+      icon: "calendar-outline",
+      isMono: false,
+      light: { bg: "#FFF1F2", border: "#FECDD3", color: "#E11D48" },
+      dark: { bg: "rgba(225, 29, 72, 0.2)", border: "rgba(225, 29, 72, 0.35)", color: "#FB7185" },
+    },
+    {
+      label: "VOLUME",
+      value: volume || "Vol. 1",
+      icon: "layers-outline",
+      isMono: false,
+      light: { bg: "#EFF6FF", border: "#BFDBFE", color: "#2563EB" },
+      dark: { bg: "rgba(37, 99, 235, 0.2)", border: "rgba(37, 99, 235, 0.35)", color: "#60A5FA" },
+    },
+    {
+      label: "SERIES",
+      value: series || "Wayward Son Chronicles",
+      icon: "library-outline",
+      isMono: false,
+      light: { bg: "#FFFBEB", border: "#FDE68A", color: "#D97706" },
+      dark: { bg: "rgba(217, 119, 6, 0.2)", border: "rgba(217, 119, 6, 0.35)", color: "#FBBF24" },
+    },
+    {
+      label: "EDITION",
+      value: edition || "1st Edition",
+      icon: "ribbon-outline",
+      isMono: false,
+      light: { bg: "#ECFEFF", border: "#A5F3FC", color: "#0891B2" },
+      dark: { bg: "rgba(8, 145, 178, 0.2)", border: "rgba(8, 145, 178, 0.35)", color: "#22D3EE" },
+    },
+    {
+      label: "PRICE (PHP)",
+      value: displayPrice || "₱450.00",
+      icon: "cash-outline",
+      isMono: false,
+      light: { bg: "#F0FDF4", border: "#BBF7D0", color: "#16A34A" },
+      dark: { bg: "rgba(22, 163, 74, 0.2)", border: "rgba(22, 163, 74, 0.35)", color: "#4ADE80" },
+    },
+    {
+      label: "COPIES IN SYSTEM",
+      value: String(totalCopies),
+      icon: "copy-outline",
+      isMono: false,
+      light: { bg: "#F0FDFA", border: "#99F6E4", color: "#0D9488" },
+      dark: { bg: "rgba(13, 148, 136, 0.2)", border: "rgba(13, 148, 136, 0.35)", color: "#2DD4BF" },
+    },
+    {
+      label: "ACCESSION NO.",
+      value: accessionNumber,
+      icon: "sparkles-outline",
+      isMono: true,
+      light: { bg: "#FDF4FF", border: "#F5D0FE", color: "#C026D3" },
+      dark: { bg: "rgba(192, 38, 211, 0.2)", border: "rgba(192, 38, 211, 0.35)", color: "#E879F9" },
+    },
+  ];
 
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
@@ -726,114 +1001,127 @@ export default function BookDetailsScreen() {
             }),
           }
         ]}>
-          <View style={styles.titleRow}>
-            <View style={{ flex: 1 }}>
-              <Text
-                style={[styles.bookTitle, { color: theme.textPrimary }]}
-              >
-                {title.toUpperCase()}
-              </Text>
-
-              <Text style={[styles.author, { color: theme.textSecondary }]}>
-                {author}
-              </Text>
+          {/* HERO BOOK SHOWCASE */}
+          <View style={styles.heroShowcaseRow}>
+            {/* Left: Book Cover (Real Photo or 3D Digital Cover) */}
+            <View style={styles.heroCoverWrapper}>
+              <BookCoverImage
+                uri={coverUri}
+                title={title}
+                author={author}
+                category={category || departmentParam}
+                style={styles.heroCoverImage}
+                isHero={true}
+              />
             </View>
 
-            <View style={{ alignItems: "flex-end", gap: 6 }}>
-              <Animated.View
+            {/* Right: Book Meta, Category, Title & Author */}
+            <View style={styles.heroMetaCol}>
+              <View style={[styles.heroCategoryPill, { backgroundColor: palette.iconBg, borderColor: palette.border }]}>
+                <View style={[styles.heroCategoryDot, { backgroundColor: palette.iconColor }]} />
+                <Text style={[styles.heroCategoryText, { color: palette.iconColor }]}>
+                  {(category || departmentParam || "CIRCULATION").toUpperCase()}
+                </Text>
+              </View>
+
+              <Text style={[styles.heroTitleText, { color: theme.textPrimary }]} numberOfLines={3}>
+                {title}
+              </Text>
+
+              <Text style={[styles.heroAuthorText, { color: theme.textSecondary }]} numberOfLines={2}>
+                by <Text style={{ fontWeight: "700", color: isDarkMode ? theme.accentGold : "#0274BB" }}>{author}</Text>
+              </Text>
+
+              {/* Rating & Review */}
+              <View style={styles.heroRatingRow}>
+                <Ionicons name="star" size={13} color="#F59E0B" />
+                <Text style={[styles.heroRatingScore, { color: theme.textPrimary }]}>{rating}</Text>
+                <Text style={[styles.heroRatingCount, { color: theme.textSecondary }]}>({reviews} reviews)</Text>
+              </View>
+            </View>
+          </View>
+
+          {/* STATUS PILLS ROW */}
+          <View style={styles.heroStatusPillsRow}>
+            <Animated.View
+              style={[
+                styles.availableBadge,
+                {
+                  backgroundColor: badgeStyle.bg,
+                  borderColor: badgeStyle.border,
+                  opacity: badgeOpacityAnim,
+                  transform: [{ scale: badgeScaleAnim }],
+                },
+              ]}
+            >
+              <View style={[styles.statusDot, { backgroundColor: badgeStyle.dot }]} />
+              <Text style={[styles.availableText, { color: badgeStyle.text }]}>
+                {badgeStyle.label}
+              </Text>
+            </Animated.View>
+
+            {isApprovedLoan && (
+              <View
                 style={[
-                  styles.availableBadge,
-                  {
-                    backgroundColor: badgeStyle.bg,
-                    borderColor: badgeStyle.border,
-                    opacity: badgeOpacityAnim,
-                    transform: [{ scale: badgeScaleAnim }],
+                  styles.topActiveLoanBadge,
+                  isLoanDue && {
+                    borderColor: "#EF4444",
+                    backgroundColor: "rgba(239, 68, 68, 0.15)",
                   },
                 ]}
               >
-                <View
-                  style={[styles.statusDot, { backgroundColor: badgeStyle.dot }]}
+                <Ionicons
+                  name={isLoanDue ? "alert-circle-outline" : "checkmark-circle-outline"}
+                  size={13}
+                  color={isLoanDue ? "#EF4444" : "#10B981"}
+                  style={{ marginRight: 4 }}
                 />
-
                 <Text
                   style={[
-                    styles.availableText,
-                    { color: badgeStyle.text },
+                    styles.topActiveLoanText,
+                    isLoanDue && { color: "#EF4444" },
                   ]}
                 >
-                  {badgeStyle.label}
+                  {isLoanDue ? "Active Loan · Due to Return" : "Active Loan"}
                 </Text>
-              </Animated.View>
+              </View>
+            )}
 
-              {/* Active Loan status badge moved below Currently Unavailable */}
-              {isApprovedLoan && (
-                <View
-                  style={[
-                    styles.topActiveLoanBadge,
-                    isLoanDue && {
-                      borderColor: "#EF4444",
-                      backgroundColor: "rgba(239, 68, 68, 0.15)",
-                    },
-                  ]}
-                >
-                  <Ionicons
-                    name={isLoanDue ? "alert-circle-outline" : "checkmark-circle-outline"}
-                    size={13}
-                    color={isLoanDue ? "#EF4444" : "#10B981"}
-                    style={{ marginRight: 4 }}
-                  />
-                  <Text
-                    style={[
-                      styles.topActiveLoanText,
-                      isLoanDue && { color: "#EF4444" },
-                    ]}
-                  >
-                    {isLoanDue ? "Active Loan · Due to Return" : "Active Loan"}
-                  </Text>
-                </View>
-              )}
+            {isPendingBorrowApproval && (
+              <View style={styles.topPendingApprovalBadge}>
+                <Ionicons name="time-outline" size={13} color="#F59E0B" style={{ marginRight: 4 }} />
+                <Text style={styles.topPendingApprovalText}>Pending Borrow Approval</Text>
+              </View>
+            )}
 
-              {/* Pending Borrow Approval Badge */}
-              {isPendingBorrowApproval && (
-                <View style={styles.topPendingApprovalBadge}>
-                  <Ionicons name="time-outline" size={13} color="#F59E0B" style={{ marginRight: 4 }} />
-                  <Text style={styles.topPendingApprovalText}>Pending Borrow Approval</Text>
-                </View>
-              )}
+            {isReservationWaitlist && !hasAvailableCopyForReserved && (
+              <View style={[styles.topPendingApprovalBadge, { borderColor: "#A855F7", backgroundColor: "rgba(168, 85, 247, 0.15)" }]}>
+                <Ionicons name="bookmark-outline" size={13} color="#A855F7" style={{ marginRight: 4 }} />
+                <Text style={[styles.topPendingApprovalText, { color: "#C084FC" }]}>Waitlisted (Queue #{activeRequest?.queuePosition || 1})</Text>
+              </View>
+            )}
 
-              {/* Reservation Waitlist Badge */}
-              {isReservationWaitlist && !hasAvailableCopyForReserved && (
-                <View style={[styles.topPendingApprovalBadge, { borderColor: "#A855F7", backgroundColor: "rgba(168, 85, 247, 0.15)" }]}>
-                  <Ionicons name="bookmark-outline" size={13} color="#A855F7" style={{ marginRight: 4 }} />
-                  <Text style={[styles.topPendingApprovalText, { color: "#C084FC" }]}>Waitlisted (Queue #{activeRequest?.queuePosition || 1})</Text>
-                </View>
-              )}
+            {isReservationWaitlist && hasAvailableCopyForReserved && (
+              <View style={[styles.topActiveLoanBadge, { borderColor: "#10B981", backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
+                <Ionicons name="checkmark-circle-outline" size={13} color="#10B981" style={{ marginRight: 4 }} />
+                <Text style={[styles.topActiveLoanText, { color: "#34D399" }]}>1 Copy Available to Borrow!</Text>
+              </View>
+            )}
 
-              {/* Reservation Ready Badge */}
-              {isReservationWaitlist && hasAvailableCopyForReserved && (
-                <View style={[styles.topActiveLoanBadge, { borderColor: "#10B981", backgroundColor: "rgba(16, 185, 129, 0.15)" }]}>
-                  <Ionicons name="checkmark-circle-outline" size={13} color="#10B981" style={{ marginRight: 4 }} />
-                  <Text style={[styles.topActiveLoanText, { color: "#34D399" }]}>1 Copy Available to Borrow!</Text>
-                </View>
-              )}
-
-              {params.matchPercent !== undefined && Number(params.matchPercent) > 0 && (
-                <View style={[
-                  styles.matchBadge,
-                  !isDarkMode && {
-                    backgroundColor: "#E0F2FE",
-                    borderColor: "rgba(2, 116, 187, 0.3)",
-                  }
-                ]}>
-                  <Text style={[styles.matchText, !isDarkMode && { color: "#0274BB" }]}>
-                    {params.matchPercent}% MATCH
-                  </Text>
-                </View>
-              )}
-            </View>
-
+            {params.matchPercent !== undefined && Number(params.matchPercent) > 0 && (
+              <View style={[
+                styles.matchBadge,
+                !isDarkMode && {
+                  backgroundColor: "#E0F2FE",
+                  borderColor: "rgba(2, 116, 187, 0.3)",
+                }
+              ]}>
+                <Text style={[styles.matchText, !isDarkMode && { color: "#0274BB" }]}>
+                  {params.matchPercent}% MATCH
+                </Text>
+              </View>
+            )}
           </View>
-
 
           {/* COPY INVENTORY & AVAILABILITY */}
           <View style={[styles.inventoryBox, { backgroundColor: isDarkMode ? "#0A1322" : "#F0F7FF", borderColor: isDarkMode ? "rgba(255, 214, 0, 0.2)" : "rgba(2, 116, 187, 0.2)" }]}>
@@ -851,30 +1139,30 @@ export default function BookDetailsScreen() {
               </View>
             </View>
 
-            {/* 4-metric cards */}
+            {/* 4-metric cards with distinctive colors */}
             <View style={styles.inventoryCardsRow}>
-              <View style={[styles.inventoryCardPhysical, { backgroundColor: isDarkMode ? "rgba(0, 0, 0, 0.3)" : "#FFFFFF", borderColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.2)" }]}>
-                <Text style={[styles.invCardLabelSlate, !isDarkMode && { color: "#0274BB" }]}>TOTAL PHYSICAL</Text>
+              <View style={[styles.inventoryCardPhysical, { backgroundColor: isDarkMode ? "rgba(2, 116, 187, 0.12)" : "#F0F7FF", borderColor: isDarkMode ? "rgba(2, 116, 187, 0.3)" : "#BAE6FD" }]}>
+                <Text style={[styles.invCardLabelSlate, { color: "#0274BB" }]}>TOTAL PHYSICAL</Text>
                 <Text style={[styles.invCardValueWhite, { color: theme.textPrimary }]}>{totalCopies}</Text>
-                <Text style={styles.invCardSubSlate}>In System</Text>
+                <Text style={[styles.invCardSubSlate, { color: isDarkMode ? "#94A3B8" : "#64748B" }]}>In System</Text>
               </View>
 
-              <View style={styles.inventoryCardAvail}>
-                <Text style={styles.invCardLabelEmerald}>AVAILABLE</Text>
-                <Text style={styles.invCardValueEmerald}>{availableCopies}</Text>
-                <Text style={styles.invCardSubEmerald}>For Checkout</Text>
+              <View style={[styles.inventoryCardAvail, { backgroundColor: isDarkMode ? "rgba(16, 185, 129, 0.12)" : "#ECFDF5", borderColor: isDarkMode ? "rgba(16, 185, 129, 0.3)" : "#A7F3D0" }]}>
+                <Text style={[styles.invCardLabelEmerald, { color: "#059669" }]}>AVAILABLE</Text>
+                <Text style={[styles.invCardValueEmerald, { color: isDarkMode ? "#34D399" : "#047857" }]}>{availableCopies}</Text>
+                <Text style={[styles.invCardSubEmerald, { color: "#10B981" }]}>For Checkout</Text>
               </View>
 
-              <View style={styles.inventoryCardRes}>
-                <Text style={styles.invCardLabelAmber}>RESERVED</Text>
-                <Text style={styles.invCardValueAmber}>{reservedCopies}</Text>
-                <Text style={styles.invCardSubAmber}>Pending Holds</Text>
+              <View style={[styles.inventoryCardRes, { backgroundColor: isDarkMode ? "rgba(245, 158, 11, 0.12)" : "#FFFBEB", borderColor: isDarkMode ? "rgba(245, 158, 11, 0.3)" : "#FDE68A" }]}>
+                <Text style={[styles.invCardLabelAmber, { color: "#D97706" }]}>RESERVED</Text>
+                <Text style={[styles.invCardValueAmber, { color: isDarkMode ? "#FBBF24" : "#B45309" }]}>{reservedCopies}</Text>
+                <Text style={[styles.invCardSubAmber, { color: "#F59E0B" }]}>Pending Holds</Text>
               </View>
 
-              <View style={styles.inventoryCardLoan}>
-                <Text style={styles.invCardLabelRose}>ON LOAN</Text>
-                <Text style={styles.invCardValueRose}>{unavailableCopies}</Text>
-                <Text style={styles.invCardSubRose}>Borrowed</Text>
+              <View style={[styles.inventoryCardLoan, { backgroundColor: isDarkMode ? "rgba(239, 68, 68, 0.12)" : "#FFF1F2", borderColor: isDarkMode ? "rgba(239, 68, 68, 0.3)" : "#FECDD3" }]}>
+                <Text style={[styles.invCardLabelRose, { color: "#E11D48" }]}>ON LOAN</Text>
+                <Text style={[styles.invCardValueRose, { color: isDarkMode ? "#F87171" : "#BE123C" }]}>{unavailableCopies}</Text>
+                <Text style={[styles.invCardSubRose, { color: "#EF4444" }]}>Borrowed</Text>
               </View>
             </View>
 
@@ -896,137 +1184,44 @@ export default function BookDetailsScreen() {
             </View>
           </View>
 
-          {/* 8 Detail Cards (2 per row) */}
+          {/* 12 Detail Cards with Rich Themed Accents */}
           <View style={styles.detailGrid}>
-            <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="pricetag-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>ISBN</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF", fontFamily: "monospace" }]} numberOfLines={2}>
-                    {isbn || "978-0132350884"}
-                  </Text>
-                </View>
-              </View>
+            {Array.from({ length: 6 }).map((_, rIdx) => {
+              const item1 = detailMetadataList[rIdx * 2];
+              const item2 = detailMetadataList[rIdx * 2 + 1];
+              const theme1 = isDarkMode ? item1.dark : item1.light;
+              const theme2 = isDarkMode ? item2.dark : item2.light;
 
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="information-circle-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>DEPARTMENT</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {departmentParam || "Circulation"}
-                  </Text>
-                </View>
-              </View>
-            </View>
+              return (
+                <View key={`detail-row-${rIdx}`} style={styles.detailRow}>
+                  {/* Item 1 */}
+                  <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0" }]}>
+                    <View style={[styles.detailIconBox, { backgroundColor: theme1.bg, borderColor: theme1.border }]}>
+                      <Ionicons name={item1.icon as any} size={15} color={theme1.color} />
+                    </View>
+                    <View style={styles.detailContent}>
+                      <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>{item1.label}</Text>
+                      <Text style={[styles.detailValue, { color: theme.textPrimary }, item1.isMono && { fontFamily: "monospace" }]} numberOfLines={2}>
+                        {item1.value}
+                      </Text>
+                    </View>
+                  </View>
 
-            <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="bookmark-outline" size={14} color={detailBoxIconColor} />
+                  {/* Item 2 */}
+                  <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0" }]}>
+                    <View style={[styles.detailIconBox, { backgroundColor: theme2.bg, borderColor: theme2.border }]}>
+                      <Ionicons name={item2.icon as any} size={15} color={theme2.color} />
+                    </View>
+                    <View style={styles.detailContent}>
+                      <Text style={[styles.detailLabel, { color: theme.textSecondary }]}>{item2.label}</Text>
+                      <Text style={[styles.detailValue, { color: theme.textPrimary }, item2.isMono && { fontFamily: "monospace" }]} numberOfLines={2}>
+                        {item2.value}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>GENRE</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {category || "General Collection"}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="time-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>CALL NUMBER</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF", fontFamily: "monospace" }]} numberOfLines={2}>
-                    {shelf || "CIR 101.4 .A01 2026"}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="calendar-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>PUB. DATE</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {pubDateFormatted || year || "Sep 1, 2026"}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="globe-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>LANGUAGE</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {language || "English"}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="layers-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>VOLUME</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {volume || "Single Volume / None"}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="book-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>EDITION</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {edition || "Single Edition / None"}
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.detailRow}>
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="copy-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>COPIES IN SYSTEM</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF" }]} numberOfLines={2}>
-                    {String(totalCopies)}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={[styles.detailCard, { backgroundColor: theme.cardBg || "#111C35", borderColor: detailCardBorder }]}>
-                <View style={[styles.detailIconBox, { backgroundColor: detailBoxBg, borderColor: detailBoxBorder }]}>
-                  <Ionicons name="sparkles-outline" size={14} color={detailBoxIconColor} />
-                </View>
-                <View style={styles.detailContent}>
-                  <Text style={[styles.detailLabel, { color: detailLabelColor }]}>ACCESSION NO.</Text>
-                  <Text style={[styles.detailValue, { color: theme.textPrimary || "#FFFFFF", fontFamily: "monospace" }]} numberOfLines={2}>
-                    {accessionNumber}
-                  </Text>
-                </View>
-              </View>
-            </View>
+              );
+            })}
           </View>
 
           {/* BOOK CARD (Physical Library Checkout Ledger Card) */}
@@ -1693,11 +1888,151 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: "#111C35",
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 22,
+    marginHorizontal: 16,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
     borderColor: "#1E2D4A",
+  },
+
+  /* HERO SHOWCASE STYLES */
+  heroShowcaseRow: {
+    flexDirection: "row",
+    gap: 14,
+    marginBottom: 12,
+  },
+  heroCoverWrapper: {
+    width: 102,
+    height: 142,
+    borderRadius: 12,
+    overflow: "hidden",
+    elevation: 4,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.14,
+    shadowRadius: 6,
+  },
+  heroCoverImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+  },
+  heroCoverFallback: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 12,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+    padding: 6,
+  },
+  heroSpine: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 5,
+  },
+  heroSpineCrease: {
+    position: "absolute",
+    left: 5,
+    top: 0,
+    bottom: 0,
+    width: 2,
+  },
+  heroRibbon: {
+    position: "absolute",
+    top: 0,
+    right: 8,
+    width: 8,
+    height: 16,
+    borderBottomLeftRadius: 2,
+    borderBottomRightRadius: 2,
+  },
+  heroIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1.5,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  heroTagChip: {
+    position: "absolute",
+    bottom: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 4,
+  },
+  heroTagText: {
+    fontSize: 8,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  heroStiStamp: {
+    position: "absolute",
+    bottom: 4,
+    fontSize: 7,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  heroMetaCol: {
+    flex: 1,
+    justifyContent: "center",
+  },
+  heroCategoryPill: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  heroCategoryDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  heroCategoryText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  heroTitleText: {
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 21,
+    letterSpacing: 0.2,
+  },
+  heroAuthorText: {
+    fontSize: 12.5,
+    marginTop: 4,
+  },
+  heroRatingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 6,
+  },
+  heroRatingScore: {
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  heroRatingCount: {
+    fontSize: 11,
+  },
+  heroStatusPillsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 14,
+    marginTop: 2,
   },
 
   titleRow: {
@@ -1731,13 +2066,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(239, 68, 68, 0.15)",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginLeft: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "#EF4444",
-    alignSelf: "flex-end",
   },
 
   statusDot: {
@@ -2075,22 +2408,18 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    borderRadius: 16,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.06)",
-    backgroundColor: "rgba(255, 255, 255, 0.03)",
-    paddingVertical: 8,
+    paddingVertical: 9,
     paddingHorizontal: 10,
-    gap: 8,
-    minHeight: 50,
+    gap: 9,
+    minHeight: 52,
   },
   detailIconBox: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: "rgba(255, 214, 0, 0.12)",
+    width: 32,
+    height: 32,
+    borderRadius: 9,
     borderWidth: 1,
-    borderColor: "rgba(255, 214, 0, 0.2)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -2098,18 +2427,16 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   detailLabel: {
-    fontSize: 8,
-    fontWeight: "900",
-    color: "rgba(255, 255, 255, 0.45)",
-    letterSpacing: 0.6,
+    fontSize: 8.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
     textTransform: "uppercase",
   },
   detailValue: {
-    fontSize: 11,
-    lineHeight: 14,
+    fontSize: 12,
+    lineHeight: 15,
     fontWeight: "700",
-    color: "#FFFFFF",
-    marginTop: 1,
+    marginTop: 2,
   },
 
   // BOOK CARD Styles

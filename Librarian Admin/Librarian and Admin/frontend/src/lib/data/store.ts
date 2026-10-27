@@ -205,8 +205,8 @@ export const store = {
     });
   },
 
-  async listBooks(search = "", department = "All", limit = 120, offset = 0, includeArchived = false) {
-    return catalogRepository.listBooks({ search, department, limit, offset, includeArchived });
+  async listBooks(search = "", department = "All", limit = 120, offset = 0, includeArchived = false, searchField = "title") {
+    return catalogRepository.listBooks({ search, searchField, department, limit, offset, includeArchived });
   },
 
   async addBook(

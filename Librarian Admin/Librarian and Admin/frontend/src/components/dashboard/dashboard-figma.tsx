@@ -36,6 +36,7 @@ import { Pie, PieChart, ResponsiveContainer, Tooltip, Bar, BarChart, CartesianGr
 import { Badge } from "@/components/ui/badge";
 import { Panel } from "@/components/ui/panel";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import type { SearchResult, Department, BookRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/components/providers/session-provider";
@@ -934,8 +935,10 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                         <span className={relevanceBadgeClass}>{relevance}% MATCH</span>
                       </div>
 
-                      {/* Title & Metadata */}
-                      <div>
+                      {/* Title & Metadata with Cover Preview on left */}
+                      <div className="flex items-start gap-3.5">
+                        <BookCoverImage book={result} size="sm" className="mt-0.5" />
+                        <div className="min-w-0 flex-1">
                         <h3 className={cn("text-[17px] font-bold tracking-tight line-clamp-2 leading-snug transition-colors", isLight ? "text-[#0274BB] group-hover:text-blue-700" : "text-white group-hover:text-[#FFD600]")}>
                           {result.title}
                         </h3>
@@ -959,6 +962,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                               </span>
                             )}
                           </div>
+                        </div>
                         </div>
                       </div>
 
@@ -1488,6 +1492,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                             >
                               {idx + 1}
                             </div>
+                            <BookCoverImage book={book} size="xs" />
                             <div className="min-w-0">
                               <p className={cn("truncate text-xs font-bold", isLight ? "text-[#0274BB]" : "text-white")}>{book.title}</p>
                               <p className={cn("truncate text-[10px]", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>
@@ -1933,12 +1938,17 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                                 className={cn("cursor-pointer transition-colors group", isLight ? "hover:bg-sky-50/50" : "hover:bg-white/[0.04]")}
                               >
                                 <td className="py-3 pr-4">
-                                  <p className={cn("font-semibold truncate max-w-[200px] transition-colors", isLight ? "text-[#0274BB] group-hover:text-blue-700" : "text-white group-hover:text-[#FCD400]")} title={book.title}>
-                                    {book.title}
-                                  </p>
-                                  <p className={cn("text-[10px] truncate mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")} title={book.author}>
-                                    {book.author || "STI Library"}
-                                  </p>
+                                  <div className="flex items-center gap-3">
+                                    <BookCoverImage book={book} size="xs" />
+                                    <div className="min-w-0">
+                                      <p className={cn("font-semibold truncate max-w-[200px] transition-colors", isLight ? "text-[#0274BB] group-hover:text-blue-700" : "text-white group-hover:text-[#FCD400]")} title={book.title}>
+                                        {book.title}
+                                      </p>
+                                      <p className={cn("text-[10px] truncate mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")} title={book.author}>
+                                        {book.author || "STI Library"}
+                                      </p>
+                                    </div>
+                                  </div>
                                 </td>
                                 <td className={cn("py-3", isLight ? "text-slate-700 font-medium" : "text-slate-300")}>{book.department || "Circulation"}</td>
                                 <td className={cn("py-3 font-mono", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>{shelfText}</td>
@@ -1978,12 +1988,17 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                                 className={cn("cursor-pointer transition-colors group", isLight ? "hover:bg-sky-50/50" : "hover:bg-white/[0.04]")}
                               >
                                 <td className="py-3 pr-4">
-                                  <p className={cn("font-semibold truncate max-w-[200px] transition-colors", isLight ? "text-[#0274BB] group-hover:text-blue-700" : "text-white group-hover:text-[#FCD400]")} title={book.title}>
-                                    {book.title}
-                                  </p>
-                                  <p className={cn("text-[10px] truncate mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")} title={book.author}>
-                                    {book.author || "STI Library"}
-                                  </p>
+                                  <div className="flex items-center gap-3">
+                                    <BookCoverImage book={book} size="xs" />
+                                    <div className="min-w-0">
+                                      <p className={cn("font-semibold truncate max-w-[200px] transition-colors", isLight ? "text-[#0274BB] group-hover:text-blue-700" : "text-white group-hover:text-[#FCD400]")} title={book.title}>
+                                        {book.title}
+                                      </p>
+                                      <p className={cn("text-[10px] truncate mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")} title={book.author}>
+                                        {book.author || "STI Library"}
+                                      </p>
+                                    </div>
+                                  </div>
                                 </td>
                                 <td className={cn("py-3", isLight ? "text-slate-700 font-medium" : "text-slate-300")}>{book.department || "Circulation"}</td>
                                 <td className={cn("py-3 font-mono", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>{shelfText}</td>
@@ -2154,10 +2169,10 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       : "border-white/10 border-r-[6px] border-r-transparent bg-[#152E47]/60 shadow-md hover:bg-[#1E3445]"
                   )}
                 >
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3.5 min-w-0">
                     <span
                       className={cn(
-                        "text-xs font-black transition-colors",
+                        "text-xs font-black transition-colors shrink-0",
                         isLight
                           ? "text-[#0274BB]"
                           : idx === 0
@@ -2167,7 +2182,8 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     >
                       0{idx + 1}
                     </span>
-                    <span className={cn("text-sm font-black", isLight ? "text-[#0274BB]" : "text-white")}>{book.title.toUpperCase()}</span>
+                    <BookCoverImage book={book} size="xs" />
+                    <span className={cn("text-sm font-black truncate", isLight ? "text-[#0274BB]" : "text-white")}>{book.title.toUpperCase()}</span>
                   </div>
                   <div
                     className={cn(

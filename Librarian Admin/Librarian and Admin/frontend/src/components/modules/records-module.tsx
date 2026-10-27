@@ -6,13 +6,16 @@ import {
   useDeferredValue,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
   Archive,
   BookOpen,
+  BookPlus,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -25,6 +28,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  SlidersHorizontal,
   Smartphone,
   Sparkles,
   Tag,
@@ -37,6 +41,12 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { BookRecord, Department } from "@/lib/types";
 import { useSession } from "@/components/providers/session-provider";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
+import {
+  extractEmbeddedCoverUri,
+  stripEmbeddedCoverUri,
+  registerUploadedBookCover,
+} from "@/lib/book-covers";
 import { generateCallNumber, generateAccessionNumber, ALL_SYSTEM_GENRES, VOLUME_OPTIONS, EDITION_OPTIONS } from "@/lib/catalog/call-number";
 import { CustomSelect } from "@/components/ui/custom-select";
 import { useTheme } from "@/components/providers/theme-provider";
@@ -138,6 +148,30 @@ function sanitizeIsbn(isbn?: string | null): string {
     .trim();
 }
 
+function formatPriceWithCommas(val: string): string {
+  if (!val) return "";
+  const clean = val.replace(/[^0-9.]/g, "");
+  if (!clean) return "";
+
+  const parts = clean.split(".");
+  let integerPart = parts[0] || "";
+  const hasDecimal = parts.length > 1;
+  const decimalPart = hasDecimal ? parts.slice(1).join("") : null;
+
+  if (integerPart === "" && hasDecimal) {
+    integerPart = "0";
+  } else if (integerPart.length > 1 && integerPart.startsWith("0")) {
+    integerPart = integerPart.replace(/^0+/, "") || "0";
+  }
+
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
+  if (hasDecimal) {
+    return `${formattedInteger}.${decimalPart!.slice(0, 2)}`;
+  }
+  return formattedInteger;
+}
+
 const emptyBookForm = {
   title: "",
   author: "",
@@ -149,8 +183,10 @@ const emptyBookForm = {
   accessionNumber: "",
   genres: "",
   volume: "Single Volume / None",
+  series: "",
   edition: "Single Edition / None",
   copies: 1,
+  price: "",
   summary: "",
   availability: "Available" as BookRecord["availability"],
 };
@@ -269,6 +305,8 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   const [books, setBooks]           = useState<BookRecord[]>([]);
   const [totalBooks, setTotalBooks] = useState(0);
   const [search, setSearch]         = useState("");
+  const searchField = "title";
+  const [dailyBooksAdded, setDailyBooksAdded] = useState(0);
 
   const deptFromQuery = searchParams.get("department");
   const [department, setDepartment] = useState<Department | "All">(() => {
@@ -289,9 +327,41 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   const [page, setPage]             = useState(1);
   const [showModal, setShowModal]   = useState(false);
   const [form, setForm]             = useState(emptyBookForm);
+  const [authors, setAuthors]       = useState<string[]>([""]);
   const [submitting, setSubmitting] = useState(false);
-  const [suggestions, setSuggestions] = useState<BookRecord[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const addBookFormRef              = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    if (showModal) {
+      setTimeout(() => {
+        addBookFormRef.current?.scrollTo({ top: 0, behavior: "instant" });
+      }, 10);
+    }
+  }, [showModal]);
+
+  const handleAddAuthor = () => {
+    setAuthors((prev) => [...prev, ""]);
+  };
+
+  const handleRemoveAuthor = (index: number) => {
+    setAuthors((prev) => {
+      if (prev.length <= 1) return [""];
+      const next = prev.filter((_, i) => i !== index);
+      const joined = next.map((a) => a.trim()).filter(Boolean).join(", ");
+      setForm((f) => ({ ...f, author: joined }));
+      return next;
+    });
+  };
+
+  const handleAuthorChange = (index: number, val: string) => {
+    setAuthors((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      const joined = next.map((a) => a.trim()).filter(Boolean).join(", ");
+      setForm((f) => ({ ...f, author: joined }));
+      return next;
+    });
+  };
   const [selectedBookDetails, setSelectedBookDetails] = useState<BookRecord | null>(null);
 
   const [dashboardSummary, setDashboardSummary] = useState<{
@@ -375,7 +445,30 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       if (!res.ok) return;
       const data = await res.json();
       if (data && Array.isArray(data.books)) {
-        setDigitizedBooks(data.books);
+        const enriched = data.books.map((b: any) => {
+          const coverUri =
+            b.coverImage ||
+            b.coverImg ||
+            b.coverUrl ||
+            b.cover_img ||
+            extractEmbeddedCoverUri(b.rawText || b.raw_text) ||
+            undefined;
+          if (coverUri) {
+            registerUploadedBookCover({
+              id: b.id,
+              isbn: sanitizeIsbn(b.isbn),
+              title: b.title,
+              coverUri,
+            });
+          }
+          return {
+            ...b,
+            coverImage: coverUri,
+            coverImg: coverUri,
+            rawText: stripEmbeddedCoverUri(b.rawText || b.raw_text || ""),
+          };
+        });
+        setDigitizedBooks(enriched);
       }
     } catch (err) {
       console.warn("Failed to fetch digitized queue:", err);
@@ -400,6 +493,13 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
     setSelectedDigitizedForReview(book);
     const pubYear = book.year || (book.publishedDate ? String(book.publishedDate).substring(0, 4) : "2026");
     const pubDate = book.publishedDate || `${pubYear}-01-01`;
+    const attachedCover =
+      book.coverImage ||
+      book.coverImg ||
+      book.coverUrl ||
+      book.cover_img ||
+      extractEmbeddedCoverUri(book.rawText || book.raw_text) ||
+      "";
 
     const initialReview = {
       title: book.title || "",
@@ -409,13 +509,16 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       genres: book.genre || book.category || "General",
       category: book.category || book.genre || "General",
       copies: Math.max(1, Number(book.copies || 1)),
-      edition: book.edition || "1st Edition",
-      volume: book.volume || "Vol. 1",
+      edition: book.edition || "Single Edition / None",
+      volume: book.volume || "Single Volume / None",
+      series: book.series || "",
+      price: book.price ? formatPriceWithCommas(String(book.price)) : "",
       publisher: book.publisher || "",
       publishedDate: pubDate,
       summary: book.summary || "",
       shelfLocation: book.shelfLocation || "",
       accessionNumber: book.accessionNumber || "",
+      coverImg: attachedCover,
     };
 
     const generatedCall = generateCallNumber(initialReview);
@@ -456,9 +559,25 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
 
     try {
       setIsApproving(true);
+      const coverToSave =
+        reviewForm.coverImg ||
+        selectedDigitizedForReview.coverImage ||
+        selectedDigitizedForReview.coverImg ||
+        extractEmbeddedCoverUri(selectedDigitizedForReview.rawText || selectedDigitizedForReview.raw_text) ||
+        "";
+      if (coverToSave) {
+        registerUploadedBookCover({
+          isbn: sanitizeIsbn(reviewForm.isbn),
+          title: reviewForm.title,
+          coverUri: coverToSave,
+        });
+      }
       const payload = {
         ...reviewForm,
         isbn: sanitizeIsbn(reviewForm.isbn),
+        price: reviewForm.price ? Number(String(reviewForm.price).replace(/,/g, "")) : 0,
+        coverImg: coverToSave,
+        coverImage: coverToSave,
       };
       const res = await fetch(`/api/records/digitized/${selectedDigitizedForReview.id}/approve`, {
         method: "POST",
@@ -476,6 +595,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       setSelectedDigitizedForReview(null);
 
       void loadBooks();
+      void fetchDailyAdded();
       alert(`✓ Successfully Cataloged!\n"${reviewForm.title}" is now officially published to the library catalog.`);
     } catch (err: any) {
       alert("Cataloging Error: " + (err.message || String(err)));
@@ -739,6 +859,8 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         }
 
         await loadBooks();
+    void fetchDailyAdded();
+        void fetchDailyAdded();
         alert(`Import completed! ${bookDataList.length - errorCount} books imported successfully, ${errorCount} failed.`);
       } catch (err) {
         console.error("Import error:", err);
@@ -753,65 +875,62 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   const deferredSearch = useDeferredValue(search);
   const pageSize = 60;
 
+  const fetchDailyAdded = useCallback(async () => {
+    try {
+      const res = await fetch("/api/records/daily-count");
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.count === "number") {
+          setDailyBooksAdded(data.count);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    void fetchDailyAdded();
+  }, [fetchDailyAdded]);
+
   const loadBooks = useCallback(async () => {
     const params = new URLSearchParams({
       search: deferredSearch,
+      searchField,
       department,
       page: String(page),
       pageSize: String(pageSize),
     });
     const res = await fetch(`/api/records?${params}`);
     if (!res.ok) return;
-    const payload = (await res.json()) as { books: BookRecord[]; total: number };
+    const payload = (await res.json()) as { books: BookRecord[]; total: number; addedToday?: number };
     startTransition(() => {
       setBooks(payload.books);
       setTotalBooks(payload.total);
+      if (typeof payload.addedToday === "number") {
+        setDailyBooksAdded(payload.addedToday);
+      }
     });
-  }, [deferredSearch, department, page]);
+  }, [deferredSearch, searchField, department, page]);
 
   useEffect(() => { void loadBooks(); }, [loadBooks]);
 
-  useEffect(() => {
-    if (!search.trim()) {
-      setSuggestions([]);
-      return;
-    }
-    const delayDebounceFn = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({
-          search: search,
-          department,
-          page: "1",
-          pageSize: "5",
-        });
-        const res = await fetch(`/api/records?${params}`);
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.books) {
-          setSuggestions(data.books);
-        }
-      } catch (err) {
-        console.error("Suggestions load error:", err);
-      }
-    }, 250);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [search, department]);
-
-  useEffect(() => {
-    function clickOutside(e: MouseEvent) {
-      const container = document.getElementById("search-autocomplete-container");
-      if (container && !container.contains(e.target as Node)) {
-        setShowSuggestions(false);
-      }
-    }
-    document.addEventListener("mousedown", clickOutside);
-    return () => document.removeEventListener("mousedown", clickOutside);
-  }, []);
-
-  // Alphabetical grouping by first letter of title
+  // Grouped rows: alphabetical letter sections when browsing, direct relevance sorting when searching
   const groupedRows = useMemo(() => {
-    const sorted = [...books].sort((a, b) => a.title.localeCompare(b.title));
+    let sorted = [...books];
+    if (deferredSearch.trim()) {
+      const q = deferredSearch.trim().toLowerCase();
+      sorted.sort((a, b) => {
+        const aTitle = a.title.toLowerCase();
+        const bTitle = b.title.toLowerCase();
+        if (aTitle === q && bTitle !== q) return -1;
+        if (bTitle === q && aTitle !== q) return 1;
+        if (aTitle.startsWith(q) && !bTitle.startsWith(q)) return -1;
+        if (bTitle.startsWith(q) && !aTitle.startsWith(q)) return 1;
+        return aTitle.localeCompare(bTitle);
+      });
+      return sorted.map((book) => ({ type: "book" as const, book }));
+    }
+
+    sorted.sort((a, b) => a.title.localeCompare(b.title));
     const rows: Array<{ type: "letter"; letter: string } | { type: "book"; book: BookRecord }> = [];
     let current = "";
     for (const book of sorted) {
@@ -823,7 +942,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       rows.push({ type: "book", book });
     }
     return rows;
-  }, [books]);
+  }, [books, deferredSearch]);
 
   const totalPages = Math.max(1, Math.ceil(totalBooks / pageSize));
 
@@ -850,23 +969,29 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
+    const combinedAuthor = authors.map((a) => a.trim()).filter(Boolean).join(", ") || form.author.trim();
     await fetch("/api/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         ...form,
+        author: combinedAuthor,
+        price: form.price ? Number(String(form.price).replace(/,/g, "")) : 0,
         availability: normalizeStatus(form.availability),
       }),
     });
     setForm(emptyBookForm);
+    setAuthors([""]);
     setShowModal(false);
     await loadBooks();
+    void fetchDailyAdded();
     setSubmitting(false);
   }
 
   async function handleDelete(id: string) {
     await fetch(`/api/records/${id}`, { method: "DELETE" });
     await loadBooks();
+    void fetchDailyAdded();
   }
 
   // Inventory Summary Metrics (accurate client synchronization)
@@ -955,7 +1080,31 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         </div>
 
         <div className="shrink-0 flex items-center gap-3">
-          {/* Records & Digitized Segmented Toggle - Placed immediately before Export */}
+          {/* Daily Ingestion Log Counter - Moved before Records */}
+          <div
+            className={cn(
+              "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-2xs transition-all",
+              isLight
+                ? "bg-emerald-50/90 border-emerald-300 text-emerald-800"
+                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+            )}
+            title={`Total books added to the catalog today: ${dailyBooksAdded}`}
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <BookOpen className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+              {dailyBooksAdded}
+            </span>
+            <span className="hidden sm:inline font-bold">
+              {dailyBooksAdded === 1 ? "Book Added Today" : "Books Added Today"}
+            </span>
+            <span className="sm:hidden font-bold">Today</span>
+          </div>
+
+          {/* Records & Digitized Segmented Toggle - Placed immediately after Daily Counter */}
           <div className={cn(
             "flex items-center p-1 rounded-xl border transition-all",
             isLight
@@ -1083,85 +1232,79 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
 
       {activeTab === "records" ? (
         <>
-
-      {/* ── Search & filter ────────────────────────────────── */}
-      <div className="flex flex-wrap gap-3">
-        <div className="relative flex-1 min-w-[200px]" id="search-autocomplete-container">
-          <Search className={cn("absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 transition-colors", isLight ? "text-[#0274BB]" : "text-slate-500")} />
-          <input
-            suppressHydrationWarning
-            className={cn(
-              "w-full rounded-xl border py-2.5 pl-10 pr-4 text-sm focus:outline-none transition-all",
-              isLight
-                ? "border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus:border-[#0274BB] focus:ring-2 focus:ring-[#0274BB]/15 shadow-2xs"
-                : "border-white/10 bg-white/5 text-white placeholder:text-slate-500 focus:border-[#FCD400]/50"
-            )}
-            placeholder="Search title, author, ISBN…"
-            value={search}
-            onChange={e => { setPage(1); setSearch(e.target.value); setShowSuggestions(true); }}
-            onFocus={() => setShowSuggestions(true)}
-          />
-          {showSuggestions && suggestions.length > 0 && (
-            <div className={cn(
-              "absolute left-0 right-0 z-30 mt-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
-              isLight ? "border-slate-200 bg-white text-slate-900" : "border-white/8 bg-[#0F1D29]/95 text-white"
-            )}>
-              <div className="space-y-1">
-                {suggestions.map((book) => (
-                  <button
-                    key={`suggestion-${book.id}`}
-                    onClick={() => {
-                      setSearch(book.title);
-                      setShowSuggestions(false);
-                    }}
+          {/* ── Search Bar & Department Filter ──────────── */}
+          <div className="flex flex-wrap gap-3">
+            <div className="relative flex-1 min-w-[280px]">
+              <div className={cn(
+                "flex items-center h-[42px] rounded-xl border transition-all shadow-2xs overflow-hidden",
+                isLight
+                  ? "border-slate-300 bg-white focus-within:border-[#0274BB] focus-within:ring-2 focus-within:ring-[#0274BB]/15"
+                  : "border-white/10 bg-white/5 focus-within:border-[#FCD400]/50 focus-within:ring-2 focus-within:ring-[#FCD400]/20"
+              )}>
+                {/* Search Text Input */}
+                <div className="relative flex-1 flex items-center h-full">
+                  <Search className={cn(
+                    "absolute left-3.5 h-4 w-4 pointer-events-none transition-colors",
+                    isLight ? "text-slate-400" : "text-slate-500"
+                  )} />
+                  <input
+                    suppressHydrationWarning
                     className={cn(
-                      "w-full flex items-center justify-between rounded-lg p-2 text-left transition-colors",
-                      isLight ? "hover:bg-slate-100" : "hover:bg-white/5"
+                      "w-full h-full bg-transparent py-2 pl-10 pr-9 text-sm focus:outline-none transition-all",
+                      isLight
+                        ? "text-slate-900 placeholder:text-slate-400"
+                        : "text-white placeholder:text-slate-500"
                     )}
-                  >
-                    <div>
-                      <p className={cn("text-xs font-bold line-clamp-1", isLight ? "text-slate-900" : "text-white")}>{book.title}</p>
-                      <p className={cn("text-[10px] mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>{book.author}</p>
-                    </div>
-                    <span className={cn(
-                      "text-[9px] font-mono px-1.5 py-0.5 rounded border",
-                      isLight ? "bg-slate-100 text-slate-600 border-slate-200" : "text-slate-400 bg-white/5 border-white/5"
-                    )}>
-                      {sanitizeIsbn(book.isbn)}
-                    </span>
-                  </button>
-                ))}
+                    placeholder="Search by book title (e.g. His Life, Java, Calculus)…"
+                    value={search}
+                    onChange={(e) => {
+                      setPage(1);
+                      setSearch(e.target.value);
+                    }}
+                  />
+                  {search && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearch("");
+                        setPage(1);
+                      }}
+                      className="absolute right-2.5 p-1 rounded-md text-slate-400 hover:text-slate-700 dark:hover:text-white transition-colors cursor-pointer"
+                      title="Clear search"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          )}
-        </div>
-        <div className="min-w-[180px] sm:min-w-[210px]">
-          <CustomSelect
-            value={department}
-            options={departmentOptions}
-            onChange={(val) => {
-              setPage(1);
-              const newDept = val as Department | "All";
-              setDepartment(newDept);
-              if (typeof window !== "undefined") {
-                const url = new URL(window.location.href);
-                if (newDept === "All") {
-                  url.searchParams.delete("department");
-                } else {
-                  url.searchParams.set("department", newDept);
-                }
-                window.history.replaceState(null, "", url.toString());
-              }
-            }}
-            buttonClassName={cn(
-              "h-[42px] rounded-xl py-2.5 px-4 text-sm font-semibold transition-all shadow-xs",
-              isLight
-                ? "border border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50 focus:border-[#0274BB]"
-                : "border-white/10 bg-white/5 text-white hover:border-white/20 focus:border-[#FCD400]"
-            )}
-          />
-        </div>
-      </div>
+            <div className="min-w-[180px] sm:min-w-[210px]">
+              <CustomSelect
+                value={department}
+                options={departmentOptions}
+                onChange={(val) => {
+                  setPage(1);
+                  const newDept = val as Department | "All";
+                  setDepartment(newDept);
+                  if (typeof window !== "undefined") {
+                    const url = new URL(window.location.href);
+                    if (newDept === "All") {
+                      url.searchParams.delete("department");
+                    } else {
+                      url.searchParams.set("department", newDept);
+                    }
+                    window.history.replaceState(null, "", url.toString());
+                  }
+                }}
+                buttonClassName={cn(
+                  "h-[42px] rounded-xl py-2.5 px-4 text-sm font-semibold transition-all shadow-xs",
+                  isLight
+                    ? "border border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50 focus:border-[#0274BB]"
+                    : "border-white/10 bg-white/5 text-white hover:border-white/20 focus:border-[#FCD400]"
+                )}
+              />
+            </div>
+          </div>
 
       {/* ── Table ──────────────────────────────────────────── */}
       <div className={cn(
@@ -1227,18 +1370,23 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                     )}
                     onClick={() => setSelectedBookDetails(book)}
                   >
-                    <td className="px-5 py-4 max-w-[280px]">
-                      <div className={cn(
-                        "font-bold text-[15px] leading-snug line-clamp-1 transition-colors",
-                        isLight ? "text-slate-900 group-hover:text-[#0274BB]" : "text-white group-hover:text-[#FCD400]"
-                      )}>
-                        {book.title}
-                      </div>
-                      <div className={cn(
-                        "text-xs font-medium mt-1 line-clamp-1",
-                        isLight ? "text-slate-500" : "text-slate-400"
-                      )}>
-                        {book.author}
+                    <td className="px-5 py-4 max-w-[330px]">
+                      <div className="flex items-center gap-3.5">
+                        <BookCoverImage book={book} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className={cn(
+                            "font-bold text-[15px] leading-snug line-clamp-1 transition-colors",
+                            isLight ? "text-slate-900 group-hover:text-[#0274BB]" : "text-white group-hover:text-[#FCD400]"
+                          )}>
+                            {book.title}
+                          </div>
+                          <div className={cn(
+                            "text-xs font-medium mt-1 line-clamp-1",
+                            isLight ? "text-slate-500" : "text-slate-400"
+                          )}>
+                            {book.author}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-5 py-4 whitespace-nowrap">
@@ -1294,14 +1442,14 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                         onClick={(e) => { e.stopPropagation(); void handleDelete(book.id); }}
                         suppressHydrationWarning
                         className={cn(
-                          "rounded-lg p-2 transition-all active:scale-95 inline-flex items-center justify-center",
+                          "record-archive-btn rounded-lg p-2 transition-all active:scale-95 inline-flex items-center justify-center",
                           isLight
-                            ? "border border-orange-300 bg-orange-50 text-orange-600 hover:bg-orange-500 hover:text-white hover:border-orange-500 shadow-2xs"
+                            ? "border border-orange-300 bg-orange-100/70 text-orange-700 hover:bg-orange-500 hover:text-white hover:border-orange-500 shadow-2xs"
                             : "border border-orange-500/20 bg-orange-500/5 text-orange-400 hover:bg-orange-500/15 hover:border-orange-500/30"
                         )}
                         title="Archive"
                       >
-                        <Archive className="h-4 w-4" />
+                        <Archive className={cn("h-4 w-4", isLight ? "text-orange-700" : "text-orange-400")} />
                       </button>
                     </td>
                   </tr>
@@ -1482,19 +1630,24 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                         )}
                         onClick={() => handleOpenReviewModal(book)}
                       >
-                        {/* 1. Book / Author (Exact Picture 3 placement) */}
-                        <td className="px-5 py-4 max-w-[280px]">
-                          <div className={cn(
-                            "font-bold text-[15px] leading-snug line-clamp-1 transition-colors",
-                            isLight ? "text-slate-900 group-hover:text-[#0274BB]" : "text-white group-hover:text-[#FCD400]"
-                          )}>
-                            {book.title}
-                          </div>
-                          <div className={cn(
-                            "text-xs font-medium mt-1 line-clamp-1",
-                            isLight ? "text-slate-500" : "text-slate-400"
-                          )}>
-                            {book.author || "Unknown Author"}
+                        {/* 1. Book / Author (Exact Picture 2 & 3 placement with Cover Preview on left) */}
+                        <td className="px-5 py-4 max-w-[330px]">
+                          <div className="flex items-center gap-3.5">
+                            <BookCoverImage book={book} size="sm" />
+                            <div className="min-w-0 flex-1">
+                              <div className={cn(
+                                "font-bold text-[15px] leading-snug line-clamp-1 transition-colors",
+                                isLight ? "text-slate-900 group-hover:text-[#0274BB]" : "text-white group-hover:text-[#FCD400]"
+                              )}>
+                                {book.title}
+                              </div>
+                              <div className={cn(
+                                "text-xs font-medium mt-1 line-clamp-1",
+                                isLight ? "text-slate-500" : "text-slate-400"
+                              )}>
+                                {book.author || "Unknown Author"}
+                              </div>
+                            </div>
                           </div>
                         </td>
 
@@ -1676,6 +1829,121 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
 
             {/* Modal Body */}
             <form onSubmit={handleApproveAndCatalog} className="px-6 py-5 max-h-[82vh] overflow-y-auto space-y-4">
+              {/* Row 0: Book Cover Picture Preview (Synced from Librarian Mobile App) */}
+              <div
+                className={cn(
+                  "rounded-2xl border p-4 transition-colors",
+                  isLight
+                    ? "border-sky-200 bg-sky-50/60"
+                    : "border-white/10 bg-white/[0.03]"
+                )}
+              >
+                <div className="mb-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className={cn("h-4 w-4", isLight ? "text-[#0274BB]" : "text-[#FCD400]")} />
+                    <span className={cn("text-[11px] font-extrabold uppercase tracking-wider", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                      Book Cover Picture
+                    </span>
+                  </div>
+                  <span
+                    className={cn(
+                      "rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider",
+                      reviewForm.coverImg
+                        ? isLight
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                          : "border-emerald-500/30 bg-emerald-500/15 text-emerald-300"
+                        : isLight
+                        ? "border-sky-200 bg-white text-[#0274BB]"
+                        : "border-white/15 bg-white/5 text-slate-300"
+                    )}
+                  >
+                    {reviewForm.coverImg ? "Uploaded via Mobile" : "Synced Cover Preview"}
+                  </span>
+                </div>
+
+                <div
+                  className={cn(
+                    "flex items-center gap-4 rounded-xl border p-3.5",
+                    isLight
+                      ? "border-slate-200/90 bg-white shadow-xs"
+                      : "border-white/10 bg-[#0B1622]/90"
+                  )}
+                >
+                  <BookCoverImage
+                    uri={reviewForm.coverImg}
+                    book={{
+                      ...selectedDigitizedForReview,
+                      title: reviewForm.title,
+                      author: reviewForm.author,
+                      isbn: reviewForm.isbn,
+                      department: reviewForm.department,
+                      category: reviewForm.genres || reviewForm.category,
+                      coverImg: reviewForm.coverImg,
+                    }}
+                    size="md"
+                    className="w-16 h-[92px] shadow-md"
+                  />
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4 flex-shrink-0 text-emerald-500" />
+                      <p className={cn("text-sm font-bold", isLight ? "text-slate-900" : "text-white")}>
+                        {reviewForm.coverImg ? "Cover Picture Attached" : "Book Cover Preview Attached"}
+                      </p>
+                    </div>
+                    <p className={cn("mt-1 text-xs leading-relaxed", isLight ? "text-slate-600" : "text-slate-400")}>
+                      {reviewForm.coverImg
+                        ? "Captured and uploaded by the librarian via Librarian Mobile App. Will be displayed with this book in catalog & details."
+                        : "Will be displayed with this book across all web system dashboards and mobile applications."}
+                    </p>
+                    <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                      <label
+                        className={cn(
+                          "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition",
+                          isLight
+                            ? "border-sky-200 bg-sky-50 text-[#0274BB] hover:bg-sky-100"
+                            : "border-white/15 bg-white/5 text-[#FCD400] hover:bg-white/10"
+                        )}
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>{reviewForm.coverImg ? "Change Picture" : "Upload Custom Picture"}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                              if (typeof reader.result === "string") {
+                                handleReviewFieldChange("coverImg", reader.result);
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          }}
+                        />
+                      </label>
+                      {reviewForm.coverImg && (
+                        <button
+                          type="button"
+                          onClick={() => handleReviewFieldChange("coverImg", "")}
+                          className={cn(
+                            "inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-bold transition",
+                            isLight
+                              ? "border-red-200 bg-red-50 text-red-600 hover:bg-red-100"
+                              : "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                          )}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Row 1: Title */}
               <label className="grid gap-1.5">
                 <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
@@ -1718,11 +1986,11 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
               </div>
 
-              {/* Row 3: Department & Genre */}
+              {/* Row 3: Section & Classification */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="grid gap-1.5">
                   <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                    Department <span className="text-red-500">*</span>
+                    Section <span className="text-red-500">*</span>
                   </span>
                   <select
                     className="modal-input"
@@ -1736,7 +2004,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
                 <label className="grid gap-1.5">
                   <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                    Genre <span className="text-red-500">*</span>
+                    Classification <span className="text-red-500">*</span>
                   </span>
                   <select
                     required
@@ -1744,7 +2012,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                     value={reviewForm.genres || reviewForm.category || ""}
                     onChange={(e) => handleReviewFieldChange("genres", e.target.value)}
                   >
-                    <option value="" disabled>-- Select Genre --</option>
+                    <option value="" disabled>-- Select Classification --</option>
                     {reviewGenreOptions.map((g) => (
                       <option key={g} value={g}>{g}</option>
                     ))}
@@ -1752,21 +2020,92 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
               </div>
 
-              {/* Row 4: Call Number & Accession Number */}
+              {/* Row 4: Publisher & Pub. Date */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Publisher
+                  </span>
+                  <input
+                    className="modal-input"
+                    value={reviewForm.publisher || ""}
+                    onChange={(e) => handleReviewFieldChange("publisher", e.target.value)}
+                    placeholder="e.g. Pearson, O'Reilly Media, Scholastic Press"
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Pub. Date
+                  </span>
+                  <input
+                    type="date"
+                    className="modal-input"
+                    value={reviewForm.publishedDate}
+                    onChange={(e) => handleReviewFieldChange("publishedDate", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              {/* Row 5: Volume, Series & Edition (3 equal columns) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-end">
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Volume
+                  </span>
+                  <select
+                    className="modal-input"
+                    value={reviewForm.volume}
+                    onChange={(e) => handleReviewFieldChange("volume", e.target.value)}
+                  >
+                    {VOLUME_OPTIONS.map(vol => (
+                      <option key={vol} value={vol}>{vol}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Series
+                  </span>
+                  <input
+                    className="modal-input"
+                    value={reviewForm.series || ""}
+                    onChange={(e) => handleReviewFieldChange("series", e.target.value)}
+                    placeholder="e.g. Series name / No."
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Edition
+                  </span>
+                  <select
+                    className="modal-input"
+                    value={reviewForm.edition}
+                    onChange={(e) => handleReviewFieldChange("edition", e.target.value)}
+                  >
+                    {EDITION_OPTIONS.map(ed => (
+                      <option key={ed} value={ed}>{ed}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {/* Row 6: Call Number & Accession Number */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="grid gap-1.5">
                   <div className="flex items-center justify-between">
                     <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
                       Call Number / Shelf Location <span className="text-red-500">*</span>
                     </span>
-                    <span className="text-[10px] text-[#0274BB] font-semibold">Auto-Formatted</span>
+                    <span className="text-[10px] text-[#0274BB] dark:text-[#FCD400] font-semibold flex items-center gap-1">
+                      <Sparkles className="h-3 w-3" /> Auto
+                    </span>
                   </div>
                   <input
                     required
                     className="modal-input font-mono font-bold"
                     value={reviewForm.shelfLocation}
                     onChange={(e) => handleReviewFieldChange("shelfLocation", e.target.value)}
-                    placeholder="e.g. GEN-ACT-002"
+                    placeholder="Auto-generated e.g. QA 76.73 .P98 2026"
                   />
                 </label>
                 <label className="grid gap-1.5">
@@ -1774,19 +2113,21 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                     <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
                       Accession Number
                     </span>
-                    <span className="text-[10px] text-[#0274BB] font-semibold">Auto-Assigned</span>
+                    <span className="text-[10px] text-[#0274BB] dark:text-[#FCD400] font-semibold flex items-center gap-1">
+                      <Sparkles className="h-3 w-3" /> Auto
+                    </span>
                   </div>
                   <input
                     className="modal-input font-mono"
                     value={reviewForm.accessionNumber}
                     onChange={(e) => handleReviewFieldChange("accessionNumber", e.target.value)}
-                    placeholder="e.g. ACC-2026-0042"
+                    placeholder="Auto e.g. ACC-2026-0042"
                   />
                 </label>
               </div>
 
-              {/* Row 5: Copies, Edition, Volume, Published Date */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* Row 7: Copies & Price (PHP) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="grid gap-1.5">
                   <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
                     Copies
@@ -1802,59 +2143,33 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
                 <label className="grid gap-1.5">
                   <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                    Edition
+                    Price (PHP)
                   </span>
-                  <select
-                    className="modal-input text-xs"
-                    value={reviewForm.edition}
-                    onChange={(e) => handleReviewFieldChange("edition", e.target.value)}
-                  >
-                    {EDITION_OPTIONS.map(ed => (
-                      <option key={ed} value={ed}>{ed}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-1.5">
-                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                    Volume
-                  </span>
-                  <select
-                    className="modal-input text-xs"
-                    value={reviewForm.volume}
-                    onChange={(e) => handleReviewFieldChange("volume", e.target.value)}
-                  >
-                    {VOLUME_OPTIONS.map(vol => (
-                      <option key={vol} value={vol}>{vol}</option>
-                    ))}
-                  </select>
-                </label>
-                <label className="grid gap-1.5">
-                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                    Published Date
-                  </span>
-                  <input
-                    type="date"
-                    className="modal-input text-xs"
-                    value={reviewForm.publishedDate}
-                    onChange={(e) => handleReviewFieldChange("publishedDate", e.target.value)}
-                  />
+                  <div className="relative flex items-center">
+                    <span className={cn(
+                      "absolute left-3 text-sm pointer-events-none select-none z-10 leading-none",
+                      isLight ? "text-slate-600 font-normal" : "text-white font-normal"
+                    )}>
+                      ₱
+                    </span>
+                    <input
+                      suppressHydrationWarning
+                      type="text"
+                      inputMode="decimal"
+                      style={{ paddingLeft: "34px" }}
+                      className="modal-input !pl-[34px] font-normal"
+                      value={reviewForm.price || ""}
+                      onChange={(e) => {
+                        const formatted = formatPriceWithCommas(e.target.value);
+                        handleReviewFieldChange("price", formatted);
+                      }}
+                      placeholder="0.00"
+                    />
+                  </div>
                 </label>
               </div>
 
-              {/* Row 6: Publisher */}
-              <label className="grid gap-1.5">
-                <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                  Publisher
-                </span>
-                <input
-                  className="modal-input"
-                  value={reviewForm.publisher}
-                  onChange={(e) => handleReviewFieldChange("publisher", e.target.value)}
-                  placeholder="e.g. Scholastic Press"
-                />
-              </label>
-
-              {/* Row 7: Synopsis / Summary */}
+              {/* Row 8: Synopsis / Summary */}
               <label className="grid gap-1.5">
                 <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
                   Synopsis / Summary
@@ -1918,32 +2233,53 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
           />
 
           {/* Panel */}
-          <div className="relative z-10 w-full max-w-xl rounded-2xl border border-white/12 bg-[#0F1D29] shadow-2xl shadow-black/60">
+          <div className={cn(
+            "relative z-10 w-full max-w-2xl rounded-2xl border shadow-2xl overflow-hidden my-auto",
+            isLight
+              ? "border-slate-200 bg-white shadow-slate-900/20 text-slate-900"
+              : "border-white/12 bg-[#0F1D29] shadow-black/70 text-white"
+          )}>
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-white/8 px-6 py-4">
+            <div className={cn(
+              "flex items-center justify-between border-b px-6 py-4",
+              isLight ? "border-slate-200 bg-slate-50/80" : "border-white/8 bg-white/2"
+            )}>
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#FCD400]/15">
                   <BookOpen className="h-4 w-4 text-[#FCD400]" />
                 </div>
                 <div>
                   <p className="text-[10px] font-bold tracking-widest text-[#FCD400] uppercase">Catalog</p>
-                  <h2 className="text-base font-black text-white">Add New Book</h2>
+                  <h2 className={cn("text-base font-black", isLight ? "text-slate-900" : "text-white")}>Add New Book</h2>
                 </div>
               </div>
               <button
                 suppressHydrationWarning
-                onClick={() => setShowModal(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-white/8 hover:text-white transition"
+                onClick={() => {
+                  setShowModal(false);
+                  setForm(emptyBookForm);
+                  setAuthors([""]);
+                }}
+                className={cn(
+                  "rounded-lg p-1.5 transition cursor-pointer",
+                  isLight ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700" : "text-slate-400 hover:bg-white/8 hover:text-white"
+                )}
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             {/* Form */}
-            <form onSubmit={handleSubmit} className="px-6 py-5 grid gap-4 max-h-[82vh] overflow-y-auto pr-2">
+            <form
+              ref={addBookFormRef}
+              onSubmit={handleSubmit}
+              className="px-6 py-5 grid gap-3.5 max-h-[82vh] overflow-y-auto overflow-x-hidden modal-scroll"
+            >
               {/* Row 1: Title */}
               <label className="grid gap-1.5">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Title</span>
+                <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                  Title
+                </span>
                 <input
                   suppressHydrationWarning
                   required
@@ -1954,21 +2290,64 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 />
               </label>
 
-              {/* Row 2: Author & ISBN */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Row 2: Author & ISBN (Multiple Authors supported with + icon) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
+                <div className="grid gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                      Author{authors.length > 1 ? "s" : ""}
+                    </span>
+                    {authors.length > 1 && (
+                      <span className="text-[10px] text-[#FCD400] font-semibold">
+                        {authors.length} Authors
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {authors.map((authorName, index) => (
+                      <div key={`author-${index}`} className="relative flex items-center">
+                        <input
+                          suppressHydrationWarning
+                          required={index === 0}
+                          className="modal-input pr-9"
+                          value={authorName}
+                          onChange={(e) => handleAuthorChange(index, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleAddAuthor();
+                            }
+                          }}
+                          placeholder={index === 0 ? "e.g. Robert C. Martin" : `Co-author ${index + 1}`}
+                        />
+                        {index === 0 ? (
+                          <button
+                            type="button"
+                            onClick={handleAddAuthor}
+                            className="absolute right-2 p-1.5 rounded-lg text-[#FCD400] hover:bg-white/10 transition cursor-pointer"
+                            title="Add another author"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAuthor(index)}
+                            className="absolute right-2 p-1.5 rounded-lg text-rose-400 hover:bg-white/10 transition cursor-pointer"
+                            title="Remove author"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <label className="grid gap-1.5">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Author</span>
-                  <input
-                    suppressHydrationWarning
-                    required
-                    className="modal-input"
-                    value={form.author}
-                    onChange={(e) => setForm((f) => ({ ...f, author: e.target.value }))}
-                    placeholder="e.g. Robert C. Martin"
-                  />
-                </label>
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">ISBN</span>
+                  <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    ISBN
+                  </span>
                   <input
                     suppressHydrationWarning
                     className="modal-input"
@@ -1979,28 +2358,42 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
               </div>
 
-              {/* Row 3: Department Loc. & Genre */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Row 3: Section & Classification */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <CustomSelect
-                  label="Department Loc."
+                  label="Section"
                   value={form.department}
                   options={departmentOptions.filter((d) => d !== "All")}
                   onChange={(val) => setForm((f) => ({ ...f, department: val as Department }))}
                 />
                 <CustomSelect
-                  label="Genre"
+                  label="Classification"
                   subLabel="Alphabetical (A-Z)"
                   value={form.genres}
                   options={sortedGenres}
                   onChange={(val) => setForm((f) => ({ ...f, genres: val }))}
-                  placeholder="-- Select Genre (A-Z) --"
+                  placeholder="-- Select Classification (A-Z) --"
                 />
               </div>
 
-              {/* Row 4: Pub. Date & Call Number */}
-              <div className="grid grid-cols-2 gap-4">
+              {/* Row 4: Publisher & Pub. Date */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="grid gap-1.5">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Pub. Date</span>
+                  <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Publisher
+                  </span>
+                  <input
+                    suppressHydrationWarning
+                    className="modal-input"
+                    value={form.publisher}
+                    onChange={(e) => setForm((f) => ({ ...f, publisher: e.target.value }))}
+                    placeholder="e.g. Pearson, O'Reilly Media, Scholastic Press"
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Pub. Date
+                  </span>
                   <input
                     suppressHydrationWarning
                     type="date"
@@ -2009,9 +2402,43 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                     onChange={(e) => setForm((f) => ({ ...f, publicationDate: e.target.value }))}
                   />
                 </label>
+              </div>
+
+              {/* Row 5: Volume, Series & Edition (Divided equally into 3 input fields) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 items-end">
+                <CustomSelect
+                  label="Volume"
+                  value={form.volume}
+                  options={VOLUME_OPTIONS}
+                  onChange={(val) => setForm((f) => ({ ...f, volume: val }))}
+                />
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Series
+                  </span>
+                  <input
+                    suppressHydrationWarning
+                    className="modal-input"
+                    value={form.series}
+                    onChange={(e) => setForm((f) => ({ ...f, series: e.target.value }))}
+                    placeholder="e.g. Series name / No."
+                  />
+                </label>
+                <CustomSelect
+                  label="Edition"
+                  value={form.edition}
+                  options={EDITION_OPTIONS}
+                  onChange={(val) => setForm((f) => ({ ...f, edition: val }))}
+                />
+              </div>
+
+              {/* Row 6: Call Number & Accession Number */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <label className="grid gap-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Call Number</span>
+                    <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                      Call Number
+                    </span>
                     <span className="text-[10px] text-[#FCD400] font-semibold flex items-center gap-1">
                       <Sparkles className="h-3 w-3" /> Auto
                     </span>
@@ -2024,40 +2451,11 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                     placeholder="Auto-generated e.g. QA 76.73 .P98 2026"
                   />
                 </label>
-              </div>
-
-              {/* Row 5: Volume & Edition */}
-              <div className="grid grid-cols-2 gap-4">
-                <CustomSelect
-                  label="Volume"
-                  value={form.volume}
-                  options={VOLUME_OPTIONS}
-                  onChange={(val) => setForm((f) => ({ ...f, volume: val }))}
-                />
-                <CustomSelect
-                  label="Edition"
-                  value={form.edition}
-                  options={EDITION_OPTIONS}
-                  onChange={(val) => setForm((f) => ({ ...f, edition: val }))}
-                />
-              </div>
-
-              {/* Row 6: Copies & Accession Number */}
-              <div className="grid grid-cols-2 gap-4">
-                <label className="grid gap-1.5">
-                  <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Copies</span>
-                  <input
-                    suppressHydrationWarning
-                    type="number"
-                    min={1}
-                    className="modal-input"
-                    value={form.copies}
-                    onChange={(e) => setForm((f) => ({ ...f, copies: parseInt(e.target.value) || 1 }))}
-                  />
-                </label>
                 <label className="grid gap-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Accession Number</span>
+                    <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                      Accession Number
+                    </span>
                     <span className="text-[10px] text-[#FCD400] font-semibold flex items-center gap-1">
                       <Sparkles className="h-3 w-3" /> Auto
                     </span>
@@ -2072,21 +2470,54 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </label>
               </div>
 
-              {/* Row 7: Publisher */}
-              <label className="grid gap-1.5">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Publisher</span>
-                <input
-                  suppressHydrationWarning
-                  className="modal-input"
-                  value={form.publisher}
-                  onChange={(e) => setForm((f) => ({ ...f, publisher: e.target.value }))}
-                  placeholder="e.g. Pearson, O'Reilly Media, Scholastic Press"
-                />
-              </label>
+              {/* Row 7: Copies & Price (Clear Peso sign, user types actual price, no arrows) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Copies
+                  </span>
+                  <input
+                    suppressHydrationWarning
+                    type="number"
+                    min={1}
+                    className="modal-input"
+                    value={form.copies}
+                    onChange={(e) => setForm((f) => ({ ...f, copies: parseInt(e.target.value) || 1 }))}
+                  />
+                </label>
+                <label className="grid gap-1.5">
+                  <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                    Price (PHP)
+                  </span>
+                  <div className="relative flex items-center">
+                    <span className={cn(
+                      "absolute left-3 text-sm pointer-events-none select-none z-10 leading-none",
+                      isLight ? "text-slate-600 font-normal" : "text-white font-normal"
+                    )}>
+                      ₱
+                    </span>
+                    <input
+                      suppressHydrationWarning
+                      type="text"
+                      inputMode="decimal"
+                      style={{ paddingLeft: "34px" }}
+                      className="modal-input !pl-[34px] font-normal"
+                      value={form.price}
+                      onChange={(e) => {
+                        const formatted = formatPriceWithCommas(e.target.value);
+                        setForm((f) => ({ ...f, price: formatted }));
+                      }}
+                      placeholder="0.00"
+                    />
+                  </div>
+                </label>
+              </div>
 
               {/* Row 8: Summary */}
               <label className="grid gap-1.5">
-                <span className="text-[11px] font-semibold tracking-wide text-slate-400 uppercase">Summary</span>
+                <span className={cn("text-[11px] font-semibold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                  Summary
+                </span>
                 <textarea
                   suppressHydrationWarning
                   rows={3}
@@ -2102,8 +2533,17 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 <button
                   suppressHydrationWarning
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="rounded-xl border border-white/10 bg-white/5 px-5 py-2.5 text-sm font-semibold text-slate-300 hover:bg-white/10 transition cursor-pointer"
+                  onClick={() => {
+                    setShowModal(false);
+                    setForm(emptyBookForm);
+                    setAuthors([""]);
+                  }}
+                  className={cn(
+                    "rounded-xl border px-5 py-2.5 text-sm font-semibold transition cursor-pointer",
+                    isLight
+                      ? "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                      : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                  )}
                 >
                   Cancel
                 </button>
@@ -2166,17 +2606,27 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       <style>{`
         .modal-input {
           width: 100%;
-          border-radius: 10px;
+          height: 42px;
+          border-radius: 12px;
           border: 1px solid rgba(255,255,255,0.10);
           background: rgba(255,255,255,0.05);
-          padding: 8px 12px;
+          padding-top: 8px;
+          padding-bottom: 8px;
+          padding-left: 12px;
+          padding-right: 12px;
           font-size: 13px;
           color: #fff;
           outline: none;
-          transition: border-color 0.15s;
+          transition: border-color 0.15s, box-shadow 0.15s;
+          box-sizing: border-box;
+        }
+        textarea.modal-input {
+          height: auto !important;
+          min-height: 80px;
         }
         .modal-input:focus {
           border-color: rgba(252,212,0,0.5);
+          box-shadow: 0 0 0 2px rgba(252,212,0,0.15);
         }
         .modal-input option {
           background: #0F1D29;
@@ -2188,10 +2638,41 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         }
         html[data-theme="light"] .modal-input:focus {
           border-color: #0274BB;
+          box-shadow: 0 0 0 2px rgba(2, 116, 187, 0.15);
         }
         html[data-theme="light"] .modal-input option {
           background: #ffffff;
           color: #000000;
+        }
+
+        /* Remove up/down spinner arrows from number inputs */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+          -webkit-appearance: none !important;
+          margin: 0 !important;
+        }
+        input[type="number"] {
+          -moz-appearance: textfield !important;
+        }
+
+        .modal-scroll::-webkit-scrollbar {
+          width: 6px;
+        }
+        .modal-scroll::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .modal-scroll::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.18);
+          border-radius: 9999px;
+        }
+        .modal-scroll::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.30);
+        }
+        html[data-theme="light"] .modal-scroll::-webkit-scrollbar-thumb {
+          background: rgba(0, 0, 0, 0.18);
+        }
+        html[data-theme="light"] .modal-scroll::-webkit-scrollbar-thumb:hover {
+          background: rgba(0, 0, 0, 0.30);
         }
 
         .pagination-btn {
@@ -2259,6 +2740,24 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
           border-color: #0072ce !important;
           box-shadow: 0 0 0 2px rgba(0, 114, 206, 0.25) !important;
           color: #0072ce !important;
+        }
+        html[data-theme="light"] .record-archive-btn {
+          border: 1px solid #fdba74 !important;
+          background-color: #fff7ed !important;
+          color: #c2410c !important;
+        }
+        html[data-theme="light"] .record-archive-btn svg {
+          color: #c2410c !important;
+          stroke: #c2410c !important;
+        }
+        html[data-theme="light"] .record-archive-btn:hover {
+          background-color: #ea580c !important;
+          border-color: #ea580c !important;
+          color: #ffffff !important;
+        }
+        html[data-theme="light"] .record-archive-btn:hover svg {
+          color: #ffffff !important;
+          stroke: #ffffff !important;
         }
       `}</style>
 

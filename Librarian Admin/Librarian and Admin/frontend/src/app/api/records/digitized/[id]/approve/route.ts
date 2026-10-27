@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
 import { catalogRepository } from "@/lib/catalog/repository";
 import { pool } from "@/lib/db";
+import { extractEmbeddedCoverUri } from "@/lib/book-covers";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,25 @@ export async function POST(
     // ignore
   }
 
+  let existing: any = null;
+  try {
+    const { rows } = await pool.query(
+      "SELECT * FROM digitized_books WHERE id::text = $1::text LIMIT 1",
+      [id]
+    );
+    if (rows[0]) existing = rows[0];
+  } catch {}
+
+  const resolvedCoverImg =
+    body.coverImg ||
+    body.coverImage ||
+    body.coverUrl ||
+    extractEmbeddedCoverUri(body.rawText || existing?.raw_text || existing?.rawText) ||
+    "";
+
+  const targetTitle = body.title || existing?.title || "";
+  const targetIsbn = sanitizeIsbn(body.isbn || existing?.isbn);
+
   try {
     const proxyRes = await proxyToBackend(
       `/api/admin/digitized-books/${id}/approve`,
@@ -37,28 +57,31 @@ export async function POST(
       rawBodyText
     );
     if (proxyRes.ok) {
-      return proxyRes;
+      if (resolvedCoverImg) {
+        try {
+          await pool.query(
+            "UPDATE books SET cover_img = $1 WHERE (isbn = $2 AND $2 <> '') OR LOWER(title) = LOWER($3)",
+            [resolvedCoverImg, targetIsbn, targetTitle]
+          );
+        } catch {}
+      }
+      const resData = await proxyRes.json();
+      if (resData?.book && resolvedCoverImg) {
+        resData.book.coverImg = resolvedCoverImg;
+        resData.book.coverImage = resolvedCoverImg;
+        resData.book.cover_img = resolvedCoverImg;
+      }
+      return NextResponse.json(resData, { status: proxyRes.status });
     }
   } catch {
     // fallback to direct DB
   }
 
   try {
-    let existing: any = null;
-    try {
-      const { rows } = await pool.query(
-        "SELECT * FROM digitized_books WHERE id::text = $1::text LIMIT 1",
-        [id]
-      );
-      if (rows[0]) existing = rows[0];
-    } catch {}
-
     const created = await catalogRepository.addBook({
-      title: body.title || existing?.title || "Untitled Book",
+      title: targetTitle || "Untitled Book",
       author: body.author || existing?.author || "Unknown Author",
-      isbn:
-        sanitizeIsbn(body.isbn || existing?.isbn) ||
-        `CAT-${Date.now().toString().slice(-6)}`,
+      isbn: targetIsbn || `CAT-${Date.now().toString().slice(-6)}`,
       department: body.department || existing?.department || "Circulation",
       category: body.category || body.genre || existing?.genre || "General",
       genres: body.genres || body.genre || existing?.genre || "General",
@@ -78,7 +101,7 @@ export async function POST(
           : new Date().toISOString().split("T")[0]),
       summary: body.summary || existing?.summary || "",
       availability: "Available",
-      coverImg: "",
+      coverImg: resolvedCoverImg,
     } as any);
 
     try {

@@ -1978,7 +1978,39 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
 
   async getStudentCardAndViolations(identifier) {
     if (!identifier) return null;
-    const cleanId = String(identifier).trim();
+    let cleanId = String(identifier).trim();
+
+    // If identifier is a full URL or custom scheme, extract the student token/id
+    if (cleanId.startsWith("http://") || cleanId.startsWith("https://")) {
+      try {
+        const parsed = new URL(cleanId);
+        const queryQr = parsed.searchParams.get("qr") || parsed.searchParams.get("studentId") || parsed.searchParams.get("idNumber");
+        if (queryQr) {
+          cleanId = queryQr.trim();
+        } else {
+          const segments = parsed.pathname.split("/").filter(Boolean);
+          const verifyIdx = segments.findIndex((s) => s === "verify" || s === "card-by-qr" || s === "qr" || s === "student");
+          if (verifyIdx !== -1 && segments[verifyIdx + 1]) {
+            cleanId = decodeURIComponent(segments[verifyIdx + 1]).trim();
+          } else if (segments.length > 0) {
+            cleanId = decodeURIComponent(segments[segments.length - 1]).trim();
+          }
+        }
+      } catch {
+        const match = cleanId.match(/\/(?:verify|card-by-qr|qr|student)\/([^/?#]+)/i);
+        if (match && match[1]) cleanId = decodeURIComponent(match[1]).trim();
+      }
+    }
+    if (cleanId.startsWith("bookhive://student/")) {
+      cleanId = cleanId.replace("bookhive://student/", "").trim();
+    }
+    if (cleanId.startsWith("{")) {
+      try {
+        const p = JSON.parse(cleanId);
+        const idVal = p.qrCode || p.qr || p.idNumber || p.studentId || p.id;
+        if (idVal) cleanId = String(idVal).trim();
+      } catch {}
+    }
 
     try {
       // 1. Locate student
@@ -2008,6 +2040,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
              OR lower(u.email) = lower($1)
              OR lower(u.name) = lower($1)
              OR u.id::text = $1
+             OR regexp_replace(lower(COALESCE(u.id_number, '')), '[^a-z0-9]', '', 'g') = regexp_replace(lower($1), '[^a-z0-9]', '', 'g')
           LIMIT 1
         `;
         const { rows } = await pool.query(studentSql, [cleanId]);
@@ -2214,7 +2247,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           });
       }
 
-      // Fetch all student reservations and pending requests for Tab 3
+      // Fetch all student reservations for Tab 4 (Approved / Reserved)
       let reservedBooks = [];
       try {
         const resSql = `
@@ -2229,7 +2262,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           FROM transactions t
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
             AND t.type::text = 'Reservation'
-            AND t.status::text IN ('Approved', 'Pending', 'Reserved')
+            AND t.status::text IN ('Approved', 'Reserved')
             AND t.picked_up_at IS NULL
           ORDER BY t.requested_at DESC
         `;
@@ -2244,6 +2277,63 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
         }));
       } catch (resErr) {
         warnIfNotOffline("DB getStudentCardAndViolations reservedBooks query error:", resErr.message);
+      }
+
+      // Fetch all pending requests (Borrow and Reservation) awaiting librarian response for Tab 3 (Pending Books)
+      let pendingBooks = [];
+      try {
+        const pendingSql = `
+          SELECT
+            t.id,
+            COALESCE(b.title, t.resource_title) AS "bookTitle",
+            t.isbn,
+            t.type,
+            t.status,
+            t.requested_at AS "requestedAt",
+            t.due_date AS "dueDate"
+          FROM transactions t
+          LEFT JOIN LATERAL (
+            SELECT title
+            FROM books b
+            WHERE (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
+               OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER(b.title))
+            ORDER BY (CASE WHEN t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn THEN 0 ELSE 1 END)
+            LIMIT 1
+          ) b ON true
+          WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
+            AND (
+              t.status::text ILIKE 'pending%'
+              OR t.status::text = 'Waitlisted'
+            )
+          ORDER BY t.requested_at DESC
+        `;
+        const { rows: pendingRows } = await pool.query(pendingSql, [String(student.id), String(student.idNumber)]);
+        pendingBooks = pendingRows.map(p => ({
+          id: p.id,
+          bookTitle: p.bookTitle || "Pending Request",
+          isbn: p.isbn || "",
+          type: p.type || "Borrow",
+          status: p.status || "Pending",
+          requestedAt: p.requestedAt ? new Date(p.requestedAt).toISOString().split('T')[0] : "—",
+          dueDate: p.dueDate ? new Date(p.dueDate).toISOString().split('T')[0] : "—",
+        }));
+      } catch (pErr) {
+        warnIfNotOffline("DB getStudentCardAndViolations pendingBooks query error:", pErr.message);
+      }
+
+      if (pendingBooks.length === 0 && typeof inMemoryTransactions !== 'undefined') {
+        pendingBooks = inMemoryTransactions
+          .filter(tx => (tx.userId === student.id || tx.studentId === student.idNumber) &&
+            (tx.status === 'Pending' || (tx.status && String(tx.status).toLowerCase().includes('pending'))))
+          .map(tx => ({
+            id: tx.id,
+            bookTitle: tx.resourceTitle || tx.bookTitle || "Pending Request",
+            isbn: tx.isbn || "",
+            type: tx.type || (tx.action === 'Reserve' ? 'Reservation' : 'Borrow'),
+            status: tx.status || 'Pending',
+            requestedAt: tx.requestedAt ? new Date(tx.requestedAt).toISOString().split('T')[0] : "—",
+            dueDate: tx.dueDate ? new Date(tx.dueDate).toISOString().split('T')[0] : "—",
+          }));
       }
 
       // 3. Fetch / Compute Violations
@@ -2328,6 +2418,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
         },
         libraryCard,
         reservedBooks,
+        pendingBooks,
         violations,
       };
     } catch (err) {

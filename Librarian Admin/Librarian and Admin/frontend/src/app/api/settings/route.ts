@@ -1,11 +1,2 @@
-import { proxyToBackend } from "@/lib/proxy";
-
+export { GET, PATCH } from "@/app/api/admin/settings/route";
 export const runtime = "nodejs";
-
-export async function GET(request: Request) {
-  return proxyToBackend("/api/admin/settings", request);
-}
-
-export async function PATCH(request: Request) {
-  return proxyToBackend("/api/admin/settings", request);
-}

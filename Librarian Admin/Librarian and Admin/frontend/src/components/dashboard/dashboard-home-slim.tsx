@@ -19,6 +19,7 @@ import Link from "next/link";
 
 import { useTheme } from "@/components/providers/theme-provider";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import { Badge } from "@/components/ui/badge";
 import { MetricCard } from "@/components/ui/metric-card";
 import { Panel } from "@/components/ui/panel";
@@ -384,14 +385,7 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
                                 )}
                               >
                                 <div className="grid gap-3 lg:grid-cols-[auto_1fr_auto] lg:items-start">
-                                  <div
-                                    className={cn(
-                                      "flex h-12 w-12 items-center justify-center rounded-2xl text-xl",
-                                      isLight ? "bg-[#eff6ff] text-[#1d4ed8]" : "bg-sky-500/15 text-sky-200",
-                                    )}
-                                  >
-                                    <BookOpen className="h-5 w-5" />
-                                  </div>
+                                  <BookCoverImage book={item} size="sm" />
 
                                   <div className="min-w-0">
                                     <p
@@ -680,12 +674,15 @@ export function DashboardHomeSlim({ variant = "admin" }: { variant?: DashboardVa
                   className="rounded-[22px] border border-[var(--line)] bg-[var(--surface-muted)] px-4 py-3"
                 >
                   <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-semibold text-[var(--foreground)]">{request.studentName}</p>
-                      <p className="mt-1 text-sm text-[var(--muted)]">{request.resourceTitle}</p>
-                      <p className="mt-1 text-xs text-[var(--muted)]">
-                        {request.department} - {formatDateTime(request.requestedAt)}
-                      </p>
+                    <div className="flex items-start gap-3">
+                      <BookCoverImage book={{ title: request.resourceTitle, isbn: request.isbn, department: request.department }} size="xs" />
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--foreground)]">{request.studentName}</p>
+                        <p className="mt-1 text-sm text-[var(--muted)]">{request.resourceTitle}</p>
+                        <p className="mt-1 text-xs text-[var(--muted)]">
+                          {request.department} - {formatDateTime(request.requestedAt)}
+                        </p>
+                      </div>
                     </div>
                     <span className="rounded-full bg-[var(--warning)]/12 px-2.5 py-1 text-xs font-semibold text-[var(--warning)]">
                       {request.status}

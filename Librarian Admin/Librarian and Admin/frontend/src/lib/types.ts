@@ -119,6 +119,8 @@ export interface BookRecord {
   archived?: boolean;
   copies?: number;
   accessionNumber?: string;
+  series?: string;
+  price?: number | string;
 }
 
 export interface TransactionRecord {
@@ -146,6 +148,11 @@ export interface TransactionRecord {
   isPickedUp?: boolean;
   comment?: string;
   studentIdImage?: string | null;
+  author?: string;
+  coverUrl?: string;
+  userDepartment?: string;
+  userCourse?: string;
+  bookDepartment?: string;
 }
 
 export interface ActivityLog {

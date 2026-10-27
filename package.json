@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "dev": "node run-all.js",
+    "dev:offline": "node run-all.js --offline",
     "dev:tunnel": "node run-all.js --tunnel",
     "dev:lan": "node run-all.js --lan",
     "dev:web": "node run-all.js --web",

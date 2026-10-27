@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
-import { SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE, getSession } from "@/lib/auth";
 import { extractUploadContext } from "@/lib/search/uploads";
 import { BACKEND_URL } from "@/lib/config";
 import { pool } from "@/lib/db";
@@ -230,9 +230,24 @@ function computeWordByWordRelevance(
   return { relevance: 0, matchedBy: [] };
 }
 
-async function getSearchLogsFromDb(): Promise<PromptSearchLog[]> {
+async function getSearchLogsFromDb(actor = ""): Promise<PromptSearchLog[]> {
   try {
-    const { rows } = await pool.query(`
+    let whereClause = "";
+    const params: any[] = [];
+    if (actor) {
+      const parts = actor.split(/\s+/).filter((p) => p.length > 2 && !p.includes("."));
+      const surname = parts[parts.length - 1];
+      if (surname && surname.toLowerCase() !== actor.toLowerCase()) {
+        whereClause = "WHERE (lower(actor_name) LIKE $1 OR lower(actor_name) LIKE $2)";
+        params.push(`%${actor.toLowerCase()}%`, `%${surname.toLowerCase()}%`);
+      } else {
+        whereClause = "WHERE lower(actor_name) LIKE $1";
+        params.push(`%${actor.toLowerCase()}%`);
+      }
+    }
+
+    const { rows } = await pool.query(
+      `
       SELECT 
         id::text,
         actor_name AS "actor",
@@ -243,9 +258,12 @@ async function getSearchLogsFromDb(): Promise<PromptSearchLog[]> {
         matches_found AS "matchesFound",
         created_at::text AS "createdAt"
       FROM ai_search_logs
+      ${whereClause}
       ORDER BY created_at DESC
-      LIMIT 50
-    `);
+      LIMIT 1000
+    `,
+      params
+    );
     return rows.map((r: any) => ({
       id: r.id,
       actor: r.actor || "Staff",
@@ -263,9 +281,16 @@ async function getSearchLogsFromDb(): Promise<PromptSearchLog[]> {
 }
 
 export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const session = await getSession();
+  const actor = searchParams.get("actor")?.trim() || session?.name || "";
+
   // Try proxying to Express backend first if available
   try {
-    const res = await fetch(`${BACKEND_URL}/api/admin/prompt-search`, {
+    const backendUrl = actor
+      ? `${BACKEND_URL}/api/admin/prompt-search?actor=${encodeURIComponent(actor)}`
+      : `${BACKEND_URL}/api/admin/prompt-search`;
+    const res = await fetch(backendUrl, {
       headers: { "Content-Type": "application/json" },
       cache: "no-store",
       signal: AbortSignal.timeout(1500),
@@ -280,7 +305,7 @@ export async function GET(request: Request) {
     // Backend offline / suspended -> use direct Neon DB fallback
   }
 
-  const logs = await getSearchLogsFromDb();
+  const logs = await getSearchLogsFromDb(actor);
   return NextResponse.json({ logs });
 }
 
@@ -496,6 +521,8 @@ export async function POST(request: Request) {
     // 3. Log search query in Neon DB
     if (queryText) {
       try {
+        const session = await getSession();
+        const actorName = session?.name || "Librarian / Admin";
         await pool.query(
           `INSERT INTO ai_search_logs (
             id, actor_name, prompt, department, mode, file_names, matches_found, created_at
@@ -503,7 +530,7 @@ export async function POST(request: Request) {
             gen_random_uuid(), $1, $2, $3, $4, $5, $6, NOW()
           )`,
           [
-            "Librarian / Admin",
+            actorName,
             queryText,
             department,
             mode,
@@ -516,7 +543,9 @@ export async function POST(request: Request) {
       }
     }
 
-    const logs = await getSearchLogsFromDb();
+    const session = await getSession();
+    const actor = session?.name || "";
+    const logs = await getSearchLogsFromDb(actor);
     return NextResponse.json({ results, logs });
   } catch (dbError: any) {
     console.error("[Prompt Search] Direct Neon DB execution error:", dbError);
@@ -531,19 +560,37 @@ export async function DELETE(request: Request) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   const mode = searchParams.get("mode");
+  const session = await getSession();
+  const actor = searchParams.get("actor")?.trim() || session?.name || "";
 
   try {
     if (id) {
       await pool.query("DELETE FROM ai_search_logs WHERE id::text = $1", [id]);
     } else if (mode) {
-      await pool.query("DELETE FROM ai_search_logs WHERE mode = $1", [mode]);
+      if (actor) {
+        const surname = actor.split(/\s+/).pop() || actor;
+        await pool.query(
+          "DELETE FROM ai_search_logs WHERE mode = $1 AND (lower(actor_name) LIKE $2 OR lower(actor_name) LIKE $3)",
+          [mode, `%${actor.toLowerCase()}%`, `%${surname.toLowerCase()}%`]
+        );
+      } else {
+        await pool.query("DELETE FROM ai_search_logs WHERE mode = $1", [mode]);
+      }
     } else {
-      await pool.query("DELETE FROM ai_search_logs");
+      if (actor) {
+        const surname = actor.split(/\s+/).pop() || actor;
+        await pool.query(
+          "DELETE FROM ai_search_logs WHERE lower(actor_name) LIKE $1 OR lower(actor_name) LIKE $2",
+          [`%${actor.toLowerCase()}%`, `%${surname.toLowerCase()}%`]
+        );
+      } else {
+        await pool.query("DELETE FROM ai_search_logs");
+      }
     }
   } catch (err) {
     console.warn("[Prompt Search] Delete logs error:", err);
   }
 
-  const logs = await getSearchLogsFromDb();
+  const logs = await getSearchLogsFromDb(actor);
   return NextResponse.json({ success: true, logs });
 }

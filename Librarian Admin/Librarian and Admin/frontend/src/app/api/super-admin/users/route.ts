@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import bcrypt from "bcryptjs";
 import { proxyToBackend } from "@/lib/proxy";
+import { getSession } from "@/lib/auth";
 import { pool } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -14,7 +16,6 @@ export async function GET(request: Request) {
     console.warn("Proxy to /api/super-admin/users failed, using database fallback:", err);
   }
 
-  // Fallback: Query PostgreSQL directly
   try {
     const { searchParams } = new URL(request.url);
     const role = searchParams.get("role") ?? "All";
@@ -94,5 +95,78 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  return proxyToBackend("/api/super-admin/users", request);
+  const rawBody = await request.text();
+  const proxyRes = await proxyToBackend("/api/super-admin/users", request, rawBody);
+  if (proxyRes.ok) {
+    return proxyRes;
+  }
+
+  try {
+    const body = rawBody ? JSON.parse(rawBody) : {};
+    const {
+      name,
+      idNumber,
+      email,
+      role = "Student",
+      department = "General Reference",
+      course = "Library Operations",
+      yearLevel,
+      section,
+      password,
+    } = body;
+
+    if (!name || !email || !idNumber) {
+      return NextResponse.json(
+        { message: "Name, email, and ID number are required." },
+        { status: 400 }
+      );
+    }
+
+    const tempPassword = password || idNumber;
+    const passwordHash = await bcrypt.hash(String(tempPassword), 10);
+    const qrCode = `STI-LIB-${idNumber}`;
+
+    const { rows } = await pool.query(
+      `INSERT INTO users (
+         name, id_number, email, password_hash, role, department, course,
+         year_level, section, status, qr_code, last_active
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Active', $10, NOW())
+       RETURNING
+         id, name, id_number AS "idNumber", email, role, department, course,
+         year_level AS "yearLevel", section, status, permissions,
+         qr_code AS "qrCode", last_active AS "lastActive", created_at AS "createdAt", updated_at AS "updatedAt"`,
+      [
+        name,
+        idNumber,
+        email,
+        passwordHash,
+        role,
+        department,
+        course,
+        yearLevel || null,
+        section || null,
+        qrCode,
+      ]
+    );
+
+    const user = rows[0];
+    const session = await getSession().catch(() => null);
+    const actor = session?.name || "Super Admin";
+
+    try {
+      await pool.query(
+        `INSERT INTO history_logs (actor, action, target, module, detail)
+         VALUES ($1, 'Provisioned Account', $2, 'User Management', $3)`,
+        [`Super Admin ${actor}`, `${user.name} (${user.role})`, `Created ${user.role} account (${user.idNumber}).`]
+      );
+    } catch {}
+
+    return NextResponse.json({ user, tempPassword }, { status: 201 });
+  } catch (err: any) {
+    console.error("Direct DB superAdmin createUser error:", err);
+    return NextResponse.json(
+      { message: err?.message || "Failed to create account." },
+      { status: 400 }
+    );
+  }
 }

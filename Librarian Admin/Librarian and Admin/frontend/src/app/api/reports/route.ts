@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
-import { store } from "@/lib/data/store";
+import { buildRichReports } from "@/lib/admin/reports-helper";
 
 export const runtime = "nodejs";
 
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const reports = await store.getReports();
+    const reports = await buildRichReports();
     return NextResponse.json(reports);
   } catch (fallbackError) {
     console.error("Reports fallback error:", fallbackError);

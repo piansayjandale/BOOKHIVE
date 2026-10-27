@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { proxyToBackend } from "@/lib/proxy";
 import { pool } from "@/lib/db";
+import {
+  extractEmbeddedCoverUri,
+  stripEmbeddedCoverUri,
+  embedCoverUriInRawText,
+} from "@/lib/book-covers";
 
 export const runtime = "nodejs";
 
@@ -13,7 +18,32 @@ function sanitizeIsbn(val?: string | null): string {
     .trim();
 }
 
+function enrichDigitizedItem(row: any) {
+  const raw = row.raw_text || row.rawText || "";
+  const coverUri =
+    row.coverImage ||
+    row.coverImg ||
+    row.coverUrl ||
+    row.cover_img ||
+    extractEmbeddedCoverUri(raw) ||
+    undefined;
+  return {
+    ...row,
+    coverImage: coverUri,
+    coverImg: coverUri,
+    rawText: stripEmbeddedCoverUri(raw),
+  };
+}
+
 function mapDigitizedRow(row: any) {
+  const raw = row.raw_text || row.rawText || "";
+  const coverUri =
+    row.cover_img ||
+    row.coverImage ||
+    row.coverImg ||
+    extractEmbeddedCoverUri(raw) ||
+    undefined;
+
   return {
     id: String(row.id),
     title: row.title || "Untitled Book",
@@ -37,7 +67,9 @@ function mapDigitizedRow(row: any) {
     docType: row.doc_type || row.docType || "Catalog Intake Slip",
     ocrEngine: row.ocr_engine || row.ocrEngine || "Tesseract Neural OCR",
     confidence: Number(row.confidence ?? 95.0),
-    rawText: row.raw_text || row.rawText || "",
+    rawText: stripEmbeddedCoverUri(raw),
+    coverImage: coverUri,
+    coverImg: coverUri,
     scannedBy: row.scanned_by || row.scannedBy || "Librarian Mobile App",
     status: row.status || "Pending Review",
     createdAt: row.created_at || new Date().toISOString(),
@@ -49,7 +81,11 @@ export async function GET(request: Request) {
   try {
     const proxyRes = await proxyToBackend("/api/admin/digitized-books", request);
     if (proxyRes.ok) {
-      return proxyRes;
+      const data = await proxyRes.json();
+      if (data && Array.isArray(data.books)) {
+        data.books = data.books.map(enrichDigitizedItem);
+      }
+      return NextResponse.json(data);
     }
   } catch {
     // fallback to direct DB
@@ -99,6 +135,12 @@ export async function POST(request: Request) {
     }
   } catch {
     return NextResponse.json({ message: "Failed to parse body" }, { status: 400 });
+  }
+
+  const incomingCover = body.coverImage || body.coverImg || body.coverUrl || extractEmbeddedCoverUri(body.rawText);
+  if (incomingCover) {
+    body.rawText = embedCoverUriInRawText(body.rawText || "", incomingCover);
+    rawBodyText = JSON.stringify(body);
   }
 
   try {

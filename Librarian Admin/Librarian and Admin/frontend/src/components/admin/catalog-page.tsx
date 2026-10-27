@@ -36,6 +36,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { useSuperAdminVitals } from "@/lib/hooks/use-super-admin-vitals";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 
 const DEPARTMENTS = [
   { name: "All", label: "All Holdings", count: "48,074" },
@@ -669,26 +670,29 @@ export function CatalogPage() {
                         <AvailabilityBadge availability={book.availability} isLight={isLight} />
                       </div>
 
-                      {/* Title & Author */}
-                      <div className="mt-3.5">
-                        <h3
-                          className={cn(
-                            "font-bold text-base tracking-tight leading-snug line-clamp-2 transition-colors cursor-pointer",
-                            isLight
-                              ? "text-slate-900 group-hover:text-[#0274BB]"
-                              : "text-white group-hover:text-[#FCD400]"
-                          )}
-                          onClick={() => setSelectedBook(book)}
-                          title={book.title}
-                        >
-                          {book.title}
-                        </h3>
-                        <p className={cn("mt-1 text-xs line-clamp-1", isLight ? "text-slate-500" : "text-slate-300")}>
-                          by <span className={cn("font-semibold", isLight ? "text-slate-800" : "text-slate-200")}>{book.author}</span>
-                          {book.publishedDate && (
-                            <span className="text-slate-400"> · {book.publishedDate.slice(0, 4)}</span>
-                          )}
-                        </p>
+                      {/* Title & Author with Cover Preview on left */}
+                      <div className="mt-3.5 flex items-start gap-3.5">
+                        <BookCoverImage book={book} size="md" className="cursor-pointer" />
+                        <div className="min-w-0 flex-1">
+                          <h3
+                            className={cn(
+                              "font-bold text-base tracking-tight leading-snug line-clamp-2 transition-colors cursor-pointer",
+                              isLight
+                                ? "text-slate-900 group-hover:text-[#0274BB]"
+                                : "text-white group-hover:text-[#FCD400]"
+                            )}
+                            onClick={() => setSelectedBook(book)}
+                            title={book.title}
+                          >
+                            {book.title}
+                          </h3>
+                          <p className={cn("mt-1 text-xs line-clamp-1", isLight ? "text-slate-500" : "text-slate-300")}>
+                            by <span className={cn("font-semibold", isLight ? "text-slate-800" : "text-slate-200")}>{book.author}</span>
+                            {book.publishedDate && (
+                              <span className="text-slate-400"> · {book.publishedDate.slice(0, 4)}</span>
+                            )}
+                          </p>
+                        </div>
                       </div>
 
                       {/* Metadata Chips Grid */}
@@ -822,21 +826,26 @@ export function CatalogPage() {
                         key={book.id || `b-${idx}`}
                         className={cn("transition group", isLight ? "hover:bg-slate-50/80" : "hover:bg-white/[0.04]")}
                       >
-                        <td className="px-5 py-3.5 max-w-[280px]">
-                          <div
-                            className={cn(
-                              "font-bold text-sm truncate transition-colors cursor-pointer",
-                              isLight
-                                ? "text-slate-900 group-hover:text-[#0274BB]"
-                                : "text-white group-hover:text-[#FCD400]"
-                            )}
-                            onClick={() => setSelectedBook(book)}
-                            title={book.title}
-                          >
-                            {book.title}
-                          </div>
-                          <div className={cn("mt-0.5 text-xs truncate", isLight ? "text-slate-500" : "text-slate-400")}>
-                            {book.author} · ISBN: <span className={cn("font-mono", isLight ? "text-slate-700" : "text-slate-300")}>{book.isbn}</span>
+                        <td className="px-5 py-3.5 max-w-[320px]">
+                          <div className="flex items-center gap-3.5">
+                            <BookCoverImage book={book} size="sm" />
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className={cn(
+                                  "font-bold text-sm truncate transition-colors cursor-pointer",
+                                  isLight
+                                    ? "text-slate-900 group-hover:text-[#0274BB]"
+                                    : "text-white group-hover:text-[#FCD400]"
+                                )}
+                                onClick={() => setSelectedBook(book)}
+                                title={book.title}
+                              >
+                                {book.title}
+                              </div>
+                              <div className={cn("mt-0.5 text-xs truncate", isLight ? "text-slate-500" : "text-slate-400")}>
+                                {book.author} · ISBN: <span className={cn("font-mono", isLight ? "text-slate-700" : "text-slate-300")}>{book.isbn}</span>
+                              </div>
+                            </div>
                           </div>
                         </td>
                         <td className="px-5 py-3.5 whitespace-nowrap">

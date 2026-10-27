@@ -19,6 +19,7 @@ import {
 
 import { AdminPageHeader, AdminSection, AdminTable } from "@/components/admin/shared";
 import { useTheme } from "@/components/providers/theme-provider";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import { DepartmentBadge } from "@/components/ui/department-badge";
 import { ModernDropdown, type ModernDropdownOption } from "./system-management-page";
 import { requestJson } from "@/lib/admin/client";
@@ -428,8 +429,13 @@ export function RecordsPage() {
                 {data.map((book, idx) => (
                   <tr key={book.id ? `bk-${book.id}-${idx}` : `b-idx-${idx}`} className={isLight ? "hover:bg-slate-50 transition" : "hover:bg-white/[0.02] transition"}>
                     <td className="px-4 py-3.5">
-                      <div className={cn("font-bold text-sm sm:text-base", isLight ? "text-slate-900" : "text-white")}>{book.title}</div>
-                      <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">{book.author} · ISBN: <span className="font-mono">{book.isbn}</span></div>
+                      <div className="flex items-center gap-3.5">
+                        <BookCoverImage book={book} size="sm" />
+                        <div className="min-w-0 flex-1">
+                          <div className={cn("font-bold text-sm sm:text-base", isLight ? "text-slate-900" : "text-white")}>{book.title}</div>
+                          <div className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">{book.author} · ISBN: <span className="font-mono">{book.isbn}</span></div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3.5">
                       <DepartmentBadge department={book.department} isLight={isLight} />
@@ -480,8 +486,20 @@ export function RecordsPage() {
                       <div className="text-xs sm:text-sm font-mono text-slate-500 dark:text-slate-400 mt-0.5">{tx.studentId || tx.idNumber || "—"}</div>
                     </td>
                     <td className="px-4 py-3.5">
-                      <div className={cn("font-bold text-sm sm:text-base", isLight ? "text-slate-900" : "text-white")}>{tx.resourceTitle || tx.title || "—"}</div>
-                      <div className="text-xs sm:text-sm font-mono text-slate-500 dark:text-slate-400 mt-0.5">{tx.isbn || "—"}</div>
+                      <div className="flex items-center gap-3.5">
+                        <BookCoverImage
+                          book={{
+                            title: tx.resourceTitle || tx.title,
+                            isbn: tx.isbn,
+                            department: tx.department,
+                          }}
+                          size="sm"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className={cn("font-bold text-sm sm:text-base", isLight ? "text-slate-900" : "text-white")}>{tx.resourceTitle || tx.title || "—"}</div>
+                          <div className="text-xs sm:text-sm font-mono text-slate-500 dark:text-slate-400 mt-0.5">{tx.isbn || "—"}</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="px-4 py-3.5">
                       {tx.type ? (

@@ -29,6 +29,7 @@ import type { HistoryEntry } from "@/lib/types";
 import type { PromptSearchLog } from "@/lib/admin/types";
 import { formatDateTime, cn } from "@/lib/utils";
 import { useTheme } from "@/components/providers/theme-provider";
+import { useSession } from "@/components/providers/session-provider";
 
 // Removed Settings, Accounts, and Announcements; added Search History & Pickups Only
 const modules = ["All", "Records", "Transactions", "Pickups Only", "Search History"] as const;
@@ -134,9 +135,23 @@ export function isPickupEntry(entry: { action?: string; detail?: string; module?
 export function HistoryModule() {
   const router = useRouter();
   const { theme } = useTheme();
+  const { user } = useSession();
+  const activeActor = user?.name || "Yana Brich R. Palmares";
   const isLight = theme === "light";
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [searchLogs, setSearchLogs] = useState<PromptSearchLog[]>([]);
+  const [liveTransactions, setLiveTransactions] = useState<any[]>([]);
+  const [dbCounts, setDbCounts] = useState<{
+    total: number;
+    records: number;
+    transactions: number;
+    pickups: number;
+    historyPickups: number;
+    historyTransactions: number;
+    search: number;
+    filterSearches: number;
+    aiSearches: number;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [module, setModule] = useState<(typeof modules)[number]>("All");
   const [searchHistoryTab, setSearchHistoryTab] = useState<"filter" | "ai" | "all">("filter");
@@ -173,6 +188,8 @@ export function HistoryModule() {
       const params = new URLSearchParams({
         search: deferredSearch,
         module: "All",
+        limit: "1000",
+        actor: activeActor,
       });
       const response = await fetch(`/api/history?${params.toString()}`);
       if (!response.ok) {
@@ -180,16 +197,39 @@ export function HistoryModule() {
         return;
       }
       const payload = await response.json();
-      const list = Array.isArray(payload?.history) ? payload.history : Array.isArray(payload) ? payload : [];
-      startTransition(() => setHistory(list));
+      const list = Array.isArray(payload?.history) ? payload.history : Array.isArray(payload?.logs) ? payload.logs : [];
+      startTransition(() => {
+        setHistory(list);
+        if (payload?.counts) {
+          setDbCounts(payload.counts);
+        }
+      });
     } catch {
       startTransition(() => setHistory([]));
     }
-  }, [deferredSearch]);
+  }, [deferredSearch, activeActor]);
+
+  const loadLiveTransactions = useCallback(async () => {
+    try {
+      const res = await fetch("/api/transactions?status=All&type=All");
+      if (res.ok) {
+        const payload = await res.json();
+        const list = Array.isArray(payload?.transactions)
+          ? payload.transactions
+          : Array.isArray(payload)
+          ? payload
+          : [];
+        startTransition(() => setLiveTransactions(list));
+      }
+    } catch (e) {
+      console.warn("Failed to load live transactions:", e);
+    }
+  }, []);
 
   const loadSearchLogs = useCallback(async () => {
     try {
-      const response = await fetch("/api/admin/prompt-search");
+      const params = new URLSearchParams({ actor: activeActor });
+      const response = await fetch(`/api/admin/prompt-search?${params.toString()}`);
       if (response.ok) {
         const payload = await response.json();
         if (Array.isArray(payload?.logs)) {
@@ -199,7 +239,7 @@ export function HistoryModule() {
     } catch (e) {
       console.warn("Failed to load prompt search logs:", e);
     }
-  }, []);
+  }, [activeActor]);
 
   useEffect(() => {
     void loadHistory();
@@ -209,10 +249,15 @@ export function HistoryModule() {
     void loadSearchLogs();
   }, [loadSearchLogs]);
 
+  useEffect(() => {
+    void loadLiveTransactions();
+  }, [loadLiveTransactions]);
+
   const handleRefresh = useCallback(() => {
     void loadHistory();
     void loadSearchLogs();
-  }, [loadHistory, loadSearchLogs]);
+    void loadLiveTransactions();
+  }, [loadHistory, loadSearchLogs, loadLiveTransactions]);
 
   async function handleDeleteSearchLog(id: string) {
     try {
@@ -247,8 +292,8 @@ export function HistoryModule() {
     try {
       const url =
         modeTab === "all"
-          ? "/api/admin/prompt-search"
-          : `/api/admin/prompt-search?mode=${encodeURIComponent(modeTab)}`;
+          ? `/api/admin/prompt-search?actor=${encodeURIComponent(activeActor)}`
+          : `/api/admin/prompt-search?mode=${encodeURIComponent(modeTab)}&actor=${encodeURIComponent(activeActor)}`;
 
       const response = await fetch(url, { method: "DELETE" });
       if (response.ok) {
@@ -270,22 +315,52 @@ export function HistoryModule() {
     }
   }
 
+  // Account-scoped search logs - guarantees only this account's searches are shown
+  const accountScopedSearchLogs = useMemo(() => {
+    if (!activeActor) return searchLogs;
+    const target = activeActor.toLowerCase();
+    const parts = target.split(/\s+/).filter((p) => p.length > 2 && !p.includes("."));
+    const surname = parts[parts.length - 1] || target;
+    return searchLogs.filter((l) => {
+      const act = (l.actor || "").toLowerCase();
+      return act.includes(target) || (surname.length > 2 && act.includes(surname));
+    });
+  }, [searchLogs, activeActor]);
+
+  // Account-scoped history logs - guarantees only this account's logs are shown
+  const accountScopedHistory = useMemo(() => {
+    const list = Array.isArray(history) ? history : [];
+    if (!activeActor) return list;
+    const target = activeActor.toLowerCase();
+    const parts = target.split(/\s+/).filter((p) => p.length > 2 && !p.includes("."));
+    const surname = parts[parts.length - 1] || target;
+    return list.filter((h) => {
+      const act = (h.actor || "").toLowerCase();
+      return act.includes(target) || (surname.length > 2 && act.includes(surname));
+    });
+  }, [history, activeActor]);
+
   const counts = useMemo(() => {
-    const safeHistory = Array.isArray(history) ? history : [];
-    const pickupCount = safeHistory.filter((h) => isPickupEntry(h)).length;
-    const recordsCount = safeHistory.filter((h) => h.module === "Records" && !isPickupEntry(h)).length;
-    const txCount = safeHistory.filter((h) => h.module === "Transactions" && !isPickupEntry(h)).length;
+    const safeHistory = accountScopedHistory;
+
+    // Real-time database counts scoped strictly to this account
+    const totalCount = dbCounts?.total ?? safeHistory.length;
+    const recordsCount = dbCounts?.records ?? safeHistory.filter((h) => h.module === "Records" && !isPickupEntry(h)).length;
+    const transactionsCount = dbCounts?.transactions ?? safeHistory.filter((h) => h.module === "Transactions" && !isPickupEntry(h)).length;
+    const pickupsCount = dbCounts?.pickups ?? safeHistory.filter((h) => isPickupEntry(h)).length;
+    const searchCount = dbCounts?.search ?? accountScopedSearchLogs.length;
+
     return {
-      total: safeHistory.length,
+      total: totalCount,
       records: recordsCount,
-      transactions: txCount,
-      search: searchLogs.length,
-      pickups: pickupCount,
+      transactions: transactionsCount,
+      search: searchCount,
+      pickups: pickupsCount,
     };
-  }, [history, searchLogs]);
+  }, [accountScopedHistory, accountScopedSearchLogs, dbCounts]);
 
   const displayedHistory = useMemo(() => {
-    let list = Array.isArray(history) ? history : [];
+    let list = accountScopedHistory;
     if (module === "Pickups Only") {
       return list.filter((h) => isPickupEntry(h));
     }
@@ -297,20 +372,32 @@ export function HistoryModule() {
       return list.filter((h) => h.module === "Records");
     }
     return list;
-  }, [history, module]);
+  }, [accountScopedHistory, module]);
 
-  // Divided search logs: Filtered vs AI Prompt vs All
+  // Divided search logs: Filtered vs AI Prompt vs All (strictly scoped to this account)
   const filterLogs = useMemo(
-    () => searchLogs.filter((l) => l.mode === "filter" || l.mode === "prefix"),
-    [searchLogs],
+    () => accountScopedSearchLogs.filter((l) => l.mode === "filter" || l.mode === "prefix"),
+    [accountScopedSearchLogs],
   );
   const aiLogs = useMemo(
-    () => searchLogs.filter((l) => !l.mode || l.mode === "ai"),
-    [searchLogs],
+    () => accountScopedSearchLogs.filter((l) => !l.mode || l.mode === "ai"),
+    [accountScopedSearchLogs],
   );
 
+  const filterCount = useMemo(() => {
+    return dbCounts?.filterSearches ?? filterLogs.length;
+  }, [filterLogs, dbCounts]);
+
+  const aiCount = useMemo(() => {
+    return dbCounts?.aiSearches ?? aiLogs.length;
+  }, [aiLogs, dbCounts]);
+
+  const allSearchTabCount = useMemo(() => {
+    return dbCounts?.search ?? accountScopedSearchLogs.length;
+  }, [accountScopedSearchLogs, dbCounts]);
+
   const displayedSearchLogs = useMemo(() => {
-    let list = searchHistoryTab === "filter" ? filterLogs : searchHistoryTab === "ai" ? aiLogs : searchLogs;
+    let list = searchHistoryTab === "filter" ? filterLogs : searchHistoryTab === "ai" ? aiLogs : accountScopedSearchLogs;
     if (deferredSearch.trim()) {
       const q = deferredSearch.toLowerCase();
       list = list.filter(
@@ -321,7 +408,7 @@ export function HistoryModule() {
       );
     }
     return list;
-  }, [searchHistoryTab, filterLogs, aiLogs, searchLogs, deferredSearch]);
+  }, [searchHistoryTab, filterLogs, aiLogs, accountScopedSearchLogs, deferredSearch]);
 
   const totalSearchPages = Math.max(1, Math.ceil(displayedSearchLogs.length / SEARCH_PAGE_SIZE));
 
@@ -374,11 +461,17 @@ export function HistoryModule() {
           <p className="text-[11px] font-bold tracking-[0.2em] text-[#0274BB] dark:text-[#FCD400] uppercase">
             Librarian · History
           </p>
-          <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white tracking-tight">
-            Audit Trail & History
-          </h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="mt-1 text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+              Audit Trail & History
+            </h1>
+            <div className="mt-1 flex items-center gap-2 px-3 py-1 rounded-xl border text-xs font-bold bg-blue-50 dark:bg-white/5 border-blue-200 dark:border-white/10 text-[#0274BB] dark:text-[#FCD400]">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>{activeActor}</span>
+            </div>
+          </div>
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-            View timestamped catalog events, circulation transactions, and catalog search history.
+            View timestamped catalog events, circulation transactions, and search history for this account.
           </p>
         </div>
         <button
@@ -399,7 +492,7 @@ export function HistoryModule() {
             key: "All" as const,
             label: "Total Logs",
             value: counts.total.toLocaleString(),
-            sublabel: "All system activities",
+            sublabel: "Account activities",
             color: "#0F1D29",
             lightBg: "bg-slate-50/90 hover:bg-slate-100/90",
             lightBorder: "border-slate-300",
@@ -668,7 +761,7 @@ export function HistoryModule() {
                       : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300",
                   )}
                 >
-                  {filterLogs.length}
+                  {filterCount}
                 </span>
               </button>
 
@@ -693,7 +786,7 @@ export function HistoryModule() {
                       : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300",
                   )}
                 >
-                  {aiLogs.length}
+                  {aiCount}
                 </span>
               </button>
 
@@ -718,7 +811,7 @@ export function HistoryModule() {
                       : "bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300",
                   )}
                 >
-                  {searchLogs.length}
+                  {allSearchTabCount}
                 </span>
               </button>
             </div>

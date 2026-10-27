@@ -38,6 +38,7 @@ import type {
 import { formatDateTime, formatDate, getTodayString, cn, formatCourseShortcut, isDueToReturn, isDateOverdue } from "@/lib/utils";
 import { StudentLibraryCardModal } from "@/components/modals/student-library-card-modal";
 import { BookDetailModal, type BookDetailPayload } from "@/components/ui/book-detail-modal";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 
 /* ── Constants ───────────────────────────────────────────────────────────── */
 
@@ -2239,39 +2240,44 @@ export function TransactionsModule() {
                   </td>
 
                   {/* Resource */}
-                  <td className="px-5 py-3.5 align-middle min-w-[280px]">
+                  <td className="px-5 py-3.5 align-middle min-w-[320px]">
                     <button
                       type="button"
                       onClick={() => handleOpenBookModal(txn)}
                       className={cn(
-                        "table-stack-btn group text-left flex !flex flex-col !flex-col items-start !items-start justify-start w-full rounded-lg p-1 -m-1 transition-all duration-200 focus:outline-none cursor-pointer",
+                        "group text-left flex items-center gap-3.5 w-full rounded-lg p-1 -m-1 transition-all duration-200 focus:outline-none cursor-pointer",
                         isLight
                           ? "hover:bg-blue-50/80 focus:ring-1 focus:ring-[#0274BB]"
                           : "hover:bg-[#FCD400]/10 hover:border hover:border-[#FCD400]/30 focus:ring-1 focus:ring-[#FCD400]"
                       )}
-                      style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", width: "100%", textAlign: "left" }}
                       title={`Click to view Book Details for ${txn.resourceTitle}`}
                     >
-                      {/* Book Title */}
-                      <div className={cn(
-                        "text-[15px] sm:text-base font-bold leading-snug transition-colors flex items-center gap-1.5 w-full text-left",
-                        isLight ? "text-slate-900 group-hover:text-[#0274BB] group-hover:underline" : "text-white group-hover:text-[#FCD400]"
-                      )}>
-                        <span className="whitespace-normal break-words font-bold text-left">{txn.resourceTitle}</span>
-                        <span className={cn("text-[11px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity font-bold", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
-                          ↗
-                        </span>
-                      </div>
-
-                      {/* ISBN bellow the book title, vertically aligned straight */}
-                      {txn.isbn && (
+                      <BookCoverImage
+                        book={{ title: txn.resourceTitle, isbn: txn.isbn, department: txn.department }}
+                        size="sm"
+                      />
+                      <div className="flex flex-col items-start justify-start min-w-0 flex-1 text-left">
+                        {/* Book Title */}
                         <div className={cn(
-                          "text-xs sm:text-sm mt-1 font-mono font-medium transition-colors w-full text-left",
-                          isLight ? "text-slate-500 font-semibold group-hover:text-slate-800" : "text-slate-400 group-hover:text-slate-200"
+                          "text-[15px] sm:text-base font-bold leading-snug transition-colors flex items-center gap-1.5 w-full text-left",
+                          isLight ? "text-slate-900 group-hover:text-[#0274BB] group-hover:underline" : "text-white group-hover:text-[#FCD400]"
                         )}>
-                          {txn.isbn}
+                          <span className="whitespace-normal break-words font-bold text-left">{txn.resourceTitle}</span>
+                          <span className={cn("text-[11px] shrink-0 opacity-0 group-hover:opacity-100 transition-opacity font-bold", isLight ? "text-[#0274BB]" : "text-[#FCD400]")}>
+                            ↗
+                          </span>
                         </div>
-                      )}
+
+                        {/* ISBN below the book title */}
+                        {txn.isbn && (
+                          <div className={cn(
+                            "text-xs sm:text-sm mt-1 font-mono font-medium transition-colors w-full text-left",
+                            isLight ? "text-slate-500 font-semibold group-hover:text-slate-800" : "text-slate-400 group-hover:text-slate-200"
+                          )}>
+                            {txn.isbn}
+                          </div>
+                        )}
+                      </div>
                     </button>
                   </td>
 

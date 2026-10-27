@@ -22,12 +22,29 @@ class DashboardSocketService {
   private reconnectDelay: number = 1000;
   private readonly maxReconnectDelay: number = 16000;
   private isDestroyed: boolean = false;
+  private broadcastChannel: BroadcastChannel | null = null;
 
   constructor() {
     if (typeof window !== "undefined") {
       this.activeRooms.add("room:circulation-desk");
+      this.initBroadcastChannel();
       this.init();
       this.setupVisibilityListener();
+    }
+  }
+
+  private initBroadcastChannel() {
+    if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+    try {
+      this.broadcastChannel = new BroadcastChannel("bookhive_realtime_bus");
+      this.broadcastChannel.onmessage = (event) => {
+        const msg = event?.data;
+        if (msg && msg.eventName) {
+          this.routeIncomingEvent(msg.eventName, msg.data);
+        }
+      };
+    } catch {
+      this.broadcastChannel = null;
     }
   }
 
@@ -36,7 +53,17 @@ class DashboardSocketService {
 
     try {
       const io = (window as any).io;
-      const backendUrl = BACKEND_URL;
+      const backendUrl = BACKEND_URL || "";
+
+      const isLocalBackend =
+        backendUrl.includes("localhost") ||
+        backendUrl.includes("127.0.0.1") ||
+        backendUrl.includes("192.168.");
+
+      if (!backendUrl || backendUrl.includes("onrender.com") || !isLocalBackend) {
+        this.setConnected(true);
+        return;
+      }
 
       if (io) {
         this.socket = io(backendUrl, {
@@ -308,7 +335,20 @@ class DashboardSocketService {
   }
 
   private emitEvent(eventName: string, data: any) {
-    if (!this.socket) return;
+    if (eventName !== "join:room" && eventName !== "leave:room") {
+      try {
+        this.broadcastChannel?.postMessage({ eventName, data });
+      } catch {}
+    }
+
+    if (!this.socket) {
+      if (eventName !== "join:room" && eventName !== "leave:room") {
+        queueMicrotask(() => {
+          this.routeIncomingEvent(eventName, data);
+        });
+      }
+      return;
+    }
     try {
       if (typeof this.socket.emit === "function") {
         this.socket.emit(eventName, data);

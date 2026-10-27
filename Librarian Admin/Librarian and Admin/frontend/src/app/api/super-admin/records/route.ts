@@ -119,6 +119,7 @@ export async function GET(request: Request) {
           b.availability,
           b.borrow_count AS "borrowCount",
           b.copies,
+          b.cover_img AS "coverImg",
           b.archived_at AS "archivedAt",
           b.created_at AS "createdAt"
         FROM books b

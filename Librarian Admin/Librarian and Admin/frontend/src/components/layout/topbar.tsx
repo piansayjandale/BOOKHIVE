@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { Bell, AlertTriangle, Search, Sun, Moon, X, ArrowLeft, ExternalLink, CheckCheck } from "lucide-react";
+import { Bell, AlertTriangle, Search, Sun, Moon, X, ArrowLeft, ExternalLink, CheckCheck, BookOpen, User, Calendar, Info, ZoomIn } from "lucide-react";
 import { createPortal } from "react-dom";
 import { useRouter, usePathname } from "next/navigation";
 
@@ -24,10 +24,10 @@ export function Topbar({
   const [notifications, setNotifications] = useState<any[]>([]);
   const [hasUnread, setHasUnread] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState<any | null>(null);
-  const [isDeciding, setIsDeciding] = useState(false);
+  const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [declineComment, setDeclineComment] = useState("");
-  const [isDecliningWithComment, setIsDecliningWithComment] = useState(false);
+
+
   const panelRef = useRef<HTMLDivElement | null>(null);
   const config = dashboardVariantConfig[variant];
 
@@ -61,7 +61,7 @@ export function Topbar({
   };
 
   const handleNotificationItemClick = (item: any) => {
-    const rawId = item.id.replace("due-today-", "");
+    const rawId = (item.transactionId || item.id || "").replace("due-today-", "");
     
     // 1. Mark clicked notification as read in active client store & persist
     setReadIds((prev) => {
@@ -86,7 +86,7 @@ export function Topbar({
       )
     );
 
-    // 2. Open detail/approval modal
+    // 2. Open detail view modal showing full transaction details
     setSelectedNotification({ ...item, unread: false, is_read: true });
     setNotificationsOpen(false);
 
@@ -96,21 +96,27 @@ export function Topbar({
         new CustomEvent("highlight-transaction", { detail: { id: rawId } })
       );
     }
-
-    // 4. Check if active route is /transactions; if not, trigger client-side navigation
-    const targetPath =
-      config.basePath === "/admin" || config.basePath === "/super-admin"
-        ? `${config.basePath}/transactions`
-        : "/librarian/transactions";
-    if (pathname !== targetPath && !pathname.endsWith("/transactions")) {
-      router.push(`${targetPath}?highlight=${rawId}`);
-    }
   };
 
   const handleCloseModal = () => {
     setSelectedNotification(null);
-    setIsDecliningWithComment(false);
-    setDeclineComment("");
+    setEnlargedImage(null);
+  };
+
+  const handleOpenInTransactions = () => {
+    if (!selectedNotification) return;
+    const rawId = (selectedNotification.transactionId || selectedNotification.id || "").replace("due-today-", "");
+    handleCloseModal();
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("highlight-transaction", { detail: { id: rawId } })
+      );
+    }
+    const targetPath =
+      config.basePath === "/admin" || config.basePath === "/super-admin"
+        ? `${config.basePath}/transactions`
+        : "/librarian/transactions";
+    router.push(`${targetPath}?highlight=${rawId}`);
   };
 
   useEffect(() => {
@@ -198,21 +204,31 @@ export function Topbar({
 
             return {
               id: itemId,
+              transactionId: t.id,
               title,
               description,
               timestamp: isDueToday ? todayStart.toISOString() : (t.requestedAt || new Date().toISOString()),
               unread,
               is_read,
-              // Raw transaction fields for the details popup
-              studentName: t.studentName,
-              studentId: t.studentId,
-              resourceTitle: t.resourceTitle,
-              isbn: t.isbn,
+              // Comprehensive transaction fields for detail viewing
+              studentName: t.studentName || "N/A",
+              studentId: t.studentId || "N/A",
+              userCourse: t.userCourse || t.course || "N/A",
+              userDepartment: t.userDepartment || t.department || "N/A",
+              resourceTitle: t.resourceTitle || "Untitled Book",
+              author: t.author || t.resourceAuthor || "Not specified",
+              isbn: t.isbn || "N/A",
+              bookDepartment: t.bookDepartment || t.department || "Circulation",
               status: t.status,
-              type: t.type,
+              type: t.type || "Borrow",
               requestedAt: t.requestedAt,
               dueDate: t.dueDate,
+              decidedAt: t.decidedAt,
+              decidedBy: t.decidedBy,
+              pickedUpAt: t.pickedUpAt,
               studentIdImage: t.studentIdImage,
+              comment: t.comment,
+              queuePosition: t.queuePosition,
             };
           });
 
@@ -238,7 +254,16 @@ export function Topbar({
           ? items.filter((item) => item.status === "Pending" || new Date(item.timestamp).getTime() > clearedTime)
           : items;
 
-        setNotifications(visibleItems.slice(0, 15));
+        // Deduplicate notifications by unique item ID so keys are strictly unique
+        const uniqueItemsMap = new Map<string, any>();
+        for (const item of visibleItems) {
+          if (!uniqueItemsMap.has(item.id)) {
+            uniqueItemsMap.set(item.id, item);
+          }
+        }
+        const uniqueItems = Array.from(uniqueItemsMap.values());
+
+        setNotifications(uniqueItems.slice(0, 15));
         return true;
       }
       return false;
@@ -281,20 +306,30 @@ export function Topbar({
 
     const newItem = {
       id: rawId,
+      transactionId: data.id || rawId,
       title,
       description,
       timestamp: data.requestedAt || new Date().toISOString(),
       unread: !isRead,
       is_read: isRead,
-      studentName: data.studentName,
-      studentId: data.studentId,
-      resourceTitle: data.resourceTitle || data.title,
-      isbn: data.isbn,
+      studentName: data.studentName || "N/A",
+      studentId: data.studentId || "N/A",
+      userCourse: data.userCourse || data.course || "N/A",
+      userDepartment: data.userDepartment || data.department || "N/A",
+      resourceTitle: data.resourceTitle || data.title || "Untitled Book",
+      author: data.author || data.resourceAuthor || "Not specified",
+      isbn: data.isbn || "N/A",
+      bookDepartment: data.bookDepartment || data.department || "Circulation",
       status: isCancel ? "Cancelled" : (data.status || "Pending"),
       type: data.type || (isBorrow ? "Borrow" : "Reservation"),
       requestedAt: data.requestedAt || new Date().toISOString(),
       dueDate: data.dueDate,
+      decidedAt: data.decidedAt,
+      decidedBy: data.decidedBy,
+      pickedUpAt: data.pickedUpAt,
       studentIdImage: data.studentIdImage,
+      comment: data.comment,
+      queuePosition: data.queuePosition,
     };
 
     setNotifications((prev) => {
@@ -311,7 +346,14 @@ export function Topbar({
         if (pDiff !== 0) return pDiff;
         return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
       });
-      return combined.slice(0, 15);
+      // Deduplicate combined list by unique item ID
+      const uniqueCombinedMap = new Map<string, any>();
+      for (const item of combined) {
+        if (!uniqueCombinedMap.has(item.id)) {
+          uniqueCombinedMap.set(item.id, item);
+        }
+      }
+      return Array.from(uniqueCombinedMap.values()).slice(0, 15);
     });
 
     // Schedule background synchronization to keep server and cache consistent
@@ -432,46 +474,7 @@ export function Topbar({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [notificationsOpen]);
 
-  const handleDecide = async (id: string, nextStatus: "Approved" | "Declined", comment?: string) => {
-    if (nextStatus === "Approved" || nextStatus === "Declined") {
-      const confirmMessage = nextStatus === "Approved"
-        ? "Are you sure to approve this?"
-        : "Are you sure to decline this?";
-      if (typeof window !== "undefined" && !window.confirm(confirmMessage)) {
-        return;
-      }
-    }
-    setIsDeciding(true);
-    // Optimistically remove item from local notifications state
-    setNotifications((prev) =>
-      prev.filter((n) => n.id !== id && n.id !== `due-today-${id}`)
-    );
-    if (typeof window !== "undefined") {
-      window.dispatchEvent(
-        new CustomEvent("transaction-updated", { detail: { id, status: nextStatus } })
-      );
-    }
-    handleCloseModal();
-
-    try {
-      const rawId = id.replace("due-today-", "");
-      const res = await fetch(`/api/transactions/${rawId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: nextStatus, comment: comment || null }),
-      });
-      if (!res.ok) {
-        console.error("Failed to update transaction status:", await res.text());
-      }
-    } catch (err) {
-      console.error("Error updating transaction status:", err instanceof Error ? err.message : String(err));
-    } finally {
-      await fetchNotifications();
-      setIsDeciding(false);
-    }
-  };
-
-  // Modal JSX constructed for portal rendering
+  // Modal JSX for viewing all transaction details (Notifications are view-only; Accept/Decline is in Transactions)
   const detailModalContent = selectedNotification ? (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
@@ -480,223 +483,350 @@ export function Topbar({
         onClick={handleCloseModal}
       />
       {/* Container */}
-      <div className="relative z-10 w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-[var(--card-bg)] p-6 shadow-2xl text-[var(--topbar-foreground)]">
+      <div className="relative z-10 w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-[var(--line)] bg-[var(--card-bg)] p-6 shadow-2xl text-[var(--topbar-foreground)]">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--line)] pb-4">
+        <div className="flex items-start justify-between border-b border-[var(--line)] pb-4">
           <div>
-            <p className="text-[10px] font-bold tracking-widest text-[var(--accent)] uppercase">
-              Notification Details
-            </p>
-            <h3 className="mt-1 text-lg font-black text-[var(--topbar-title-color)]">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center rounded-full bg-[var(--accent)]/15 px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-[var(--accent)] border border-[var(--accent)]/30">
+                Notification Details
+              </span>
+              {(() => {
+                const rawStatus = String(selectedNotification.status || "").toLowerCase();
+                const isCancelled = rawStatus === "cancelled" || selectedNotification.title?.toUpperCase().includes("CANCELLED");
+                const isDeclined = rawStatus === "declined";
+                const isPending = rawStatus === "pending";
+                const isReturned = rawStatus === "returned";
+                const isWaitlisted = selectedNotification.type === "Reservation" && !isCancelled && !isDeclined && selectedNotification.status !== "Approved";
+
+                if (isCancelled) {
+                  return (
+                    <span
+                      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase border border-red-500/40 bg-red-500/15 text-red-600 dark:text-red-400"
+                      style={{ backgroundColor: "rgba(239, 68, 68, 0.15)", color: "#dc2626", borderColor: "rgba(239, 68, 68, 0.4)" }}
+                    >
+                      Cancelled
+                    </span>
+                  );
+                }
+                if (isDeclined) {
+                  return (
+                    <span
+                      className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider uppercase border border-red-500/40 bg-red-500/15 text-red-600 dark:text-red-400"
+                      style={{ backgroundColor: "rgba(239, 68, 68, 0.15)", color: "#dc2626", borderColor: "rgba(239, 68, 68, 0.4)" }}
+                    >
+                      Declined
+                    </span>
+                  );
+                }
+                if (isWaitlisted) {
+                  return (
+                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-purple-500/15 text-purple-400 border border-purple-500/30">
+                      Waitlisted in Queue
+                    </span>
+                  );
+                }
+                if (isPending) {
+                  return (
+                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-amber-500/15 text-amber-500 border border-amber-500/30">
+                      Pending
+                    </span>
+                  );
+                }
+                if (isReturned) {
+                  return (
+                    <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                      Returned
+                    </span>
+                  );
+                }
+                return (
+                  <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                    {selectedNotification.status || "Approved"}
+                  </span>
+                );
+              })()}
+            </div>
+            <h3 className="mt-2 text-lg font-black text-[var(--topbar-title-color)]">
               {selectedNotification.title}
             </h3>
+            <p className="mt-0.5 text-xs text-[var(--topbar-muted)]">
+              {selectedNotification.description}
+            </p>
           </div>
           <button
             suppressHydrationWarning
             onClick={handleCloseModal}
             className="rounded-lg p-1.5 text-[var(--topbar-muted)] hover:bg-[var(--surface-hover)] hover:text-[var(--topbar-foreground)] transition"
+            title="Close"
           >
-            <X className="h-4 w-4" />
+            <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Content Details */}
-        <div className="mt-4 space-y-4">
-          <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-4">
-            <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
-              Resource Title
-            </p>
-            <p className="mt-1 text-sm font-bold text-[var(--topbar-title-color)]">
-              {selectedNotification.resourceTitle}
-            </p>
-            {selectedNotification.isbn && (
-              <p className="mt-1 text-[11px] font-mono text-[var(--topbar-muted)]">
-                ISBN: {selectedNotification.isbn}
-              </p>
-            )}
+        <div className="mt-5 space-y-4">
+          {/* Informational Notification Banner - High Contrast Vibrant Blue */}
+          <div
+            className="rounded-xl border border-blue-200 bg-blue-50/90 dark:border-blue-500/30 dark:bg-blue-950/40 p-3.5 flex items-start gap-3 shadow-xs"
+            style={{ borderColor: "rgba(59, 130, 246, 0.35)", backgroundColor: "rgba(239, 246, 255, 0.95)" }}
+          >
+            <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" style={{ color: "#2563eb" }} />
+            <div className="text-xs font-medium leading-relaxed" style={{ color: "#1d4ed8" }}>
+              <span className="font-bold" style={{ color: "#1e40af" }}>Notification Overview: </span>
+              This alert is for viewing only. To accept, decline, or process circulation requests, proceed to the Transactions module.
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-3">
+          {/* Book / Resource Section */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <BookOpen className="h-3.5 w-3.5 text-[var(--accent)]" />
               <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
-                Requester
+                Book / Resource Details
               </p>
-              <p className="mt-1 text-xs font-bold text-[var(--topbar-title-color)]">
-                {selectedNotification.studentName}
+            </div>
+            <p className="text-sm font-bold text-[var(--topbar-title-color)]">
+              {selectedNotification.resourceTitle || "Untitled Resource"}
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Author</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">{selectedNotification.author || "Not specified"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">ISBN</span>
+                <span className="font-mono text-[var(--topbar-title-color)]">{selectedNotification.isbn || "N/A"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Library Section</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">{selectedNotification.bookDepartment || "Circulation"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Activity Type</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">{selectedNotification.type || "Borrow"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Student Requester Section */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <User className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
+                Student Requester Information
               </p>
-              {selectedNotification.studentId && (
-                <p className="mt-0.5 text-[10px] text-[var(--topbar-muted)]">
-                  ID: {selectedNotification.studentId}
-                </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Student Name</span>
+                <span className="font-bold text-[var(--topbar-title-color)]">{selectedNotification.studentName || "N/A"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Student ID Number</span>
+                <span className="font-mono font-medium text-[var(--topbar-title-color)]">{selectedNotification.studentId || "N/A"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Course / Program</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">{selectedNotification.userCourse || "N/A"}</span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">College / Department</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">{selectedNotification.userDepartment || "N/A"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Transaction Metadata & Dates */}
+          <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Calendar className="h-3.5 w-3.5 text-[var(--accent)]" />
+              <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
+                Transaction Schedule & Timeline
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Date Requested</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">
+                  {selectedNotification.requestedAt || selectedNotification.timestamp
+                    ? new Date(selectedNotification.requestedAt || selectedNotification.timestamp).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "N/A"}
+                </span>
+              </div>
+              <div>
+                <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Due Date</span>
+                <span className="font-medium text-[var(--topbar-title-color)]">
+                  {selectedNotification.dueDate
+                    ? new Date(selectedNotification.dueDate).toLocaleDateString(undefined, {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })
+                    : selectedNotification.status === "Pending"
+                    ? "Assigned upon approval (7 days)"
+                    : "Not applicable"}
+                </span>
+              </div>
+              {selectedNotification.transactionId && (
+                <div className="col-span-2">
+                  <span className="text-[10px] text-[var(--topbar-muted)] uppercase block">Reference Transaction ID</span>
+                  <span className="font-mono text-[11px] text-[var(--topbar-muted)] break-all">{selectedNotification.transactionId}</span>
+                </div>
+              )}
+              {selectedNotification.comment && (
+                <div className="col-span-2 rounded-lg border border-[var(--line)] bg-[var(--card-bg)] p-2.5">
+                  <span className="text-[10px] font-bold text-[var(--topbar-muted)] uppercase block">Remarks / Notes</span>
+                  <span className="text-xs text-[var(--topbar-title-color)] mt-0.5 block">{selectedNotification.comment}</span>
+                </div>
               )}
             </div>
-
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-3">
-              <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
-                Status
-              </p>
-              <span
-                className={`mt-1.5 inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${
-                  selectedNotification.type === "Reservation"
-                    ? "bg-purple-500/15 text-purple-400 border border-purple-500/30"
-                    : selectedNotification.status === "Pending"
-                    ? "bg-amber-500/15 text-amber-400 border border-amber-500/30"
-                    : selectedNotification.status === "Returned"
-                    ? "bg-sky-500/15 text-sky-400 border border-sky-500/30"
-                    : "bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-                }`}
-              >
-                {selectedNotification.type === "Reservation" ? "Waitlisted in Queue" : selectedNotification.status}
-              </span>
-            </div>
           </div>
 
+          {/* Reservation Queue Notice if applicable */}
           {selectedNotification.type === "Reservation" && (
             <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3.5 flex items-start gap-3">
               <span className="text-purple-400 text-base">ℹ️</span>
               <div>
-                <p className="text-xs font-bold text-purple-300">1st-Come, 1st-Served Reservation</p>
+                <p className="text-xs font-bold text-purple-300">
+                  1st-Come, 1st-Served Reservation
+                  {selectedNotification.queuePosition ? ` (Position #${selectedNotification.queuePosition})` : ""}
+                </p>
                 <p className="text-[11px] text-purple-200/80 mt-0.5 leading-relaxed">
-                  Reservations function as 1st-come, 1st-served and do not require manual approval or decline. This student is automatically queued in the waitlist. When the borrowed copy is returned, the system will automatically notify this student to claim and borrow the book.
+                  Reservations operate automatically on a 1st-come, 1st-served queue. When an active borrowed copy is checked in, the system alerts the student to claim the item.
                 </p>
               </div>
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-3">
-              <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
-                Request Date
-              </p>
-              <p className="mt-1 text-xs text-[var(--topbar-title-color)]">
-                {new Date(selectedNotification.timestamp).toLocaleDateString()}
-              </p>
-              <p className="text-[10px] text-[var(--topbar-muted)]">
-                {new Date(selectedNotification.timestamp).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-3">
-              <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
-                Activity Type
-              </p>
-              <p className="mt-1 text-xs font-semibold text-[var(--topbar-title-color)]">
-                {selectedNotification.type}
-              </p>
-            </div>
-          </div>
-
+          {/* Uploaded ID Preview */}
           {selectedNotification.studentIdImage && (
             <div className="rounded-xl border border-[var(--line)] bg-[var(--background-muted)] p-4">
-              <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase mb-2">
-                Uploaded ID Picture / Attachment
-              </p>
-              <div className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border border-[var(--line)] bg-black/20">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-[10px] font-bold tracking-wider text-[var(--topbar-muted)] uppercase">
+                  Uploaded ID Picture / Attachment
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setEnlargedImage(selectedNotification.studentIdImage)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-[var(--accent)] hover:underline cursor-pointer active:scale-95 transition"
+                  title="View full size attachment"
+                >
+                  <ZoomIn className="h-3.5 w-3.5" />
+                  <span>View Full Size</span>
+                </button>
+              </div>
+              <div
+                className="relative aspect-[3/2] w-full overflow-hidden rounded-lg border border-[var(--line)] bg-slate-100 dark:bg-slate-800/60 cursor-pointer transition-all duration-200 hover:border-[var(--accent)] hover:shadow-md"
+                onClick={() => setEnlargedImage(selectedNotification.studentIdImage)}
+                title="Click to view full size"
+              >
                 <img
                   src={selectedNotification.studentIdImage}
                   alt="Student ID Preview"
                   className="h-full w-full object-contain"
                 />
               </div>
-            </div>
-          )}
-
-          {isDecliningWithComment && (
-            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-4 space-y-2">
-              <label className="text-[10px] font-bold tracking-wider text-red-400 uppercase">
-                Decline Reason / Comment
-              </label>
-              <textarea
-                value={declineComment}
-                onChange={(e) => setDeclineComment(e.target.value)}
-                placeholder="Enter comment for the student explaining why the request is declined..."
-                className="w-full rounded-lg border border-[var(--line)] bg-[var(--background-muted)] p-2.5 text-xs text-[var(--topbar-foreground)] focus:border-red-500 focus:outline-none min-h-[70px] resize-none placeholder:text-slate-500"
-                required
-              />
+              <button
+                type="button"
+                onClick={() => setEnlargedImage(selectedNotification.studentIdImage)}
+                className="w-full mt-2.5 inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--card-bg)] py-2 text-xs font-bold text-[var(--topbar-title-color)] hover:bg-[var(--surface-hover)] active:scale-95 transition cursor-pointer shadow-xs"
+              >
+                <ZoomIn className="h-4 w-4 text-[var(--accent)]" />
+                <span>Click to enlarge</span>
+              </button>
             </div>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="mt-6 flex justify-between gap-3">
+        <div className="mt-6 flex items-center justify-between gap-3 border-t border-[var(--line)] pt-4">
           <button
             suppressHydrationWarning
-            disabled={isDeciding}
             onClick={handleCloseModal}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--background-muted)] px-5 py-2 text-xs font-bold text-[var(--topbar-title-color)] hover:bg-[var(--surface-hover)] active:scale-95 transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--background-muted)] px-5 py-2.5 text-xs font-bold text-[var(--topbar-title-color)] hover:bg-[var(--surface-hover)] active:scale-95 transition"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Back
+            Close
           </button>
-          {selectedNotification.type === "Reservation" ? (
-            <button
-              suppressHydrationWarning
-              disabled={isDeciding}
-              onClick={handleCloseModal}
-              className="rounded-xl bg-[var(--accent)] px-5 py-2 text-xs font-bold text-[#0b1c2c] shadow-lg shadow-[var(--accent)]/10 hover:brightness-110 active:scale-95 transition disabled:opacity-50"
-            >
-              Acknowledge & Close
-            </button>
-          ) : selectedNotification.status === "Pending" ? (
-            isDecliningWithComment ? (
-              <div className="flex gap-2">
-                <button
-                  suppressHydrationWarning
-                  disabled={isDeciding}
-                  onClick={() => {
-                    setIsDecliningWithComment(false);
-                    setDeclineComment("");
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-[var(--background-muted)] px-4 py-2 text-xs font-bold text-[var(--topbar-title-color)] hover:bg-[var(--surface-hover)] transition disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  suppressHydrationWarning
-                  disabled={isDeciding || !declineComment.trim()}
-                  onClick={() => handleDecide(selectedNotification.id, "Declined", declineComment)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/20 px-4 py-2 text-xs font-bold text-red-300 hover:bg-red-500/30 transition disabled:opacity-50"
-                >
-                  Confirm Decline
-                </button>
-              </div>
-            ) : (
-              <div className="flex gap-2">
-                <button
-                  suppressHydrationWarning
-                  disabled={isDeciding}
-                  onClick={() => setIsDecliningWithComment(true)}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-2 text-xs font-bold text-red-300 hover:bg-red-500/20 hover:border-red-500/50 active:scale-95 transition disabled:opacity-50"
-                >
-                  Decline
-                </button>
-                <button
-                  suppressHydrationWarning
-                  disabled={isDeciding}
-                  onClick={() => handleDecide(selectedNotification.id, "Approved")}
-                  className="rounded-xl bg-[var(--accent)] px-5 py-2 text-xs font-bold text-[#0b1c2c] shadow-lg shadow-[var(--accent)]/10 hover:brightness-110 active:scale-95 transition disabled:opacity-50"
-                >
-                  Approve
-                </button>
-              </div>
-            )
-          ) : (
-            <button
-              suppressHydrationWarning
-              disabled={isDeciding}
-              onClick={handleCloseModal}
-              className="rounded-xl bg-[var(--accent)] px-5 py-2 text-xs font-bold text-[#0b1c2c] shadow-lg shadow-[var(--accent)]/10 hover:brightness-110 active:scale-95 transition disabled:opacity-50"
-            >
-              Close Details
-            </button>
-          )}
+          <button
+            suppressHydrationWarning
+            onClick={handleOpenInTransactions}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-5 py-2.5 text-xs font-bold text-[#0b1c2c] shadow-lg shadow-[var(--accent)]/15 hover:brightness-110 active:scale-95 transition"
+          >
+            <span>Open in Transactions</span>
+            <ExternalLink className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </div>
   ) : null;
+
+  const enlargedImageModal = enlargedImage ? (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 modal-backdrop backdrop-blur-md"
+        style={{ backgroundColor: "rgba(0, 0, 0, 0.85)" }}
+        onClick={() => setEnlargedImage(null)}
+      />
+      {/* Modal Dialog */}
+      <div className="relative z-10 w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl border border-white/20 bg-slate-900 shadow-2xl text-white overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-slate-950/60">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-[var(--accent)]" />
+            <p className="text-xs font-bold uppercase tracking-wider text-slate-200">
+              Uploaded Student ID / Document Preview
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={enlargedImage}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-slate-300 hover:bg-white/10 hover:text-white transition"
+              title="Open full image in new tab"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              <span>Open in New Tab</span>
+            </a>
+            <button
+              onClick={() => setEnlargedImage(null)}
+              className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-white/10 transition cursor-pointer"
+              title="Close Preview"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-4 flex-1 overflow-auto flex items-center justify-center bg-black/40 min-h-[300px]">
+          <img
+            src={enlargedImage}
+            alt="Uploaded Student ID Full Preview"
+            className="max-h-[75vh] w-auto max-w-full object-contain mx-auto rounded-lg shadow-lg"
+          />
+        </div>
+
+        <div className="px-5 py-3 border-t border-white/10 bg-slate-950/60 flex items-center justify-between">
+          <p className="text-[11px] text-slate-400">Click Close or click outside to dismiss.</p>
+          <button
+            onClick={() => setEnlargedImage(null)}
+            className="rounded-xl border border-white/15 bg-white/10 px-4 py-1.5 text-xs font-bold text-white hover:bg-white/20 active:scale-95 transition cursor-pointer"
+          >
+            Close Preview
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
 
   return (
     <header className="sticky top-0 z-40 mb-8 flex items-center justify-between gap-4 rounded-[12px] border border-[var(--line)] bg-[var(--topbar-bg)] px-6 py-4 text-[var(--topbar-foreground)] shadow-sm transition-colors duration-300 ease-out backdrop-blur-md">
@@ -777,11 +907,11 @@ export function Topbar({
 
               {/* Notifications Cards Container */}
               <div className="space-y-2.5 max-h-[340px] overflow-y-auto pr-1">
-                {notifications.map((item) => {
+                {notifications.map((item, index) => {
                   const isRead = item.is_read || !item.unread;
                   return (
                     <button
-                      key={item.id}
+                      key={`notif-${item.id}-${index}`}
                       onClick={() => handleNotificationItemClick(item)}
                       className={`group relative flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition-all duration-200 focus:outline-none ${
                         isRead
@@ -862,6 +992,9 @@ export function Topbar({
       {/* Render detailed modal inside a Portal to body to secure screen centering and backdrop blur */}
       {mounted && typeof document !== "undefined" && selectedNotification
         ? createPortal(detailModalContent, document.body)
+        : null}
+      {mounted && typeof document !== "undefined" && enlargedImage
+        ? createPortal(enlargedImageModal, document.body)
         : null}
     </header>
   );

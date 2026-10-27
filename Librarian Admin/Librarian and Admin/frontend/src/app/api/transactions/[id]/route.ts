@@ -179,8 +179,6 @@ export async function PATCH(
       }
     }
 
-    // If ID was not matched directly (e.g. temporary client ID or desynced socket ID),
-    // recover by matching record by book and student details
     if (rows.length === 0 && (body?.isbn || body?.resourceTitle || body?.studentId || body?.studentName)) {
       const isPickupAction = body?.action === "pickup" || body?.pickedUp === true || body?.status === "Picked Up";
       let fallbackQuery = "";
@@ -311,7 +309,8 @@ export async function PATCH(
       try {
         const bookIdent = tx.isbn || tx.resource_title;
         if (bookIdent) {
-          await pool.query(`
+          await pool.query(
+            `
             UPDATE books b
             SET availability = CASE
               WHEN (
@@ -326,7 +325,9 @@ export async function PATCH(
             updated_at = NOW()
             WHERE (b.isbn IS NOT NULL AND b.isbn != '' AND b.isbn != 'N/A' AND b.isbn = $1)
                OR LOWER(b.title) = LOWER($2)
-          `, [tx.isbn || "", tx.resource_title || ""]);
+          `,
+            [tx.isbn || "", tx.resource_title || ""]
+          );
         }
       } catch (syncErr) {
         console.warn("Direct DB availability sync error:", syncErr);
@@ -423,10 +424,34 @@ export async function PATCH(
         isPickedUp: Boolean(tx.isPickedUp || tx.pickedUpAt || tx.picked_up_at),
         comment: tx.comment ?? comment ?? null,
       };
+
+      const actorLabel = session ? `${session.role} ${session.name}` : "BookHive Librarian";
+      const isPickupAction = body?.action === "pickup" || body?.pickedUp === true || body?.status === "Picked Up";
+      try {
+        await pool.query(
+          `INSERT INTO history_logs (actor, action, target, module, detail)
+           VALUES ($1, $2, $3, 'Transactions', $4)`,
+          [
+            actorLabel,
+            isPickupAction ? "Marked book as picked up" : `${normalizedTx.status} transaction`,
+            normalizedTx.studentName,
+            isPickupAction
+              ? `${normalizedTx.resourceTitle} picked up by ${normalizedTx.studentName} (${normalizedTx.studentId}).`
+              : `${normalizedTx.resourceTitle} is now marked ${normalizedTx.status}.`,
+          ]
+        );
+        await pool.query(
+          `INSERT INTO activity_logs (message, level) VALUES ($1, $2)`,
+          [
+            `${normalizedTx.type} ${normalizedTx.status.toLowerCase()} for ${normalizedTx.studentId}`,
+            normalizedTx.status === "Declined" ? "warning" : "success",
+          ]
+        );
+      } catch {}
+
       return NextResponse.json({ transaction: normalizedTx, promotedTransaction: promotedTx, ok: true });
     }
 
-    // Secondary in-memory store fallback
     try {
       const memoryTx = store.updateTransactionStatus(id, nextStatus as any);
       if (memoryTx) {

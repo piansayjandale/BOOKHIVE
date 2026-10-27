@@ -35,6 +35,8 @@ import {
   hasAllFourIdPhotos,
   loadStudentIdCardsForUser,
   saveStudentIdCardsToStorage,
+  rotateIdCardSlot,
+  toggleIdCardsOrientation,
   StudentIdCardsData,
 } from "../../data/store";
 
@@ -75,7 +77,13 @@ export default function ProfileScreen() {
   const [idUploadModalVisible, setIdUploadModalVisible] = useState(false);
   const [idViewerModalVisible, setIdViewerModalVisible] = useState(false);
   const [showIdCards, setShowIdCards] = useState(false);
-  const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{ title: string; uri: string } | null>(null);
+  const [enlargedIdPhoto, setEnlargedIdPhoto] = useState<{
+    title: string;
+    uri: string;
+    slotKey?: string;
+    rotation?: number;
+    orientation?: "portrait" | "landscape";
+  } | null>(null);
   const [savingIdCards, setSavingIdCards] = useState(false);
 
   // Draft slots for uploading the 4 ID photos
@@ -93,32 +101,47 @@ export default function ProfileScreen() {
 
   const refreshIdCardsState = React.useCallback(async () => {
     const currentProf = getStudentProfile();
+    const stored = await loadStudentIdCardsForUser(user || currentProf);
+
+    let baseCards: StudentIdCardsData | null = null;
     if (hasAllFourIdPhotos(user)) {
-      setUploadedIdCards({
+      baseCards = {
         schoolIdFront: String(user!.schoolIdFront),
         schoolIdBack: String(user!.schoolIdBack),
         libraryIdFront: String(user!.libraryIdFront),
         libraryIdBack: String(user!.libraryIdBack),
         ownerEmail: user?.email,
         ownerStudentId: user?.studentId,
-      });
-      setIdCardsChecked(true);
-      return;
-    }
-    if (hasAllFourIdPhotos(currentProf)) {
-      setUploadedIdCards({
+      };
+    } else if (hasAllFourIdPhotos(currentProf)) {
+      baseCards = {
         schoolIdFront: String(currentProf.schoolIdFront),
         schoolIdBack: String(currentProf.schoolIdBack),
         libraryIdFront: String(currentProf.libraryIdFront),
         libraryIdBack: String(currentProf.libraryIdBack),
         ownerEmail: currentProf.email,
         ownerStudentId: currentProf.studentId,
-      });
-      setIdCardsChecked(true);
-      return;
+      };
     }
-    const stored = await loadStudentIdCardsForUser(user || currentProf);
-    setUploadedIdCards(stored);
+
+    const mergedCards: StudentIdCardsData | null =
+      baseCards || stored
+        ? {
+            ...(baseCards || {}),
+            ...(stored || {}),
+            schoolIdFront: stored?.schoolIdFront || baseCards?.schoolIdFront,
+            schoolIdBack: stored?.schoolIdBack || baseCards?.schoolIdBack,
+            libraryIdFront: stored?.libraryIdFront || baseCards?.libraryIdFront,
+            libraryIdBack: stored?.libraryIdBack || baseCards?.libraryIdBack,
+            orientation: stored?.orientation || (baseCards as any)?.orientation || "portrait",
+            rotations: { ...(baseCards?.rotations || {}), ...(stored?.rotations || {}) },
+          }
+        : null;
+
+    if (mergedCards?.orientation) {
+      setIdCaptureOrientation(mergedCards.orientation);
+    }
+    setUploadedIdCards(mergedCards);
     setIdCardsChecked(true);
   }, [user]);
 
@@ -228,9 +251,14 @@ export default function ProfileScreen() {
     loadViolations();
   }, [loadViolations]);
 
+  const lastViolationsFetchTimeRef = React.useRef<number>(0);
   useFocusEffect(
     React.useCallback(() => {
-      loadViolations();
+      const now = Date.now();
+      if (now - lastViolationsFetchTimeRef.current > 15000) {
+        lastViolationsFetchTimeRef.current = now;
+        loadViolations();
+      }
     }, [loadViolations])
   );
 
@@ -370,6 +398,7 @@ export default function ProfileScreen() {
   };
 
   const hasUploadedAllFour = hasAllFourIdPhotos(uploadedIdCards);
+  const isProfileIdPortrait = (uploadedIdCards?.orientation || idCaptureOrientation || "portrait") === "portrait";
 
   const openIdUploadModal = () => {
     setDraftSchoolFront(uploadedIdCards?.schoolIdFront || "");
@@ -550,6 +579,8 @@ export default function ProfileScreen() {
         verifiedAt: new Date().toISOString(),
         ownerEmail: targetEmail,
         ownerStudentId: targetStudentId,
+        orientation: idCaptureOrientation,
+        rotations: uploadedIdCards?.rotations || {},
       };
 
       await saveStudentIdCardsToStorage(
@@ -587,7 +618,7 @@ export default function ProfileScreen() {
 
       Alert.alert(
         "ID Cards Uploaded!",
-        "Your School ID (Front & Back) and Library ID (Front & Back) have been saved. The upload button below your profile picture has now transformed into an ID icon—tap it anytime to view your 4 ID pictures!"
+        "Your School ID (Front & Back) has been saved. Tap the School ID icon anytime to view your ID pictures!"
       );
     } catch (err) {
       console.warn("Error saving 4 ID cards:", err);
@@ -595,6 +626,48 @@ export default function ProfileScreen() {
     } finally {
       setSavingIdCards(false);
     }
+  };
+
+  const handleRotateEnlargedPhoto = async () => {
+    if (!enlargedIdPhoto) return;
+    const targetSlot = enlargedIdPhoto.slotKey;
+    const currentRot = (enlargedIdPhoto.rotation || 0) + 90;
+    const nextRot = currentRot % 360;
+
+    setEnlargedIdPhoto((prev) => (prev ? { ...prev, rotation: nextRot } : null));
+
+    if (targetSlot) {
+      setUploadedIdCards((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rotations: {
+            ...(prev.rotations || {}),
+            [targetSlot]: nextRot,
+          },
+        };
+      });
+
+      const targetEmail = studentEmail !== "N/A" ? studentEmail : user?.email;
+      const targetStudentId = studentIdNumber !== "N/A" ? studentIdNumber : user?.studentId;
+      await rotateIdCardSlot(targetSlot, targetEmail, targetStudentId, 90);
+    }
+  };
+
+  const handleToggleOrientationEnlargedPhoto = async () => {
+    const currentOri = enlargedIdPhoto?.orientation || uploadedIdCards?.orientation || idCaptureOrientation || "portrait";
+    const nextOri = currentOri === "portrait" ? "landscape" : "portrait";
+
+    setIdCaptureOrientation(nextOri);
+    setEnlargedIdPhoto((prev) => (prev ? { ...prev, orientation: nextOri } : null));
+    setUploadedIdCards((prev) => {
+      if (!prev) return prev;
+      return { ...prev, orientation: nextOri };
+    });
+
+    const targetEmail = studentEmail !== "N/A" ? studentEmail : user?.email;
+    const targetStudentId = studentIdNumber !== "N/A" ? studentIdNumber : user?.studentId;
+    await toggleIdCardsOrientation(targetEmail, targetStudentId);
   };
 
   const TOTAL_CARD_ROWS = Math.max(14, borrowedBooks.length);
@@ -962,92 +1035,6 @@ export default function ProfileScreen() {
                     </Text>
                   </View>
                 </TouchableOpacity>
-              ) : hasUploadedAllFour ? (
-                <TouchableOpacity
-                  onPress={() => setShowIdCards((prev) => !prev)}
-                  activeOpacity={0.8}
-                  style={[
-                    styles.idIconButtonBelowAvatar,
-                    {
-                      backgroundColor: showIdCards
-                        ? isDarkMode
-                          ? "rgba(255, 200, 0, 0.18)"
-                          : "rgba(2, 116, 187, 0.16)"
-                        : isDarkMode
-                        ? "rgba(16, 185, 129, 0.14)"
-                        : "rgba(2, 116, 187, 0.1)",
-                      borderColor: showIdCards
-                        ? isDarkMode
-                          ? "#FFC800"
-                          : "#0274BB"
-                        : isDarkMode
-                        ? "#10B981"
-                        : "#0274BB",
-                    },
-                  ]}
-                  accessibilityRole="button"
-                  accessibilityLabel="Toggle School ID and Library ID Photos"
-                >
-                  <View
-                    style={[
-                      styles.idIconCircle,
-                      {
-                        backgroundColor: showIdCards
-                          ? isDarkMode
-                            ? "#FFC800"
-                            : "#0274BB"
-                          : isDarkMode
-                          ? "#10B981"
-                          : "#0274BB",
-                      },
-                    ]}
-                  >
-                    <Ionicons
-                      name="id-card"
-                      size={18}
-                      color={showIdCards && isDarkMode ? "#080F1E" : "#FFFFFF"}
-                    />
-                  </View>
-                  <View style={{ marginLeft: 8, marginRight: 6 }}>
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "800",
-                        color: showIdCards
-                          ? isDarkMode
-                            ? "#FFC800"
-                            : "#0274BB"
-                          : isDarkMode
-                          ? "#10B981"
-                          : "#0274BB",
-                      }}
-                    >
-                      Student & Library IDs
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: 10,
-                        fontWeight: "600",
-                        color: theme.textSecondary,
-                      }}
-                    >
-                      {showIdCards
-                        ? "Click to hide ID cards"
-                        : "Click ID icon to view 4 cards"}
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name={showIdCards ? "chevron-up-circle" : "chevron-down-circle"}
-                    size={18}
-                    color={
-                      showIdCards
-                        ? isDarkMode
-                          ? "#FFC800"
-                          : "#0274BB"
-                        : "#10B981"
-                    }
-                  />
-                </TouchableOpacity>
               ) : null}
 
               <Text style={[styles.name, { color: theme.textPrimary }]}>
@@ -1122,7 +1109,10 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         style={[
                           styles.inlineIdPhotoCard,
-                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
+                          {
+                            height: isProfileIdPortrait ? 200 : 125,
+                            borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0",
+                          },
                         ]}
                         activeOpacity={0.85}
                         onPress={() => {
@@ -1130,6 +1120,9 @@ export default function ProfileScreen() {
                             setEnlargedIdPhoto({
                               title: "School ID — Front",
                               uri: uploadedIdCards.schoolIdFront,
+                              slotKey: "schoolIdFront",
+                              rotation: uploadedIdCards?.rotations?.schoolIdFront || 0,
+                              orientation: uploadedIdCards?.orientation || idCaptureOrientation || "portrait",
                             });
                           }
                         }}
@@ -1137,7 +1130,12 @@ export default function ProfileScreen() {
                         {uploadedIdCards?.schoolIdFront ? (
                           <Image
                             source={{ uri: uploadedIdCards.schoolIdFront }}
-                            style={styles.inlineIdImage}
+                            style={[
+                              styles.inlineIdImage,
+                              Boolean(uploadedIdCards?.rotations?.schoolIdFront)
+                                ? { transform: [{ rotate: `${uploadedIdCards?.rotations?.schoolIdFront}deg` }] }
+                                : null,
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
@@ -1155,7 +1153,10 @@ export default function ProfileScreen() {
                       <TouchableOpacity
                         style={[
                           styles.inlineIdPhotoCard,
-                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
+                          {
+                            height: isProfileIdPortrait ? 200 : 125,
+                            borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0",
+                          },
                         ]}
                         activeOpacity={0.85}
                         onPress={() => {
@@ -1163,6 +1164,9 @@ export default function ProfileScreen() {
                             setEnlargedIdPhoto({
                               title: "School ID — Back",
                               uri: uploadedIdCards.schoolIdBack,
+                              slotKey: "schoolIdBack",
+                              rotation: uploadedIdCards?.rotations?.schoolIdBack || 0,
+                              orientation: uploadedIdCards?.orientation || idCaptureOrientation || "portrait",
                             });
                           }
                         }}
@@ -1170,94 +1174,12 @@ export default function ProfileScreen() {
                         {uploadedIdCards?.schoolIdBack ? (
                           <Image
                             source={{ uri: uploadedIdCards.schoolIdBack }}
-                            style={styles.inlineIdImage}
-                            resizeMode="contain"
-                          />
-                        ) : (
-                          <View style={styles.inlineIdEmptySlot}>
-                            <Ionicons name="image-outline" size={24} color="#94A3B8" />
-                            <Text style={styles.inlineIdEmptyText}>Back Missing</Text>
-                          </View>
-                        )}
-                        <View style={styles.inlineIdBadgePill}>
-                          <Text style={styles.inlineIdBadgeText}>BACK</Text>
-                        </View>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-
-                  {/* 2. LIBRARY ID (FRONT & BACK) */}
-                  <View style={styles.inlineIdGroup}>
-                    <View style={styles.inlineIdGroupHeader}>
-                      <Ionicons
-                        name="card"
-                        size={15}
-                        color={isDarkMode ? theme.accentGold : "#0274BB"}
-                      />
-                      <Text
-                        style={[
-                          styles.inlineIdGroupTitle,
-                          { color: isDarkMode ? theme.accentGold : "#0274BB" },
-                        ]}
-                      >
-                        LIBRARY ID (FRONT & BACK)
-                      </Text>
-                    </View>
-
-                    <View style={styles.inlineIdPhotosRow}>
-                      {/* Library ID Front */}
-                      <TouchableOpacity
-                        style={[
-                          styles.inlineIdPhotoCard,
-                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
-                        ]}
-                        activeOpacity={0.85}
-                        onPress={() => {
-                          if (uploadedIdCards?.libraryIdFront) {
-                            setEnlargedIdPhoto({
-                              title: "Library ID — Front",
-                              uri: uploadedIdCards.libraryIdFront,
-                            });
-                          }
-                        }}
-                      >
-                        {uploadedIdCards?.libraryIdFront ? (
-                          <Image
-                            source={{ uri: uploadedIdCards.libraryIdFront }}
-                            style={styles.inlineIdImage}
-                            resizeMode="contain"
-                          />
-                        ) : (
-                          <View style={styles.inlineIdEmptySlot}>
-                            <Ionicons name="image-outline" size={24} color="#94A3B8" />
-                            <Text style={styles.inlineIdEmptyText}>Front Missing</Text>
-                          </View>
-                        )}
-                        <View style={styles.inlineIdBadgePill}>
-                          <Text style={styles.inlineIdBadgeText}>FRONT</Text>
-                        </View>
-                      </TouchableOpacity>
-
-                      {/* Library ID Back */}
-                      <TouchableOpacity
-                        style={[
-                          styles.inlineIdPhotoCard,
-                          { borderColor: isDarkMode ? "#1E2A42" : "#E2E8F0" },
-                        ]}
-                        activeOpacity={0.85}
-                        onPress={() => {
-                          if (uploadedIdCards?.libraryIdBack) {
-                            setEnlargedIdPhoto({
-                              title: "Library ID — Back",
-                              uri: uploadedIdCards.libraryIdBack,
-                            });
-                          }
-                        }}
-                      >
-                        {uploadedIdCards?.libraryIdBack ? (
-                          <Image
-                            source={{ uri: uploadedIdCards.libraryIdBack }}
-                            style={styles.inlineIdImage}
+                            style={[
+                              styles.inlineIdImage,
+                              Boolean(uploadedIdCards?.rotations?.schoolIdBack)
+                                ? { transform: [{ rotate: `${uploadedIdCards?.rotations?.schoolIdBack}deg` }] }
+                                : null,
+                            ]}
                             resizeMode="contain"
                           />
                         ) : (
@@ -2354,7 +2276,7 @@ export default function ProfileScreen() {
                     { color: isDarkMode ? "#FACC15" : "#0274BB" },
                   ]}
                 >
-                  1. School ID (Front & Back)
+                  School ID (Front & Back)
                 </Text>
               </View>
 
@@ -2612,285 +2534,7 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {/* SECTION 2: LIBRARY ID */}
-              <View style={[styles.idSectionHeaderRow, { marginTop: 18 }]}>
-                <Ionicons
-                  name="library-outline"
-                  size={17}
-                  color={isDarkMode ? "#FACC15" : "#0274BB"}
-                />
-                <Text
-                  style={[
-                    styles.idSectionHeading,
-                    { color: isDarkMode ? "#FACC15" : "#0274BB" },
-                  ]}
-                >
-                  2. Library ID (Front & Back)
-                </Text>
-              </View>
-
-              <View style={styles.idSlotsGrid}>
-                {/* Library ID Front */}
-                <View
-                  style={[
-                    styles.idSlotCard,
-                    {
-                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
-                      borderColor: draftLibraryFront
-                        ? "#10B981"
-                        : isDarkMode
-                        ? "#263554"
-                        : "#CBD5E1",
-                    },
-                  ]}
-                >
-                  <View style={styles.idSlotLabelRow}>
-                    <Text
-                      style={[
-                        styles.idSlotLabel,
-                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
-                      ]}
-                    >
-                      Library ID • Front
-                    </Text>
-                    {draftLibraryFront ? (
-                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                    ) : null}
-                  </View>
-
-                  {draftLibraryFront ? (
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() =>
-                        promptSlotSource(
-                          "Library ID (Front)",
-                          setDraftLibraryFront,
-                          "libraryFront"
-                        )
-                      }
-                      style={styles.idPreviewWrap}
-                    >
-                      <Image
-                        source={{ uri: draftLibraryFront }}
-                        style={styles.idPreviewImage}
-                        resizeMode="contain"
-                      />
-                      <View style={styles.idRetakeOverlay}>
-                        <Ionicons name="camera-reverse-outline" size={14} color="#FFFFFF" />
-                        <Text style={styles.idRetakeText}>Change</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.idEmptySlotBody}>
-                      <Ionicons
-                        name="id-card-outline"
-                        size={28}
-                        color={isDarkMode ? "#64748B" : "#94A3B8"}
-                      />
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: isDarkMode ? "#94A3B8" : "#64748B",
-                          marginTop: 4,
-                          marginBottom: 8,
-                        }}
-                      >
-                        Front Side
-                      </Text>
-                      <View style={styles.idActionMiniRow}>
-                        <TouchableOpacity
-                          style={[
-                            styles.idMiniBtn,
-                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
-                          ]}
-                          onPress={() =>
-                            promptOrientationAndPick(
-                              "camera",
-                              "Library ID (Front)",
-                              setDraftLibraryFront,
-                              "libraryFront"
-                            )
-                          }
-                        >
-                          <Ionicons
-                            name="camera-outline"
-                            size={14}
-                            color={isDarkMode ? "#FACC15" : "#0274BB"}
-                          />
-                          <Text
-                            style={[
-                              styles.idMiniBtnText,
-                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
-                            ]}
-                          >
-                            Camera
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.idMiniBtn,
-                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
-                          ]}
-                          onPress={() =>
-                            promptOrientationAndPick(
-                              "gallery",
-                              "Library ID (Front)",
-                              setDraftLibraryFront,
-                              "libraryFront"
-                            )
-                          }
-                        >
-                          <Ionicons
-                            name="images-outline"
-                            size={14}
-                            color={isDarkMode ? "#FACC15" : "#0274BB"}
-                          />
-                          <Text
-                            style={[
-                              styles.idMiniBtnText,
-                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
-                            ]}
-                          >
-                            Gallery
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                </View>
-
-                {/* Library ID Back */}
-                <View
-                  style={[
-                    styles.idSlotCard,
-                    {
-                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
-                      borderColor: draftLibraryBack
-                        ? "#10B981"
-                        : isDarkMode
-                        ? "#263554"
-                        : "#CBD5E1",
-                    },
-                  ]}
-                >
-                  <View style={styles.idSlotLabelRow}>
-                    <Text
-                      style={[
-                        styles.idSlotLabel,
-                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
-                      ]}
-                    >
-                      Library ID • Back
-                    </Text>
-                    {draftLibraryBack ? (
-                      <Ionicons name="checkmark-circle" size={16} color="#10B981" />
-                    ) : null}
-                  </View>
-
-                  {draftLibraryBack ? (
-                    <TouchableOpacity
-                      activeOpacity={0.85}
-                      onPress={() =>
-                        promptSlotSource(
-                          "Library ID (Back)",
-                          setDraftLibraryBack,
-                          "libraryBack"
-                        )
-                      }
-                      style={styles.idPreviewWrap}
-                    >
-                      <Image
-                        source={{ uri: draftLibraryBack }}
-                        style={styles.idPreviewImage}
-                        resizeMode="contain"
-                      />
-                      <View style={styles.idRetakeOverlay}>
-                        <Ionicons name="camera-reverse-outline" size={14} color="#FFFFFF" />
-                        <Text style={styles.idRetakeText}>Change</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ) : (
-                    <View style={styles.idEmptySlotBody}>
-                      <Ionicons
-                        name="card-outline"
-                        size={28}
-                        color={isDarkMode ? "#64748B" : "#94A3B8"}
-                      />
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: isDarkMode ? "#94A3B8" : "#64748B",
-                          marginTop: 4,
-                          marginBottom: 8,
-                        }}
-                      >
-                        Back Side
-                      </Text>
-                      <View style={styles.idActionMiniRow}>
-                        <TouchableOpacity
-                          style={[
-                            styles.idMiniBtn,
-                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
-                          ]}
-                          onPress={() =>
-                            promptOrientationAndPick(
-                              "camera",
-                              "Library ID (Back)",
-                              setDraftLibraryBack,
-                              "libraryBack"
-                            )
-                          }
-                        >
-                          <Ionicons
-                            name="camera-outline"
-                            size={14}
-                            color={isDarkMode ? "#FACC15" : "#0274BB"}
-                          />
-                          <Text
-                            style={[
-                              styles.idMiniBtnText,
-                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
-                            ]}
-                          >
-                            Camera
-                          </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[
-                            styles.idMiniBtn,
-                            { backgroundColor: isDarkMode ? "#1E293B" : "#E2E8F0" },
-                          ]}
-                          onPress={() =>
-                            promptOrientationAndPick(
-                              "gallery",
-                              "Library ID (Back)",
-                              setDraftLibraryBack,
-                              "libraryBack"
-                            )
-                          }
-                        >
-                          <Ionicons
-                            name="images-outline"
-                            size={14}
-                            color={isDarkMode ? "#FACC15" : "#0274BB"}
-                          />
-                          <Text
-                            style={[
-                              styles.idMiniBtnText,
-                              { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
-                            ]}
-                          >
-                            Gallery
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    </View>
-                  )}
-                </View>
-              </View>
-            </ScrollView>
+              </ScrollView>
 
             {/* Footer Buttons */}
             <View
@@ -2926,7 +2570,7 @@ export default function ProfileScreen() {
                   styles.idSubmitBtn,
                   {
                     backgroundColor:
-                      draftSchoolFront && draftSchoolBack && draftLibraryFront && draftLibraryBack
+                      draftSchoolFront && draftSchoolBack
                         ? isDarkMode
                           ? "#FACC15"
                           : "#0274BB"
@@ -2949,7 +2593,7 @@ export default function ProfileScreen() {
                       name="checkmark-done-circle"
                       size={18}
                       color={
-                        draftSchoolFront && draftSchoolBack && draftLibraryFront && draftLibraryBack
+                        draftSchoolFront && draftSchoolBack
                           ? isDarkMode
                             ? "#080F1E"
                             : "#FFFFFF"
@@ -2962,14 +2606,14 @@ export default function ProfileScreen() {
                         fontSize: 14,
                         fontWeight: "800",
                         color:
-                          draftSchoolFront && draftSchoolBack && draftLibraryFront && draftLibraryBack
+                          draftSchoolFront && draftSchoolBack
                             ? isDarkMode
                               ? "#080F1E"
                               : "#FFFFFF"
                             : "#CBD5E1",
                       }}
                     >
-                      Save All 4 ID Photos
+                      Save School ID Photos
                     </Text>
                   </>
                 )}
@@ -3020,7 +2664,7 @@ export default function ProfileScreen() {
                       { color: isDarkMode ? "#F8FAFC" : "#0F172A" },
                     ]}
                   >
-                    Verified Student & Library IDs
+                    Verified School ID
                   </Text>
                   <Text
                     style={{
@@ -3077,6 +2721,9 @@ export default function ProfileScreen() {
                     setEnlargedIdPhoto({
                       title: "School ID • Front",
                       uri: uploadedIdCards.schoolIdFront,
+                      slotKey: "schoolIdFront",
+                      rotation: uploadedIdCards?.rotations?.schoolIdFront || 0,
+                      orientation: uploadedIdCards?.orientation || idCaptureOrientation || "portrait",
                     })
                   }
                   style={[
@@ -3103,10 +2750,15 @@ export default function ProfileScreen() {
                     />
                   </View>
                   {uploadedIdCards?.schoolIdFront ? (
-                    <View style={styles.idPreviewWrap}>
+                    <View style={[styles.idPreviewWrap, { height: isProfileIdPortrait ? 175 : 104 }]}>
                       <Image
                         source={{ uri: uploadedIdCards.schoolIdFront }}
-                        style={styles.idPreviewImage}
+                        style={[
+                          styles.idPreviewImage,
+                          Boolean(uploadedIdCards?.rotations?.schoolIdFront)
+                            ? { transform: [{ rotate: `${uploadedIdCards?.rotations?.schoolIdFront}deg` }] }
+                            : null,
+                        ]}
                         resizeMode="contain"
                       />
                     </View>
@@ -3121,6 +2773,9 @@ export default function ProfileScreen() {
                     setEnlargedIdPhoto({
                       title: "School ID • Back",
                       uri: uploadedIdCards.schoolIdBack,
+                      slotKey: "schoolIdBack",
+                      rotation: uploadedIdCards?.rotations?.schoolIdBack || 0,
+                      orientation: uploadedIdCards?.orientation || idCaptureOrientation || "portrait",
                     })
                   }
                   style={[
@@ -3147,117 +2802,15 @@ export default function ProfileScreen() {
                     />
                   </View>
                   {uploadedIdCards?.schoolIdBack ? (
-                    <View style={styles.idPreviewWrap}>
+                    <View style={[styles.idPreviewWrap, { height: isProfileIdPortrait ? 175 : 104 }]}>
                       <Image
                         source={{ uri: uploadedIdCards.schoolIdBack }}
-                        style={styles.idPreviewImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-              </View>
-
-              {/* Library ID Front & Back */}
-              <View style={[styles.idSectionHeaderRow, { marginTop: 18 }]}>
-                <Ionicons
-                  name="library-outline"
-                  size={17}
-                  color={isDarkMode ? "#FACC15" : "#0274BB"}
-                />
-                <Text
-                  style={[
-                    styles.idSectionHeading,
-                    { color: isDarkMode ? "#FACC15" : "#0274BB" },
-                  ]}
-                >
-                  Library ID (Front & Back)
-                </Text>
-              </View>
-
-              <View style={styles.idSlotsGrid}>
-                {/* 3. Library ID Front */}
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() =>
-                    uploadedIdCards?.libraryIdFront &&
-                    setEnlargedIdPhoto({
-                      title: "Library ID • Front",
-                      uri: uploadedIdCards.libraryIdFront,
-                    })
-                  }
-                  style={[
-                    styles.idSlotCard,
-                    {
-                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
-                      borderColor: isDarkMode ? "#263554" : "#CBD5E1",
-                    },
-                  ]}
-                >
-                  <View style={styles.idSlotLabelRow}>
-                    <Text
-                      style={[
-                        styles.idSlotLabel,
-                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
-                      ]}
-                    >
-                      Library ID • Front
-                    </Text>
-                    <Ionicons
-                      name="expand-outline"
-                      size={14}
-                      color={isDarkMode ? "#94A3B8" : "#64748B"}
-                    />
-                  </View>
-                  {uploadedIdCards?.libraryIdFront ? (
-                    <View style={styles.idPreviewWrap}>
-                      <Image
-                        source={{ uri: uploadedIdCards.libraryIdFront }}
-                        style={styles.idPreviewImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                  ) : null}
-                </TouchableOpacity>
-
-                {/* 4. Library ID Back */}
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  onPress={() =>
-                    uploadedIdCards?.libraryIdBack &&
-                    setEnlargedIdPhoto({
-                      title: "Library ID • Back",
-                      uri: uploadedIdCards.libraryIdBack,
-                    })
-                  }
-                  style={[
-                    styles.idSlotCard,
-                    {
-                      backgroundColor: isDarkMode ? "#111C33" : "#F8FAFC",
-                      borderColor: isDarkMode ? "#263554" : "#CBD5E1",
-                    },
-                  ]}
-                >
-                  <View style={styles.idSlotLabelRow}>
-                    <Text
-                      style={[
-                        styles.idSlotLabel,
-                        { color: isDarkMode ? "#E2E8F0" : "#1E293B" },
-                      ]}
-                    >
-                      Library ID • Back
-                    </Text>
-                    <Ionicons
-                      name="expand-outline"
-                      size={14}
-                      color={isDarkMode ? "#94A3B8" : "#64748B"}
-                    />
-                  </View>
-                  {uploadedIdCards?.libraryIdBack ? (
-                    <View style={styles.idPreviewWrap}>
-                      <Image
-                        source={{ uri: uploadedIdCards.libraryIdBack }}
-                        style={styles.idPreviewImage}
+                        style={[
+                          styles.idPreviewImage,
+                          Boolean(uploadedIdCards?.rotations?.schoolIdBack)
+                            ? { transform: [{ rotate: `${uploadedIdCards?.rotations?.schoolIdBack}deg` }] }
+                            : null,
+                        ]}
                         resizeMode="contain"
                       />
                     </View>
@@ -3273,11 +2826,11 @@ export default function ProfileScreen() {
                   marginTop: 14,
                 }}
               >
-                Tap any of the 4 ID pictures above to view full screen.
+                Tap any ID picture above to view full screen.
               </Text>
             </ScrollView>
 
-            {/* Footer */}
+            {/* Footer Close */}
             <View
               style={[
                 styles.idModalFooter,
@@ -3287,18 +2840,10 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={[
                   styles.idSubmitBtn,
-                  {
-                    backgroundColor: isDarkMode ? "#FACC15" : "#0274BB",
-                  },
+                  { backgroundColor: isDarkMode ? "#FFC800" : "#0274BB", flex: 1 },
                 ]}
                 onPress={() => setIdViewerModalVisible(false)}
               >
-                <Ionicons
-                  name="checkmark-circle"
-                  size={18}
-                  color={isDarkMode ? "#080F1E" : "#FFFFFF"}
-                  style={{ marginRight: 6 }}
-                />
                 <Text
                   style={{
                     fontSize: 14,
@@ -3306,7 +2851,7 @@ export default function ProfileScreen() {
                     color: isDarkMode ? "#080F1E" : "#FFFFFF",
                   }}
                 >
-                  Done
+                  Close Viewer
                 </Text>
               </TouchableOpacity>
             </View>
@@ -3334,7 +2879,14 @@ export default function ProfileScreen() {
             <Text style={styles.viewerHeaderTitle}>
               {enlargedIdPhoto?.title || "ID Card"}
             </Text>
-            <View style={{ width: 48 }} />
+            <TouchableOpacity
+              onPress={handleRotateEnlargedPhoto}
+              style={styles.viewerHeaderRotateBtn}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="refresh" size={18} color="#FACC15" />
+              <Text style={styles.viewerHeaderRotateBtnText}>Rotate</Text>
+            </TouchableOpacity>
           </View>
 
           <View style={styles.viewerBody}>
@@ -3342,18 +2894,68 @@ export default function ProfileScreen() {
               <Image
                 source={{ uri: enlargedIdPhoto.uri }}
                 style={{
-                  width: SCREEN_WIDTH - 32,
-                  height: (SCREEN_WIDTH - 32) * 0.65,
+                  width:
+                    (enlargedIdPhoto.orientation ||
+                      uploadedIdCards?.orientation ||
+                      idCaptureOrientation ||
+                      "portrait") === "portrait"
+                      ? Math.min(SCREEN_WIDTH - 48, 290)
+                      : SCREEN_WIDTH - 32,
+                  height:
+                    (enlargedIdPhoto.orientation ||
+                      uploadedIdCards?.orientation ||
+                      idCaptureOrientation ||
+                      "portrait") === "portrait"
+                      ? Math.min(SCREEN_WIDTH - 48, 290) * 1.48
+                      : (SCREEN_WIDTH - 32) * 0.65,
                   borderRadius: 16,
                   borderWidth: 2,
                   borderColor: "#FACC15",
+                  transform: [{ rotate: `${enlargedIdPhoto.rotation || 0}deg` }],
                 }}
                 resizeMode="contain"
               />
             ) : null}
           </View>
 
-          <View style={[styles.viewerBottomContainer, { paddingBottom: insets.bottom + 20 }]}>
+          <View style={[styles.viewerBottomContainer, { paddingBottom: insets.bottom + 16, flexDirection: "column", gap: 10 }]}>
+            <View style={{ flexDirection: "row", gap: 10, width: "100%" }}>
+              <TouchableOpacity
+                style={styles.viewerRotateActionBtn}
+                onPress={handleRotateEnlargedPhoto}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="refresh" size={18} color="#080F1E" style={{ marginRight: 6 }} />
+                <Text style={styles.viewerRotateActionText}>Rotate 90°</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.viewerOrientationActionBtn}
+                onPress={handleToggleOrientationEnlargedPhoto}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name={
+                    (enlargedIdPhoto?.orientation ||
+                      uploadedIdCards?.orientation ||
+                      idCaptureOrientation ||
+                      "portrait") === "portrait"
+                      ? "phone-portrait"
+                      : "phone-landscape"
+                  }
+                  size={18}
+                  color="#FACC15"
+                  style={{ marginRight: 6 }}
+                />
+                <Text style={styles.viewerOrientationActionText}>
+                  {(enlargedIdPhoto?.orientation ||
+                    uploadedIdCards?.orientation ||
+                    idCaptureOrientation ||
+                    "portrait") === "portrait"
+                    ? "Portrait Frame"
+                    : "Landscape Frame"}
+                </Text>
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               style={styles.viewerBottomCloseBtn}
               onPress={() => setEnlargedIdPhoto(null)}
@@ -4125,6 +3727,52 @@ const styles = StyleSheet.create({
   viewerBottomCloseText: {
     color: "#FFFFFF",
     fontSize: 14,
+    fontWeight: "700",
+  },
+  viewerHeaderRotateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: "rgba(250, 204, 21, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+  },
+  viewerHeaderRotateBtnText: {
+    color: "#FACC15",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  viewerRotateActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "#FACC15",
+  },
+  viewerRotateActionText: {
+    color: "#080F1E",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  viewerOrientationActionBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 13,
+    borderRadius: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(250, 204, 21, 0.4)",
+  },
+  viewerOrientationActionText: {
+    color: "#FFFFFF",
+    fontSize: 13.5,
     fontWeight: "700",
   },
 

@@ -1,20 +1,2 @@
-import { proxyToBackend } from "@/lib/proxy";
-
+export { PATCH, PUT, DELETE } from "@/app/api/admin/books/[id]/route";
 export const runtime = "nodejs";
-
-export async function PUT(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const { id } = await context.params;
-  return proxyToBackend(`/api/admin/books/${id}`, request);
-}
-
-export async function DELETE(
-  request: Request,
-  context: { params: Promise<{ id: string }> },
-) {
-  const { id } = await context.params;
-  return proxyToBackend(`/api/admin/books/${id}`, request);
-}
-

@@ -6,6 +6,7 @@ import { Archive, Eye, Plus, Search, ChevronLeft, ChevronRight, Inbox, Check, X,
 import { useNotice } from "@/components/providers/notice-provider";
 import { AdminModal, AdminPageHeader, AdminSection, AdminTable, FieldLabel } from "@/components/admin/shared";
 import { DepartmentBadge } from "@/components/ui/department-badge";
+import { BookCoverImage } from "@/components/ui/book-cover-image";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminBookRecord, AdminBooksPayload, AdminTransactionsPayload } from "@/lib/admin/types";
 import { cn, formatDate, formatDateTime } from "@/lib/utils";
@@ -383,10 +384,18 @@ export function BookManagementPage({ tabs }: { tabs?: ReactNode }) {
                         <p className="text-xs text-[var(--topbar-muted)] mt-0.5 font-mono">{item.studentId}</p>
                       </td>
                       <td className="px-5 py-4 max-w-md">
-                        <p className="text-sm font-semibold text-white leading-snug">{item.resourceTitle}</p>
-                        {item.isbn && (
-                          <p className="mt-1 text-xs text-[var(--topbar-muted)] font-mono leading-relaxed">ISBN: {item.isbn}</p>
-                        )}
+                        <div className="flex items-center gap-3.5">
+                          <BookCoverImage
+                            book={{ title: item.resourceTitle, isbn: item.isbn, department: item.department }}
+                            size="sm"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-white leading-snug">{item.resourceTitle}</p>
+                            {item.isbn && (
+                              <p className="mt-1 text-xs text-[var(--topbar-muted)] font-mono leading-relaxed">ISBN: {item.isbn}</p>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-5 py-4 text-xs text-slate-400 whitespace-nowrap">
                         {formatDateTime(item.requestedAt)}
@@ -433,10 +442,18 @@ export function BookManagementPage({ tabs }: { tabs?: ReactNode }) {
                         <p className="text-xs text-[var(--topbar-muted)] mt-0.5 font-mono">{item.studentId}</p>
                       </td>
                       <td className="px-5 py-4 max-w-md">
-                        <p className="text-sm font-semibold text-white leading-snug">{item.resourceTitle}</p>
-                        {item.isbn && (
-                          <p className="mt-1 text-xs text-[var(--topbar-muted)] font-mono leading-relaxed">ISBN: {item.isbn}</p>
-                        )}
+                        <div className="flex items-center gap-3.5">
+                          <BookCoverImage
+                            book={{ title: item.resourceTitle, isbn: item.isbn, department: item.department }}
+                            size="sm"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-white leading-snug">{item.resourceTitle}</p>
+                            {item.isbn && (
+                              <p className="mt-1 text-xs text-[var(--topbar-muted)] font-mono leading-relaxed">ISBN: {item.isbn}</p>
+                            )}
+                          </div>
+                        </div>
                       </td>
                       <td className="px-5 py-4 text-xs text-slate-400 whitespace-nowrap">
                         {formatDateTime(item.requestedAt)}
@@ -479,15 +496,20 @@ export function BookManagementPage({ tabs }: { tabs?: ReactNode }) {
                       className="border-b border-[var(--line)] transition hover:bg-white/[0.03]"
                     >
                       <td className="px-5 py-4 max-w-md">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-sm font-semibold text-white leading-snug">{book.title}</p>
-                          {book.archived && (
-                            <span className="inline-flex items-center rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
-                              Archived
-                            </span>
-                          )}
+                        <div className="flex items-center gap-3.5">
+                          <BookCoverImage book={book} size="sm" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-white leading-snug">{book.title}</p>
+                              {book.archived && (
+                                <span className="inline-flex items-center rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider">
+                                  Archived
+                                </span>
+                              )}
+                            </div>
+                            <p className="mt-1 text-xs text-[var(--topbar-muted)] leading-relaxed">{book.apaCitation}</p>
+                          </div>
                         </div>
-                        <p className="mt-1 text-xs text-[var(--topbar-muted)] leading-relaxed">{book.apaCitation}</p>
                       </td>
                       <td className="px-5 py-4 whitespace-nowrap">
                         <DepartmentBadge department={book.department} />
@@ -587,6 +609,22 @@ export function BookManagementPage({ tabs }: { tabs?: ReactNode }) {
         onClose={() => setOpen(false)}
       >
         <form className="grid gap-4 md:grid-cols-2" onSubmit={handleSubmit}>
+          <div className="md:col-span-2 flex flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.02] p-4 mb-1">
+            <BookCoverImage
+              book={{
+                id: editingBook?.id,
+                title: form.title || editingBook?.title || "Book Preview",
+                author: form.author || editingBook?.author || "Author",
+                isbn: form.isbn || editingBook?.isbn,
+                department: form.department || editingBook?.department,
+                category: form.category || editingBook?.category,
+                coverImg: (editingBook as any)?.coverImg,
+              }}
+              isHero
+              size="lg"
+              className="w-28 h-[154px] shadow-xl ring-1 ring-white/15"
+            />
+          </div>
           <FieldLabel label="Title">
             <input
               value={form.title}
