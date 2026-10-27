@@ -165,6 +165,10 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
         const rows = state.digitized_books.filter((r) => String(r.id) === id);
         return { rows, rowCount: rows.length };
       }
+      if (sqlLower.includes("status = 'pending review'")) {
+        const rows = state.digitized_books.filter((r) => !r.status || r.status === "Pending Review");
+        return { rows, rowCount: rows.length };
+      }
       return { rows: state.digitized_books, rowCount: state.digitized_books.length };
     }
     if (sqlLower.startsWith("insert into digitized_books")) {
@@ -173,21 +177,25 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
         title: params[0] || "Untitled Scanned Document",
         author: params[1] || "Unknown Author",
         isbn: params[2] || "N/A",
-        department: params[3] || "Circulation",
+        genre: params[3] || "General",
         category: params[4] || "General",
-        summary: params[5] || "",
-        ocr_text: params[6] || "",
-        file_name: params[7] || "scan.jpg",
-        file_size: params[8] || "120 KB",
-        page_count: Number(params[9] || 1),
-        status: params[10] || "Pending Review",
-        scanned_by: params[11] || "Librarian",
-        volume: params[12] || "None",
-        edition: params[13] || "None",
-        copies: Number(params[14] || 1),
-        shelf_location: params[15] || "CIR-01A.1",
-        published_year: params[16] || "2026",
-        publisher: params[17] || "",
+        department: params[5] || "Circulation",
+        shelf_location: params[6] || "CIR-01A.1",
+        accession_number: params[7] || "",
+        copies: Number(params[8] || 1),
+        edition: params[9] || "1st Edition",
+        volume: params[10] || "Vol. 1",
+        publisher: params[11] || "",
+        publication_date: params[12] || "2026-01-01",
+        year: params[13] || "2026",
+        pages: Number(params[14] || 1),
+        summary: params[15] || "",
+        doc_type: params[16] || "Catalog Intake Slip",
+        ocr_engine: params[17] || "Tesseract Neural OCR",
+        confidence: Number(params[18] || 95),
+        raw_text: params[19] || "",
+        scanned_by: params[20] || "Librarian",
+        status: "Pending Review",
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -253,7 +261,45 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     return { rows: [state.system_settings[0]], rowCount: 1 };
   }
 
-  // 4. System Backups & Institutional Sync Logs
+  // 4. Announcements
+  if (sqlLower.includes("from announcements") || sqlLower.includes("into announcements") || sqlLower.includes("update announcements") || sqlLower.includes("delete from announcements")) {
+    if (sqlLower.startsWith("select")) {
+      const rows = state.announcements.map((a) => ({
+        ...a,
+        author: a.author || a.author_name || "Library Administration",
+      }));
+      return { rows, rowCount: rows.length };
+    }
+    if (sqlLower.startsWith("insert into announcements")) {
+      const row = {
+        id: randomUUID(),
+        title: params[0] || "Announcement",
+        content: params[1] || "",
+        audience: params[2] || "All Users",
+        priority: params[3] || "Normal",
+        published: params[4] !== false,
+        author: params[5] || "Library Administration",
+        author_name: params[5] || "Library Administration",
+        duration_days: params[6] ?? null,
+        expires_at: params[7] ?? null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      state.announcements.unshift(row);
+      return { rows: [row], rowCount: 1 };
+    }
+    if (sqlLower.startsWith("delete from announcements")) {
+      const id = String(params[0] || "");
+      const idx = state.announcements.findIndex((a) => String(a.id) === id);
+      if (idx >= 0) {
+        const [removed] = state.announcements.splice(idx, 1);
+        return { rows: [removed], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+  }
+
+  // 5. System Backups & Institutional Sync Logs
   if (sqlLower.includes("system_backups")) {
     if (sqlLower.startsWith("select")) {
       return { rows: state.system_backups, rowCount: state.system_backups.length };
@@ -289,7 +335,7 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     }
   }
 
-  // 5. Reports / Analytics special aggregations
+  // 6. Reports / Analytics special aggregations
   if (sqlLower.includes("to_char(created_at, 'mon')") && sqlLower.includes("from books")) {
     return {
       rows: [
@@ -379,7 +425,7 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     return { rows, rowCount: rows.length };
   }
 
-  // 6. History Logs, Activity Logs, Auth Logs, AI Search Logs
+  // 7. History Logs, Activity Logs, Auth Logs, AI Search Logs
   if (sqlLower.includes("from history_logs") || sqlLower.includes("into history_logs")) {
     if (sqlLower.startsWith("insert into history_logs")) {
       const row = {
@@ -394,14 +440,14 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
       state.history_logs.unshift(row);
       return { rows: [row], rowCount: 1 };
     }
-    if (sqlLower.includes("created_at >= current_date") && sqlLower.includes("count(*)")) {
+    if (sqlLower.includes("created_at >= current_date") && sqlLower.startsWith("select count(*)")) {
       const today = new Date().toISOString().slice(0, 10);
       const count = state.history_logs.filter(
         (h) => String(h.created_at || "").startsWith(today) && (h.module === "Records" || String(h.action || "").toLowerCase().includes("add"))
       ).length;
       return { rows: [{ count }], rowCount: 1 };
     }
-    if (sqlLower.includes("count(*)")) {
+    if (sqlLower.startsWith("select count(*)")) {
       return { rows: [{ total: state.history_logs.length, count: state.history_logs.length }], rowCount: 1 };
     }
     const rows = state.history_logs.map((h) => ({
@@ -469,17 +515,121 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     return { rows, rowCount: rows.length };
   }
 
-  // 7. Users table
-  if (sqlLower.includes("from users") || sqlLower.includes("into users") || sqlLower.includes("update users") || sqlLower.includes("delete from users")) {
-    if (sqlLower.includes("select count(*)") && !sqlLower.includes("group by")) {
-      if (params.length === 0) {
-        return { rows: [{ count: state.users.length, total: state.users.length }], rowCount: 1 };
+  // 8. Books table (must be checked BEFORE transactions because student/books queries contain a transactions subquery!)
+  if (
+    sqlLower.includes("from books") ||
+    sqlLower.includes("from paged_books") ||
+    sqlLower.startsWith("insert into books") ||
+    sqlLower.startsWith("update books") ||
+    sqlLower.startsWith("delete from books")
+  ) {
+    // Let /api/transactions (which has FROM transactions t ... LEFT JOIN LATERAL (SELECT ... FROM books b)) pass through to transactions!
+    if (!sqlLower.includes("from transactions")) {
+      const books = getLocalBooksRows();
+      const { borrowedByIsbn, reservedByIsbn } = computeBookLoanCounts(state);
+
+      if (sqlLower.includes("created_at >= current_date") && sqlLower.startsWith("select count(*)")) {
+        const today = new Date().toISOString().slice(0, 10);
+        const count = books.filter((b) => String(b.created_at || "").startsWith(today)).length;
+        return { rows: [{ count }], rowCount: 1 };
       }
-      throwOffline();
+
+      if (sqlLower.startsWith("select count(*)") && !sqlLower.includes("$1 = 'all'")) {
+        const activeOnly = sqlLower.includes("archived_at is null");
+        let filtered = activeOnly ? books.filter((b) => !b.archived_at) : books;
+        if (params.length === 1 && typeof params[0] === "string" && params[0] !== "All" && !params[0].includes("%")) {
+          filtered = filtered.filter((b) => b.department === params[0]);
+        }
+        return { rows: [{ count: filtered.length, total: filtered.length }], rowCount: 1 };
+      }
+
+      if (sqlLower.includes("with paged_books as")) {
+        let list = books.filter((b) => !b.archived_at);
+        let limit = 50;
+        let offset = 0;
+        if (params.length === 3) {
+          const dept = String(params[0] || "");
+          if (dept && dept !== "All") list = list.filter((b) => b.department === dept);
+          limit = Number(params[1] || 50);
+          offset = Number(params[2] || 0);
+        } else if (params.length >= 2) {
+          limit = Number(params[0] || 50);
+          offset = Number(params[1] || 0);
+        }
+        const rows = list.slice(offset, offset + limit).map((b) => mapStudentBookRow(b, borrowedByIsbn, reservedByIsbn));
+        return { rows, rowCount: rows.length };
+      }
+
+      if ((sqlLower.includes("where b.id::text = $1") || sqlLower.includes("where id::text = $1") || sqlLower.includes("where id = $1")) && params.length > 0) {
+        const q = String(params[0] || "").trim().toLowerCase();
+        const found = books.filter(
+          (b) => String(b.id).toLowerCase() === q || String(b.isbn || "").toLowerCase() === q
+        );
+        const rows = found.map((b) => mapStudentBookRow(b, borrowedByIsbn, reservedByIsbn));
+        return { rows, rowCount: rows.length };
+      }
+
+      if (sqlLower.includes("lower(b.title) like $1") || sqlLower.includes("title ilike")) {
+        const rawPattern = String(params[0] || "").replace(/%/g, "").trim().toLowerCase();
+        let list = books.filter((b) => !b.archived_at);
+        if (rawPattern) {
+          list = list.filter(
+            (b) =>
+              String(b.title || "").toLowerCase().includes(rawPattern) ||
+              String(b.author || "").toLowerCase().includes(rawPattern) ||
+              String(b.isbn || "").toLowerCase().includes(rawPattern) ||
+              String(b.category || "").toLowerCase().includes(rawPattern) ||
+              String(b.genres || "").toLowerCase().includes(rawPattern)
+          );
+        }
+        const limit = Number(params[params.length - 1]) || 50;
+        const rows = list.slice(0, Math.min(200, limit)).map((b) => mapStudentBookRow(b, borrowedByIsbn, reservedByIsbn));
+        return { rows, rowCount: rows.length };
+      }
+
+      if (sqlLower.startsWith("insert into books")) {
+        const newBook = {
+          id: randomUUID(),
+          title: params[0] || "Untitled",
+          author: params[1] || "Unknown Author",
+          isbn: params[2] || `ISBN-${Date.now()}`,
+          department: params[3] || "Circulation",
+          category: params[4] || "General",
+          shelf_location: params[5] || "CIR-01A.1",
+          published_date: params[6] || "2026-01-01",
+          publication_date: String(params[6] || "2026-01-01").slice(0, 10),
+          summary: params[7] || "",
+          apa_citation: params[8] || "",
+          availability: params[9] || "Available",
+          borrow_count: 0,
+          copies: Number(params[10] || 1),
+          volume: params[11] || "Single Volume / None",
+          edition: params[12] || "Single Edition / None",
+          genres: params[13] || params[4] || "General",
+          publisher: params[14] || "",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          archived_at: null,
+          source: "bookhive-manual",
+        };
+        books.unshift(newBook);
+        return { rows: [newBook], rowCount: 1 };
+      }
+    }
+  }
+
+  // 9. Users table (checked when main query is on users, not a LEFT JOIN users in transactions)
+  if (
+    (sqlLower.includes("from users") && !sqlLower.includes("from transactions")) ||
+    sqlLower.startsWith("insert into users") ||
+    sqlLower.startsWith("update users") ||
+    sqlLower.startsWith("delete from users")
+  ) {
+    if (sqlLower.startsWith("select count(*)") && !sqlLower.includes("group by")) {
+      return { rows: [{ count: state.users.length, total: state.users.length }], rowCount: 1 };
     }
 
     if (sqlLower.startsWith("select")) {
-      // Login check by email or id_number
       if (sqlLower.includes("lower(email) = $1") || sqlLower.includes("lower(email) = lower($1)")) {
         const idf = String(params[0] || "").trim().toLowerCase();
         const rows = state.users
@@ -493,7 +643,6 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
         return { rows, rowCount: rows.length };
       }
 
-      // QR lookup
       if (sqlLower.includes("qr_code") && params.length === 1 && !sqlLower.includes("offset")) {
         const q = String(params[0] || "").trim().toLowerCase();
         const rows = state.users.filter(
@@ -506,7 +655,6 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
         return { rows, rowCount: rows.length };
       }
 
-      // By ID
       if ((sqlLower.includes("where id = $1") || sqlLower.includes("where u.id = $1") || sqlLower.includes("where id::text = $1")) && params.length > 0) {
         const id = String(params[0] || "");
         const rows = state.users
@@ -520,31 +668,29 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
         return { rows, rowCount: rows.length };
       }
 
-      // Active users for OCR verify-id
+      let filtered = [...state.users];
       if (sqlLower.includes("status = 'active'") && !sqlLower.includes("coalesce") && !sqlLower.includes("offset")) {
-        const rows = state.users
-          .filter((u) => (u.status || "Active") === "Active")
-          .map((u) => ({
-            ...u,
-            idNumber: u.id_number || "",
-            yearLevel: u.year_level || "",
-            lastActive: u.last_active || u.created_at || new Date().toISOString(),
-          }));
-        return { rows, rowCount: rows.length };
+        filtered = filtered.filter((u) => (u.status || "Active") === "Active");
       }
 
-      // For paginated admin/super-admin user lists, delegate to adminRepository fallback
-      if (sqlLower.includes("offset")) {
-        throwOffline();
-      }
-
-      const rows = state.users.map((u) => ({
+      const mapped = filtered.map((u) => ({
         ...u,
         idNumber: u.id_number || "",
         yearLevel: u.year_level || "",
+        qrCode: u.qr_code || "",
         lastActive: u.last_active || u.created_at || new Date().toISOString(),
+        createdAt: u.created_at || new Date().toISOString(),
+        updatedAt: u.updated_at || new Date().toISOString(),
       }));
-      return { rows, rowCount: rows.length };
+
+      if (sqlLower.includes("offset") && params.length >= 2) {
+        const limit = Number(params[params.length - 2]) || 10;
+        const offset = Number(params[params.length - 1]) || 0;
+        const paged = mapped.slice(offset, offset + limit);
+        return { rows: paged, rowCount: paged.length };
+      }
+
+      return { rows: mapped, rowCount: mapped.length };
     }
 
     if (sqlLower.startsWith("update users")) {
@@ -569,9 +715,9 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     }
   }
 
-  // 8. Transactions table (card-by-qr and infrastructure count)
+  // 10. Transactions table
   if (sqlLower.includes("from transactions")) {
-    if (sqlLower.includes("select count(*)") && params.length === 0 && !sqlLower.includes("group by")) {
+    if (sqlLower.startsWith("select count(*)") && !sqlLower.includes("group by")) {
       return { rows: [{ count: state.transactions.length, total: state.transactions.length }], rowCount: 1 };
     }
     if (sqlLower.includes("where user_id = $1") || sqlLower.includes("student_id = $2")) {
@@ -583,104 +729,6 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
       return { rows, rowCount: rows.length };
     }
     throwOffline();
-  }
-
-  // 9. Books table (Student APIs, OCR scan-paper, daily-count, infrastructure count)
-  if (sqlLower.includes("from books") || sqlLower.includes("from paged_books") || sqlLower.includes("into books")) {
-    const books = getLocalBooksRows();
-    const { borrowedByIsbn, reservedByIsbn } = computeBookLoanCounts(state);
-
-    if (sqlLower.includes("created_at >= current_date") && sqlLower.includes("count(*)")) {
-      const today = new Date().toISOString().slice(0, 10);
-      const count = books.filter((b) => String(b.created_at || "").startsWith(today)).length;
-      return { rows: [{ count }], rowCount: 1 };
-    }
-
-    // Student /api/student/books count or infrastructure count
-    if (sqlLower.includes("select count(*)") && !sqlLower.includes("$1 = 'all'")) {
-      const activeOnly = sqlLower.includes("archived_at is null");
-      let filtered = activeOnly ? books.filter((b) => !b.archived_at) : books;
-      if (params.length === 1 && typeof params[0] === "string" && params[0] !== "All" && !params[0].includes("%")) {
-        filtered = filtered.filter((b) => b.department === params[0]);
-      }
-      return { rows: [{ count: filtered.length, total: filtered.length }], rowCount: 1 };
-    }
-
-    // Student /api/student/books paginated list (WITH paged_books AS)
-    if (sqlLower.includes("with paged_books as")) {
-      let list = books.filter((b) => !b.archived_at);
-      let limit = 50;
-      let offset = 0;
-      if (params.length === 3) {
-        const dept = String(params[0] || "");
-        if (dept && dept !== "All") list = list.filter((b) => b.department === dept);
-        limit = Number(params[1] || 50);
-        offset = Number(params[2] || 0);
-      } else if (params.length >= 2) {
-        limit = Number(params[0] || 50);
-        offset = Number(params[1] || 0);
-      }
-      const rows = list.slice(offset, offset + limit).map((b) => mapStudentBookRow(b, borrowedByIsbn, reservedByIsbn));
-      return { rows, rowCount: rows.length };
-    }
-
-    // Student /api/student/books/[id]
-    if ((sqlLower.includes("where b.id::text = $1") || sqlLower.includes("where id::text = $1") || sqlLower.includes("where id = $1")) && params.length > 0) {
-      const q = String(params[0] || "").trim().toLowerCase();
-      const found = books.filter(
-        (b) => String(b.id).toLowerCase() === q || String(b.isbn || "").toLowerCase() === q
-      );
-      const rows = found.map((b) => mapStudentBookRow(b, borrowedByIsbn, reservedByIsbn));
-      return { rows, rowCount: rows.length };
-    }
-
-    // Student /api/student/books/search or /api/student/ocr/scan-paper
-    if (sqlLower.includes("lower(b.title) like $1") || sqlLower.includes("title ilike")) {
-      const rawPattern = String(params[0] || "").replace(/%/g, "").trim().toLowerCase();
-      let list = books.filter((b) => !b.archived_at);
-      if (rawPattern) {
-        list = list.filter(
-          (b) =>
-            String(b.title || "").toLowerCase().includes(rawPattern) ||
-            String(b.author || "").toLowerCase().includes(rawPattern) ||
-            String(b.isbn || "").toLowerCase().includes(rawPattern) ||
-            String(b.category || "").toLowerCase().includes(rawPattern) ||
-            String(b.genres || "").toLowerCase().includes(rawPattern)
-        );
-      }
-      const limit = Number(params[params.length - 1]) || 50;
-      const rows = list.slice(0, Math.min(200, limit)).map((b) => mapStudentBookRow(b, borrowedByIsbn, reservedByIsbn));
-      return { rows, rowCount: rows.length };
-    }
-
-    if (sqlLower.startsWith("insert into books")) {
-      const newBook = {
-        id: randomUUID(),
-        title: params[0] || "Untitled",
-        author: params[1] || "Unknown Author",
-        isbn: params[2] || `ISBN-${Date.now()}`,
-        department: params[3] || "Circulation",
-        category: params[4] || "General",
-        shelf_location: params[5] || "CIR-01A.1",
-        published_date: params[6] || "2026-01-01",
-        publication_date: String(params[6] || "2026-01-01").slice(0, 10),
-        summary: params[7] || "",
-        apa_citation: params[8] || "",
-        availability: params[9] || "Available",
-        borrow_count: 0,
-        copies: Number(params[10] || 1),
-        volume: params[11] || "Single Volume / None",
-        edition: params[12] || "Single Edition / None",
-        genres: params[13] || params[4] || "General",
-        publisher: params[14] || "",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        archived_at: null,
-        source: "bookhive-manual",
-      };
-      books.unshift(newBook);
-      return { rows: [newBook], rowCount: 1 };
-    }
   }
 
   throwOffline();
