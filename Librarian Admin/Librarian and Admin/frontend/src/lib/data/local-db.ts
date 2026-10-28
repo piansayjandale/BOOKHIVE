@@ -233,8 +233,8 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
         maintenance_title: "System Maintenance & Update",
         maintenance_message: "BookHive is currently undergoing scheduled maintenance and updates.",
         maintenance_until: null,
-        min_app_version: "1.0.9",
-        latest_apk_url: "https://expo.dev/artifacts/eas/a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY.apk",
+        min_app_version: "1.1.0",
+        latest_apk_url: "https://expo.dev/artifacts/eas/QuHFoP8CF0nyJcYjtxTABgfINbWkLET_Jqi8rjeI4-g.apk",
         updated_at: new Date().toISOString(),
       });
     }

@@ -3,12 +3,12 @@
   "redirects": [
     {
       "source": "/downloads/bookhive-release.apk",
-      "destination": "https://expo.dev/artifacts/eas/a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY.apk",
+      "destination": "https://expo.dev/artifacts/eas/QuHFoP8CF0nyJcYjtxTABgfINbWkLET_Jqi8rjeI4-g.apk",
       "permanent": false
     },
     {
       "source": "/downloads/app-release.apk",
-      "destination": "https://expo.dev/artifacts/eas/a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY.apk",
+      "destination": "https://expo.dev/artifacts/eas/QuHFoP8CF0nyJcYjtxTABgfINbWkLET_Jqi8rjeI4-g.apk",
       "permanent": false
     }
   ],

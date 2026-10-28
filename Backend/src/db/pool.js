@@ -135,7 +135,7 @@ export async function runAutoMigrations() {
         );
       `);
     } else {
-      const latestEasApk = 'https://expo.dev/artifacts/eas/a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY.apk';
+      const latestEasApk = 'https://expo.dev/artifacts/eas/QuHFoP8CF0nyJcYjtxTABgfINbWkLET_Jqi8rjeI4-g.apk';
       await pool.query(`
         CREATE TABLE IF NOT EXISTS system_settings (
           id INTEGER PRIMARY KEY DEFAULT 1,
@@ -157,15 +157,16 @@ export async function runAutoMigrations() {
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_title TEXT NOT NULL DEFAULT 'System Maintenance & Update';
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_message TEXT NOT NULL DEFAULT 'BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.';
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS maintenance_until TIMESTAMPTZ DEFAULT NULL;
-        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS min_app_version TEXT NOT NULL DEFAULT '1.0.9';
+        ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS min_app_version TEXT NOT NULL DEFAULT '1.1.0';
         ALTER TABLE system_settings ADD COLUMN IF NOT EXISTS latest_apk_url TEXT NOT NULL DEFAULT '${latestEasApk}';
         UPDATE system_settings
-        SET min_app_version = '1.0.9',
+        SET min_app_version = '1.1.0',
             latest_apk_url = '${latestEasApk}'
         WHERE id = 1
           AND (
-            min_app_version IN ('1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4', '1.0.5', '1.0.6', '1.0.7', '1.0.8')
+            min_app_version IN ('1.0.0', '1.0.1', '1.0.2', '1.0.3', '1.0.4', '1.0.5', '1.0.6', '1.0.7', '1.0.8', '1.0.9')
             OR latest_apk_url IS NULL
+            OR latest_apk_url LIKE '%a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY%'
             OR latest_apk_url LIKE '%PdclHLKCDOCemD5tcCx2e-a8eSKYUW2tj0rg8Sv1kjU%'
             OR latest_apk_url LIKE '%xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8%'
             OR latest_apk_url LIKE '%XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8%'
