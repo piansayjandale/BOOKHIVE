@@ -626,6 +626,26 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
     sqlLower.startsWith("update users") ||
     sqlLower.startsWith("delete from users")
   ) {
+    if (sqlLower.includes("group by")) {
+      const countsMap = new Map<string, { department: string; course: string; count: number; usage: number }>();
+      const students = state.users.filter(
+        (u) => (String(u.role || "").toLowerCase() === "student" || !u.role) && u.status !== "Archived"
+      );
+      for (const u of students) {
+        const dept = u.department || "CICT";
+        const course = u.course || "BSIT";
+        const key = `${dept}|${course}`;
+        if (!countsMap.has(key)) {
+          countsMap.set(key, { department: dept, course, count: 0, usage: 0 });
+        }
+        const item = countsMap.get(key)!;
+        item.count += 1;
+        item.usage += 1;
+      }
+      const rows = Array.from(countsMap.values());
+      return { rows, rowCount: rows.length };
+    }
+
     if (sqlLower.startsWith("select count(*)") && !sqlLower.includes("group by")) {
       return { rows: [{ count: state.users.length, total: state.users.length }], rowCount: 1 };
     }

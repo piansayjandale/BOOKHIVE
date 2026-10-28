@@ -33,7 +33,7 @@ export function transformDepartmentData(rawUsage?: any[]): DepartmentData[] {
   rawUsage.forEach((item) => {
     // If item already has a direct valid college code
     const directCode = String(item.code || item.key || "").trim().toUpperCase();
-    const count = Number(item.count ?? item.usage ?? item.total ?? 0);
+    const count = Number(item.count || item.usage || item.total || 0) || 0;
     if (directCode && map[directCode] !== undefined) {
       map[directCode] += count;
       return;

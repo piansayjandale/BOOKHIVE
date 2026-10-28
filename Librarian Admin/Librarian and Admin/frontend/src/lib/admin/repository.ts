@@ -545,6 +545,7 @@ export const adminRepository = {
       const counts: Record<string, number> = { CICT: 0, COE: 0, CBMA: 0, CAS: 0, CED: 0, CHTM: 0, CCJE: 0 };
       for (const row of deptRes.rows) {
         const combined = `${row.department || ""} ${row.course || ""}`.toUpperCase();
+        const rowCount = Number(row.count ?? row.usage ?? 1) || 1;
         if (
           combined.includes("CICT") ||
           combined.includes("INFORMATION") ||
@@ -554,7 +555,7 @@ export const adminRepository = {
           combined.includes("TECH") ||
           combined.includes("SOFTWARE")
         ) {
-          counts.CICT += row.count;
+          counts.CICT += rowCount;
         } else if (
           combined.includes("COE") ||
           combined.includes("ENGINEERING") ||
@@ -564,7 +565,7 @@ export const adminRepository = {
           combined.includes("BSME") ||
           combined.includes("MARITIME")
         ) {
-          counts.COE += row.count;
+          counts.COE += rowCount;
         } else if (
           combined.includes("CBMA") ||
           combined.includes("BUSINESS") ||
@@ -575,7 +576,7 @@ export const adminRepository = {
           combined.includes("MANAGEMENT") ||
           combined.includes("FINANCE")
         ) {
-          counts.CBMA += row.count;
+          counts.CBMA += rowCount;
         } else if (
           combined.includes("CAS") ||
           combined.includes("ARTS") ||
@@ -586,7 +587,7 @@ export const adminRepository = {
           combined.includes("GENERAL") ||
           combined.includes("WNU STI")
         ) {
-          counts.CAS += row.count;
+          counts.CAS += rowCount;
         } else if (
           combined.includes("CED") ||
           combined.includes("EDUCATION") ||
@@ -594,7 +595,7 @@ export const adminRepository = {
           combined.includes("BSED") ||
           combined.includes("BEED")
         ) {
-          counts.CED += row.count;
+          counts.CED += rowCount;
         } else if (
           combined.includes("CHTM") ||
           combined.includes("HOSPITALITY") ||
@@ -604,7 +605,7 @@ export const adminRepository = {
           combined.includes("HOTEL") ||
           combined.includes("HRM")
         ) {
-          counts.CHTM += row.count;
+          counts.CHTM += rowCount;
         } else if (
           combined.includes("CCJE") ||
           combined.includes("CRIMINAL") ||
@@ -612,20 +613,20 @@ export const adminRepository = {
           combined.includes("CRIMINOLOGY") ||
           combined.includes("BSCRIM")
         ) {
-          counts.CCJE += row.count;
+          counts.CCJE += rowCount;
         } else {
-          counts.CICT += row.count;
+          counts.CICT += rowCount;
         }
       }
 
       departmentUsage = [
-        { department: "College of Information and Communications Technology (CICT)", key: "CICT", code: "CICT", mascot: "Red Sentinels", usage: counts.CICT, count: counts.CICT, color: "#EF4444" },
-        { department: "College of Engineering (COE)", key: "COE", code: "COE", mascot: "Orange Erudites", usage: counts.COE, count: counts.COE, color: "#FF6B00" },
-        { department: "College of Business Management and Accountancy (CBMA)", key: "CBMA", code: "CBMA", mascot: "Yellow Tycoons", usage: counts.CBMA, count: counts.CBMA, color: "#EAB308" },
-        { department: "College of Arts and Sciences (CAS)", key: "CAS", code: "CAS", mascot: "Green Titans", usage: counts.CAS, count: counts.CAS, color: "#10B981" },
-        { department: "College of Education (CED)", key: "CED", code: "CED", mascot: "Blue Guardians", usage: counts.CED, count: counts.CED, color: "#3B82F6" },
-        { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", code: "CHTM", mascot: "Pink Vikings", usage: counts.CHTM, count: counts.CHTM, color: "#EC4899" },
-        { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", code: "CCJE", mascot: "Purple Wizards", usage: counts.CCJE, count: counts.CCJE, color: "#8B5CF6" },
+        { department: "College of Information and Communications Technology (CICT)", key: "CICT", code: "CICT", mascot: "Red Sentinels", usage: counts.CICT || 0, count: counts.CICT || 0, color: "#EF4444" },
+        { department: "College of Engineering (COE)", key: "COE", code: "COE", mascot: "Orange Erudites", usage: counts.COE || 0, count: counts.COE || 0, color: "#FF6B00" },
+        { department: "College of Business Management and Accountancy (CBMA)", key: "CBMA", code: "CBMA", mascot: "Yellow Tycoons", usage: counts.CBMA || 0, count: counts.CBMA || 0, color: "#EAB308" },
+        { department: "College of Arts and Sciences (CAS)", key: "CAS", code: "CAS", mascot: "Green Titans", usage: counts.CAS || 0, count: counts.CAS || 0, color: "#10B981" },
+        { department: "College of Education (CED)", key: "CED", code: "CED", mascot: "Blue Guardians", usage: counts.CED || 0, count: counts.CED || 0, color: "#3B82F6" },
+        { department: "College of Hospitality and Tourism Management (CHTM)", key: "CHTM", code: "CHTM", mascot: "Pink Vikings", usage: counts.CHTM || 0, count: counts.CHTM || 0, color: "#EC4899" },
+        { department: "College of Criminal Justice Education (CCJE)", key: "CCJE", code: "CCJE", mascot: "Purple Wizards", usage: counts.CCJE || 0, count: counts.CCJE || 0, color: "#8B5CF6" },
       ];
 
       const totalDeptStudents = Object.values(counts).reduce((a, b) => a + b, 0);
