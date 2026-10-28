@@ -11,6 +11,7 @@ import { API_URL, getBackendUrl } from "../../data/authService";
 import {
   getStudentProfile,
   hasAllFourIdPhotos,
+  hasSchoolIdPhotos,
   loadStudentIdCardsForUser,
   subscribe,
 } from "../../data/store";
@@ -372,8 +373,8 @@ function CenterQrButton({
                   setQrModalMode("none");
                   if (requiresIdUpload) {
                     Alert.alert(
-                      "ID Upload Required",
-                      "Please upload your School ID and Library ID before using the scanner."
+                      "School ID Required",
+                      "Please upload your School ID before using the scanner."
                     );
                     return;
                   }
@@ -712,8 +713,8 @@ function CustomBottomTabBar({
     const onPress = () => {
       if (requiresIdUpload && routeName !== "profile") {
         Alert.alert(
-          "ID Upload Required",
-          "Please click the button below your profile picture to upload your School ID (Front & Back) and Library ID (Front & Back) before navigating to other pages."
+          "School ID Required",
+          "Please click the button below your profile picture to upload your School ID (Front & Back) before navigating to other pages."
         );
         const profileRoute = state?.routes?.find((r: any) => r.name === "profile");
         if (profileRoute && typeof navigateToTab === "function") {
@@ -847,14 +848,14 @@ export default function Layout() {
       }
 
       const profile = getStudentProfile();
-      if (hasAllFourIdPhotos(user) || hasAllFourIdPhotos(profile)) {
+      if (hasSchoolIdPhotos(user) || hasSchoolIdPhotos(profile)) {
         if (mounted) setHasIdCards(true);
         return;
       }
 
       const stored = await loadStudentIdCardsForUser(user);
       if (mounted) {
-        setHasIdCards(Boolean(stored));
+        setHasIdCards(Boolean(stored && hasSchoolIdPhotos(stored)));
       }
     };
 

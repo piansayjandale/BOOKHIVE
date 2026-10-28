@@ -112,6 +112,23 @@ export type StudentIdCardsData = {
   rotations?: Record<string, number>;
 };
 
+export const hasSchoolIdPhotos = (
+  obj?: {
+    schoolIdFront?: string;
+    schoolIdBack?: string;
+    libraryIdFront?: string;
+    libraryIdBack?: string;
+  } | null
+): boolean => {
+  if (!obj) return false;
+  return Boolean(
+    obj.schoolIdFront &&
+      String(obj.schoolIdFront).trim().length > 0 &&
+      obj.schoolIdBack &&
+      String(obj.schoolIdBack).trim().length > 0
+  );
+};
+
 export const hasAllFourIdPhotos = (
   obj?: {
     schoolIdFront?: string;
@@ -263,8 +280,8 @@ export const loadStudentIdCardsForUser = async (
   const targetEmail = (userOrProfile?.email || cachedProfile.email || "").trim().toLowerCase();
   const targetStudentId = (userOrProfile?.studentId || cachedProfile.studentId || "").trim().toLowerCase();
 
-  // 1. Check direct fields on passed object
-  if (hasAllFourIdPhotos(userOrProfile)) {
+  // 1. Check direct fields on passed object (School ID Front & Back required)
+  if (hasSchoolIdPhotos(userOrProfile)) {
     const fallbackMemory =
       (targetEmail && inMemoryIdCardsByUser[targetEmail]) ||
       (targetStudentId && inMemoryIdCardsByUser[targetStudentId]) ||
@@ -272,8 +289,8 @@ export const loadStudentIdCardsForUser = async (
     return {
       schoolIdFront: String(userOrProfile!.schoolIdFront),
       schoolIdBack: String(userOrProfile!.schoolIdBack),
-      libraryIdFront: String(userOrProfile!.libraryIdFront),
-      libraryIdBack: String(userOrProfile!.libraryIdBack),
+      libraryIdFront: userOrProfile?.libraryIdFront ? String(userOrProfile.libraryIdFront) : (fallbackMemory?.libraryIdFront || ""),
+      libraryIdBack: userOrProfile?.libraryIdBack ? String(userOrProfile.libraryIdBack) : (fallbackMemory?.libraryIdBack || ""),
       ownerEmail: targetEmail,
       ownerStudentId: targetStudentId,
       orientation: (userOrProfile as any)?.orientation || fallbackMemory?.orientation || "portrait",
@@ -282,10 +299,10 @@ export const loadStudentIdCardsForUser = async (
   }
 
   // 2. Check in-memory ID cards cache
-  if (targetEmail && hasAllFourIdPhotos(inMemoryIdCardsByUser[targetEmail])) {
+  if (targetEmail && hasSchoolIdPhotos(inMemoryIdCardsByUser[targetEmail])) {
     return inMemoryIdCardsByUser[targetEmail];
   }
-  if (targetStudentId && hasAllFourIdPhotos(inMemoryIdCardsByUser[targetStudentId])) {
+  if (targetStudentId && hasSchoolIdPhotos(inMemoryIdCardsByUser[targetStudentId])) {
     return inMemoryIdCardsByUser[targetStudentId];
   }
 
@@ -293,12 +310,12 @@ export const loadStudentIdCardsForUser = async (
   const cachedMatches =
     (targetEmail && cachedProfile.email.toLowerCase().trim() === targetEmail) ||
     (targetStudentId && cachedProfile.studentId.toLowerCase().trim() === targetStudentId);
-  if (cachedMatches && hasAllFourIdPhotos(cachedProfile)) {
+  if (cachedMatches && hasSchoolIdPhotos(cachedProfile)) {
     return {
       schoolIdFront: String(cachedProfile.schoolIdFront),
       schoolIdBack: String(cachedProfile.schoolIdBack),
-      libraryIdFront: String(cachedProfile.libraryIdFront),
-      libraryIdBack: String(cachedProfile.libraryIdBack),
+      libraryIdFront: cachedProfile.libraryIdFront ? String(cachedProfile.libraryIdFront) : "",
+      libraryIdBack: cachedProfile.libraryIdBack ? String(cachedProfile.libraryIdBack) : "",
       ownerEmail: targetEmail,
       ownerStudentId: targetStudentId,
     };
@@ -310,7 +327,7 @@ export const loadStudentIdCardsForUser = async (
       const byEmail = await AsyncStorage.getItem(`STUDENT_ID_CARDS_${targetEmail}`);
       if (byEmail) {
         const parsed = JSON.parse(byEmail);
-        if (hasAllFourIdPhotos(parsed)) {
+        if (hasSchoolIdPhotos(parsed)) {
           inMemoryIdCardsByUser[targetEmail] = parsed;
           return parsed;
         }
@@ -320,7 +337,7 @@ export const loadStudentIdCardsForUser = async (
       const byId = await AsyncStorage.getItem(`STUDENT_ID_CARDS_${targetStudentId}`);
       if (byId) {
         const parsed = JSON.parse(byId);
-        if (hasAllFourIdPhotos(parsed)) {
+        if (hasSchoolIdPhotos(parsed)) {
           inMemoryIdCardsByUser[targetStudentId] = parsed;
           return parsed;
         }
@@ -336,7 +353,7 @@ export const loadStudentIdCardsForUser = async (
       const matchesOwner =
         (targetEmail && ownerEmail && ownerEmail === targetEmail) ||
         (targetStudentId && ownerId && ownerId === targetStudentId);
-      if (matchesOwner && hasAllFourIdPhotos(parsed)) {
+      if (matchesOwner && hasSchoolIdPhotos(parsed)) {
         return parsed;
       }
     }
@@ -600,7 +617,7 @@ const loadCacheFromStorage = async () => {
     }
 
     // Hydrate ID cards from scoped storage if not already populated in cachedProfile
-    if (!hasAllFourIdPhotos(cachedProfile) && (cachedProfile.email || cachedProfile.studentId)) {
+    if (!hasSchoolIdPhotos(cachedProfile) && (cachedProfile.email || cachedProfile.studentId)) {
       const storedCards = await loadStudentIdCardsForUser(cachedProfile);
       if (storedCards) {
         cachedProfile = {
@@ -893,13 +910,13 @@ export const syncProfileWithBackend = async (force = false) => {
         qrCode: dbUser.qrCode || cachedProfile.qrCode || "",
       };
 
-      if (hasAllFourIdPhotos(cachedProfile)) {
+      if (hasSchoolIdPhotos(cachedProfile)) {
         await saveStudentIdCardsToStorage(
           {
             schoolIdFront: cachedProfile.schoolIdFront!,
             schoolIdBack: cachedProfile.schoolIdBack!,
-            libraryIdFront: cachedProfile.libraryIdFront!,
-            libraryIdBack: cachedProfile.libraryIdBack!,
+            libraryIdFront: cachedProfile.libraryIdFront || "",
+            libraryIdBack: cachedProfile.libraryIdBack || "",
           },
           cachedProfile.email,
           cachedProfile.studentId
@@ -1968,13 +1985,13 @@ export const updateStudentProfile = async (updatedProfile: Partial<UserProfile>)
     ...updatedProfile,
   };
   await safeSaveProfileToStorage(cachedProfile);
-  if (hasAllFourIdPhotos(cachedProfile)) {
+  if (hasSchoolIdPhotos(cachedProfile)) {
     await saveStudentIdCardsToStorage(
       {
         schoolIdFront: cachedProfile.schoolIdFront!,
         schoolIdBack: cachedProfile.schoolIdBack!,
-        libraryIdFront: cachedProfile.libraryIdFront!,
-        libraryIdBack: cachedProfile.libraryIdBack!,
+        libraryIdFront: cachedProfile.libraryIdFront || "",
+        libraryIdBack: cachedProfile.libraryIdBack || "",
       },
       cachedProfile.email,
       cachedProfile.studentId

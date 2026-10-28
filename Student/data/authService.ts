@@ -204,16 +204,14 @@ export async function safeSaveCurrentUserToStorage(user: User): Promise<void> {
   const cleanEmail = (user.email || "").trim().toLowerCase();
   const cleanId = (user.studentId || "").trim().toLowerCase();
 
-  // If all 4 ID photos exist and any are large base64 strings, store them in the dedicated single key
+  // If School ID photos exist and any are large base64 strings, store them in the dedicated single key
   if (
     user.schoolIdFront &&
     user.schoolIdBack &&
-    user.libraryIdFront &&
-    user.libraryIdBack &&
     (user.schoolIdFront.length > MAX_INLINE_LEN ||
       user.schoolIdBack.length > MAX_INLINE_LEN ||
-      user.libraryIdFront.length > MAX_INLINE_LEN ||
-      user.libraryIdBack.length > MAX_INLINE_LEN)
+      (user.libraryIdFront && user.libraryIdFront.length > MAX_INLINE_LEN) ||
+      (user.libraryIdBack && user.libraryIdBack.length > MAX_INLINE_LEN))
   ) {
     const primaryCardKey = cleanEmail
       ? `STUDENT_ID_CARDS_${cleanEmail}`
@@ -223,8 +221,8 @@ export async function safeSaveCurrentUserToStorage(user: User): Promise<void> {
     const cardPayload = {
       schoolIdFront: user.schoolIdFront,
       schoolIdBack: user.schoolIdBack,
-      libraryIdFront: user.libraryIdFront,
-      libraryIdBack: user.libraryIdBack,
+      libraryIdFront: user.libraryIdFront || "",
+      libraryIdBack: user.libraryIdBack || "",
       verifiedAt: new Date().toISOString(),
       ownerEmail: cleanEmail,
       ownerStudentId: cleanId,

@@ -397,7 +397,11 @@ export default function ProfileScreen() {
     setPhotoOptionsVisible(true);
   };
 
-  const hasUploadedAllFour = hasAllFourIdPhotos(uploadedIdCards);
+  const hasUploadedSchoolId = Boolean(
+    (uploadedIdCards?.schoolIdFront || profile?.schoolIdFront || user?.schoolIdFront) &&
+    (uploadedIdCards?.schoolIdBack || profile?.schoolIdBack || user?.schoolIdBack)
+  );
+  const hasUploadedAllFour = hasUploadedSchoolId;
   const isProfileIdPortrait = (uploadedIdCards?.orientation || idCaptureOrientation || "portrait") === "portrait";
 
   const openIdUploadModal = () => {
@@ -556,10 +560,10 @@ export default function ProfileScreen() {
   };
 
   const handleSaveFourIdPhotos = async () => {
-    if (!draftSchoolFront || !draftSchoolBack || !draftLibraryFront || !draftLibraryBack) {
+    if (!draftSchoolFront || !draftSchoolBack) {
       Alert.alert(
-        "All 4 ID Pictures Required",
-        "Please upload all 4 required ID pictures:\n• School ID (Front)\n• School ID (Back)\n• Library ID (Front)\n• Library ID (Back)"
+        "School ID Required",
+        "Please upload both the Front and Back of your School ID."
       );
       return;
     }
@@ -570,12 +574,15 @@ export default function ProfileScreen() {
       const targetEmail = studentEmail !== "N/A" ? studentEmail : user?.email;
       const targetStudentId = studentIdNumber !== "N/A" ? studentIdNumber : user?.studentId;
 
+      const currentLibraryFront = draftLibraryFront || uploadedIdCards?.libraryIdFront || "";
+      const currentLibraryBack = draftLibraryBack || uploadedIdCards?.libraryIdBack || "";
+
       // Local payload uses lightweight file:// URIs on native devices to prevent Android SQLite_FULL
       const cardsPayload: StudentIdCardsData = {
         schoolIdFront: draftSchoolFront,
         schoolIdBack: draftSchoolBack,
-        libraryIdFront: draftLibraryFront,
-        libraryIdBack: draftLibraryBack,
+        libraryIdFront: currentLibraryFront,
+        libraryIdBack: currentLibraryBack,
         verifiedAt: new Date().toISOString(),
         ownerEmail: targetEmail,
         ownerStudentId: targetStudentId,
@@ -595,8 +602,8 @@ export default function ProfileScreen() {
         updateUser({
           schoolIdFront: draftSchoolFront,
           schoolIdBack: draftSchoolBack,
-          libraryIdFront: draftLibraryFront,
-          libraryIdBack: draftLibraryBack,
+          libraryIdFront: currentLibraryFront,
+          libraryIdBack: currentLibraryBack,
         });
       }
 
@@ -610,18 +617,18 @@ export default function ProfileScreen() {
         course: studentCourse,
         schoolIdFront: draftBase64Ref.current.schoolFront || draftSchoolFront,
         schoolIdBack: draftBase64Ref.current.schoolBack || draftSchoolBack,
-        libraryIdFront: draftBase64Ref.current.libraryFront || draftLibraryFront,
-        libraryIdBack: draftBase64Ref.current.libraryBack || draftLibraryBack,
+        libraryIdFront: draftBase64Ref.current.libraryFront || currentLibraryFront,
+        libraryIdBack: draftBase64Ref.current.libraryBack || currentLibraryBack,
       });
 
       setIdUploadModalVisible(false);
 
       Alert.alert(
-        "ID Cards Uploaded!",
-        "Your School ID (Front & Back) has been saved. Tap the School ID icon anytime to view your ID pictures!"
+        "School ID Uploaded!",
+        "Your School ID (Front & Back) has been saved successfully. Tap the School ID icon anytime to view your ID pictures!"
       );
     } catch (err) {
-      console.warn("Error saving 4 ID cards:", err);
+      console.warn("Error saving School ID cards:", err);
       Alert.alert("Error", "Could not save your ID pictures. Please try again.");
     } finally {
       setSavingIdCards(false);
@@ -727,13 +734,13 @@ export default function ProfileScreen() {
       | "/help"
       | "/(tabs)"
   ) => {
-    if (idCardsChecked && !hasUploadedAllFour) {
+    if (idCardsChecked && !hasUploadedSchoolId) {
       Alert.alert(
-        "ID Upload Required",
-        "Please click the button below your profile picture to upload your School ID (Front & Back) and Library ID (Front & Back) first.",
+        "School ID Required",
+        "Please click the button below your profile picture to upload your School ID (Front & Back) first.",
         [
           {
-            text: "Upload IDs Now",
+            text: "Upload School ID Now",
             onPress: openIdUploadModal,
           },
           {
@@ -830,8 +837,8 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* REQUIRED ID UPLOAD NOTICE FOR EXISTING ACCOUNTS WITHOUT THE 4 ID PHOTOS */}
-        {idCardsChecked && !hasUploadedAllFour && (
+        {/* REQUIRED ID UPLOAD NOTICE FOR EXISTING ACCOUNTS WITHOUT SCHOOL ID */}
+        {idCardsChecked && !hasUploadedSchoolId && (
           <View
             style={[
               styles.requiredIdBanner,
@@ -855,7 +862,7 @@ export default function ProfileScreen() {
                   { color: isDarkMode ? "#FACC15" : "#92400E" },
                 ]}
               >
-                Action Required: Upload Your School & Library IDs
+                Action Required: Upload Your School ID
               </Text>
               <Text
                 style={[
@@ -863,7 +870,7 @@ export default function ProfileScreen() {
                   { color: isDarkMode ? "#E2E8F0" : "#78350F" },
                 ]}
               >
-                Your existing student account does not have your 4 ID pictures on file yet. Please click the button below your profile picture to upload your School ID (Front & Back) and Library ID (Front & Back).
+                Your existing student account does not have your School ID pictures on file yet. Please click the button below your profile picture to upload your School ID (Front & Back).
               </Text>
             </View>
           </View>
@@ -973,9 +980,9 @@ export default function ProfileScreen() {
               </TouchableOpacity>
 
               {/* BUTTON BELOW PROFILE PICTURE:
-                  - For existing student accounts without the 4 ID pictures: Upload School & Library ID (Front & Back) button
-                  - After uploading (and for new sign-in student accounts): Transforms into an ID Icon button that opens the 4 ID pictures */}
-              {idCardsChecked && !hasUploadedAllFour ? (
+                  - For existing student accounts without School ID: Upload School ID (Front & Back) button
+                  - After uploading: Shows School ID verified status */}
+              {idCardsChecked && !hasUploadedSchoolId ? (
                 <TouchableOpacity
                   onPress={openIdUploadModal}
                   activeOpacity={0.85}
@@ -987,7 +994,7 @@ export default function ProfileScreen() {
                     },
                   ]}
                   accessibilityRole="button"
-                  accessibilityLabel="Upload School ID and Library ID Front and Back"
+                  accessibilityLabel="Upload School ID Front and Back"
                 >
                   <Ionicons
                     name="cloud-upload"
@@ -1001,7 +1008,7 @@ export default function ProfileScreen() {
                         { color: isDarkMode ? "#080F1E" : "#FFFFFF" },
                       ]}
                     >
-                      Upload School & Library ID
+                      Upload School ID
                     </Text>
                     <Text
                       style={[
@@ -1013,7 +1020,7 @@ export default function ProfileScreen() {
                         },
                       ]}
                     >
-                      Required • Front & Back (4 Photos)
+                      Required • Front & Back (2 Photos)
                     </Text>
                   </View>
                   <View

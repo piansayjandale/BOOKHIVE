@@ -231,12 +231,16 @@ function LoginScreenContent() {
           return;
         }
 
-        // Check if existing student account already has the 4 ID photos (School ID Front/Back & Library ID Front/Back)
+        // Check if existing student account already has School ID photos (Front & Back)
         const existingIdCards = await loadStudentIdCardsForUser(result.user);
-        if (!existingIdCards) {
+        const hasSchoolId = Boolean(
+          (existingIdCards?.schoolIdFront || result.user?.schoolIdFront) &&
+          (existingIdCards?.schoolIdBack || result.user?.schoolIdBack)
+        );
+        if (!hasSchoolId) {
           showAlert(
-            "ID Upload Required",
-            "Welcome back! Please click the Upload School & Library ID button below your profile picture to upload the Front & Back of your School ID and Library ID."
+            "School ID Required",
+            "Welcome back! Please click the Upload School ID button below your profile picture to upload the Front & Back of your School ID."
           );
           router.replace({
             pathname: "/(tabs)/profile",
@@ -337,7 +341,7 @@ function LoginScreenContent() {
             <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder="••••••••"
+              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
               placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={password}
               onChangeText={(value) => {
