@@ -192,10 +192,10 @@ export function RemindersModule() {
 
   const filteredByTab = useMemo(() => {
     if (activeTab === "violators") {
-      return activeTransactions.filter((t) => isOverdue(t.dueDate));
+      return activeTransactions.filter((t) => isOverdue(t.dueDate || (t as any).due_date));
     }
     if (activeTab === "dueToday") {
-      return activeTransactions.filter((t) => isToday(t.dueDate));
+      return activeTransactions.filter((t) => isToday(t.dueDate || (t as any).due_date));
     }
     // "due" tab (All active return schedules)
     return activeTransactions;
@@ -250,8 +250,8 @@ export function RemindersModule() {
   /* ── Summary statistics ──────────────────────────────────────────────── */
 
   const stats = useMemo(() => {
-    const violatorsCount = activeTransactions.filter((t) => isOverdue(t.dueDate)).length;
-    const dueTodayCount = activeTransactions.filter((t) => isToday(t.dueDate)).length;
+    const violatorsCount = activeTransactions.filter((t) => isOverdue(t.dueDate || (t as any).due_date)).length;
+    const dueTodayCount = activeTransactions.filter((t) => isToday(t.dueDate || (t as any).due_date)).length;
     return {
       violators: violatorsCount,
       activeBorrows: activeTransactions.length,
@@ -443,9 +443,9 @@ export function RemindersModule() {
             </thead>
             <tbody>
               {sorted.map((txn) => {
-                const isOverdueItem = isOverdue(txn.dueDate);
-                const isDueTodayItem = isToday(txn.dueDate);
-                const overdueDays = getOverdueDays(txn.dueDate);
+                const isOverdueItem = isOverdue(txn.dueDate || (txn as any).due_date);
+                const isDueTodayItem = isToday(txn.dueDate || (txn as any).due_date);
+                const overdueDays = getOverdueDays(txn.dueDate || (txn as any).due_date);
 
                 return (
                   <tr
@@ -536,7 +536,7 @@ export function RemindersModule() {
 
                     {/* Due Date */}
                     <td className={cn("px-5 py-3.5 text-xs whitespace-nowrap", isLight ? "text-slate-600" : "text-slate-300")}>
-                      {txn.dueDate ? formatDate(txn.dueDate) : "N/A"}
+                      {(txn.dueDate || (txn as any).due_date) ? formatDate(txn.dueDate || (txn as any).due_date) : "N/A"}
                     </td>
 
                     {/* Status Badge */}

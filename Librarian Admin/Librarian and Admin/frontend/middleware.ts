@@ -89,11 +89,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Root always redirects to /intro (Localhost & Live entry point)
+  if (pathname === "/") {
+    return NextResponse.redirect(new URL("/intro", request.url));
+  }
+
   // --- Web Page Route Protection ---
   if (!isAuthenticated && !isPublicPath(pathname)) {
-    if (pathname === "/") {
-      return NextResponse.redirect(new URL("/intro", request.url));
-    }
     return NextResponse.redirect(new URL(sessionDashboardPath, request.url));
   }
 

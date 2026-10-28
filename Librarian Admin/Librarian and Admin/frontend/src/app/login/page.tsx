@@ -225,8 +225,9 @@ export default function LoginPage() {
                     setIdentifier(e.target.value);
                     if (error) setError("");
                   }}
-                  placeholder="School Email or ID (Student or Staff)"
-                  className="w-full bg-transparent border-0 outline-hidden text-sm font-medium"
+                  placeholder=""
+                  style={{ backgroundColor: "transparent", color: "inherit" }}
+                  className="login-input w-full bg-transparent border-0 outline-hidden text-sm font-medium"
                   autoComplete="username"
                   autoCapitalize="none"
                   autoCorrect="off"
@@ -245,8 +246,9 @@ export default function LoginPage() {
                     setPassword(e.target.value);
                     if (error) setError("");
                   }}
-                  placeholder="••••••••"
-                  className="w-full bg-transparent border-0 outline-hidden text-sm font-medium tracking-widest"
+                  placeholder=""
+                  style={{ backgroundColor: "transparent", color: "inherit" }}
+                  className="login-input w-full bg-transparent border-0 outline-hidden text-sm font-medium tracking-widest"
                   autoComplete="current-password"
                   required
                 />
@@ -294,7 +296,8 @@ export default function LoginPage() {
                   value={signupName}
                   onChange={(e) => setSignupName(e.target.value)}
                   placeholder="Full Name (e.g., Juan Dela Cruz)"
-                  className="w-full bg-transparent border-0 outline-hidden text-sm font-medium"
+                  style={{ backgroundColor: "transparent", color: "inherit" }}
+                  className="login-input w-full bg-transparent border-0 outline-hidden text-sm font-medium"
                   required
                 />
               </div>
@@ -306,7 +309,8 @@ export default function LoginPage() {
                   value={signupIdNumber}
                   onChange={(e) => setSignupIdNumber(e.target.value)}
                   placeholder="Student ID (e.g., 23-1653-705)"
-                  className="w-full bg-transparent border-0 outline-hidden text-sm font-medium"
+                  style={{ backgroundColor: "transparent", color: "inherit" }}
+                  className="login-input w-full bg-transparent border-0 outline-hidden text-sm font-medium"
                   required
                 />
               </div>
@@ -318,7 +322,8 @@ export default function LoginPage() {
                   value={signupEmail}
                   onChange={(e) => setSignupEmail(e.target.value)}
                   placeholder="School Email (e.g., juan@wnu.sti.edu.ph)"
-                  className="w-full bg-transparent border-0 outline-hidden text-sm font-medium"
+                  style={{ backgroundColor: "transparent", color: "inherit" }}
+                  className="login-input w-full bg-transparent border-0 outline-hidden text-sm font-medium"
                   required
                 />
               </div>
@@ -330,7 +335,8 @@ export default function LoginPage() {
                   value={signupPassword}
                   onChange={(e) => setSignupPassword(e.target.value)}
                   placeholder="Create Password"
-                  className="w-full bg-transparent border-0 outline-hidden text-sm font-medium"
+                  style={{ backgroundColor: "transparent", color: "inherit" }}
+                  className="login-input w-full bg-transparent border-0 outline-hidden text-sm font-medium"
                   required
                 />
               </div>

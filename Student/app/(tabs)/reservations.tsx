@@ -336,7 +336,7 @@ export default function ReservationsScreen() {
       id: item?.id || `empty-row-${index}`,
       borrowDate: borrowDateText,
       dueReturnDate: dueReturnText,
-      bookTitle: item?.title || "",
+      bookTitle: item?.title || item?.resourceTitle || (item as any)?.resource_title || (item as any)?.bookTitle || "",
       hasData: !!item,
       isReturned,
       isReservation,

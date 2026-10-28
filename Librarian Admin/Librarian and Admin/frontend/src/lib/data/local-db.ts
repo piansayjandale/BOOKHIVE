@@ -1015,20 +1015,172 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
 
     // 10.7 General transactions query
     if (sqlLower.startsWith("select count(*)") && !sqlLower.includes("group by")) {
-      return { rows: [{ count: state.transactions.length, total: state.transactions.length }], rowCount: 1 };
+      let count = state.transactions.length;
+      if (sqlLower.includes("status = 'approved'")) {
+        count = state.transactions.filter(t => String(t.status || "").toLowerCase() === "approved").length;
+      } else if (sqlLower.includes("status = 'pending'")) {
+        count = state.transactions.filter(t => String(t.status || "").toLowerCase() === "pending").length;
+      }
+      return { rows: [{ count, total: count }], rowCount: 1 };
     }
 
-    if (sqlLower.includes("where user_id = $1") || sqlLower.includes("student_id = $2") || sqlLower.includes("student_id = $1")) {
-      const uid = String(params[0] || "");
-      const sid = String(params[1] || params[0] || "");
-      const rows = state.transactions.filter(
-        (t) => String(t.user_id) === uid || String(t.student_id) === sid
+    const books = getLocalBooksRows();
+    const users = state.users;
+
+    // Normalize helper that ensures all camelCase and snake_case properties are always populated
+    const normalizeTx = (t: any) => {
+      if (!t) return t;
+      const b = books.find(
+        (bk) =>
+          (t.isbn && t.isbn !== "N/A" && String(bk.isbn).trim() === String(t.isbn).trim()) ||
+          (t.resource_title && bk.title && String(bk.title).toLowerCase().trim() === String(t.resource_title).toLowerCase().trim()) ||
+          (t.resourceTitle && bk.title && String(bk.title).toLowerCase().trim() === String(t.resourceTitle).toLowerCase().trim()) ||
+          (t.title && bk.title && String(bk.title).toLowerCase().trim() === String(t.title).toLowerCase().trim())
       );
-      return { rows, rowCount: rows.length };
+      const u = users.find(
+        (usr) =>
+          String(usr.id) === String(t.user_id || t.userId) ||
+          (t.student_id && String(usr.id_number || "").toLowerCase() === String(t.student_id).toLowerCase()) ||
+          (t.studentId && String(usr.id_number || "").toLowerCase() === String(t.studentId).toLowerCase())
+      );
+
+      const resourceTitle = String(t.resource_title || t.resourceTitle || t.title || b?.title || "Unknown Book");
+      const studentName = String(t.student_name || t.studentName || u?.name || "Student Borrower");
+      const studentId = String(t.student_id || t.studentId || u?.id_number || "");
+      const userId = String(t.user_id || t.userId || u?.id || "");
+      const isbn = String(t.isbn || b?.isbn || "N/A");
+      const department = String(t.department || u?.department || b?.department || "Circulation");
+      const type = String(t.type || "Borrow");
+      const status = String(t.status || "Pending");
+      const requestedAt = t.requested_at || t.requestedAt || t.created_at || t.createdAt || new Date().toISOString();
+      const dueDate = t.due_date || t.dueDate || null;
+      const pickedUpAt = t.picked_up_at || t.pickedUpAt || null;
+      const decidedAt = t.decided_at || t.decidedAt || null;
+      const decidedBy = t.decided_by || t.decidedBy || null;
+      const availableAt = t.available_at || t.availableAt || null;
+      const expiresAt = t.expires_at || t.expiresAt || null;
+      const coverUrl = b?.coverImg || b?.cover_img || t.coverUrl || t.cover_img || t.coverImg || "";
+      const author = b?.author || t.author || "STI Library Author";
+
+      return {
+        ...t,
+        id: String(t.id),
+        userId,
+        user_id: userId,
+        studentName,
+        student_name: studentName,
+        studentId,
+        student_id: studentId,
+        resourceTitle,
+        resource_title: resourceTitle,
+        title: resourceTitle,
+        author,
+        isbn,
+        department,
+        userDepartment: u?.department || department,
+        userCourse: u?.course || u?.department || "BSIT",
+        bookDepartment: b?.department || department,
+        type,
+        status,
+        requestedAt,
+        requested_at: requestedAt,
+        dueDate,
+        due_date: dueDate,
+        pickedUpAt,
+        picked_up_at: pickedUpAt,
+        isPickedUp: Boolean(pickedUpAt),
+        decidedAt,
+        decided_at: decidedAt,
+        decidedBy,
+        decided_by: decidedBy,
+        availableAt,
+        available_at: availableAt,
+        expiresAt,
+        expires_at: expiresAt,
+        coverUrl,
+        coverImg: coverUrl,
+        cover_img: coverUrl,
+      };
+    };
+
+    let result = [...state.transactions];
+
+    // Filter by student / user identifier if present in query
+    if (
+      sqlLower.includes("lower(t.student_id)") ||
+      sqlLower.includes("t.user_id::text = $1") ||
+      sqlLower.includes("where (t.user_id::text = $1") ||
+      sqlLower.includes("where user_id = $1") ||
+      sqlLower.includes("student_id = $2") ||
+      sqlLower.includes("student_id = $1")
+    ) {
+      const p1 = String(params[0] || "").toLowerCase().trim();
+      const p2 = String(params[1] || params[0] || "").toLowerCase().trim();
+      const p3 = String(params[2] || params[1] || params[0] || "").toLowerCase().trim();
+
+      result = result.filter((t) => {
+        const sid = String(t.student_id || t.studentId || "").toLowerCase().trim();
+        const sname = String(t.student_name || t.studentName || "").toLowerCase().trim();
+        const uid = String(t.user_id || t.userId || "").toLowerCase().trim();
+
+        const match1 = p1 && (sid === p1 || sname === p1 || uid === p1);
+        const match2 = p2 && (sid === p2 || sname === p2 || uid === p2);
+        const match3 = p3 && (sid === p3 || sname === p3 || uid === p3);
+
+        return Boolean(match1 || match2 || match3);
+      });
     }
 
-    // Return all transactions if no specific filter
-    return { rows: state.transactions, rowCount: state.transactions.length };
+    // Filter by status if specified in params or query
+    if (sqlLower.includes("t.status = $") || sqlLower.includes("status = $")) {
+      const statusParam = params.find((p) =>
+        typeof p === "string" && ["approved", "pending", "declined", "returned", "cancelled", "waitlisted"].includes(p.toLowerCase())
+      );
+      if (statusParam) {
+        result = result.filter(
+          (t) => String(t.status || "").toLowerCase() === String(statusParam).toLowerCase()
+        );
+      }
+    }
+
+    // Filter by type if specified in params or query
+    if (sqlLower.includes("t.type = $") || sqlLower.includes("type = $")) {
+      const typeParam = params.find((p) =>
+        typeof p === "string" && ["borrow", "borrowing", "reservation", "reserve"].includes(p.toLowerCase())
+      );
+      if (typeParam) {
+        const targetType = typeParam.toLowerCase().startsWith("res") ? "reservation" : "borrow";
+        result = result.filter((t) => {
+          const tp = String(t.type || "").toLowerCase();
+          return targetType === "reservation" ? (tp === "reservation" || tp === "reserve") : (tp === "borrow" || tp === "borrowing");
+        });
+      }
+    }
+
+    // Filter by search keyword if specified
+    const searchParam = params.find((p) => typeof p === "string" && p.startsWith("%") && p.endsWith("%"));
+    if (searchParam) {
+      const cleanTerm = searchParam.replace(/%/g, "").toLowerCase().trim();
+      if (cleanTerm) {
+        result = result.filter((t) => {
+          const sname = String(t.student_name || t.studentName || "").toLowerCase();
+          const sid = String(t.student_id || t.studentId || "").toLowerCase();
+          const rtitle = String(t.resource_title || t.resourceTitle || "").toLowerCase();
+          const isbn = String(t.isbn || "").toLowerCase();
+          return sname.includes(cleanTerm) || sid.includes(cleanTerm) || rtitle.includes(cleanTerm) || isbn.includes(cleanTerm);
+        });
+      }
+    }
+
+    // Sort by requested_at DESC
+    result.sort((a, b) => {
+      const da = new Date(a.requested_at || a.requestedAt || a.created_at || a.createdAt || 0).getTime();
+      const db = new Date(b.requested_at || b.requestedAt || b.created_at || b.createdAt || 0).getTime();
+      return db - da;
+    });
+
+    const mapped = result.map(normalizeTx);
+    return { rows: mapped, rowCount: mapped.length };
   }
 
   throwOffline();

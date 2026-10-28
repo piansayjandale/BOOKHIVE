@@ -87,6 +87,11 @@ const nextConfig: NextConfig = {
     const apkUrl = isStaleApk ? latestEasApk : envApk;
     return [
       {
+        source: "/",
+        destination: "/intro",
+        permanent: false,
+      },
+      {
         source: "/mobile",
         destination: "/download",
         permanent: true,

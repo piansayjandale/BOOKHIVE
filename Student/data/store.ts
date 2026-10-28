@@ -1149,7 +1149,7 @@ export const syncTransactionsWithBackend = async (force = false): Promise<void> 
             studentName: tx.studentName || tx.student_name || undefined,
             isbn: tx.isbn || undefined,
             copies: tx.copies ? Number(tx.copies) : undefined,
-            title: tx.title || tx.resourceTitle || "Unknown Book",
+            title: tx.title || tx.resourceTitle || tx.resource_title || tx.bookTitle || "Unknown Book",
             author: tx.author || "Unknown Author",
             description: tx.description || "",
             year: tx.year || "2024",

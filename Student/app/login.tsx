@@ -324,7 +324,7 @@ function LoginScreenContent() {
             <Ionicons name="mail-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder="School Email or ID (Student or Staff)"
+              placeholder=""
               placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={email}
               onChangeText={(value) => {
@@ -341,7 +341,7 @@ function LoginScreenContent() {
             <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              placeholder=""
               placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={password}
               onChangeText={(value) => {

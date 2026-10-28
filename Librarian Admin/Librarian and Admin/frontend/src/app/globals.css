@@ -548,17 +548,30 @@ html[data-theme="light"] {
   }
 
   /* Ensure ALL inputs, selects, textareas and options are clean and legible */
-  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+  input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not(.login-input),
   select,
   textarea {
     color: #000000 !important;
     background-color: var(--card-bg) !important;
     border-color: var(--line) !important;
   }
-  input.bg-transparent {
+  input.bg-transparent:not(.login-input) {
     color: #000000 !important;
     background-color: transparent !important;
     background: transparent !important;
+  }
+  input.login-input {
+    background-color: transparent !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  input.login-input:-webkit-autofill,
+  input.login-input:-webkit-autofill:hover,
+  input.login-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #091120 inset !important;
+    -webkit-text-fill-color: #ffffff !important;
+    transition: background-color 5000s ease-in-out 0s;
   }
   input::placeholder,
   textarea::placeholder {
