@@ -6,7 +6,7 @@ import { pool } from "@/lib/db";
 export const runtime = "nodejs";
 
 async function loadSuperAdminSettings() {
-  const latestEasApk = "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk";
+  const latestEasApk = "https://expo.dev/artifacts/eas/a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY.apk";
   try {
     const res = await pool.query("SELECT * FROM system_settings WHERE id = 1");
     const settings = res.rows[0] || {};
@@ -16,6 +16,8 @@ async function loadSuperAdminSettings() {
 
     const isStaleApk =
       !settings.latest_apk_url ||
+      settings.latest_apk_url.includes("PdclHLKCDOCemD5tcCx2e-a8eSKYUW2tj0rg8Sv1kjU") ||
+      settings.latest_apk_url.includes("xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8") ||
       settings.latest_apk_url.includes("XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8") ||
       settings.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
       settings.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
@@ -24,7 +26,7 @@ async function loadSuperAdminSettings() {
       settings.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
     const isStaleVersion =
       !settings.min_app_version ||
-      ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5"].includes(String(settings.min_app_version).trim());
+      ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5", "1.0.6", "1.0.7", "1.0.8"].includes(String(settings.min_app_version).trim());
 
     return {
       settings: {
@@ -44,7 +46,7 @@ async function loadSuperAdminSettings() {
           settings.maintenance_message ||
           "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
         maintenanceUntil: settings.maintenance_until || null,
-        minAppVersion: isStaleVersion ? "1.0.6" : settings.min_app_version,
+        minAppVersion: isStaleVersion ? "1.0.9" : settings.min_app_version,
         latestApkUrl: isStaleApk ? latestEasApk : settings.latest_apk_url,
       },
       institutionalSync: {

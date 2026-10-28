@@ -6,7 +6,7 @@ import { pool } from "@/lib/db";
 export const runtime = "nodejs";
 
 async function loadMaintenanceState() {
-  const latestEasApk = "https://expo.dev/artifacts/eas/xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8.apk";
+  const latestEasApk = "https://expo.dev/artifacts/eas/a3L1Zy4ZsfcYyQgjemhGKXJZwGQw54-073mSl8Jm4eY.apk";
   try {
     const res = await pool.query("SELECT * FROM system_settings WHERE id = 1");
     const s = res.rows[0] || {};
@@ -26,6 +26,8 @@ async function loadMaintenanceState() {
 
     const isStaleApk =
       !s.latest_apk_url ||
+      s.latest_apk_url.includes("PdclHLKCDOCemD5tcCx2e-a8eSKYUW2tj0rg8Sv1kjU") ||
+      s.latest_apk_url.includes("xc8SUbZZdm5ObSv2fEFJIqtMbYHYyDuaEBsqcpwf2c8") ||
       s.latest_apk_url.includes("XFgckz2TnI1Z76BNl4QKdN6GqdBxBMw0p7wHXKXVla8") ||
       s.latest_apk_url.includes("mH97U3T7g48Yn3KFtIHH0Uyal0bzBl5MWx5iu39M_uI") ||
       s.latest_apk_url.includes("m90mnPT1hrznA0zP1xdm95K-P6ZMwCNdlYIbZ6kO-uQ") ||
@@ -34,7 +36,7 @@ async function loadMaintenanceState() {
       s.latest_apk_url.includes("9vqmAP6x6yMOIC_o6J9CLqo8sKcXd0rOtUXxAa7M5UU");
     const isStaleVersion =
       !s.min_app_version ||
-      ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5"].includes(String(s.min_app_version).trim());
+      ["1.0.0", "1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.0.5", "1.0.6", "1.0.7", "1.0.8"].includes(String(s.min_app_version).trim());
 
     return {
       inMaintenance,
@@ -44,7 +46,7 @@ async function loadMaintenanceState() {
         "BookHive is currently undergoing scheduled maintenance and updates. Services are temporarily paused.",
       until,
       remainingSeconds,
-      minVersion: isStaleVersion ? "1.0.6" : s.min_app_version,
+      minVersion: isStaleVersion ? "1.0.9" : s.min_app_version,
       latestApkUrl: isStaleApk ? latestEasApk : s.latest_apk_url,
     };
   } catch {
