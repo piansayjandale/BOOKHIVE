@@ -2452,8 +2452,18 @@ export const syncAnnouncementsWithBackend = async (force = false) => {
     }
 
     const response = await axios.get(`${API_URL}/api/student/announcements`, headers);
-    if (response.status === 200 && response.data?.announcements) {
-      cachedAnnouncements = response.data.announcements;
+    if (response.status === 200 && Array.isArray(response.data?.announcements)) {
+      cachedAnnouncements = response.data.announcements.map((a: any) => ({
+        id: String(a.id || Math.random()),
+        title: a.title || "Announcement",
+        content: a.content || "",
+        priority: a.priority || "Normal",
+        author: a.author || a.author_name || "Library Administration",
+        updatedAt: a.updatedAt || a.updated_at || a.createdAt || a.created_at || new Date().toISOString(),
+        createdAt: a.createdAt || a.created_at || a.updatedAt || new Date().toISOString(),
+        audience: a.audience || "All Users",
+        department: a.department || null,
+      }));
       await AsyncStorage.setItem("STUDENT_ANNOUNCEMENTS", JSON.stringify(cachedAnnouncements));
       notify();
     }

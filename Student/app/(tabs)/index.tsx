@@ -157,6 +157,13 @@ const formatDateTime = (date: Date) => {
   return `${month} ${day}, ${year} • ${hours}:${minutes} ${ampm}`;
 };
 
+const formatSafeAnnouncementDate = (dateVal?: any): string => {
+  if (!dateVal) return "Recently";
+  const d = new Date(dateVal);
+  if (isNaN(d.getTime())) return "Recently";
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+};
+
 const STOP_WORDS = new Set([
   "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "as", "at", 
   "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "did", "do", 
@@ -1526,9 +1533,9 @@ export default function HomeScreen() {
                     <Text style={[styles.announcementTitleText, { color: isDarkMode ? theme.textPrimary : theme.brandBlue }]} numberOfLines={1}>{item.title}</Text>
                     <Text style={[styles.announcementBody, { color: theme.textSecondary }]} numberOfLines={2}>{item.content}</Text>
                     <View style={[styles.announcementFooter, { borderTopColor: theme.cardBorder }]}>
-                      <Text style={[styles.announcementAuthor, { color: theme.textSecondary }]}>By {item.author}</Text>
+                      <Text style={[styles.announcementAuthor, { color: theme.textSecondary }]}>By {item.author || "Library Administration"}</Text>
                       <Text style={[styles.announcementDate, { color: theme.textSecondary }]}>
-                        {new Date(item.updatedAt).toLocaleDateString()}
+                        {formatSafeAnnouncementDate(item.updatedAt || (item as any).createdAt || (item as any).date)}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1937,9 +1944,9 @@ export default function HomeScreen() {
 
               {/* Footer */}
               <View style={[styles.modalAnnFooter, { borderTopColor: theme.cardBorder }]}>
-                <Text style={[styles.modalAnnAuthor, { color: theme.textSecondary }]}>By {selectedAnnouncement?.author}</Text>
+                <Text style={[styles.modalAnnAuthor, { color: theme.textSecondary }]}>By {selectedAnnouncement?.author || "Library Administration"}</Text>
                 <Text style={[styles.modalAnnDate, { color: theme.textSecondary }]}>
-                  {selectedAnnouncement ? new Date(selectedAnnouncement.updatedAt).toLocaleDateString() : ""}
+                  {formatSafeAnnouncementDate(selectedAnnouncement?.updatedAt || (selectedAnnouncement as any)?.createdAt || (selectedAnnouncement as any)?.date)}
                 </Text>
               </View>
 
