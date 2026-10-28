@@ -71,13 +71,7 @@ export function DownloadView({ downloadUrl }: DownloadViewProps) {
             </div>
           </div>
 
-          <Link
-            href="/login"
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 transition-all shadow-xs"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            Back to Portal
-          </Link>
+
         </div>
       </header>
 
@@ -335,7 +329,7 @@ export function DownloadView({ downloadUrl }: DownloadViewProps) {
               </div>
 
               <Link
-                href="/login"
+                href="/intro"
                 className="mt-5 w-full inline-flex items-center justify-center gap-2.5 px-5 py-3.5 rounded-xl bg-gradient-to-r from-sky-600 to-sky-700 hover:from-sky-500 hover:to-sky-600 text-white font-bold text-sm shadow-md shadow-sky-600/25 transition-all cursor-pointer"
               >
                 <span>Launch BookHive in Safari</span>

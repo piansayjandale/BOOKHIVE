@@ -1,389 +1,392 @@
 "use client";
 
-import React, { useState, useEffect, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
-import './Login.css';
+import React, { useState, useEffect, FormEvent } from "react";
+import Link from "next/link";
+import { ArrowLeft, Mail, Lock, Eye, EyeOff, Sun, Moon, Sparkles, HelpCircle } from "lucide-react";
+import "./Login.css";
 
-const LoginPage: React.FC = () => {
-    const [mounted, setMounted] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+export default function LoginPage() {
+  const [mounted, setMounted] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [showForgotModal, setShowForgotModal] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
   useEffect(() => {
     setMounted(true);
+    // Check local storage or document theme
+    if (typeof window !== "undefined") {
+      const savedTheme = localStorage.getItem("bookhive_theme");
+      if (savedTheme === "light") {
+        setIsDarkMode(false);
+      }
+    }
   }, []);
+
+  const toggleTheme = () => {
+    setIsDarkMode((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bookhive_theme", next ? "dark" : "light");
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (e.key === "Escape") {
         setShowForgotModal(false);
       }
     };
     if (showForgotModal) {
-      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener("keydown", handleKeyDown);
     }
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown);
     };
   }, [showForgotModal]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setIsLoading(true);
 
-    // Validation
-    if (!email.trim() || !password.trim()) {
-      setError('Please fill in both email and password.');
-      setIsLoading(false);
-      return;
-    }
+    const trimmedIdentifier = identifier.trim();
+    const trimmedPassword = password.trim();
 
-    if (!email.includes('@')) {
-      setError('Please enter a valid email address.');
+    // Validation: Support both School Email and Student / Staff ID number
+    if (!trimmedIdentifier || !trimmedPassword) {
+      setError("Please enter both your school email or ID and password.");
       setIsLoading(false);
       return;
     }
 
     try {
-      // Call authentication API
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
+      // Call unified authentication API
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          identifier: email.trim(),
-          password,
+          identifier: trimmedIdentifier,
+          password: trimmedPassword,
         }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || 'Login failed. Please check your credentials.');
+        setError(data.message || "Invalid credentials. Please verify your school email or Student ID.");
         setIsLoading(false);
         return;
       }
 
-      // Redirect based on the path provided by the API
-      if (data.redirectPath) {
+      // Route based on role
+      const userRole = (data.user?.role || "").toLowerCase().trim();
+      const isStudent = userRole === "student";
+
+      if (isStudent) {
+        window.location.assign("/student");
+      } else if (data.redirectPath && data.redirectPath !== "/login") {
         window.location.assign(data.redirectPath);
       } else {
-        window.location.assign('/dashboard');
+        window.location.assign("/librarian");
       }
     } catch (err) {
-      console.error('Login error:', err);
-      setError('An error occurred during login. Please try again.');
+      console.error("Login error:", err);
+      setError("Unable to connect to BookHive services. Please try again.");
       setIsLoading(false);
     }
   };
 
-  return (
-    <div className="login-page" data-theme="light" suppressHydrationWarning>
-      {/* Back to Intro / Home Link - Icon only, no container or text */}
-      <a
-        href="/intro"
-        className="login-back-home-btn"
-        title="Back to BookHive Intro & Features"
-        aria-label="Back to BookHive Intro"
-        style={{
-          position: "fixed",
-          top: "22px",
-          left: "22px",
-          zIndex: 100,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#0B1C2C",
-          textDecoration: "none",
-          transition: "transform 0.2s ease, opacity 0.2s ease, color 0.2s ease",
-          cursor: "pointer",
-          filter: "drop-shadow(0 2px 4px rgba(255, 255, 255, 0.85)) drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35))",
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.transform = "scale(1.2)";
-          e.currentTarget.style.color = "#0274BB";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "scale(1)";
-          e.currentTarget.style.color = "#0B1C2C";
-        }}
-      >
-        <ArrowLeft size={32} strokeWidth={2.6} />
-      </a>
+  const bgClass = isDarkMode ? "bg-[#090E1A] text-slate-100" : "bg-[#F8FAFC] text-slate-900";
+  const cardBgClass = isDarkMode
+    ? "bg-[#111A2E] border-slate-700/60 shadow-2xl shadow-black/60"
+    : "bg-white border-slate-200 shadow-xl shadow-slate-300/50";
+  const inputBgClass = isDarkMode
+    ? "bg-[#0A1120] border-slate-700/80 text-white placeholder-slate-500"
+    : "bg-slate-50 border-slate-300 text-slate-900 placeholder-slate-400";
 
-      <img 
-        src="/login-building.jpg" 
-        alt="Background" 
-        className="login-bg" 
-        suppressHydrationWarning 
-      />
-      <div className="login-bg-overlay" />
-      <div className="login-container" style={{ position: 'relative', zIndex: 10 }}>
-        {/* LEFT PANEL */}
-        <div 
-          className="left-panel" 
-          role="img" 
-          aria-label="STI Logo and Library" 
-          style={{ backgroundColor: '#FFF200' }}
+  return (
+    <div
+      className={`min-h-screen w-full flex flex-col justify-between selection:bg-amber-300 selection:text-slate-950 transition-colors duration-200 ${bgClass}`}
+      data-theme={isDarkMode ? "dark" : "light"}
+      suppressHydrationWarning
+    >
+      {/* Ambient decorative glow */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div
+          className={`absolute -top-40 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full blur-3xl opacity-20 pointer-events-none transition-all ${
+            isDarkMode ? "bg-amber-500/20" : "bg-sky-400/20"
+          }`}
+        />
+      </div>
+
+      {/* Top Bar Navigation */}
+      <header className="relative z-20 w-full px-4 sm:px-8 py-4 sm:py-6 flex items-center justify-between max-w-5xl mx-auto">
+        <Link
+          href="/intro"
+          className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold border transition-all cursor-pointer ${
+            isDarkMode
+              ? "bg-slate-800/80 border-slate-700/80 text-slate-200 hover:bg-slate-700/80 hover:text-white"
+              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-slate-950 shadow-xs"
+          }`}
+          title="Back to Intro & Features"
         >
-          <div className="sti-brand-container">
-            <img 
-              src="/sti-logo.png" 
-              className="sti-brand-logo" 
-              alt="STI Logo" 
+          <ArrowLeft className="w-4 h-4" />
+          <span>Back to Intro</span>
+        </Link>
+
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className={`w-10 h-10 rounded-xl flex items-center justify-center border transition-all cursor-pointer ${
+            isDarkMode
+              ? "bg-slate-800/80 border-slate-700/80 text-amber-400 hover:bg-slate-700/80"
+              : "bg-white border-slate-200 text-amber-500 hover:bg-slate-100 shadow-xs"
+          }`}
+          title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+          aria-label="Toggle theme"
+        >
+          {isDarkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+        </button>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-6 sm:py-10 w-full max-w-lg mx-auto">
+        {/* Brand Identity Header */}
+        <div className="flex flex-col items-center text-center mb-6 sm:mb-8">
+          <div className="w-14 h-14 rounded-2xl bg-[#FFF200] p-2 flex items-center justify-center shadow-lg shadow-amber-500/15 mb-3.5 transition-transform hover:scale-105">
+            <img
+              src="/sti-logo.png"
+              alt="STI Logo"
+              className="w-full h-full object-contain"
               suppressHydrationWarning
             />
-            <div className="sti-brand-library">LIBRARY</div>
           </div>
+          <h1 className="text-3xl sm:text-4xl font-black tracking-tight flex items-center gap-2">
+            <span>BookHive</span>
+          </h1>
+          <p
+            className={`text-xs sm:text-sm font-medium mt-1 ${
+              isDarkMode ? "text-slate-400" : "text-slate-600"
+            }`}
+          >
+            STI West Negros University Library Companion
+          </p>
         </div>
 
-        {/* RIGHT PANEL */}
-        <div className="right-panel">
-          
-          <h1 className="title">BOOKHIVE</h1>
-          <p className="subtitle">Login Your Account</p>
+        {/* Central Login Card */}
+        <div className={`w-full border rounded-3xl p-6 sm:p-8 backdrop-blur-md transition-all ${cardBgClass}`}>
+          <h2 className="text-xl sm:text-2xl font-black tracking-tight mb-5">
+            Log in to your account
+          </h2>
 
-          <form className="login-form" onSubmit={handleSubmit} noValidate>
-            {error && <div className="login-error">{error}</div>}
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
+            {error && (
+              <div className="rounded-xl p-3.5 bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-semibold text-center leading-relaxed animate-in fade-in">
+                {error}
+              </div>
+            )}
 
-            <div className="form-group">
-              <label htmlFor="email" className="label">EMAIL ADDRESS</label>
-              <input
-                id="email"
-                type="email"
-                className="input"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                aria-required="true"
-                autoComplete="username"
-                required
-                disabled={isLoading}
-                suppressHydrationWarning
-              />
+            {/* School Email or ID */}
+            <div>
+              <label
+                htmlFor="identifier"
+                className={`block text-[11px] font-bold tracking-wider uppercase mb-1.5 ${
+                  isDarkMode ? "text-slate-400" : "text-slate-600"
+                }`}
+              >
+                School Email or Student ID
+              </label>
+              <div
+                className={`h-13 rounded-2xl border px-3.5 flex items-center gap-3 transition-all focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/20 ${inputBgClass}`}
+              >
+                <Mail className="w-5 h-5 text-slate-400 shrink-0" />
+                <input
+                  id="identifier"
+                  type="text"
+                  value={identifier}
+                  onChange={(e) => {
+                    setIdentifier(e.target.value);
+                    if (error) setError("");
+                  }}
+                  placeholder="e.g., student@sti.edu.ph or 23-1653-705"
+                  className="w-full bg-transparent text-sm font-medium focus:outline-hidden"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
             </div>
 
-            <div className="form-group">
-              <label htmlFor="password" className="label">PASSWORD</label>
-              <div className="password-input-wrapper">
+            {/* Password */}
+            <div>
+              <label
+                htmlFor="password"
+                className={`block text-[11px] font-bold tracking-wider uppercase mb-1.5 ${
+                  isDarkMode ? "text-slate-400" : "text-slate-600"
+                }`}
+              >
+                Password
+              </label>
+              <div
+                className={`h-13 rounded-2xl border px-3.5 flex items-center gap-3 transition-all focus-within:border-amber-400 focus-within:ring-2 focus-within:ring-amber-400/20 ${inputBgClass}`}
+              >
+                <Lock className="w-5 h-5 text-slate-400 shrink-0" />
                 <input
                   id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  className="input"
+                  type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  aria-required="true"
-                  autoComplete="current-password"
-                  required
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError("");
+                  }}
+                  placeholder="••••••••"
+                  className="w-full bg-transparent text-sm font-medium focus:outline-hidden"
+                  autoCapitalize="none"
+                  autoCorrect="off"
                   disabled={isLoading}
-                  suppressHydrationWarning
+                  required
                 />
                 <button
                   type="button"
-                  className="password-toggle"
                   onClick={() => setShowPassword(!showPassword)}
-                  disabled={isLoading}
-                  aria-label="Toggle password visibility"
-                  suppressHydrationWarning
-                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', right: '8px' }}
+                  className="p-1 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
-                  {showPassword ? (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ color: "#000000", opacity: 0.9 }}
-                    >
-                      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                      <path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                      <line x1="2" y1="2" x2="22" y2="22" />
-                    </svg>
-                  ) : (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      style={{ color: "#000000", opacity: 0.9 }}
-                    >
-                      <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                 </button>
               </div>
             </div>
 
-            <div className="options-row">
-              <label className="remember">
+            {/* Remember Me & Forgot Password */}
+            <div className="flex items-center justify-between text-xs pt-1">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   checked={rememberMe}
-                  onChange={e => setRememberMe(e.target.checked)}
-                  disabled={isLoading}
-                  suppressHydrationWarning
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded-md border-slate-600 text-amber-500 focus:ring-amber-400 focus:ring-offset-0 bg-transparent"
                 />
-                Remember
+                <span className={isDarkMode ? "text-slate-300 font-medium" : "text-slate-600 font-medium"}>
+                  Remember me
+                </span>
               </label>
-              <a 
-                href="#forgot-password" 
-                className="forgot-password" 
-                onClick={e => {
-                  e.preventDefault();
-                  setShowForgotModal(true);
-                }}
+
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(true)}
+                className="font-bold text-amber-400 hover:text-amber-300 transition-colors cursor-pointer"
               >
                 Forgot Password?
-              </a>
+              </button>
             </div>
 
-            <button 
-              type="submit" 
-              className="submit-btn"
+            {/* Submit Button */}
+            <button
+              type="submit"
               disabled={isLoading}
-              suppressHydrationWarning
+              className="mt-3 w-full h-13 rounded-2xl bg-[#FFD700] hover:bg-[#ffe033] active:scale-[0.99] text-slate-950 font-black text-base shadow-lg shadow-amber-500/20 transition-all flex items-center justify-center cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'SIGNING IN...' : 'SUBMIT'}
+              {isLoading ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                  <span>Logging in...</span>
+                </span>
+              ) : (
+                "Log In"
+              )}
             </button>
+
+            {/* Mobile App Download Promo */}
+            <div className="pt-2 text-center">
+              <Link
+                href="/download"
+                className={`inline-flex items-center gap-1.5 text-xs font-bold transition-colors ${
+                  isDarkMode ? "text-sky-400 hover:text-sky-300" : "text-sky-600 hover:text-sky-700"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Get the Official Android & iOS Mobile Companion</span>
+              </Link>
+            </div>
           </form>
         </div>
-      </div>
+      </main>
 
-      {/* FORGOT PASSWORD MODAL */}
+      {/* Footer */}
+      <footer className="relative z-10 w-full py-4 text-center text-[11px] text-slate-500 font-medium">
+        STI West Negros University • BookHive Intelligent Library System
+      </footer>
+
+      {/* Forgot Password Modal */}
       {showForgotModal && (
-        <div 
-          className="forgot-modal-backdrop" 
-          onClick={e => {
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in"
+          onClick={(e) => {
             if (e.target === e.currentTarget) setShowForgotModal(false);
           }}
           role="dialog"
           aria-modal="true"
-          aria-labelledby="forgot-modal-title"
         >
-          <div className="forgot-modal-card">
-            <div className="forgot-modal-top-accent" />
-            
-            <div className="forgot-modal-header">
-              <div className="forgot-modal-header-content">
-                <div className="forgot-modal-icon-badge">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                  </svg>
+          <div className="w-full max-w-md bg-[#111A2E] border border-slate-700/80 rounded-3xl p-6 sm:p-7 shadow-2xl text-slate-200 relative">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-700/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <HelpCircle className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 id="forgot-modal-title" className="forgot-modal-title">Password Assistance</h2>
-                  <p className="forgot-modal-subtitle">BookHive Account Security</p>
+                  <h3 className="font-extrabold text-base text-white">Password Assistance</h3>
+                  <p className="text-[11px] text-slate-400">BookHive Security Support</p>
                 </div>
               </div>
-              <button 
-                type="button" 
-                className="forgot-modal-close-btn"
+              <button
+                type="button"
                 onClick={() => setShowForgotModal(false)}
-                aria-label="Close dialog"
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
               >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 6 6 18"/>
-                  <path d="m6 6 12 12"/>
-                </svg>
+                ✕
               </button>
             </div>
 
-            <div className="forgot-modal-body">
-              <div className="forgot-alert-box">
-                <svg className="forgot-alert-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10"/>
-                  <line x1="12" x2="12" y1="8" y2="12"/>
-                  <line x1="12" x2="12.01" y1="16" y2="16"/>
-                </svg>
-                <div className="forgot-alert-text">
-                  <strong>Please contact the Super Administrator:</strong> To reset your password, reach out directly to the Super Administrator. Self-service password reset is disabled for institutional security.
+            <div className="space-y-3.5 text-xs text-slate-300 leading-relaxed">
+              <p>
+                For student and institutional account security, password resets are verified directly by the STI WNU Library Services and ICT Administration.
+              </p>
+              <div className="p-3.5 rounded-xl bg-slate-800/80 border border-slate-700/70 space-y-1.5">
+                <div className="font-bold text-white text-[11px] uppercase tracking-wider">
+                  Support Contact
                 </div>
+                <div><strong>Office:</strong> STI WNU Library Desk / ICT Office</div>
+                <div><strong>Email:</strong> superadmin@stiwnu.edu.ph</div>
+                <div><strong>Hours:</strong> Monday – Friday, 8:00 AM – 5:00 PM</div>
               </div>
-
-              <div className="forgot-contact-card">
-                <div className="forgot-contact-title">Super Administrator Contact</div>
-                
-                <div className="forgot-contact-item">
-                  <svg className="forgot-contact-item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
-                    <circle cx="9" cy="7" r="4"/>
-                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                  </svg>
-                  <div>
-                    <div className="forgot-contact-label">Administrator</div>
-                    <div className="forgot-contact-value">Super Administrator</div>
-                  </div>
-                </div>
-
-                <div className="forgot-contact-item">
-                  <svg className="forgot-contact-item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect width="20" height="16" x="2" y="4" rx="2"/>
-                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-                  </svg>
-                  <div>
-                    <div className="forgot-contact-label">Official Support Email</div>
-                    <a href="mailto:superadmin@stiwnu.edu.ph" className="forgot-contact-email-link">
-                      superadmin@stiwnu.edu.ph
-                    </a>
-                  </div>
-                </div>
-
-                <div className="forgot-contact-item">
-                  <svg className="forgot-contact-item-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
-                    <circle cx="12" cy="10" r="3"/>
-                  </svg>
-                  <div>
-                    <div className="forgot-contact-label">Office Location</div>
-                    <div className="forgot-contact-value">STI WNU Library Services / ICT Admin Desk</div>
-                  </div>
-                </div>
-              </div>
-
-              <p className="forgot-instructions">
-                When contacting the Super Administrator, please specify your <strong>Full Name</strong>, <strong>Employee/Student ID Number</strong>, and registered <strong>Email Address</strong>.
+              <p className="text-[11px] text-slate-400">
+                Please provide your <strong>Student ID Number</strong> and <strong>Full Name</strong> when requesting assistance.
               </p>
             </div>
 
-            <div className="forgot-modal-footer">
-              <button 
-                type="button" 
-                className="forgot-modal-btn-close"
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
                 onClick={() => setShowForgotModal(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs transition-colors cursor-pointer"
               >
                 Close
               </button>
-              <a 
-                href="mailto:superadmin@stiwnu.edu.ph?subject=BookHive%20Password%20Reset%20Request&body=Hello%20Super%20Administrator,%0D%0A%0D%0AI%20am%20requesting%20a%20password%20reset%20for%20my%20BookHive%20account.%0D%0A%0D%0AFull%20Name:%20%0D%0AEmployee/Student%20ID:%20%0D%0ARegistered%20Email:%20%0D%0A%0D%0AThank%20you." 
-                className="forgot-modal-btn-email"
+              <a
+                href="mailto:superadmin@stiwnu.edu.ph?subject=BookHive%20Student%20Password%20Assistance"
+                className="flex-1 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs text-center transition-colors cursor-pointer flex items-center justify-center"
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect width="20" height="16" x="2" y="4" rx="2"/>
-                  <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
-                </svg>
-                Email Super Administrator
+                Email Support
               </a>
             </div>
           </div>
@@ -391,6 +394,4 @@ const LoginPage: React.FC = () => {
       )}
     </div>
   );
-};
-
-export default LoginPage;
+}

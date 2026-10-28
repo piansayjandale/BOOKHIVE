@@ -49,7 +49,15 @@ export function getDashboardPathForRole(role?: Role | string | null): string {
     return "/librarian";
   }
 
+  if (normalized === "STUDENT") {
+    return "/student";
+  }
+
   return "/login";
+}
+
+export function isStudentPath(pathname: string): boolean {
+  return matchesPath(pathname, "/student");
 }
 
 export function isSuperAdminDashboardPath(pathname: string): boolean {

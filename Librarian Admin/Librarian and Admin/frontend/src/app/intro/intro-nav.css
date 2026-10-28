@@ -777,3 +777,232 @@
   color: #ef4444;
   text-shadow: 0 4px 20px rgba(239, 68, 68, 0.28);
 }
+
+/* =========================================================================
+   MOBILE RESPONSIVE OVERRIDES FOR PHONE ACCESS (<= 768px & <= 480px)
+   Tailored layout, typography, placements, and touch targets
+   ========================================================================= */
+@media (max-width: 768px) {
+  /* 1. Header Navigation Bar */
+  .intro-header-nav-white {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 50 !important;
+  }
+  .intro-nav-bar-full {
+    padding: 10px 14px !important;
+    gap: 8px !important;
+  }
+  .login-nav-left {
+    gap: 8px !important;
+  }
+  .login-nav-sti-badge {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    min-height: 32px !important;
+    border-radius: 8px !important;
+    padding: 3px !important;
+  }
+  .intro-brand-title-black {
+    font-size: 19px !important;
+    letter-spacing: -0.3px !important;
+  }
+  .intro-nav-right {
+    gap: 8px !important;
+  }
+  .intro-nav-faq-black-btn {
+    font-size: 13px !important;
+    padding: 6px 10px !important;
+    border-radius: 6px !important;
+  }
+  .intro-nav-login-btn {
+    font-size: 13px !important;
+    padding: 7px 14px !important;
+    border-radius: 8px !important;
+    gap: 5px !important;
+  }
+  .intro-nav-login-btn svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  /* 2. Hero Screen & Layout */
+  .login-hero-screen {
+    min-height: auto !important;
+    padding-bottom: 24px !important;
+  }
+  .login-main-container {
+    padding: 18px 16px 24px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .login-split-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 20px !important;
+  }
+  .intro-hero-left-col {
+    max-width: 100% !important;
+    width: 100% !important;
+  }
+
+  /* Kicker Pill */
+  .intro-kicker-badge-p3 {
+    font-size: 11.5px !important;
+    padding: 5px 12px !important;
+    gap: 6px !important;
+    margin-bottom: 12px !important;
+    max-width: 100% !important;
+  }
+  .intro-kicker-badge-p3 svg {
+    width: 13px !important;
+    height: 13px !important;
+  }
+
+  /* Hero Headline */
+  .intro-hero-heading-v2 {
+    font-size: 30px !important;
+    line-height: 1.15 !important;
+    letter-spacing: -0.02em !important;
+    margin-bottom: 6px !important;
+  }
+  .intro-hero-yellow-title {
+    font-size: 34px !important;
+    line-height: 1.12 !important;
+    display: block !important;
+    color: #FFF200 !important;
+  }
+
+  /* Hero Subtitle */
+  .intro-hero-subtitle-v2 {
+    font-size: 14.5px !important;
+    line-height: 1.45 !important;
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+    color: #fde047 !important;
+    max-width: 100% !important;
+  }
+
+  /* Hero Paragraph */
+  .intro-hero-paragraph-v2 {
+    font-size: 13px !important;
+    line-height: 1.58 !important;
+    margin-top: 6px !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+    max-width: 100% !important;
+  }
+
+  /* Hero Right Column (Logo) */
+  .intro-hero-logo-col {
+    min-height: auto !important;
+    margin-top: 8px !important;
+    display: flex !important;
+    justify-content: center !important;
+    width: 100% !important;
+  }
+  .intro-logo-white-card {
+    max-width: 220px !important;
+    padding: 16px 20px !important;
+    border-radius: 18px !important;
+  }
+  .intro-hero-logo-img {
+    max-width: 170px !important;
+    height: auto !important;
+  }
+
+  /* 3. Section General Styles */
+  .login-section-container {
+    padding: 36px 16px !important;
+  }
+  .login-section-inner {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+  .login-section-header {
+    margin-bottom: 22px !important;
+    text-align: center !important;
+  }
+  .login-section-title {
+    font-size: 21px !important;
+    line-height: 1.25 !important;
+  }
+  .login-section-subtitle {
+    font-size: 12.5px !important;
+    line-height: 1.5 !important;
+  }
+
+  /* 4. Features Section Grid */
+  .intro-features-section .login-features-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .intro-features-section .login-feature-card {
+    padding: 16px 14px !important;
+    min-height: auto !important;
+    border-radius: 14px !important;
+  }
+  .intro-features-section .login-feature-card-title {
+    font-size: 14px !important;
+    line-height: 1.35 !important;
+  }
+  .intro-features-section .login-feature-icon-badge {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 10px !important;
+  }
+
+  /* 5. Summary Section */
+  .login-summary-grid {
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+  }
+  .login-summary-card-frame img {
+    height: 200px !important;
+    border-radius: 14px !important;
+  }
+  .login-summary-kicker {
+    font-size: 11px !important;
+    letter-spacing: 0.1em !important;
+  }
+  .login-summary-heading {
+    font-size: 21px !important;
+    line-height: 1.2 !important;
+  }
+  .login-summary-lead {
+    font-size: 13px !important;
+    line-height: 1.6 !important;
+  }
+
+  /* 6. Modern Descriptive Analytics Grid */
+  .intro-modern-analytics-grid {
+    grid-template-columns: 1fr !important;
+    gap: 14px !important;
+  }
+  .intro-modern-analytic-card {
+    padding: 18px 16px !important;
+    border-radius: 16px !important;
+  }
+  .intro-analytic-metric-num {
+    font-size: 34px !important;
+    line-height: 1.1 !important;
+    margin: 8px 0 !important;
+  }
+  .intro-analytic-metric-title {
+    font-size: 15px !important;
+    margin-bottom: 6px !important;
+  }
+  .intro-analytic-metric-desc {
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    margin-bottom: 12px !important;
+  }
+  .intro-analytic-pill-row {
+    gap: 6px !important;
+    flex-wrap: wrap !important;
+  }
+  .intro-analytic-pill {
+    font-size: 10.5px !important;
+    padding: 4px 8px !important;
+  }
+}
