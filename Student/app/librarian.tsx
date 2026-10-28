@@ -1144,18 +1144,28 @@ export default function LibrarianScreen() {
   };
 
   /**
-   * QR Code detection handler from live CameraView
+   * QR Code and Barcode detection handler from live CameraView
    * Tracks visible QR payload in viewfinder without triggering premature navigation
    */
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (!data || typeof data !== "string" || !data.trim()) return;
     const cleanData = data.trim();
 
-    // Cache latest QR code visible in frame with current timestamp
+    // Cache latest QR / Barcode visible in frame with current timestamp
     latestQrRef.current = {
       data: cleanData,
       timestamp: Date.now(),
     };
+
+    if (activeMode === "Catalog") {
+      // If in Catalog mode and a book barcode/ISBN was scanned:
+      const cleanDigits = cleanData.replace(/[^0-9X]/gi, "");
+      const isBookCode = cleanDigits.length === 10 || cleanDigits.length === 13 || cleanData.startsWith("ACC-") || cleanData.toUpperCase().includes("ISBN");
+      if (isBookCode && !processing && !bookModalVisible) {
+        applyParsedTextToModal(cleanData);
+      }
+      return;
+    }
 
     // If librarian clicked the QR shutter icon and is actively awaiting detection:
     if (isScanningQrRef.current && qrResolveRef.current) {
@@ -1208,8 +1218,8 @@ export default function LibrarianScreen() {
 
     // Detection promise: check if a QR is already in viewfinder or wait up to 3.5s
     const qrDetectionPromise = new Promise<string | null>((resolve) => {
-      // If a QR code was detected in the frame within the last 600ms, use it
-      if (latestQrRef.current && Date.now() - latestQrRef.current.timestamp < 600) {
+      // If a QR code was detected in the frame within the last 60 seconds, use it immediately
+      if (latestQrRef.current && Date.now() - latestQrRef.current.timestamp < 60000) {
         resolve(latestQrRef.current.data);
         return;
       }
@@ -2249,9 +2259,9 @@ export default function LibrarianScreen() {
               mute={true}
               animateShutter={false}
               barcodeScannerSettings={{
-                barcodeTypes: activeMode === "Transaction" ? ["qr"] : [],
+                barcodeTypes: ["qr", "ean13", "code128", "code39", "upc_a", "upc_e", "ean8", "pdf417", "aztec", "datamatrix"],
               }}
-              onBarcodeScanned={activeMode === "Transaction" ? handleBarCodeScanned : undefined}
+              onBarcodeScanned={handleBarCodeScanned}
               onCameraReady={() => setIsCameraReady(true)}
             />
           ) : (

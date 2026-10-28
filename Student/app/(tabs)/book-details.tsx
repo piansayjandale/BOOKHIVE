@@ -445,9 +445,17 @@ export default function BookDetailsScreen() {
     : `₱${Number(String(rawPrice).replace(/[^0-9.]/g, "") || "450").toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Copies distribution aligned with backend and web system
-  const unavailableCopies = liveBookData?.borrowedCount !== undefined
-    ? Math.min(totalCopies, Math.max(Number(liveBookData.borrowedCount), isApprovedLoan ? 1 : 0))
-    : (isApprovedLoan ? 1 : ((rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable") ? totalCopies : (params.borrowedCount ? Number(params.borrowedCount) : 0)));
+  const effectiveBorrowed = Math.max(
+    liveBookData?.borrowedCount !== undefined ? Number(liveBookData.borrowedCount) : 0,
+    liveBookData?.borrowed_count !== undefined ? Number(liveBookData.borrowed_count) : 0,
+    liveBookData?.unavailableCopies !== undefined ? Number(liveBookData.unavailableCopies) : 0,
+    params.borrowedCount ? Number(params.borrowedCount) : 0,
+    params.borrowed_count ? Number(params.borrowed_count) : 0
+  );
+
+  const unavailableCopies = effectiveBorrowed > 0 || liveBookData?.borrowedCount !== undefined || liveBookData?.borrowed_count !== undefined
+    ? Math.min(totalCopies, Math.max(effectiveBorrowed, isApprovedLoan ? 1 : 0))
+    : (isApprovedLoan ? 1 : ((rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable") ? totalCopies : 0));
 
   const reservedCopies = liveBookData?.reservedCount !== undefined
     ? Math.min(totalCopies - unavailableCopies, Math.max(Number(liveBookData.reservedCount), (isPendingBorrowApproval || isReservationWaitlist) ? 1 : 0))
@@ -456,9 +464,9 @@ export default function BookDetailsScreen() {
   const computedAvailableFallback = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
 
   const availableCopies = liveBookData?.availableCopies !== undefined
-    ? Math.min(totalCopies, Math.max(0, Number(liveBookData.availableCopies)))
-    : (params.availableCopies !== undefined && !isNaN(Number(params.availableCopies)) && Number(params.availableCopies) > 0
-        ? Math.min(totalCopies, Number(params.availableCopies))
+    ? Math.min(computedAvailableFallback, Number(liveBookData.availableCopies))
+    : (params.availableCopies !== undefined && !isNaN(Number(params.availableCopies)) && Number(params.availableCopies) >= 0
+        ? Math.min(computedAvailableFallback, Number(params.availableCopies))
         : (rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable"
             ? 0
             : computedAvailableFallback));

@@ -111,6 +111,16 @@ function computeBookLoanCounts(state: LocalDbState) {
 }
 
 function mapStudentBookRow(b: any, borrowedByIsbn: Map<string, number>, reservedByIsbn: Map<string, number>) {
+  const isbn = String(b.isbn || "").trim();
+  const borrowedCount = borrowedByIsbn.get(isbn) || 0;
+  const reservedCount = reservedByIsbn.get(isbn) || 0;
+  const totalCopies = Math.max(1, Number(b.copies || 1));
+  const unavailableCopies = Math.min(totalCopies, borrowedCount);
+  const reservedCopies = Math.min(Math.max(0, totalCopies - unavailableCopies), reservedCount);
+  const availableCopies = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
+  const isAvailable = availableCopies > 0;
+  const status = isAvailable ? "Available" : (reservedCount > 0 ? "Reserved" : "Unavailable");
+
   return {
     ...b,
     id: String(b.id),
@@ -125,10 +135,18 @@ function mapStudentBookRow(b: any, borrowedByIsbn: Map<string, number>, reserved
     publishedDate: b.published_date,
     accessionNumber: b.accession_number,
     borrowCount: Number(b.borrow_count || 0),
-    borrowedCount: borrowedByIsbn.get(b.isbn) || 0,
-    reservedCount: reservedByIsbn.get(b.isbn) || 0,
-    borrowed_count: borrowedByIsbn.get(b.isbn) || 0,
-    reserved_count: reservedByIsbn.get(b.isbn) || 0,
+    borrowedCount,
+    reservedCount,
+    borrowed_count: borrowedCount,
+    reserved_count: reservedCount,
+    totalCopies,
+    copies: totalCopies,
+    unavailableCopies,
+    reservedCopies,
+    availableCopies,
+    isAvailable,
+    status,
+    availability: status,
   };
 }
 
@@ -737,11 +755,270 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
   }
 
   // 10. Transactions table
-  if (sqlLower.includes("from transactions")) {
+  if (
+    sqlLower.includes("from transactions") ||
+    sqlLower.startsWith("insert into transactions") ||
+    sqlLower.startsWith("update transactions") ||
+    sqlLower.startsWith("delete from transactions")
+  ) {
+    // 10.1 INSERT INTO transactions
+    if (sqlLower.startsWith("insert into transactions")) {
+      const studentId = String(params[0] || "").trim();
+      const studentName = String(params[1] || "").trim();
+      const resourceTitle = String(params[2] || "").trim();
+      const isbn = String(params[3] || "").trim();
+      const department = String(params[4] || "Circulation").trim();
+      const studentIdImage = params[5] || null;
+
+      // Find user if matching id_number or email
+      const matchedUser = state.users.find(
+        (u) =>
+          (u.id_number && String(u.id_number).toLowerCase() === studentId.toLowerCase()) ||
+          (u.email && String(u.email).toLowerCase() === studentId.toLowerCase())
+      );
+      const userId = matchedUser ? matchedUser.id : (studentId || randomUUID());
+
+      const isReserve = sqlLower.includes("'reserve'") || sqlLower.includes("'reservation'");
+      const newTx: any = {
+        id: randomUUID(),
+        user_id: userId,
+        student_name: studentName || matchedUser?.name || "Student Borrower",
+        student_id: studentId,
+        resource_title: resourceTitle,
+        isbn: isbn || "N/A",
+        department: department || matchedUser?.department || "Circulation",
+        type: isReserve ? "Reserve" : "Borrow",
+        status: "Pending",
+        due_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        requested_at: new Date().toISOString(),
+        student_id_image: studentIdImage,
+        created_at: new Date().toISOString(),
+        decided_by: null,
+        decided_at: null,
+        picked_up_at: null,
+        comment: isReserve ? "Submitted reservation hold via BookHive." : null,
+      };
+
+      state.transactions.unshift(newTx);
+
+      const retRow = {
+        id: newTx.id,
+        studentName: newTx.student_name,
+        student_name: newTx.student_name,
+        studentId: newTx.student_id,
+        student_id: newTx.student_id,
+        resourceTitle: newTx.resource_title,
+        resource_title: newTx.resource_title,
+        isbn: newTx.isbn,
+        department: newTx.department,
+        type: newTx.type,
+        status: newTx.status,
+        dueDate: newTx.due_date,
+        due_date: newTx.due_date,
+        requestedAt: newTx.requested_at,
+        requested_at: newTx.requested_at,
+        createdAt: newTx.created_at,
+        created_at: newTx.created_at,
+      };
+
+      return { rows: [retRow], rowCount: 1 };
+    }
+
+    // 10.2 UPDATE transactions
+    if (sqlLower.startsWith("update transactions")) {
+      const matchId = params.find((p) => typeof p === "string" && p.length > 10);
+      if (matchId) {
+        const found = state.transactions.find((t) => String(t.id) === String(matchId));
+        if (found) {
+          if (sqlLower.includes("status = 'returned'") || sqlLower.includes("status = $")) {
+            found.status = "Returned";
+            found.returned_at = new Date().toISOString();
+          } else if (sqlLower.includes("status = 'approved'")) {
+            found.status = "Approved";
+            found.decided_at = new Date().toISOString();
+          } else if (sqlLower.includes("status = 'declined'") || sqlLower.includes("status = 'cancelled'")) {
+            found.status = "Cancelled";
+            found.decided_at = new Date().toISOString();
+          }
+          found.updated_at = new Date().toISOString();
+          return { rows: [found], rowCount: 1 };
+        }
+      }
+      return { rows: [], rowCount: 0 };
+    }
+
+    // 10.3 Policy checks: activeCount and overdueCount
+    if (sqlLower.includes('as "activecount"')) {
+      const studentId = String(params[0] || "").toLowerCase().trim();
+      const studentName = String(params[1] || "").toLowerCase().trim();
+      const activeCount = state.transactions.filter((t) => {
+        const matchUser =
+          (t.student_id && String(t.student_id).toLowerCase().trim() === studentId) ||
+          (t.student_name && String(t.student_name).toLowerCase().trim() === studentName);
+        if (!matchUser) return false;
+        if (t.type !== "Borrow") return false;
+        const st = String(t.status || "").toLowerCase();
+        return !["returned", "declined", "cancelled", "rejected"].includes(st);
+      }).length;
+      return { rows: [{ activeCount, count: activeCount }], rowCount: 1 };
+    }
+
+    if (sqlLower.includes('as "overduecount"')) {
+      const studentId = String(params[0] || "").toLowerCase().trim();
+      const studentName = String(params[1] || "").toLowerCase().trim();
+      const nowTime = Date.now();
+      const overdueCount = state.transactions.filter((t) => {
+        const matchUser =
+          (t.student_id && String(t.student_id).toLowerCase().trim() === studentId) ||
+          (t.student_name && String(t.student_name).toLowerCase().trim() === studentName);
+        if (!matchUser) return false;
+        if (t.type !== "Borrow") return false;
+        const st = String(t.status || "").toLowerCase();
+        if (["returned", "declined", "cancelled", "rejected"].includes(st)) return false;
+        if (st === "overdue") return true;
+        if (t.due_date && new Date(t.due_date).getTime() < nowTime) return true;
+        return false;
+      }).length;
+      return { rows: [{ overdueCount, count: overdueCount }], rowCount: 1 };
+    }
+
+    // 10.4 Duplicate check
+    if (sqlLower.includes("limit 1") && sqlLower.includes("order by requested_at desc")) {
+      const studentId = String(params[0] || "").toLowerCase().trim();
+      const studentName = String(params[1] || "").toLowerCase().trim();
+      const targetIsbn = String(params[2] || "").trim();
+      const targetTitle = String(params[3] || "").toLowerCase().trim();
+
+      const dup = state.transactions.find((t) => {
+        const matchUser =
+          (t.student_id && String(t.student_id).toLowerCase().trim() === studentId) ||
+          (t.student_name && String(t.student_name).toLowerCase().trim() === studentName);
+        if (!matchUser) return false;
+        const matchBook =
+          (targetIsbn && targetIsbn !== "N/A" && t.isbn === targetIsbn) ||
+          (targetTitle && t.resource_title && String(t.resource_title).toLowerCase().trim() === targetTitle);
+        if (!matchBook) return false;
+        return t.status === "Pending";
+      });
+
+      if (dup) {
+        return {
+          rows: [
+            {
+              id: dup.id,
+              status: dup.status,
+              type: dup.type,
+              requestedAt: dup.requested_at,
+              resourceTitle: dup.resource_title,
+              isbn: dup.isbn,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    }
+
+    // 10.5 Book Details countQuery: borrowedCount, heldCount, waitlistCount, reservedCount
+    if (sqlLower.includes('as "borrowedcount"') && sqlLower.includes('as "reservedcount"')) {
+      const targetIsbn = String(params[0] || "").trim();
+      const targetTitle = String(params[1] || "").toLowerCase().trim();
+
+      const matching = state.transactions.filter((t) => {
+        if (targetIsbn && targetIsbn !== "N/A" && t.isbn && String(t.isbn).trim() === targetIsbn) {
+          return true;
+        }
+        if (targetTitle && t.resource_title && String(t.resource_title).toLowerCase().trim() === targetTitle) {
+          return true;
+        }
+        return false;
+      });
+
+      let borrowedCount = 0;
+      let heldCount = 0;
+      let waitlistCount = 0;
+      let reservedCount = 0;
+      const nowTime = Date.now();
+
+      for (const t of matching) {
+        const st = String(t.status || "").trim();
+        const tp = String(t.type || "").trim();
+        const isBorrow = tp === "Borrow";
+        const isReserve = tp === "Reserve" || tp === "Reservation";
+
+        if (isBorrow && ["Approved", "Pending", "Borrowed", "Overdue"].includes(st)) {
+          borrowedCount++;
+        } else if (isReserve && ["Approved", "Pending"].includes(st)) {
+          reservedCount++;
+          if (t.available_at && (!t.expires_at || new Date(t.expires_at).getTime() > nowTime)) {
+            heldCount++;
+          } else {
+            waitlistCount++;
+          }
+        }
+      }
+
+      return {
+        rows: [
+          {
+            borrowedCount,
+            heldCount,
+            waitlistCount,
+            reservedCount,
+          },
+        ],
+        rowCount: 1,
+      };
+    }
+
+    // 10.6 Book Details txQuery (ledger)
+    if (sqlLower.includes('as "borrowername"') && sqlLower.includes('as "duedate"')) {
+      const targetIsbn = String(params[0] || "").trim();
+      const targetTitle = String(params[1] || "").toLowerCase().trim();
+
+      const userById = new Map(state.users.map((u) => [String(u.id), u]));
+      const userByIdNum = new Map(state.users.map((u) => [String(u.id_number || "").toLowerCase(), u]));
+
+      const matching = state.transactions
+        .filter((t) => {
+          if (targetIsbn && targetIsbn !== "N/A" && t.isbn && String(t.isbn).trim() === targetIsbn) {
+            return true;
+          }
+          if (targetTitle && t.resource_title && String(t.resource_title).toLowerCase().trim() === targetTitle) {
+            return true;
+          }
+          return false;
+        })
+        .map((t) => {
+          const u = userById.get(String(t.user_id)) || (t.student_id ? userByIdNum.get(String(t.student_id).toLowerCase()) : null);
+          const name = t.student_name || u?.name || "Student Borrower";
+          return {
+            id: t.id,
+            borrowerName: name,
+            studentName: name,
+            studentId: t.student_id || u?.id_number || "",
+            userId: t.user_id,
+            borrowDate: t.requested_at || t.decided_at,
+            requestedAt: t.requested_at,
+            decidedAt: t.decided_at,
+            dueDate: t.due_date,
+            pickedUpAt: t.picked_up_at,
+            isPickedUp: Boolean(t.picked_up_at),
+            status: t.status,
+            type: t.type,
+          };
+        })
+        .slice(0, 10);
+
+      return { rows: matching, rowCount: matching.length };
+    }
+
+    // 10.7 General transactions query
     if (sqlLower.startsWith("select count(*)") && !sqlLower.includes("group by")) {
       return { rows: [{ count: state.transactions.length, total: state.transactions.length }], rowCount: 1 };
     }
-    if (sqlLower.includes("where user_id = $1") || sqlLower.includes("student_id = $2")) {
+
+    if (sqlLower.includes("where user_id = $1") || sqlLower.includes("student_id = $2") || sqlLower.includes("student_id = $1")) {
       const uid = String(params[0] || "");
       const sid = String(params[1] || params[0] || "");
       const rows = state.transactions.filter(
@@ -749,7 +1026,9 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
       );
       return { rows, rowCount: rows.length };
     }
-    throwOffline();
+
+    // Return all transactions if no specific filter
+    return { rows: state.transactions, rowCount: state.transactions.length };
   }
 
   throwOffline();

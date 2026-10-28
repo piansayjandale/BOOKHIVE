@@ -71,13 +71,13 @@ export async function GET(request: Request) {
         b.availability,
         COALESCE((
           SELECT COUNT(*)::int FROM transactions t
-          WHERE t.type = 'Borrow' AND t.status IN ('Approved', 'Pending')
+          WHERE t.type = 'Borrow' AND t.status IN ('Approved', 'Pending', 'Borrowed', 'Overdue')
             AND ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
               OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title)))
         ), 0) AS "borrowedCount",
         COALESCE((
           SELECT COUNT(*)::int FROM transactions t
-          WHERE t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW())
+          WHERE (t.type = 'Reservation' OR t.type = 'Reserve') AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW())
             AND ((t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND b.isbn = t.isbn)
               OR (t.resource_title IS NOT NULL AND LOWER(b.title) = LOWER(t.resource_title)))
         ), 0) AS "reservedCount"

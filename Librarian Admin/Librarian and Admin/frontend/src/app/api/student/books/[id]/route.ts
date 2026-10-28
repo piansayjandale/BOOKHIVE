@@ -90,17 +90,17 @@ export async function GET(
         (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = $1)
         OR (t.resource_title IS NOT NULL AND LOWER(t.resource_title) = LOWER($2))
       )
-      AND t.status IN ('Approved', 'Returned')
+      AND t.status IN ('Approved', 'Returned', 'Borrowed', 'Overdue', 'Pending')
       ORDER BY COALESCE(t.decided_at, t.requested_at) DESC
       LIMIT 10
     `;
 
     const countQuery = `
       SELECT
-        COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END)::int AS "borrowedCount",
-        COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "heldCount",
-        COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.available_at IS NULL OR t.expires_at <= NOW()) THEN 1 END)::int AS "waitlistCount",
-        COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "reservedCount"
+        COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending', 'Borrowed', 'Overdue') THEN 1 END)::int AS "borrowedCount",
+        COUNT(CASE WHEN (t.type = 'Reservation' OR t.type = 'Reserve') AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "heldCount",
+        COUNT(CASE WHEN (t.type = 'Reservation' OR t.type = 'Reserve') AND t.status IN ('Approved', 'Pending') AND (t.available_at IS NULL OR t.expires_at <= NOW()) THEN 1 END)::int AS "waitlistCount",
+        COUNT(CASE WHEN (t.type = 'Reservation' OR t.type = 'Reserve') AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "reservedCount"
       FROM transactions t
       WHERE (
         (t.isbn IS NOT NULL AND t.isbn != '' AND t.isbn != 'N/A' AND t.isbn = $1)
@@ -115,11 +115,11 @@ export async function GET(
 
     const ledger = txRes.rows || [];
     const counts = countRes.rows[0] || {};
-    const activeLoan = ledger.find((t: any) => t.type === "Borrow" && t.status === "Approved") || null;
-    const borrowedCount = Number(counts.borrowedCount || 0);
+    const activeLoan = ledger.find((t: any) => t.type === "Borrow" && ["Approved", "Borrowed", "Overdue", "Pending"].includes(t.status)) || null;
+    const borrowedCount = Math.max(Number(counts.borrowedCount || 0), Number(book?.borrowed_count || 0), Number(book?.borrowedCount || 0));
     const heldCount = Number(counts.heldCount || 0);
     const waitlistCount = Number(counts.waitlistCount || 0);
-    const reservedCount = Number(counts.reservedCount || 0);
+    const reservedCount = Math.max(Number(counts.reservedCount || 0), Number(book?.reserved_count || 0), Number(book?.reservedCount || 0));
     const nextQueuePosition = waitlistCount + 1;
 
     const totalCopies = Math.max(1, Number(book?.copies || 1));

@@ -1861,10 +1861,9 @@ export default function HomeScreen() {
                         <Text style={[styles.categoryCardAuthor, { color: theme.textSecondary }]} numberOfLines={1}>
                           {book.author}
                         </Text>
-                        <View style={styles.categoryCardAvailabilityRow}>
-                          <View style={[styles.cardAvailDot, { backgroundColor: isAvail ? "#10B981" : "#EF4444" }]} />
-                          <Text style={[styles.cardAvailText, { color: isAvail ? (isDarkMode ? "#34D399" : "#059669") : (isDarkMode ? "#F87171" : "#DC2626") }]}>
-                            {isAvail ? `${availCopies} avail` : "Borrowed"}
+                        <View style={styles.categoryCardGenreRow}>
+                          <Text style={[styles.categoryCardGenreText, { color: isDarkMode ? "#38BDF8" : "#0284C7" }]} numberOfLines={1}>
+                            {book.genre || book.genres || book.category || book.department || "General"}
                           </Text>
                         </View>
                       </View>
@@ -2917,19 +2916,13 @@ const styles = StyleSheet.create({
     fontSize: 9.5,
     marginTop: 1,
   },
-  categoryCardAvailabilityRow: {
+  categoryCardGenreRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
     marginTop: 3,
   },
-  cardAvailDot: {
-    width: 5.5,
-    height: 5.5,
-    borderRadius: 3,
-  },
-  cardAvailText: {
-    fontSize: 9,
+  categoryCardGenreText: {
+    fontSize: 9.5,
     fontWeight: "700",
   },
   fallbackCoverContainer: {
