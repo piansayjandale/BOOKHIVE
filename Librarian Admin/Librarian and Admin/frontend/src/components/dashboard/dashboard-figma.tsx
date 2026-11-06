@@ -41,6 +41,7 @@ import type { SearchResult, Department, BookRecord } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
+import { useNavigationTransition } from "@/components/providers/navigation-provider";
 import { transformDepartmentData, type DepartmentData } from "@/lib/department-transformer";
 import { generateCallNumber, generateAccessionNumber, ALL_SYSTEM_GENRES, VOLUME_OPTIONS, EDITION_OPTIONS } from "@/lib/catalog/call-number";
 import { CustomSelect } from "@/components/ui/custom-select";
@@ -94,7 +95,21 @@ interface DashboardProps {
 
 export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
   const router = useRouter();
+  const { startNavigation } = useNavigationTransition();
   const { user, logout } = useSession();
+  const librarianBasePath =
+    variant === "technical"
+      ? "/technical"
+      : variant === "circulation"
+      ? "/circulation"
+      : "/librarian";
+  const navigateTo = useCallback(
+    (href: string) => {
+      startNavigation(href);
+      router.push(href);
+    },
+    [router, startNavigation],
+  );
   const { theme } = useTheme();
   const isLight = theme === "light";
 
@@ -465,16 +480,101 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
     };
   }, [fetchDashboardData, fetchNewArrivals, variant]);
 
-  function runSearch(event?: React.FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
-    if (!searchQuery.trim()) {
+  // Live automatic prefix filtering ONLY when Filter Mode toggle (isPrefixFilter) is ON
+  useEffect(() => {
+    if (!isPrefixFilter) {
       return;
     }
-    const basePath = variant === "admin" ? "/admin" : "/librarian";
-    router.push(
-      `${basePath}/ai-prompt-search?query=${encodeURIComponent(searchQuery)}&department=${encodeURIComponent(
+
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearching(false);
+      setResults(null);
+      setCurrentPage(1);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSearching(true);
+      try {
+        const res = await fetch("/api/admin/prompt-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: trimmed,
+            department: selectedCategory || "All",
+            mode: "prefix",
+            skipLog: true,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error("Prefix filter request failed");
+        }
+        const data = await res.json();
+        if (!controller.signal.aborted) {
+          setResults(Array.isArray(data?.results) ? data.results : []);
+          setCurrentPage(1);
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          console.warn("Live prefix filter error:", err);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setSearching(false);
+        }
+      }
+    }, 160);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchQuery, isPrefixFilter, selectedCategory]);
+
+  async function runSearch(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      if (isPrefixFilter) {
+        setResults(null);
+      }
+      return;
+    }
+
+    if (isPrefixFilter) {
+      setSearching(true);
+      try {
+        const res = await fetch("/api/admin/prompt-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: trimmed,
+            department: selectedCategory || "All",
+            mode: "prefix",
+            skipLog: false,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setResults(Array.isArray(data?.results) ? data.results : []);
+          setCurrentPage(1);
+        }
+      } catch (err) {
+        console.warn("Prefix search submit error:", err);
+      } finally {
+        setSearching(false);
+      }
+      return;
+    }
+
+    const basePath = variant === "admin" ? "/admin" : librarianBasePath;
+    navigateTo(
+      `${basePath}/ai-prompt-search?query=${encodeURIComponent(trimmed)}&department=${encodeURIComponent(
         selectedCategory,
-      )}&filter=${isPrefixFilter ? "1" : "0"}`,
+      )}&filter=0`,
     );
   }
 
@@ -584,7 +684,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => router.push(announcementsHref)}
+                    onClick={() => navigateTo(announcementsHref)}
                     className={cn(
                       "text-xs font-bold flex items-center gap-1 cursor-pointer px-3 py-1.5 rounded-xl border transition shadow-sm",
                       isLight
@@ -707,7 +807,17 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
           {/* FILTER TOGGLE (Exact design inspired by Student app) */}
           <button
             type="button"
-            onClick={() => setIsPrefixFilter((prev) => !prev)}
+            onClick={() =>
+              setIsPrefixFilter((prev) => {
+                const next = !prev;
+                if (!next) {
+                  setResults(null);
+                  setSearching(false);
+                  setCurrentPage(1);
+                }
+                return next;
+              })
+            }
             className={cn(
               "flex items-center justify-between gap-3.5 px-4 py-1.5 rounded-full border transition-all duration-200 select-none cursor-pointer shadow-sm",
               isPrefixFilter
@@ -778,9 +888,40 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   : "Search by Title, Author, ISBN, or ask a question..."
               }
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchQuery(val);
+                if (isPrefixFilter && !val.trim()) {
+                  setResults(null);
+                  setSearching(false);
+                  setCurrentPage(1);
+                }
+              }}
               className={cn("flex-1 bg-transparent text-[15px] outline-none", isLight ? "text-[#0274BB] placeholder:text-slate-400 font-medium" : "text-white placeholder-slate-500")}
             />
+
+            {searchQuery.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  if (isPrefixFilter) {
+                    setResults(null);
+                    setSearching(false);
+                    setCurrentPage(1);
+                  }
+                }}
+                className={cn(
+                  "rounded-full p-1.5 transition cursor-pointer",
+                  isLight
+                    ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    : "text-slate-400 hover:bg-white/10 hover:text-white"
+                )}
+                title="Clear search input"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
 
             <div className="flex items-center gap-2">
               <label
@@ -893,8 +1034,58 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
             initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 18 }}
-            className="mb-8 flex flex-col gap-6 text-left"
+            className="mb-8 flex flex-col gap-5 text-left"
           >
+            <div
+              className={cn(
+                "flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-5 py-3.5 shadow-sm",
+                isLight
+                  ? "border-slate-200/90 bg-white text-slate-800"
+                  : "border-white/10 bg-[#14293E]/90 text-white"
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2.5">
+                <Filter className={cn("h-4 w-4", isLight ? "text-[#0274BB]" : "text-[#FFD600]")} />
+                <span className={cn("text-sm font-bold", isLight ? "text-[#0274BB]" : "text-white")}>
+                  Filtered Catalog Results
+                </span>
+                <span
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-xs font-extrabold",
+                    isLight
+                      ? "border-blue-200 bg-blue-50 text-[#0274BB]"
+                      : "border-[#FFD600]/30 bg-[#FFD600]/10 text-[#FFD600]"
+                  )}
+                >
+                  {results.length} {results.length === 1 ? "match" : "matches"}
+                </span>
+                {searchQuery.trim() && (
+                  <span className={cn("text-xs font-medium", isLight ? "text-slate-500" : "text-slate-400")}>
+                    starting with <span className={cn("font-bold", isLight ? "text-slate-800" : "text-white")}>"{searchQuery.trim()}"</span>
+                  </span>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery("");
+                  setResults(null);
+                  setSearching(false);
+                  setCurrentPage(1);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-bold transition cursor-pointer",
+                  isLight
+                    ? "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                    : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                )}
+              >
+                <X className="h-3.5 w-3.5" />
+                Clear
+              </button>
+            </div>
+
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {visibleResults?.map((result) => {
                 const relevance = result.relevance;
@@ -1566,7 +1757,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   <button
                     type="button"
                     suppressHydrationWarning
-                    onClick={() => router.push("/admin/catalog")}
+                    onClick={() => navigateTo("/admin/catalog")}
                     className={cn(
                       "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
@@ -1596,7 +1787,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   <button
                     type="button"
                     suppressHydrationWarning
-                    onClick={() => router.push("/admin/analytics")}
+                    onClick={() => navigateTo("/admin/analytics")}
                     className={cn(
                       "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
@@ -1626,7 +1817,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                   <button
                     type="button"
                     suppressHydrationWarning
-                    onClick={() => router.push("/admin/announcements")}
+                    onClick={() => navigateTo("/admin/announcements")}
                     className={cn(
                       "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                       isLight
@@ -1708,7 +1899,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     <button
                       type="button"
                       suppressHydrationWarning
-                      onClick={() => router.push("/librarian/records")}
+                      onClick={() => navigateTo(`${librarianBasePath}/records`)}
                       className={cn(
                         "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
@@ -1741,7 +1932,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     <button
                       type="button"
                       suppressHydrationWarning
-                      onClick={() => router.push("/librarian/transactions")}
+                      onClick={() => navigateTo(`${librarianBasePath}/transactions`)}
                       className={cn(
                         "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
@@ -1774,7 +1965,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     <button
                       type="button"
                       suppressHydrationWarning
-                      onClick={() => router.push("/librarian/records?action=import")}
+                      onClick={() => navigateTo(`${librarianBasePath}/records?action=import`)}
                       className={cn(
                         "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
@@ -1807,7 +1998,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     <button
                       type="button"
                       suppressHydrationWarning
-                      onClick={() => router.push("/librarian/reminders")}
+                      onClick={() => navigateTo(`${librarianBasePath}/reminders`)}
                       className={cn(
                         "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
@@ -1840,7 +2031,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                     <button
                       type="button"
                       suppressHydrationWarning
-                      onClick={() => router.push("/librarian/history")}
+                      onClick={() => navigateTo(`${librarianBasePath}/history`)}
                       className={cn(
                         "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                         isLight
@@ -2085,11 +2276,11 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       key={sec.name}
                       role="button"
                       tabIndex={0}
-                      onClick={() => router.push(`${targetPath}?department=${encodeURIComponent(sec.name)}`)}
+                      onClick={() => navigateTo(`${targetPath}?department=${encodeURIComponent(sec.name)}`)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" || e.key === " ") {
                           e.preventDefault();
-                          router.push(`${targetPath}?department=${encodeURIComponent(sec.name)}`);
+                          navigateTo(`${targetPath}?department=${encodeURIComponent(sec.name)}`);
                         }
                       }}
                       title={`View ${sec.name} books in Cataloging`}
@@ -2828,7 +3019,7 @@ export function DashboardFigma({ variant = "librarian" }: DashboardProps) {
                       type="button"
                       onClick={() => {
                         setSelectedNotice(null);
-                        router.push("/admin/announcements");
+                        navigateTo("/admin/announcements");
                       }}
                       className={cn(
                         "text-xs font-bold px-3.5 py-2 rounded-xl border transition flex items-center gap-1.5 cursor-pointer",

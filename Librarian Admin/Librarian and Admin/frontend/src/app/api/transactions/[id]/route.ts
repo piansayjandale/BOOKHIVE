@@ -6,6 +6,55 @@ import { store } from "@/lib/data/store";
 
 export const runtime = "nodejs";
 
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+) {
+  const { id } = await context.params;
+  try {
+    const proxyRes = await proxyToBackend(`/api/transactions/${id}`, request);
+    if (proxyRes.ok) {
+      return proxyRes;
+    }
+  } catch {}
+
+  try {
+    const { rows } = await pool.query(
+      `SELECT
+         t.id,
+         t.user_id AS "userId",
+         t.student_name AS "studentName",
+         t.student_id AS "studentId",
+         t.resource_title AS "resourceTitle",
+         t.isbn,
+         t.department,
+         t.type,
+         t.status,
+         t.requested_at AS "requestedAt",
+         t.due_date AS "dueDate",
+         t.decided_by AS "decidedBy",
+         t.decided_at AS "decidedAt",
+         t.student_id_image AS "studentIdImage",
+         CASE WHEN t.student_id_image IS NOT NULL AND length(t.student_id_image) > 0 THEN true ELSE false END AS "hasStudentIdImage",
+         t.comment,
+         t.available_at AS "availableAt",
+         t.expires_at AS "expiresAt",
+         t.picked_up_at AS "pickedUpAt"
+       FROM transactions t
+       WHERE t.id::text = $1::text
+       LIMIT 1`,
+      [id]
+    );
+
+    if (rows.length > 0) {
+      return NextResponse.json({ transaction: rows[0] });
+    }
+    return NextResponse.json({ message: "Transaction not found." }, { status: 404 });
+  } catch (err: any) {
+    return NextResponse.json({ message: err.message }, { status: 500 });
+  }
+}
+
 export async function PATCH(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -48,11 +97,14 @@ export async function PATCH(
     const nextStatus = body?.status ?? "Approved";
     const nextType = body?.type;
     const comment = body?.comment ?? null;
+    const approverName = body?.approverName || session?.name || "Jan Dale B. Piansay";
+    const approverRole = body?.approverRole || (session as any)?.subRole || session?.role || "Circulation Librarian";
+    const actorId = body?.approverId || session?.id;
     const isUuid = Boolean(
-      session?.id &&
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(session.id))
+      actorId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(actorId))
     );
-    const validDecidedBy = isUuid ? session?.id : null;
+    const validDecidedBy = isUuid ? actorId : null;
 
     let query: string;
     let params: any[];
@@ -65,11 +117,13 @@ export async function PATCH(
           expires_at = NULL,
           due_date = NOW() + INTERVAL '7 days',
           decided_by = COALESCE($2, decided_by),
+          approved_by_name = COALESCE($3, approved_by_name),
+          approved_by_role = COALESCE($4, approved_by_role),
           decided_at = NOW()
         WHERE id::text = $1::text
         RETURNING *
       `;
-      params = [id, validDecidedBy];
+      params = [id, validDecidedBy, approverName, approverRole];
     } else if (nextType === "Borrow" || nextStatus === "Approved") {
       let shouldConvertToBorrow = nextType === "Borrow";
       let isReservationTarget = body?.type === "Reservation";
@@ -122,11 +176,13 @@ export async function PATCH(
             due_date = COALESCE(due_date, NOW() + INTERVAL '7 days'),
             decided_by = $3,
             decided_at = NOW(),
+            approved_by_name = COALESCE($5, approved_by_name),
+            approved_by_role = COALESCE($6, approved_by_role),
             comment = COALESCE($4, comment)
           WHERE id::text = $1::text
           RETURNING *
         `;
-        params = [id, nextStatus, validDecidedBy, comment];
+        params = [id, nextStatus, validDecidedBy, comment, approverName, approverRole];
       } else {
         query = `
           UPDATE transactions
@@ -140,11 +196,13 @@ export async function PATCH(
             available_at = COALESCE(available_at, NOW()),
             expires_at = CASE WHEN picked_up_at IS NOT NULL THEN NULL ELSE COALESCE(expires_at, NOW() + INTERVAL '24 hours') END,
             picked_up_at = CASE WHEN picked_up_at IS NOT NULL THEN picked_up_at ELSE NULL END,
+            approved_by_name = COALESCE($5, approved_by_name),
+            approved_by_role = COALESCE($6, approved_by_role),
             comment = COALESCE($4, comment)
           WHERE id::text = $1::text
           RETURNING *
         `;
-        params = [id, nextStatus, validDecidedBy, comment];
+        params = [id, nextStatus, validDecidedBy, comment, approverName, approverRole];
       }
     } else {
       query = `
@@ -153,11 +211,13 @@ export async function PATCH(
           status = $2,
           decided_by = $3,
           decided_at = NOW(),
+          approved_by_name = COALESCE($5, approved_by_name),
+          approved_by_role = COALESCE($6, approved_by_role),
           comment = COALESCE($4, comment)
         WHERE id::text = $1::text
         RETURNING *
       `;
-      params = [id, nextStatus, validDecidedBy, comment];
+      params = [id, nextStatus, validDecidedBy, comment, approverName, approverRole];
     }
 
     let rows: any[] = [];

@@ -1,0 +1,12 @@
+import { LazyReportsModule } from "@/components/lazy-modules";
+import { PermissionGuard } from "@/components/auth/permission-guard";
+
+export default function CirculationReportsPage() {
+  return (
+    <PermissionGuard permission="reports">
+      <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden px-1">
+        <LazyReportsModule />
+      </div>
+    </PermissionGuard>
+  );
+}

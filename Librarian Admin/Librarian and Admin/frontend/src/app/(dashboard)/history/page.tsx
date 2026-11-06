@@ -1,6 +1,5 @@
-import { HistoryModule } from "@/components/modules/history-module";
+import { LazyHistoryModule } from "@/components/lazy-modules";
 
 export default function HistoryPage() {
-  return <HistoryModule />;
+  return <LazyHistoryModule />;
 }
-

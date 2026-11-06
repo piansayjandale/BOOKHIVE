@@ -240,6 +240,8 @@ class DashboardSocketService {
     socket.on("telemetry:updated", handleTelemetryUpdated);
     socket.on("catalog:updated", handleCatalogUpdated);
     socket.on("user:mutated", handleUserMutated);
+    socket.on("permissions:updated", (data: any) => this.routeIncomingEvent("permissions:updated", data));
+    socket.on("user:updated", (data: any) => this.routeIncomingEvent("user:updated", data));
     socket.on("search:query", handleSearchQuery);
 
     socket.on("announcement:deleted", (data: any) => this.routeIncomingEvent("announcement:deleted", data));
@@ -320,8 +322,13 @@ class DashboardSocketService {
       this.catalogListeners.forEach((cb) => cb(eventData));
     } else if (eventName === "catalog:updated") {
       this.catalogListeners.forEach((cb) => cb(eventData));
-    } else if (eventName === "user:mutated") {
+    } else if (eventName === "user:mutated" || eventName === "permissions:updated" || eventName === "user:updated") {
       this.userMutationListeners.forEach((cb) => cb(eventData));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("permissions:updated", { detail: eventData }));
+        window.dispatchEvent(new CustomEvent("user:updated", { detail: eventData }));
+        window.dispatchEvent(new CustomEvent("transaction:updated", { detail: eventData }));
+      }
     } else if (
       eventName === "announcement:deleted" ||
       eventName === "announcement:removed" ||

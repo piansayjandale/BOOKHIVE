@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { getReservationHistory, getUpcomingReservations, subscribe } from '../data/store';
 import AnimatedScreen from '../components/AnimatedScreen';
+import PageCircleLoader from '../components/PageCircleLoader';
 import { useThemeColors } from '../hooks/useThemeColors';
 
 export default function HistoryScreen() {
@@ -20,12 +21,11 @@ export default function HistoryScreen() {
   const { isDarkMode, theme } = useThemeColors();
   const [history, setHistory] = useState(getReservationHistory());
   const [upcoming, setUpcoming] = useState(getUpcomingReservations());
-
   const handleBack = () => {
     if (router.canGoBack?.()) {
       router.back();
     } else {
-      router.push('/profile');
+      router.replace('/(tabs)/profile');
     }
   };
 

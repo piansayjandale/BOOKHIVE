@@ -14,6 +14,7 @@ adminRouter.get("/dashboard", asyncHandler(adminController.getDashboard));
 
 // Transactions approval and desk creations
 adminRouter.get("/transactions", asyncHandler(adminController.listTransactions));
+adminRouter.get("/transactions/:transactionId", asyncHandler(adminController.getTransactionById));
 adminRouter.post("/transactions", asyncHandler(adminController.createTransaction));
 adminRouter.patch("/transactions/:transactionId", asyncHandler(adminController.decideTransaction));
 
@@ -29,6 +30,8 @@ adminRouter.get("/records-catalog", asyncHandler(adminController.getRecordsCatal
 // Digitized Books Queue
 adminRouter.get("/digitized-books", asyncHandler(adminController.listDigitizedBooks));
 adminRouter.post("/digitized-books", asyncHandler(adminController.addDigitizedBook));
+adminRouter.patch("/digitized-books/:id", asyncHandler(adminController.updateDigitizedBook));
+adminRouter.put("/digitized-books/:id", asyncHandler(adminController.updateDigitizedBook));
 adminRouter.post("/digitized-books/:id/approve", asyncHandler(adminController.approveDigitizedBook));
 adminRouter.delete("/digitized-books/:id", asyncHandler(adminController.deleteDigitizedBook));
 

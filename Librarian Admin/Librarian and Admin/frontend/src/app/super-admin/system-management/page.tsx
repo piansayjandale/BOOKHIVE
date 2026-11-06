@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { SystemManagementPage } from "@/components/super-admin/system-management-page";
+import { LazySystemManagementPage } from "@/components/lazy-modules";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8 text-white">Loading System Management...</div>}>
-      <SystemManagementPage />
+    <Suspense fallback={<PageCircleLoader />}>
+      <LazySystemManagementPage />
     </Suspense>
   );
 }

@@ -1,6 +1,6 @@
 import React from "react";
 import type { Metadata } from "next";
-import { StudentView } from "./student-view";
+import { LazyStudentView } from "@/components/lazy-modules";
 
 export const metadata: Metadata = {
   title: "Student Companion Portal | BookHive STI WNU Library",
@@ -9,5 +9,5 @@ export const metadata: Metadata = {
 };
 
 export default function StudentPage() {
-  return <StudentView />;
+  return <LazyStudentView />;
 }

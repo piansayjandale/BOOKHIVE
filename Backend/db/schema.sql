@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   role user_role NOT NULL,
+  sub_role TEXT,
   department TEXT NOT NULL,
   course TEXT NOT NULL,
   year_level TEXT,
@@ -171,7 +172,12 @@ CREATE TABLE IF NOT EXISTS transactions (
   comment TEXT,
   available_at TIMESTAMPTZ,
   expires_at TIMESTAMPTZ,
-  picked_up_at TIMESTAMPTZ
+  picked_up_at TIMESTAMPTZ,
+  assigned_to UUID REFERENCES users(id) ON DELETE SET NULL,
+  assigned_librarian_name TEXT,
+  assigned_librarian_role TEXT,
+  approved_by_name TEXT,
+  approved_by_role TEXT
 );
 
 CREATE TABLE IF NOT EXISTS reservations (

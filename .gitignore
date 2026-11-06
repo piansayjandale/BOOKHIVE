@@ -99,3 +99,6 @@ Desktop.ini
 
 # Local Netlify folder
 .netlify
+
+# Lighthouse test reports
+lighthouse-reports/

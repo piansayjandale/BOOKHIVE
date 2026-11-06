@@ -64,6 +64,14 @@ export function initSocketServer(httpServer) {
         const uid = socket.user.sub || socket.user.id;
         socket.join(ROOMS.userNotifications(uid));
       }
+      if (socket.user.studentId || socket.user.student_id || socket.user.idNumber) {
+        const sid = socket.user.studentId || socket.user.student_id || socket.user.idNumber;
+        socket.join(ROOMS.userNotifications(sid));
+        socket.join(`student:${sid}`);
+      }
+      if (socket.user.email) {
+        socket.join(ROOMS.userNotifications(socket.user.email));
+      }
     }
 
     // Room subscription handler
@@ -159,9 +167,17 @@ export function broadcastCatalogUpdate(eventName, payload) {
 
 export function sendUserNotification(userId, notificationPayload) {
   if (!io || !userId) return;
-  io.to(ROOMS.userNotifications(userId)).emit("student:notification", notificationPayload);
-  io.to(ROOMS.userNotifications(userId)).emit("loan:status-changed", notificationPayload);
-  // Fallback broadcast for mobile clients that haven't bound to specific user rooms
+  const uid = String(userId).trim();
+  io.to(ROOMS.userNotifications(uid)).emit("student:notification", notificationPayload);
+  io.to(ROOMS.userNotifications(uid)).emit("loan:status-changed", notificationPayload);
+  io.to(`student:${uid}`).emit("student:notification", notificationPayload);
+  io.to(`user:${uid}`).emit("student:notification", notificationPayload);
+  const stripped = uid.replace(/[^a-zA-Z0-9]/g, "");
+  if (stripped && stripped !== uid) {
+    io.to(ROOMS.userNotifications(stripped)).emit("student:notification", notificationPayload);
+    io.to(`student:${stripped}`).emit("student:notification", notificationPayload);
+  }
+  // Global fallback broadcast for mobile clients that haven't bound to specific user rooms
   io.emit("student:notification", notificationPayload);
 }
 
@@ -255,6 +271,15 @@ export function emitTransactionDecided(transaction) {
   }
 }
 
+export function emitPermissionsUpdated(user) {
+  if (io) {
+    console.log("[Socket.io Broadcast] Emitting permissions:updated for user:", user?.id || user?.name);
+    io.emit("permissions:updated", user);
+    io.emit("user:updated", user);
+    io.emit("transaction:updated", { action: "permissions_updated", user });
+  }
+}
+
 export function emitTransactionUpdated(transaction) {
   if (io) {
     console.log("[Socket.io Broadcast] Emitting transaction:updated for transaction:", transaction?.id);
@@ -277,10 +302,21 @@ export function emitTransactionPickedUp(transaction) {
     };
     io.emit("transaction:picked-up", payload);
     io.emit("transaction:updated", payload);
+    const formatMMDDYYYY = (d) => {
+      try {
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return "7 days";
+        const m = String(dt.getMonth() + 1).padStart(2, "0");
+        const day = String(dt.getDate()).padStart(2, "0");
+        return `${m}/${day}/${dt.getFullYear()}`;
+      } catch {
+        return "7 days";
+      }
+    };
     io.emit("student:notification", {
       ...payload,
       title: "Book Picked Up",
-      message: `You have successfully picked up "${payload.resourceTitle || payload.title || 'your book'}". Due date: ${payload.dueDate ? new Date(payload.dueDate).toLocaleDateString() : '7 days'}.`,
+      message: `You have successfully picked up "${payload.resourceTitle || payload.title || 'your book'}". Due date: ${payload.dueDate ? formatMMDDYYYY(payload.dueDate) : '7 days'}.`,
     });
     if (payload.userId || payload.studentId) {
       sendUserNotification(payload.userId || payload.studentId, payload);

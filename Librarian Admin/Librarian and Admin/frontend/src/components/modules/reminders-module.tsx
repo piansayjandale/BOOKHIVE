@@ -82,7 +82,7 @@ export function RemindersModule() {
   const [activeTab, setActiveTab] = useState<TabId>("violators");
   const [sortBy, setSortBy] = useState<SortKey | null>("dueDate");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Interactive Student Violation Modal State
   const [selectedStudentForViolation, setSelectedStudentForViolation] = useState<{

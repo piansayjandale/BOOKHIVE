@@ -7,6 +7,7 @@ import { useRouter, usePathname } from "next/navigation";
 
 import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
+import { useNavigationTransition } from "@/components/providers/navigation-provider";
 import { dashboardVariantConfig, type DashboardVariant } from "@/lib/dashboard-config";
 import dashboardSocket from "@/lib/socket";
 import { subscribeToActivity } from "@/lib/live";
@@ -18,6 +19,7 @@ export function Topbar({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { startNavigation } = useNavigationTransition();
   const { user } = useSession();
   const { theme, toggleTheme } = useTheme();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -30,6 +32,20 @@ export function Topbar({
 
   const panelRef = useRef<HTMLDivElement | null>(null);
   const config = dashboardVariantConfig[variant];
+
+  const isLibrarianDashboard =
+    variant === "librarian" ||
+    variant === "technical" ||
+    variant === "circulation" ||
+    (user?.role && ["Librarian", "Technical Librarian", "Circulation Librarian"].some((r) => user.role.includes(r)));
+
+  const activeSubRole = isLibrarianDashboard
+    ? (user?.subRole || (user?.role !== "Librarian" && user?.role?.includes("Librarian") ? user?.role : (user?.role === "Librarian" ? (user?.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian") : null)))
+    : null;
+
+  const topbarTitle = activeSubRole
+    ? `BOOKHIVE ${activeSubRole.replace(/^bookhive\s+/i, "").toUpperCase()}`
+    : config.title;
 
   const [clearedAt, setClearedAt] = useState<number>(0);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
@@ -113,10 +129,14 @@ export function Topbar({
       );
     }
     const targetPath =
-      config.basePath === "/admin" || config.basePath === "/super-admin"
-        ? `${config.basePath}/transactions`
-        : "/librarian/transactions";
-    router.push(`${targetPath}?highlight=${rawId}`);
+      config.basePath === "/admin"
+        ? "/admin/home"
+        : config.basePath === "/super-admin"
+        ? "/super-admin/records"
+        : `${config.basePath}/transactions`;
+    const dest = `${targetPath}?highlight=${rawId}`;
+    startNavigation(dest);
+    router.push(dest);
   };
 
   useEffect(() => {
@@ -125,7 +145,7 @@ export function Topbar({
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const res = await fetch("/api/transactions?status=All");
+      const res = await fetch("/api/transactions?status=All&slim=1&limit=100");
       if (!res.ok) {
         throw new Error(`Transactions fetch failed with HTTP ${res.status}`);
       }
@@ -368,9 +388,9 @@ export function Topbar({
 
     // Resilient Polling with Exponential Backoff & Page Visibility API
     let timeoutId: any = null;
-    let currentInterval = 6000;
-    const baseInterval = 6000;
-    const maxInterval = 30000;
+    let currentInterval = 15000;
+    const baseInterval = 15000;
+    const maxInterval = 45000;
     let isRunning = true;
 
     const poll = async () => {
@@ -835,11 +855,16 @@ export function Topbar({
           {config.label}
         </p>
         <div className="mt-3 flex items-center gap-3">
-          <svg className="h-5 w-5 text-[var(--accent)]" fill="currentColor" viewBox="0 0 20 20">
+          <svg className="h-5 w-5 text-[var(--accent)] shrink-0" fill="currentColor" viewBox="0 0 20 20">
             <path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v14l-5-2.5L5 18V4z" />
           </svg>
-          <h2 className="text-2xl font-bold tracking-[0.12em] text-[var(--topbar-title-color)]">
-            {config.title}
+          <h2 className="text-2xl font-bold tracking-[0.12em] text-[var(--topbar-title-color)] flex items-center gap-2.5 flex-wrap">
+            <span>{topbarTitle}</span>
+            {activeSubRole && (
+              <span className="text-[11px] font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30 uppercase">
+                {activeSubRole}
+              </span>
+            )}
           </h2>
         </div>
       </div>
@@ -973,9 +998,13 @@ export function Topbar({
                   suppressHydrationWarning
                   onClick={() => {
                     setNotificationsOpen(false);
-                    const dest = config.basePath === "/admin" || config.basePath === "/super-admin"
-                      ? `${config.basePath}/transactions`
-                      : "/librarian/transactions";
+                    const dest =
+                      config.basePath === "/admin"
+                        ? "/admin/home"
+                        : config.basePath === "/super-admin"
+                        ? "/super-admin/records"
+                        : `${config.basePath}/transactions`;
+                    startNavigation(dest);
                     router.push(dest);
                   }}
                   className="group flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/10 px-4 py-2 text-xs font-bold uppercase tracking-wider text-[var(--accent)] transition-all duration-200 hover:border-[var(--accent)]/60 hover:bg-[var(--accent)]/20 active:scale-95"

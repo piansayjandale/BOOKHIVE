@@ -197,7 +197,17 @@ export async function POST(request: Request) {
     if (rawBodyText) body = JSON.parse(rawBodyText);
   } catch {}
 
-  const res = await proxyToBackend("/api/admin/books", request, rawBodyText);
+  const session = await getSession().catch(() => null);
+  const actorName = session ? `${session.role} ${session.name}` : (body.actor || body.actorName || "BookHive Librarian");
+
+  const payloadWithActor = {
+    ...body,
+    actor: actorName,
+    actorName: actorName,
+  };
+  const bodyToSend = JSON.stringify(payloadWithActor);
+
+  const res = await proxyToBackend("/api/admin/books", request, bodyToSend);
   const coverUri = body.coverImg || body.coverImage || body.coverUrl || "";
   if (res.ok) {
     if (coverUri) {

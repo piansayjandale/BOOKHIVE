@@ -1,5 +1,5 @@
-import { DashboardFigma } from "@/components/dashboard/dashboard-figma";
+import { LazyDashboardFigma } from "@/components/lazy-modules";
 
 export default function Page() {
-  return <DashboardFigma variant="admin" />;
+  return <LazyDashboardFigma variant="admin" />;
 }

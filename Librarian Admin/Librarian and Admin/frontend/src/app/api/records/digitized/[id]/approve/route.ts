@@ -105,9 +105,10 @@ export async function POST(
     } as any);
 
     try {
+      const rawScanned = body.scannedBy || body.scanned_by || (Array.isArray(body.librarians) ? body.librarians.filter(Boolean).join(", ") : "");
       await pool.query(
-        "UPDATE digitized_books SET status = 'Cataloged', updated_at = NOW() WHERE id::text = $1::text",
-        [id]
+        "UPDATE digitized_books SET status = 'Cataloged', scanned_by = COALESCE($2, scanned_by), updated_at = NOW() WHERE id::text = $1::text",
+        [id, rawScanned || null]
       );
     } catch {}
 

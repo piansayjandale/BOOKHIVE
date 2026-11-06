@@ -349,6 +349,7 @@ export const reservationTimerService = {
         FROM transactions t
         WHERE (t.type::text = 'Borrow' OR t.type IS NULL)
           AND t.status::text IN ('Approved', 'On Loan', 'Picked Up')
+          AND (t.picked_up_at IS NOT NULL OR t.status::text IN ('On Loan', 'Picked Up'))
           AND t.due_date IS NOT NULL
           AND t.due_date::date <= CURRENT_DATE
       `;
@@ -356,15 +357,20 @@ export const reservationTimerService = {
       const { rows } = await pool.query(query);
       if (!rows || rows.length === 0) return [];
 
-      const todayStr = new Date().toISOString().split("T")[0];
+      const now = new Date();
+      const todayYmd = now.toISOString().split("T")[0];
 
       for (const tx of rows) {
-        const cacheKey = `due-${tx.id}-${todayStr}`;
+        const cacheKey = `due-${tx.id}-${todayYmd}`;
         if (!notifiedDueTxMap.has(cacheKey)) {
           notifiedDueTxMap.set(cacheKey, true);
 
-          const txDueStr = tx.dueDate ? new Date(tx.dueDate).toISOString().split("T")[0] : todayStr;
-          const isToday = txDueStr === todayStr;
+          const d = tx.dueDate ? new Date(tx.dueDate) : now;
+          const mm = String(d.getMonth() + 1).padStart(2, "0");
+          const dd = String(d.getDate()).padStart(2, "0");
+          const yyyy = d.getFullYear();
+          const txDueStr = `${mm}/${dd}/${yyyy}`;
+          const isToday = tx.dueDate && new Date(tx.dueDate).toISOString().split("T")[0] === todayYmd;
 
           const title = isToday ? "Book Due for Return" : "Book Overdue for Return";
           const message = isToday

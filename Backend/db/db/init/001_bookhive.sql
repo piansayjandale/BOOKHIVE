@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   name text NOT NULL,
   email citext NOT NULL UNIQUE,
   role text NOT NULL CHECK (role IN ('Admin', 'Librarian', 'Student')),
+  sub_role text,
   department text NOT NULL,
   status text NOT NULL DEFAULT 'Active' CHECK (status IN ('Active', 'Suspended')),
   password_hash text,

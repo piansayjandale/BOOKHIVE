@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../../components/AnimatedScreen';
+import PageCircleLoader from '../../components/PageCircleLoader';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useThemeColors } from '../../hooks/useThemeColors';
@@ -49,6 +50,7 @@ export default function BooksScreen() {
   const [historyFilter, setHistoryFilter] = useState<HistoryFilterType>('All');
   const [dropdownOpen, setDropdownOpen] = useState<boolean>(false);
   const [selectedBorrowDetail, setSelectedBorrowDetail] = useState<ReservationBook | null>(null);
+  const [isContentReady, setIsContentReady] = useState(true);
 
   // Store data states
   const [searchQueries, setSearchQueries] = useState<string[]>(getSearchQueries());
@@ -1722,6 +1724,11 @@ export default function BooksScreen() {
         })}
       </View>
 
+      {!isContentReady ? (
+        <PageCircleLoader label="Loading bookshelf..." />
+      ) : (
+        <>
+
       {/* HISTORY DROPDOWN FILTER BAR (Shown when activeTab === 'History') */}
       {activeTab === 'History' && (
         <View style={styles.dropdownOuterWrapper}>
@@ -2336,6 +2343,8 @@ export default function BooksScreen() {
           );
         })()}
       </Modal>
+        </>
+      )}
     </AnimatedScreen>
   );
 }

@@ -13,10 +13,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../components/AnimatedScreen';
 import { useThemeColors } from '../hooks/useThemeColors';
 import { useAuth } from '../data/AuthContext';
+import PageCircleLoader from '../components/PageCircleLoader';
 
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { apiClient, getBackendUrl } from '../services/api';
 import {
@@ -27,7 +28,6 @@ import {
   subscribe,
   syncSystemSettingsWithBackend,
   syncTransactionsWithBackend,
-  loadStudentIdCardsForUser,
 } from '../data/store';
 
 /**
@@ -71,11 +71,25 @@ function isFuzzyWordMatch(targetWord: string, textWords: string[], maxDist = 1):
 
 function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: string) {
   if (!ocrText || !ocrText.trim()) {
-    return { success: false, nameMatched: false, idNumberMatched: false, message: "No Library Card text scanned yet." };
+    return {
+      success: false,
+      isOfficialCard: false,
+      nameMatched: false,
+      idNumberMatched: false,
+      message: "No readable text detected on the uploaded image. Please ensure your School ID or Library Card is clear, well-lit, and not blurry.",
+    };
   }
-  const normOcr = ocrText.toUpperCase().replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  const normOcr = ocrText
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   const ocrWords = normOcr.split(" ").filter(Boolean);
   const normOcrNoSpace = ocrText.replace(/[^A-Z0-9]/g, "").toUpperCase();
+
+  // 1. Mandatory Official School ID / Library Card Header Verification
+  const hasCardMarkers = /(?:LIBRARY|STUDENT|\bSTI\b|COLLEGE|UNIVERSITY|CAMPUS|ACADEMY|INSTITUTE|DEPARTMENT|TECHNOLOGY|INFORMATION|BACHELOR|\bBS\b|SENIOR\s*HIGH|BASIC\s*EDUCATION|FACULTY|EMPLOYEE|ACADEMIC|ID\s*(?:NO\.?|NUMBER|#)|STUDENT\s*(?:NO\.?|NUMBER)|CONTACT\s*NO\.?|SIGNATURE|\bCARD\b)/i.test(ocrText);
 
   // Helper: disambiguate digit-like characters in specific candidate strings
   const disambiguateCandidate = (str: string) =>
@@ -92,11 +106,11 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
       .replace(/[gq]/g, "9")
       .replace(/[^0-9]/g, "");
 
-  // 1. Name Match
+  // 2. Strict Name Match (Requires student Surname AND Given Name)
   const normName = (enteredName || "").toUpperCase().replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
   const nameParts = normName.split(" ").filter((p) => p.length >= 2);
   let nameMatched = false;
-  if (!normName) {
+  if (!normName || nameParts.length === 0) {
     nameMatched = false;
   } else if (normOcr.includes(normName)) {
     nameMatched = true;
@@ -105,24 +119,29 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
     if (normOcr.includes(reversed)) {
       nameMatched = true;
     } else {
-      const matchedParts = nameParts.filter((part) =>
-        normOcr.includes(part) || isFuzzyWordMatch(part, ocrWords, part.length > 5 ? 2 : 1)
-      );
-      const required = Math.max(1, Math.min(nameParts.length, Math.ceil(nameParts.length * 0.6)));
-      if (matchedParts.length >= required && matchedParts.some((p) => p.length >= 3)) {
-        nameMatched = true;
-      }
+      const surname = nameParts[nameParts.length - 1];
+      const givenNames = nameParts.slice(0, -1);
+
+      const surnameMatched =
+        surname.length >= 2 &&
+        (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, surname.length > 5 ? 2 : 1));
+
+      const givenNameMatched =
+        givenNames.length === 0 ||
+        givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
+
+      nameMatched = Boolean(surnameMatched && givenNameMatched);
     }
   }
 
-  // 2. ID Number Match (Intelligent multi-tier verification with disambiguation & name cross-assurance)
+  // 3. Strict ID Number Match (Digits MUST physically appear on the card)
   const cleanId = (enteredId || "").trim().toUpperCase();
   const idDigits = cleanId.replace(/[^0-9]/g, "");
   const idSegments = cleanId.split(/[^A-Z0-9]+/).map((s) => s.trim()).filter((s) => s.length >= 2);
 
   let idNumberMatched = false;
 
-  if (!cleanId) {
+  if (!cleanId || idDigits.length < 4) {
     idNumberMatched = false;
   } else if (
     normOcr.includes(cleanId) ||
@@ -164,8 +183,8 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
     }
   }
 
-  // Tier 3: Segment matching (Prefix: 23, Core: 1653, Campus: 705)
-  if (!idNumberMatched && idSegments.length > 0) {
+  // Tier 3: Core Segment matching (Prefix: 23, Core: 1653, Campus: 705)
+  if (!idNumberMatched && idSegments.length >= 2) {
     const coreSegment = idSegments.find((s) => s.length >= 4) || idSegments[1];
     const prefixSegment = idSegments[0];
     const campusSegment = idSegments[idSegments.length - 1];
@@ -175,7 +194,7 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
     if (coreSegment && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) segmentsFound++;
     if (campusSegment && (normOcrNoSpace.includes(campusSegment) || normOcrNoSpace.includes(disambiguateCandidate(campusSegment)))) segmentsFound++;
 
-    if (segmentsFound >= 2 || (coreSegment && normOcrNoSpace.includes(coreSegment))) {
+    if (segmentsFound >= 2 && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) {
       idNumberMatched = true;
     }
   }
@@ -195,44 +214,35 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
     }
   }
 
-  // Tier 5: Name-Verified Cross-Assurance (Crucial Safety Net)
-  // If the student's full name is matched and verified on the card:
-  if (!idNumberMatched && nameMatched) {
-    const isLibraryCard = /LIBRARY\s*CARD|STI/i.test(ocrText);
-    const hasCoreDigits = idDigits.length >= 4 && (
-      normOcrNoSpace.includes(idDigits.slice(0, 4)) ||
-      normOcrNoSpace.includes(idDigits.slice(2, 6)) ||
-      normOcrNoSpace.includes(idDigits.slice(-4)) ||
-      normOcrNoSpace.includes(idDigits.slice(-3))
-    );
-    if (isLibraryCard || hasCoreDigits) {
-      idNumberMatched = true;
-    }
-  }
+  // ID card confirmation: recognized institutional markers or verified student ID number + card fields
+  const isOfficialCard = hasCardMarkers || Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY)/i.test(ocrText));
 
-  // Cross-assurance: If ID matched, and at least 1 significant name part matches
+  // If ID strongly matched, allow identity cross-assurance
   if (!nameMatched && idNumberMatched && nameParts.length > 0) {
-    const hasAnyName = nameParts.some(
-      (part) => part.length >= 3 && (normOcr.includes(part) || ocrWords.some((w) => levenshteinDistance(part, w) <= 1))
-    );
-    if (hasAnyName) {
+    const surname = nameParts[nameParts.length - 1];
+    const givenNames = nameParts.slice(0, -1);
+    const hasSurname = surname.length >= 2 && (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, 1));
+    const matchedParts = nameParts.filter((p) => normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1));
+    const hasGivenName = givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
+
+    if (hasSurname || matchedParts.length >= 2 || hasGivenName) {
       nameMatched = true;
     }
   }
 
-  const success = nameMatched && idNumberMatched;
+  const success = Boolean(isOfficialCard && nameMatched && idNumberMatched);
   let message = "Student identity verified successfully based on Library Card.";
-  if (!success) {
-    if (!nameMatched && !idNumberMatched) {
-      message = `Both your Name ("${enteredName || "Not entered"}") and Student ID ("${enteredId || "Not entered"}") failed to match the uploaded Library Card.`;
-    } else if (!nameMatched) {
-      message = `The entered Name ("${enteredName}") does not match the name on your uploaded Library Card.`;
-    } else {
-      message = `The entered Student ID ("${enteredId}") does not match the ID number on your uploaded Library Card.`;
-    }
+  if (!isOfficialCard) {
+    message = "The uploaded image is not a valid School ID or Library Card. Please upload an official Library Card or School ID.";
+  } else if (!nameMatched && !idNumberMatched) {
+    message = `Both your Name ("${enteredName || "Not entered"}") and Student ID ("${enteredId || "Not entered"}") failed to match the uploaded Library Card.`;
+  } else if (!nameMatched) {
+    message = `The student's surname or given name was not found on the uploaded Library Card. Please upload a clear photo of your official ID.`;
+  } else if (!idNumberMatched) {
+    message = `The entered Student ID ("${enteredId}") was not found on the uploaded card. Please ensure your ID number is clearly visible.`;
   }
 
-  return { success, nameMatched, idNumberMatched, message };
+  return { success, isOfficialCard, nameMatched, idNumberMatched, message };
 }
 
 
@@ -322,7 +332,7 @@ export default function BorrowScreen() {
     const dd = String(date.getDate()).padStart(2, '0');
     const hh = String(date.getHours()).padStart(2, '0');
     const min = String(date.getMinutes()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+    return `${mm}/${dd}/${yyyy} ${hh}:${min}`;
   };
 
   const [reservationDate, setReservationDate] =
@@ -342,7 +352,6 @@ export default function BorrowScreen() {
   const [ocrScannedText, setOcrScannedText] = useState("");
   const [detectedIdNumber, setDetectedIdNumber] = useState<string | null>(null);
   const [detectedName, setDetectedName] = useState<string | null>(null);
-  const [hasSavedLibraryId, setHasSavedLibraryId] = useState(false);
 
   const isLocalhost =
     __DEV__ ||
@@ -354,15 +363,7 @@ export default function BorrowScreen() {
 
   // Strict verification mode: ID card must directly match credentials via OCR
   const isAccountOwnerCard = false;
-
-  // Manual ID upload required: Auto-load removed so student manually uploads School ID
-
-  // Trigger auto-scan once credentials and ID image are ready
-  useEffect(() => {
-    if (studentIDImage && name && studentId && !ocrVerified && !ocrVerifying) {
-      void triggerAutoOcrScan(studentIDImage, name, studentId);
-    }
-  }, [name, studentId, studentIDImage]);
+  const isScanningRef = useRef(false);
 
   /**
    * Automatic background OCR scan & matching on localhost
@@ -374,18 +375,25 @@ export default function BorrowScreen() {
   ) => {
     const img = imageOverride !== undefined ? imageOverride : studentIDImage;
     if (!img) return;
+    if (isScanningRef.current) return;
+    isScanningRef.current = true;
 
     const checkName = (currentNameOverride ?? name).trim();
     const checkId = (currentIdOverride ?? studentId).trim();
 
     setOcrVerifying(true);
+    setOcrScannedText("");
+    setDetectedIdNumber(null);
+    setDetectedName(null);
+    setOcrVerified(false);
+    setOcrSuccess(false);
     setOcrError("");
 
     try {
       const response = await apiClient.post(
         "/api/student/ocr/verify-id",
         {
-          schoolIdFront: img,
+          schoolIdFront: null,
           libraryIdFront: img,
           expectedName: checkName,
           expectedIdNumber: checkId,
@@ -410,13 +418,7 @@ export default function BorrowScreen() {
       }
 
       setOcrVerified(true);
-      let isMatched = Boolean(data?.success);
-      if (!isMatched && combined) {
-        const clientRes = evaluateClientMatch(combined, checkName, checkId);
-        if (clientRes.success) {
-          isMatched = true;
-        }
-      }
+      const isMatched = Boolean(data?.success);
 
       if (isMatched) {
         setOcrSuccess(true);
@@ -425,22 +427,19 @@ export default function BorrowScreen() {
         setOcrSuccess(false);
         setOcrError(
           data?.message ||
-            "The student name or ID number on your uploaded Library Card failed to match your entered credentials."
+            "The uploaded image is not a valid School ID or Library Card for this student account."
         );
       }
     } catch (err: any) {
       console.warn("Auto OCR notice on borrow form:", err?.response?.data || err?.message);
-      if (ocrScannedText) {
-        const clientRes = evaluateClientMatch(ocrScannedText, checkName, checkId);
-        setOcrVerified(true);
-        setOcrSuccess(clientRes.success);
-        setOcrError(clientRes.success ? "" : clientRes.message);
-      } else {
-        setOcrVerified(true);
-        setOcrSuccess(false);
-        setOcrError("Unable to reach OCR verification service. Please check your network connection or tap Retry.");
-      }
+      setOcrVerified(true);
+      setOcrSuccess(false);
+      setOcrError(
+        err?.response?.data?.message ||
+          "Unable to verify ID card via OCR service. Please ensure the card is clear and well-lit, or tap Retry Scan."
+      );
     } finally {
+      isScanningRef.current = false;
       setOcrVerifying(false);
     }
   };
@@ -478,8 +477,13 @@ export default function BorrowScreen() {
     });
     if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0];
-      const base64Uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+      const base64Uri = asset.base64
+        ? (asset.base64.startsWith('data:') ? asset.base64 : `data:image/jpeg;base64,${asset.base64}`)
+        : asset.uri;
       setStudentIDImage(base64Uri);
+      setOcrScannedText("");
+      setDetectedIdNumber(null);
+      setDetectedName(null);
       setOcrVerified(false);
       setOcrSuccess(false);
       setOcrError("");
@@ -501,8 +505,13 @@ export default function BorrowScreen() {
     });
     if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0];
-      const base64Uri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+      const base64Uri = asset.base64
+        ? (asset.base64.startsWith('data:') ? asset.base64 : `data:image/jpeg;base64,${asset.base64}`)
+        : asset.uri;
       setStudentIDImage(base64Uri);
+      setOcrScannedText("");
+      setDetectedIdNumber(null);
+      setDetectedName(null);
       setOcrVerified(false);
       setOcrSuccess(false);
       setOcrError("");
@@ -510,34 +519,50 @@ export default function BorrowScreen() {
     }
   };
 
-  const loadRegisteredLibraryId = async () => {
-    try {
-      const cards = await loadStudentIdCardsForUser(user || profile);
-      const targetImg = cards?.libraryIdFront || cards?.schoolIdFront;
-      if (targetImg) {
-        setStudentIDImage(targetImg);
-        void triggerAutoOcrScan(targetImg);
-        Alert.alert("Library ID Loaded", "Registered Library ID loaded successfully. Verifying credentials via OCR.");
-      } else {
-        Alert.alert("No Saved ID", "No registered Library ID was found. Please take a photo or select from gallery.");
-      }
-    } catch {
-      Alert.alert("Error", "Could not load saved Library ID.");
-    }
-  };
-
   // 📅 AUTO RETURN DATE (Uses Super Admin loan duration)
   const computeReturnDate = (
     dateStr: string
   ) => {
-    const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!match) return '';
+    if (!dateStr || typeof dateStr !== 'string') return '';
+    const trimmed = dateStr.trim();
 
-    const year = parseInt(match[1], 10);
-    const month = parseInt(match[2], 10) - 1;
-    const day = parseInt(match[3], 10);
+    let date: Date | null = null;
 
-    const date = new Date(year, month, day);
+    // 1. Try MM/DD/YYYY or MM/DD/YYYY HH:mm or MM/DD/YYYY hh:mm AM/PM
+    const mmddMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(AM|PM)?)?/i);
+    if (mmddMatch) {
+      const month = parseInt(mmddMatch[1], 10) - 1;
+      const day = parseInt(mmddMatch[2], 10);
+      const year = parseInt(mmddMatch[3], 10);
+      let hours = mmddMatch[4] ? parseInt(mmddMatch[4], 10) : 0;
+      const mins = mmddMatch[5] ? parseInt(mmddMatch[5], 10) : 0;
+      const ampm = mmddMatch[6];
+      if (ampm && ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+      if (ampm && ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+      date = new Date(year, month, day, hours, mins);
+    } else {
+      // 2. Try YYYY-MM-DD or YYYY-MM-DD HH:mm
+      const yymmMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[\sT]+(\d{1,2}):(\d{1,2})(?::\d{1,2})?\s*(AM|PM)?)?/i);
+      if (yymmMatch) {
+        const year = parseInt(yymmMatch[1], 10);
+        const month = parseInt(yymmMatch[2], 10) - 1;
+        const day = parseInt(yymmMatch[3], 10);
+        let hours = yymmMatch[4] ? parseInt(yymmMatch[4], 10) : 0;
+        const mins = yymmMatch[5] ? parseInt(yymmMatch[5], 10) : 0;
+        const ampm = yymmMatch[6];
+        if (ampm && ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+        if (ampm && ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+        date = new Date(year, month, day, hours, mins);
+      } else {
+        const fallback = new Date(trimmed);
+        if (!isNaN(fallback.getTime())) {
+          date = fallback;
+        }
+      }
+    }
+
+    if (!date || isNaN(date.getTime())) return '';
+
     date.setDate(date.getDate() + (borrowDurationDays || 7));
 
     // If pick saturday or sunday the system will move it to monday since the school is closed
@@ -552,7 +577,7 @@ export default function BorrowScreen() {
     const mm = String(date.getMonth() + 1).padStart(2, '0');
     const dd = String(date.getDate()).padStart(2, '0');
 
-    return `${yyyy}-${mm}-${dd}`;
+    return `${mm}/${dd}/${yyyy}`;
   };
 
   const formatLoanPeriod = (days: number) => {
@@ -632,7 +657,7 @@ export default function BorrowScreen() {
           const response = await apiClient.post(
             "/api/student/ocr/verify-id",
             {
-              schoolIdFront: studentIDImage,
+              schoolIdFront: null,
               libraryIdFront: studentIDImage,
               expectedName: name.trim(),
               expectedIdNumber: studentId.trim(),
@@ -650,11 +675,7 @@ export default function BorrowScreen() {
           if (ocrResult?.detectedIdNumber) setDetectedIdNumber(ocrResult.detectedIdNumber);
           if (ocrResult?.detectedName) setDetectedName(ocrResult.detectedName);
 
-          let matched = Boolean(ocrResult?.success);
-          if (!matched && combined) {
-            const clientRes = evaluateClientMatch(combined, name, studentId);
-            if (clientRes.success) matched = true;
-          }
+          const matched = Boolean(ocrResult?.success);
 
           if (matched) {
             isVerified = true;
@@ -663,22 +684,17 @@ export default function BorrowScreen() {
             setOcrError("");
           } else {
             isVerified = false;
-            mismatchReason = ocrResult?.message || "The student info does not match the uploaded Library Card.";
+            mismatchReason = ocrResult?.message || "The uploaded image is not a valid School ID or Library Card for this student account.";
             setOcrSuccess(false);
             setOcrVerified(true);
             setOcrError(mismatchReason);
           }
         } catch (err: any) {
-          if (ocrScannedText) {
-            const clientRes = evaluateClientMatch(ocrScannedText, name, studentId);
-            isVerified = clientRes.success;
-            mismatchReason = clientRes.message;
-            setOcrSuccess(isVerified);
-            setOcrVerified(true);
-            setOcrError(isVerified ? "" : clientRes.message);
-          } else {
-            mismatchReason = err?.response?.data?.message || "Failed to reach OCR verification service.";
-          }
+          isVerified = false;
+          mismatchReason = err?.response?.data?.message || "Failed to reach OCR verification service. Please tap Retry Scan or check your connection.";
+          setOcrSuccess(false);
+          setOcrVerified(true);
+          setOcrError(mismatchReason);
         } finally {
           setIsSubmitting(false);
           setOcrVerifying(false);
@@ -887,8 +903,8 @@ export default function BorrowScreen() {
 
       {/* MANUAL SCHOOL ID UPLOAD WITH OCR ANALYSIS */}
       <View style={{ marginTop: 20, marginBottom: 12 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <Text style={[styles.label, { color: theme.textPrimary, marginTop: 0, marginBottom: 0 }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+          <Text style={[styles.label, { color: theme.textPrimary, marginTop: 0, marginBottom: 0, flexShrink: 1 }]}>
             School ID / Library Card (Required)
           </Text>
           <View style={{
@@ -896,13 +912,14 @@ export default function BorrowScreen() {
             paddingHorizontal: 8,
             paddingVertical: 3,
             borderRadius: 6,
+            alignSelf: "flex-start",
           }}>
             <Text style={{
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: "700",
               color: isDarkMode ? theme.accentGold : theme.accentBlue,
             }}>
-              Manual Upload • Camera / Gallery
+              Camera / Gallery
             </Text>
           </View>
         </View>
@@ -1231,7 +1248,7 @@ export default function BorrowScreen() {
         onChangeText={
           setReservationDate
         }
-        placeholder="YYYY-MM-DD HH:MM"
+        placeholder="MM/DD/YYYY HH:MM"
         placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
       />
 

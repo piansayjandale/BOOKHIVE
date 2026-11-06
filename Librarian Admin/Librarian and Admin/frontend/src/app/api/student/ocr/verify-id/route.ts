@@ -147,21 +147,27 @@ export async function POST(request: Request) {
   const libraryCombined = `${libraryFrontText}\n${libraryBackText}`.toUpperCase();
   const allOcrText = `${schoolCombined}\n${libraryCombined}`;
 
-  // If external OCR services couldn't extract text (e.g. rate limit or offline), verify gracefully if images are valid
+  // Quick validation: Empty OCR text means no readable content was found
   if (!allOcrText.trim()) {
     return NextResponse.json({
-      success: true,
-      verified: true,
-      nameMatched: true,
-      idNumberMatched: true,
-      detectedName: expectedName || null,
-      detectedIdNumber: expectedIdNumber || null,
-      schoolIdVerified: Boolean(schoolIdFront || schoolIdBack),
-      libraryIdVerified: Boolean(libraryIdFront || libraryIdBack),
-      confidence: 95,
+      success: false,
+      verified: false,
+      isOfficialCard: false,
+      nameMatched: false,
+      idNumberMatched: false,
+      detectedName: null,
+      detectedIdNumber: null,
+      schoolIdVerified: false,
+      libraryIdVerified: false,
+      confidence: 0,
       expectedName: expectedName || "",
       expectedIdNumber: expectedIdNumber || "",
-      message: "Student identity verified successfully based on Library Card.",
+      extracted: {
+        schoolId: { rawText: "" },
+        libraryId: { rawText: "" },
+        combined: "",
+      },
+      message: "No readable text detected on the uploaded image. Please ensure your School ID or Library Card is clear, well-lit, and not blurry.",
     });
   }
 
@@ -171,6 +177,10 @@ export async function POST(request: Request) {
     .trim();
   const ocrWords = normOcr.split(" ").filter(Boolean);
 
+  // 1. Mandatory Official School ID / Library Card Header Verification
+  const hasCardMarkers = /(?:LIBRARY|STUDENT|\bSTI\b|COLLEGE|UNIVERSITY|CAMPUS|ACADEMY|INSTITUTE|DEPARTMENT|TECHNOLOGY|INFORMATION|BACHELOR|\bBS\b|SENIOR\s*HIGH|BASIC\s*EDUCATION|FACULTY|EMPLOYEE|ACADEMIC|ID\s*(?:NO\.?|NUMBER|#)|STUDENT\s*(?:NO\.?|NUMBER)|CONTACT\s*NO\.?|SIGNATURE|\bCARD\b)/i.test(allOcrText);
+
+  // 2. Strict Name Verification (Requires student Surname AND Given Name)
   const normExpectedName = String(expectedName || "")
     .toUpperCase()
     .replace(/[^A-Z0-9\s]/g, " ")
@@ -179,8 +189,8 @@ export async function POST(request: Request) {
   const nameParts = normExpectedName.split(" ").filter((w) => w.length >= 2);
 
   let nameMatched = false;
-  if (!normExpectedName) {
-    nameMatched = true;
+  if (!normExpectedName || nameParts.length === 0) {
+    nameMatched = false;
   } else if (normOcr.includes(normExpectedName)) {
     nameMatched = true;
   } else if (nameParts.length > 0) {
@@ -188,16 +198,22 @@ export async function POST(request: Request) {
     if (normOcr.includes(reversed)) {
       nameMatched = true;
     } else {
-      const matchedParts = nameParts.filter(
-        (part) => normOcr.includes(part) || isFuzzyWordMatch(part, ocrWords, part.length > 5 ? 2 : 1)
-      );
-      const requiredMatches = Math.max(1, Math.min(nameParts.length, Math.ceil(nameParts.length * 0.6)));
-      if (matchedParts.length >= requiredMatches && matchedParts.some((p) => p.length >= 3)) {
-        nameMatched = true;
-      }
+      const surname = nameParts[nameParts.length - 1];
+      const givenNames = nameParts.slice(0, -1);
+
+      const surnameMatched =
+        surname.length >= 2 &&
+        (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, surname.length > 5 ? 2 : 1));
+
+      const givenNameMatched =
+        givenNames.length === 0 ||
+        givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
+
+      nameMatched = Boolean(surnameMatched && givenNameMatched);
     }
   }
 
+  // 3. Strict ID Number Verification (Digits MUST physically appear on the card)
   const cleanExpectedId = String(expectedIdNumber || "").trim().toUpperCase();
   const idDigitsOnly = cleanExpectedId.replace(/[^0-9]/g, "");
   const idSegments = cleanExpectedId
@@ -221,8 +237,8 @@ export async function POST(request: Request) {
       .replace(/[^0-9]/g, "");
 
   let idNumberMatched = false;
-  if (!cleanExpectedId) {
-    idNumberMatched = true;
+  if (!cleanExpectedId || idDigitsOnly.length < 4) {
+    idNumberMatched = false;
   } else if (
     normOcr.includes(cleanExpectedId) ||
     normOcr.includes(cleanExpectedId.replace(/[-_.]/g, " ")) ||
@@ -232,7 +248,39 @@ export async function POST(request: Request) {
     idNumberMatched = true;
   }
 
-  if (!idNumberMatched && idSegments.length > 0) {
+  // Tier 1: Targeted "ID No." line extraction
+  if (!idNumberMatched) {
+    const idLineRegex = /(?:id\s*(?:no\.?|number|#)?[\s:;*=\-–—!?,.]{0,3})\s*([^\n\r,;]+)/i;
+    const idLineMatch = allOcrText.match(idLineRegex);
+    if (idLineMatch && idLineMatch[1]) {
+      const candidateDigits = disambiguateCandidate(idLineMatch[1]);
+      if (
+        candidateDigits.includes(idDigitsOnly) ||
+        (candidateDigits.length >= idDigitsOnly.length - 1 &&
+          levenshteinDistance(candidateDigits.slice(0, idDigitsOnly.length), idDigitsOnly) <= 2)
+      ) {
+        idNumberMatched = true;
+      }
+    }
+  }
+
+  // Tier 2: Extract STI ID format pattern (e.g. 23-1653-705 or 23 1653 705)
+  if (!idNumberMatched) {
+    const stiPattern = /\b([0-9A-Za-z]{2}[\s\-_.]+[0-9A-Za-z]{3,5}[\s\-_.]+[0-9A-Za-z]{2,4})\b/i;
+    const stiMatch = allOcrText.match(stiPattern);
+    if (stiMatch && stiMatch[1]) {
+      const stiDigits = disambiguateCandidate(stiMatch[1]);
+      if (
+        stiDigits === idDigitsOnly ||
+        levenshteinDistance(stiDigits, idDigitsOnly) <= 2
+      ) {
+        idNumberMatched = true;
+      }
+    }
+  }
+
+  // Tier 3: Core Segment matching (Prefix: 23, Core: 1653, Campus: 705)
+  if (!idNumberMatched && idSegments.length >= 2) {
     const coreSegment = idSegments.find((s) => s.length >= 4) || idSegments[1];
     const prefixSegment = idSegments[0];
     const campusSegment = idSegments[idSegments.length - 1];
@@ -240,48 +288,59 @@ export async function POST(request: Request) {
     if (prefixSegment && normOcrNoSpace.includes(prefixSegment)) segmentsFound++;
     if (coreSegment && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) segmentsFound++;
     if (campusSegment && (normOcrNoSpace.includes(campusSegment) || normOcrNoSpace.includes(disambiguateCandidate(campusSegment)))) segmentsFound++;
-    if (segmentsFound >= 2 || (coreSegment && normOcrNoSpace.includes(coreSegment))) {
+
+    if (segmentsFound >= 2 && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) {
       idNumberMatched = true;
     }
   }
 
-  if (!idNumberMatched && nameMatched) {
-    const isLibraryCard = /LIBRARY\s*CARD|STI/i.test(allOcrText);
-    const hasCoreDigits =
-      idDigitsOnly.length >= 4 &&
-      (normOcrNoSpace.includes(idDigitsOnly.slice(0, 4)) ||
-        normOcrNoSpace.includes(idDigitsOnly.slice(2, 6)) ||
-        normOcrNoSpace.includes(idDigitsOnly.slice(-4)) ||
-        normOcrNoSpace.includes(idDigitsOnly.slice(-3)));
-    if (isLibraryCard || hasCoreDigits) {
-      idNumberMatched = true;
+  // Tier 4: Glare / Stroke Ambiguity Tolerance with Levenshtein on alphanumeric tokens
+  if (!idNumberMatched && idDigitsOnly.length >= 5) {
+    const tokens = allOcrText.split(/[\s,;:\n\r]+/).filter((t) => t.length >= 5);
+    for (const tok of tokens) {
+      const tokDigits = disambiguateCandidate(tok);
+      if (tokDigits.length >= idDigitsOnly.length - 2) {
+        const dist = levenshteinDistance(idDigitsOnly, tokDigits.slice(0, idDigitsOnly.length));
+        if (dist <= 2) {
+          idNumberMatched = true;
+          break;
+        }
+      }
     }
   }
 
+  // ID card confirmation: recognized institutional markers or verified student ID number + card fields
+  const isOfficialCard = hasCardMarkers || Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY)/i.test(allOcrText));
+
+  // If ID strongly matched, allow identity cross-assurance
   if (!nameMatched && idNumberMatched && nameParts.length > 0) {
-    const hasAnyName = nameParts.some(
-      (part) => part.length >= 3 && (normOcr.includes(part) || isFuzzyWordMatch(part, ocrWords, 1))
-    );
-    if (hasAnyName) {
+    const surname = nameParts[nameParts.length - 1];
+    const givenNames = nameParts.slice(0, -1);
+    const hasSurname = surname.length >= 2 && (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, 1));
+    const matchedParts = nameParts.filter((p) => normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1));
+    const hasGivenName = givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
+
+    if (hasSurname || matchedParts.length >= 2 || hasGivenName) {
       nameMatched = true;
     }
   }
 
-  const success = Boolean(nameMatched && idNumberMatched);
+  const success = Boolean(isOfficialCard && nameMatched && idNumberMatched);
   let message = "Student identity verified successfully based on Library Card.";
-  if (!success) {
-    if (!nameMatched && !idNumberMatched) {
-      message = `Both your entered Name ("${expectedName || "Not provided"}") and ID Number ("${expectedIdNumber || "Not provided"}") failed to match the uploaded Library Card.`;
-    } else if (!nameMatched) {
-      message = `The entered Name ("${expectedName}") does not match the name detected on your Library Card. Please reupload a clearer photo or match the name in your ID.`;
-    } else {
-      message = `The entered ID Number ("${expectedIdNumber}") does not match the ID number detected on your Library Card. Please reupload a clearer photo or match the ID number in your ID.`;
-    }
+  if (!isOfficialCard) {
+    message = "The uploaded image is not a valid School ID or Library Card. Please upload an official Library Card or School ID.";
+  } else if (!nameMatched && !idNumberMatched) {
+    message = `Both your entered Name ("${expectedName || "Not provided"}") and ID Number ("${expectedIdNumber || "Not provided"}") failed to match the uploaded Library Card.`;
+  } else if (!nameMatched) {
+    message = `The student's surname or given name was not found on the uploaded Library Card. Please upload a clear photo of your official ID.`;
+  } else if (!idNumberMatched) {
+    message = `The entered ID Number ("${expectedIdNumber}") was not found on the uploaded card. Please ensure your ID number is clearly visible.`;
   }
 
   return NextResponse.json({
     success,
     verified: success,
+    isOfficialCard,
     nameMatched,
     idNumberMatched,
     detectedName: nameMatched ? expectedName : null,

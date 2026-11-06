@@ -353,8 +353,15 @@ class SocketService {
 
   public joinUserRoom(userId: string) {
     if (!userId) return;
-    const roomName = `room:user-notifications:${userId}`;
-    this.joinRoom(roomName);
+    const trimmed = String(userId).trim();
+    this.joinRoom(`room:user-notifications:${trimmed}`);
+    this.joinRoom(`student:${trimmed}`);
+    this.joinRoom(`user:${trimmed}`);
+    const stripped = trimmed.replace(/[^a-zA-Z0-9]/g, "");
+    if (stripped && stripped !== trimmed) {
+      this.joinRoom(`room:user-notifications:${stripped}`);
+      this.joinRoom(`student:${stripped}`);
+    }
   }
 
   private rejoinRooms() {
@@ -430,12 +437,13 @@ class SocketService {
 
   public notifyTransactionDecided(data: any) {
     const raw = data?.payload || data?.transaction || data;
-    const txId = raw?.id || raw?.transactionId || data?.entity_id;
-    const status = raw?.status || data?.status;
+    const txId = raw?.id || raw?.transactionId || data?.entity_id || raw?.isbn || raw?.title || raw?.resourceTitle;
+    const status = raw?.status || data?.status || data?.title || "";
+    const isPickup = Boolean(raw?.isPickedUp || raw?.pickedUpAt || (typeof status === 'string' && status.toLowerCase().includes('picked')));
 
     // Deduplication check: ignore duplicate burst events within 3.5 seconds
-    if (txId && status) {
-      const key = `${txId}:${String(status).toLowerCase()}`;
+    if (txId) {
+      const key = `${txId}:${String(status).toLowerCase()}:${isPickup ? 'pickup' : 'normal'}`;
       const now = Date.now();
       const last = this.recentDecisionKeys.get(key);
       if (last && now - last < 3500) {

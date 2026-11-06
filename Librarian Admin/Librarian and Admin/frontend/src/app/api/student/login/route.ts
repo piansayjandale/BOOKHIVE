@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { pool } from "@/lib/db";
 import { createSessionToken } from "@/lib/token";
-import { FALLBACK_USERS_ROSTER } from "@/lib/data/users-roster";
 
 export const runtime = "nodejs";
 
@@ -69,6 +68,7 @@ export async function POST(request: Request) {
 
     // 2. Fall back to verified local users roster if database is quota-exceeded or offline
     if (!user) {
+      const { FALLBACK_USERS_ROSTER } = await import("@/lib/data/users-roster");
       const matchedRosterUser = FALLBACK_USERS_ROSTER.find(
         (u) =>
           u.email.toLowerCase() === identifier ||

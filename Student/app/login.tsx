@@ -77,6 +77,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
 
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 6,
+    marginLeft: 2,
+  },
+
   inputContainer: {
     height: 54,
     borderWidth: 1,
@@ -320,11 +327,14 @@ function LoginScreenContent() {
             Log in to your account
           </Text>
 
+          <Text style={[styles.inputLabel, { color: theme.textPrimary }]}>
+            Gmail
+          </Text>
           <View style={[styles.inputContainer, { borderColor: theme.cardBorder }]}>
             <Ionicons name="mail-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder=""
+              placeholder="Enter your Gmail"
               placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={email}
               onChangeText={(value) => {
@@ -337,11 +347,14 @@ function LoginScreenContent() {
             />
           </View>
 
+          <Text style={[styles.inputLabel, { color: theme.textPrimary }]}>
+            Password
+          </Text>
           <View style={[styles.inputContainer, { borderColor: theme.cardBorder }]}>
             <Ionicons name="lock-closed-outline" size={20} color={theme.textSecondary} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
-              placeholder=""
+              placeholder="Enter your password"
               placeholderTextColor={isDarkMode ? "rgba(255, 255, 255, 0.35)" : "rgba(0, 0, 0, 0.35)"}
               value={password}
               onChangeText={(value) => {

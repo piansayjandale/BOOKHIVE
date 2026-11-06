@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { CatalogPage } from "@/components/admin/catalog-page";
+import { LazyCatalogPage } from "@/components/lazy-modules";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8 text-white">Loading Catalog...</div>}>
-      <CatalogPage />
+    <Suspense fallback={<PageCircleLoader />}>
+      <LazyCatalogPage />
     </Suspense>
   );
 }

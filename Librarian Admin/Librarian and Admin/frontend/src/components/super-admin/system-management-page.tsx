@@ -53,6 +53,16 @@ const ALL_ROLES = [
   "Student",
 ];
 
+export const LIBRARIAN_SUB_ROLES = [
+  "Technical Librarian",
+  "Acquisitions Librarian",
+  "Metadata Librarian",
+  "Circulation Librarian",
+  "Information Services Librarian",
+  "Periodicals Librarian",
+  "Serials Librarian",
+];
+
 export interface CollegeDepartment {
   code: string;
   name: string;
@@ -400,6 +410,7 @@ const emptyUserForm = {
   email: "",
   idNumber: "",
   role: "Student",
+  subRole: "Technical Librarian",
   department: "College of Information & Communications Technology (CICT)",
   course: "BS Information Technology",
   yearLevel: "4TH",
@@ -568,6 +579,7 @@ export function SystemManagementPage() {
     setUserForm((prev) => ({
       ...prev,
       role: newRole,
+      subRole: prev.subRole || "Technical Librarian",
       department: newDept,
       course: newCourse,
     }));
@@ -692,20 +704,17 @@ export function SystemManagementPage() {
     }
   }, []);
 
-  // Initial load across all vitals and counts
+  // Initial load across vitals and background tab counts (active tab loads below without duplication)
   useEffect(() => {
-    void fetchUsers();
     void fetchVitals();
     void fetchActiveBooks();
     void fetchArchivedBooks();
-    void fetchArchivedUsers();
-  }, [fetchUsers, fetchVitals, fetchActiveBooks, fetchArchivedBooks, fetchArchivedUsers]);
+  }, [fetchVitals, fetchActiveBooks, fetchArchivedBooks]);
 
   // Trigger loads based on active tab
   useEffect(() => {
     if (activeTab === "accounts") {
       void fetchUsers();
-      void fetchVitals();
       void fetchArchivedUsers();
     } else if (activeTab === "books") {
       void fetchActiveBooks();
@@ -1262,28 +1271,38 @@ export function SystemManagementPage() {
                       </td>
                       <td className="px-4 py-4 font-mono text-[14px] text-slate-300 font-medium">{user.idNumber}</td>
                       <td className="px-4 py-4">
-                        <span
-                          className={cn(
-                            "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
-                            user.role.includes("Super Admin")
-                              ? isLight
-                                ? "bg-purple-100 text-purple-900 border border-purple-300 font-black shadow-xs"
-                                : "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
-                              : user.role.includes("Admin")
-                              ? isLight
-                                ? "bg-amber-100 text-amber-950 border border-amber-400 font-black shadow-xs"
-                                : "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
-                              : user.role.includes("Librarian")
-                              ? isLight
-                                ? "bg-sky-100 text-sky-900 border border-sky-300 font-bold"
-                                : "bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold"
-                              : isLight
-                              ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
-                              : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
+                              user.role.includes("Super Admin")
+                                ? isLight
+                                  ? "bg-purple-100 text-purple-900 border border-purple-300 font-black shadow-xs"
+                                  : "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
+                                : user.role.includes("Admin")
+                                ? isLight
+                                  ? "bg-amber-100 text-amber-950 border border-amber-400 font-black shadow-xs"
+                                  : "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
+                                : user.role.includes("Librarian")
+                                ? isLight
+                                  ? "bg-sky-100 text-sky-900 border border-sky-300 font-bold"
+                                  : "bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold"
+                                : isLight
+                                ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
+                                : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                            )}
+                          >
+                            {user.role}
+                          </span>
+                          {user.role.includes("Librarian") && (user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : user.name?.includes("Palmares") ? "Technical Librarian" : null)) && (
+                            <span className={cn(
+                              "text-[11px] font-semibold tracking-wide",
+                              isLight ? "text-sky-700 font-bold" : "text-sky-300"
+                            )}>
+                              {user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian")}
+                            </span>
                           )}
-                        >
-                          {user.role}
-                        </span>
+                        </div>
                       </td>
                       <td className="px-4 py-4 text-slate-300">
                         <DepartmentBadge department={user.department} isLight={isLight} />
@@ -1319,6 +1338,7 @@ export function SystemManagementPage() {
                                 email: user.email,
                                 idNumber: user.idNumber,
                                 role: user.role,
+                                subRole: user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian"),
                                 department: user.department || "College of Information & Communications Technology (CICT)",
                                 course: user.course || "BS Information Technology",
                                 yearLevel: user.yearLevel || "4TH",
@@ -1915,28 +1935,38 @@ export function SystemManagementPage() {
                         </td>
                         <td className="px-4 py-4 font-mono text-[14px] text-slate-300 font-medium">{user.idNumber}</td>
                         <td className="px-4 py-4">
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
-                              user.role.includes("Super Admin")
-                                ? isLight
-                                  ? "bg-purple-100 text-purple-900 border border-purple-300 font-black shadow-xs"
-                                  : "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
-                                : user.role.includes("Admin")
-                                ? isLight
-                                  ? "bg-amber-100 text-amber-950 border border-amber-400 font-black shadow-xs"
-                                  : "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
-                                : user.role.includes("Librarian")
-                                ? isLight
-                                  ? "bg-sky-100 text-sky-900 border border-sky-300 font-bold"
-                                  : "bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold"
-                                : isLight
-                                ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
-                                : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                          <div className="flex flex-col items-start gap-1">
+                            <span
+                              className={cn(
+                                "inline-flex items-center rounded-full px-3.5 py-1.5 text-[12px] font-bold uppercase tracking-wider",
+                                user.role.includes("Super Admin")
+                                  ? isLight
+                                    ? "bg-purple-100 text-purple-900 border border-purple-300 font-black shadow-xs"
+                                    : "bg-purple-500/20 text-purple-300 border border-purple-500/30 font-bold"
+                                  : user.role.includes("Admin")
+                                  ? isLight
+                                    ? "bg-amber-100 text-amber-950 border border-amber-400 font-black shadow-xs"
+                                    : "bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold"
+                                  : user.role.includes("Librarian")
+                                  ? isLight
+                                    ? "bg-sky-100 text-sky-900 border border-sky-300 font-bold"
+                                    : "bg-sky-500/20 text-sky-300 border border-sky-500/30 font-bold"
+                                  : isLight
+                                  ? "bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold"
+                                  : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold"
+                              )}
+                            >
+                              {user.role}
+                            </span>
+                            {user.role.includes("Librarian") && (user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : user.name?.includes("Palmares") ? "Technical Librarian" : null)) && (
+                              <span className={cn(
+                                "text-[11px] font-semibold tracking-wide",
+                                isLight ? "text-sky-700 font-bold" : "text-sky-300"
+                              )}>
+                                {user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian")}
+                              </span>
                             )}
-                          >
-                            {user.role}
-                          </span>
+                          </div>
                         </td>
                         <td className="px-4 py-4">
                           <DepartmentBadge department={user.department} isLight={isLight} />
@@ -2305,7 +2335,25 @@ export function SystemManagementPage() {
                     />
                   </div>
 
-                  <div>
+                  {userForm.role === "Librarian" ? (
+                    <div>
+                      <FieldLabel required>Sub Role</FieldLabel>
+                      <ModernDropdown
+                        value={userForm.subRole || "Technical Librarian"}
+                        onChange={(val) =>
+                          setUserForm((prev) => ({
+                            ...prev,
+                            subRole: val,
+                          }))
+                        }
+                        options={LIBRARIAN_SUB_ROLES}
+                        icon={<BookOpen className="h-4 w-4" />}
+                        isLight={isLight}
+                      />
+                    </div>
+                  ) : null}
+
+                  <div className={cn(userForm.role === "Librarian" ? "sm:col-span-2" : "sm:col-span-1")}>
                     <FieldLabel required>Account Status</FieldLabel>
                     <ModernDropdown
                       value={userForm.status}
@@ -2362,8 +2410,11 @@ export function SystemManagementPage() {
                       "Root system authority with unrestricted control over database pruning, user provisioning, infrastructure telemetry, and security policies."}
                     {userForm.role === "Admin" &&
                       "Campus administrative oversight with full access to collection auditing, user records management, and circulation reporting."}
-                    {userForm.role === "Librarian" &&
-                      "Operational library privileges for issue and return processing, physical shelf cataloging, and patron circulation management."}
+                    {userForm.role === "Librarian" && (
+                      <>
+                        Designated as <strong>{userForm.subRole || "Technical Librarian"}</strong>. Operational library privileges for issue and return processing, physical shelf cataloging, and patron circulation management.
+                      </>
+                    )}
                     {userForm.role === "Student" &&
                       "Standard patron account eligible for online book reservation, digital catalog browsing, and personal borrowing history."}
                   </div>

@@ -40,6 +40,7 @@ import {
 
 import { useSuperAdminVitals } from "@/lib/hooks/use-super-admin-vitals";
 import { useTheme } from "@/components/providers/theme-provider";
+import { useNavigationTransition } from "@/components/providers/navigation-provider";
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +81,14 @@ const STATIC_DEFAULT_LOGS: AuditLogItem[] = [
 
 export function SuperAdminHomePage() {
   const router = useRouter();
+  const { startNavigation } = useNavigationTransition();
+  const navigateTo = useCallback(
+    (href: string) => {
+      startNavigation(href);
+      router.push(href);
+    },
+    [router, startNavigation],
+  );
   const { theme } = useTheme();
   const isLight = theme === "light";
   const [mounted, setMounted] = useState(false);
@@ -241,7 +250,7 @@ export function SuperAdminHomePage() {
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push("/super-admin/audit-logs")}
+              onClick={() => navigateTo("/super-admin/audit-logs")}
               className={cn(
                 "text-xs font-bold flex items-center gap-1 cursor-pointer px-3 py-1.5 rounded-xl border transition",
                 isLight
@@ -850,7 +859,7 @@ export function SuperAdminHomePage() {
               {/* Shortcut 1: User Management */}
               <button
                 type="button"
-                onClick={() => router.push("/super-admin/system-management")}
+                onClick={() => navigateTo("/super-admin/system-management")}
                 className={cn(
                   "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
@@ -906,7 +915,7 @@ export function SuperAdminHomePage() {
               {/* Shortcut 3: Master Records */}
               <button
                 type="button"
-                onClick={() => router.push("/super-admin/records")}
+                onClick={() => navigateTo("/super-admin/records")}
                 className={cn(
                   "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight
@@ -934,7 +943,7 @@ export function SuperAdminHomePage() {
               {/* Shortcut 4: Global Settings */}
               <button
                 type="button"
-                onClick={() => router.push("/super-admin/settings")}
+                onClick={() => navigateTo("/super-admin/settings")}
                 className={cn(
                   "btn-command-shortcut group relative flex aspect-square flex-col !items-center !justify-center !text-center p-4 gap-3 overflow-hidden rounded-2xl border shadow-sm backdrop-blur-md transition-all duration-300 hover:-translate-y-1 cursor-pointer",
                   isLight

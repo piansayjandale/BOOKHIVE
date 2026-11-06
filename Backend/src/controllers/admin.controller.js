@@ -22,7 +22,7 @@ import { pool } from "../db/pool.js";
 import { adminModel } from "../models/admin.model.js";
 import { superAdminModel } from "../models/super-admin.model.js";
 import { studentModel } from "../models/student.model.js";
-import { emitBookAdded, emitBorrowRequest, emitTransactionDecided, emitBookReturned, emitTransactionPickedUp, emitAnnouncementPublished, emitAnnouncementDeleted, emitSettingsUpdated, emitReservationCancelled } from "../socket.js";
+import { emitBookAdded, emitBorrowRequest, emitTransactionDecided, emitBookReturned, emitTransactionPickedUp, emitAnnouncementPublished, emitAnnouncementDeleted, emitSettingsUpdated, emitReservationCancelled, emitPermissionsUpdated } from "../socket.js";
 import { eventDispatcher } from "../services/event-dispatcher.js";
 import { reservationTimerService } from "../services/reservation-timer.service.js";
 
@@ -500,7 +500,9 @@ export const adminController = {
 
   async addBook(req, res) {
     const book = await adminModel.addBook(req.body);
-    const actorLabel = `${req.user.role} ${req.user.name}`;
+    const actorLabel =
+      (req.body && (req.body.actor || req.body.actorName)) ||
+      (req.user ? `${req.user.role} ${req.user.name}` : "BookHive Librarian");
     await adminModel.addHistoryLog({
       actor: actorLabel,
       action: "Added new book",
@@ -508,7 +510,7 @@ export const adminController = {
       module: "Records",
       detail: `Catalog record created at shelf ${book.shelfLocation}.`,
     });
-    await adminModel.addActivityLog(`Book added: ${book.title}`, "success", req.user.name);
+    await adminModel.addActivityLog(`Book added: ${book.title}`, "success", (req.user && req.user.name) || actorLabel);
     
     // Broadcast real-time WebSocket event to Student App and dashboards
     emitBookAdded(book);
@@ -591,8 +593,12 @@ export const adminController = {
   },
 
   async addDigitizedBook(req, res) {
-    const book = await adminModel.addDigitizedBook(req.body);
-    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : "Librarian Mobile App";
+    const rawScannedBy = req.body?.scannedBy || req.body?.scanned_by || req.body?.capturedBy || req.body?.librarianName;
+    const scannedBy = (rawScannedBy && !rawScannedBy.includes("Librarian Mobile App") && !rawScannedBy.includes("Scanner"))
+      ? rawScannedBy
+      : (req.user?.name || req.user?.fullName || "Yana Brich R. Palmares");
+    const book = await adminModel.addDigitizedBook({ ...req.body, scannedBy });
+    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : scannedBy;
     const bookTitle = book?.title || req.body?.title || "Scanned Book";
     await adminModel.addHistoryLog({
       actor: actorLabel,
@@ -609,7 +615,9 @@ export const adminController = {
     const { id } = req.params;
     const result = await adminModel.approveDigitizedBook(id, req.body);
     const officialBook = result?.officialBook || req.body;
-    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : "Library Staff";
+    const actorLabel =
+      (req.body && (req.body.actor || req.body.actorName)) ||
+      (req.user ? `${req.user.role} ${req.user.name}` : "Library Staff");
     const bookTitle = officialBook?.title || req.body?.title || "Cataloged Book";
     await adminModel.addHistoryLog({
       actor: actorLabel,
@@ -627,6 +635,15 @@ export const adminController = {
     }
 
     return res.json({ book: officialBook, success: true, message: "Book officially cataloged." });
+  },
+
+  async updateDigitizedBook(req, res) {
+    const { id } = req.params;
+    const book = await adminModel.updateDigitizedBook(id, req.body);
+    const actorLabel = req.user ? `${req.user.role} ${req.user.name}` : "Technical Librarian";
+    const bookTitle = book?.title || req.body?.title || "Digitized Book";
+    await adminModel.addActivityLog(`Digitized slip updated: ${bookTitle}`, "info", actorLabel);
+    return res.json({ ok: true, book, message: "Digitized book record updated." });
   },
 
   async deleteDigitizedBook(req, res) {
@@ -833,16 +850,25 @@ export const adminController = {
     });
   },
 
+  async getTransactionById(req, res) {
+    const { transactionId } = req.params;
+    const transaction = await adminModel.getTransactionById(transactionId);
+    if (!transaction) {
+      return res.status(404).json({ message: "Transaction not found." });
+    }
+    return res.json({ transaction });
+  },
+
   async decideTransaction(req, res) {
     const { transactionId } = req.params;
     const { status: rawStatus, decision, comment, type, dueDate, action, pickedUp, resourceTitle, isbn, studentId, studentName } = req.body;
     const status = rawStatus || decision;
 
-    const actorId = req.user?.sub || req.user?.id;
+    const actorId = req.body?.approverId || req.user?.sub || req.user?.id;
     const isUuid = Boolean(actorId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(actorId)));
     const decidedBy = isUuid ? actorId : null;
-    const actorName = req.user?.name || "Librarian";
-    const actorRole = req.user?.role || "Librarian";
+    const actorName = req.body?.approverName || req.user?.name || "Jan Dale B. Piansay";
+    const actorRole = req.body?.approverRole || req.user?.subRole || req.user?.role || "Circulation Librarian";
     const actorLabel = `${actorRole} ${actorName}`;
 
     // Handle book pickup action by librarian
@@ -896,6 +922,8 @@ export const adminController = {
       isbn,
       studentId,
       studentName,
+      approverName: actorName,
+      approverRole: actorRole,
     });
 
     if (!transaction) {
@@ -1152,7 +1180,7 @@ export const adminController = {
   },
 
   async runPromptSearch(req, res) {
-    const { query, department, uploadedContext, fileNames, mode } = req.body;
+    const { query, department, uploadedContext, fileNames, mode, skipLog } = req.body;
     const actorId = req.user?.sub;
     const actorName = req.user?.name || "System";
     const result = await adminModel.runPromptSearch({
@@ -1161,6 +1189,7 @@ export const adminController = {
       uploadedContext,
       fileNames,
       mode,
+      skipLog: Boolean(skipLog),
       actorId,
       actorName,
     });
@@ -1195,6 +1224,17 @@ export const adminController = {
     if (!updatedUser) {
       return res.status(404).json({ message: "Librarian account not found." });
     }
+
+    if (permissions && permissions.transactions === false) {
+      try {
+        await adminModel.reassignPendingTransactionsFrom(id);
+      } catch (reassignErr) {
+        console.warn("Failed to reassign pending transactions upon restriction:", reassignErr.message);
+      }
+    }
+
+    // Broadcast real-time WebSocket events for restriction/unrestriction
+    emitPermissionsUpdated(updatedUser);
 
     const actor = req.user?.name || "Administrator";
     const restrictedCount = Object.values(permissions).filter((val) => val === false).length;

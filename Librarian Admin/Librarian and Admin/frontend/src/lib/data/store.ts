@@ -701,6 +701,16 @@ export const store = {
           returnRatePercent: totalBorrows > 0 ? Math.min(100, Math.round((totalReturns / totalBorrows) * 100)) : 100,
           totalCatalogBooks,
         },
+        collegeViolations: [
+          { code: "CICT", name: "College of Information and Communications Technology", mascot: "Red Sentinels", violations: 0, percentage: 0, color: "#EF4444" },
+          { code: "CHTM", name: "College of Hospitality and Tourism Management", mascot: "Pink Vikings", violations: 0, percentage: 0, color: "#EC4899" },
+          { code: "CCJE", name: "College of Criminal Justice Education", mascot: "Purple Wizards", violations: 0, percentage: 0, color: "#8B5CF6" },
+          { code: "CBMA", name: "College of Business Management and Accountancy", mascot: "Yellow Tycoons", violations: 0, percentage: 0, color: "#EAB308" },
+          { code: "COE", name: "College of Engineering", mascot: "Orange Erudites", violations: 0, percentage: 0, color: "#FF6B00" },
+          { code: "CAS", name: "College of Arts and Sciences", mascot: "Green Titans", violations: 0, percentage: 0, color: "#10B981" },
+          { code: "CED", name: "College of Education", mascot: "Blue Guardians", violations: 0, percentage: 0, color: "#3B82F6" },
+        ],
+        topViolationStudents: [],
       };
     } catch (e) {
       console.warn("store.getReports DB query notice, using memory state:", e);
@@ -832,6 +842,16 @@ export const store = {
         returnRatePercent: totalBorrowsCount > 0 ? Math.min(100, Math.round((returnedCount / totalBorrowsCount) * 100)) : 100,
         totalCatalogBooks: await catalogRepository.countBooks(),
       },
+      collegeViolations: [
+        { code: "CICT", name: "College of Information and Communications Technology", mascot: "Red Sentinels", violations: 0, percentage: 0, color: "#EF4444" },
+        { code: "CHTM", name: "College of Hospitality and Tourism Management", mascot: "Pink Vikings", violations: 0, percentage: 0, color: "#EC4899" },
+        { code: "CCJE", name: "College of Criminal Justice Education", mascot: "Purple Wizards", violations: 0, percentage: 0, color: "#8B5CF6" },
+        { code: "CBMA", name: "College of Business Management and Accountancy", mascot: "Yellow Tycoons", violations: 0, percentage: 0, color: "#EAB308" },
+        { code: "COE", name: "College of Engineering", mascot: "Orange Erudites", violations: 0, percentage: 0, color: "#FF6B00" },
+        { code: "CAS", name: "College of Arts and Sciences", mascot: "Green Titans", violations: 0, percentage: 0, color: "#10B981" },
+        { code: "CED", name: "College of Education", mascot: "Blue Guardians", violations: 0, percentage: 0, color: "#3B82F6" },
+      ],
+      topViolationStudents: [],
     };
   },
 

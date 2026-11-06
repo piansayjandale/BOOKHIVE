@@ -367,9 +367,9 @@ html[data-theme="light"] {
   .bg-white\/\[0\.01\]:not(aside *),
   .bg-white\/\[0\.03\]:not(aside *),
   .bg-white\/\[0\.04\]:not(aside *),
-  .bg-white\/5:not(aside *),
-  .bg-white\/6:not(aside *),
-  .bg-white\/10:not(aside *) {
+  .bg-white\/5:not(aside *):not(textarea):not(input):not(select),
+  .bg-white\/6:not(aside *):not(textarea):not(input):not(select),
+  .bg-white\/10:not(aside *):not(textarea):not(input):not(select) {
     background-color: var(--surface-muted) !important;
     border-color: var(--line) !important;
   }
@@ -549,10 +549,13 @@ html[data-theme="light"] {
 
   /* Ensure ALL inputs, selects, textareas and options are clean and legible */
   input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]):not(.login-input),
-  select,
+  select:not(.login-input),
+  textarea:not(.login-input),
   textarea {
     color: #000000 !important;
-    background-color: var(--card-bg) !important;
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    border: 1px solid var(--line) !important;
     border-color: var(--line) !important;
   }
   input.bg-transparent:not(.login-input) {
@@ -561,16 +564,29 @@ html[data-theme="light"] {
     background: transparent !important;
   }
   input.login-input {
-    background-color: transparent !important;
-    background: transparent !important;
-    border: none !important;
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    caret-color: #000000 !important;
+    border: 1.5px solid #000000 !important;
     box-shadow: none !important;
+  }
+  input.login-input:focus {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1.5px solid #000000 !important;
+    border-color: #000000 !important;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15) !important;
   }
   input.login-input:-webkit-autofill,
   input.login-input:-webkit-autofill:hover,
-  input.login-input:-webkit-autofill:focus {
-    -webkit-box-shadow: 0 0 0 1000px #091120 inset !important;
-    -webkit-text-fill-color: #ffffff !important;
+  input.login-input:-webkit-autofill:focus,
+  input.login-input:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+    box-shadow: 0 0 0 1000px #ffffff inset !important;
+    -webkit-text-fill-color: #000000 !important;
+    border: 1.5px solid #000000 !important;
     transition: background-color 5000s ease-in-out 0s;
   }
   input::placeholder,

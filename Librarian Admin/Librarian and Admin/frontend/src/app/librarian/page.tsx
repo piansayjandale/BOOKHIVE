@@ -1,6 +1,5 @@
-import { DashboardFigma } from "@/components/dashboard/dashboard-figma";
+import { LazyDashboardFigma } from "@/components/lazy-modules";
 
-// Force cache bust to resolve Next.js HMR load issues
 export default function LibrarianHomePage() {
-  return <DashboardFigma variant="librarian" />;
+  return <LazyDashboardFigma variant="librarian" />;
 }

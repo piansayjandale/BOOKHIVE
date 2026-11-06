@@ -268,17 +268,19 @@ export function interpretPromptAndFile(prompt = "", file = null, extractedText =
   }
   coreQuery = coreQuery
     .replace(
-      /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+      /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need|is\s+there\s+any)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+|materials?\s+)?(((that|which)\s+(is|are)\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+|related\s+to\s+|regarding\s+))?/i,
       ""
     )
-    .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+    .replace(/^(books?\s+|novels?\s+|references?\s+|materials?\s+)(((that|which)\s+(is|are)\s+)?(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+|related\s+to\s+|regarding\s+))/i, "")
+    .replace(/^(that\s+is\s+|which\s+is\s+|that\s+are\s+|which\s+are\s+)(about\s+|related\s+to\s+|on\s+|for\s+|regarding\s+)?/i, "")
+    .replace(/^(related\s+to\s+|about\s+|regarding\s+|on\s+)/i, "")
     .trim();
 
   if (!coreQuery && cleanPrompt && !isDirectiveSimilarToFile) {
     coreQuery = cleanPrompt;
   }
 
-  // Extract prompt keywords (supporting 2+ letter words and falling back to raw words if all are stop words)
+  // Extract prompt keywords (supporting 2+ letter words; never treat stop words as topics)
   const rawPromptWords = (coreQuery || cleanPrompt)
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
@@ -286,12 +288,7 @@ export function interpretPromptAndFile(prompt = "", file = null, extractedText =
     .filter(Boolean);
 
   const filteredPromptWords = rawPromptWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
-  const promptWords =
-    filteredPromptWords.length > 0
-      ? filteredPromptWords
-      : isDirectiveSimilarToFile
-      ? []
-      : rawPromptWords.filter((w) => w.length >= 1);
+  const promptWords = filteredPromptWords;
 
   // Detect curriculum domain from file or prompt
   const domain = resolveCurriculumDomain(`${fileName} ${cleanPrompt}`, extractedText);
@@ -359,6 +356,23 @@ export function interpretPromptAndFile(prompt = "", file = null, extractedText =
   };
 }
 
+const escapeRegExp = (str = "") => String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const stemWord = (w = "") => String(w).replace(/(ing|tions|tion|ments|ment|s|es|ed|ic|ical|ist|ists)$/i, "");
+
+export function matchesWordToken(tw = "", qw = "") {
+  if (!tw || !qw) return false;
+  const twL = String(tw).toLowerCase();
+  const qwL = String(qw).toLowerCase();
+  if (twL === qwL) return true;
+  const qwStem = stemWord(qwL);
+  const twStem = stemWord(twL);
+  if (qwStem.length >= 3 && twStem.length >= 3 && qwStem === twStem) return true;
+  // Title word starts with full query keyword (e.g. "cook" matches "cooking" or "cookbook")
+  if (qwL.length >= 4 && twL.startsWith(qwL)) return true;
+  if (qwStem.length >= 4 && twL.startsWith(qwStem)) return true;
+  return false;
+}
+
 /**
  * Computes an accurate relevance match percentage (0-100%) prioritizing book title matches
  */
@@ -403,8 +417,9 @@ export function computeAccurateMatchPercentage(row, analysis) {
 
   const promptWords = Array.isArray(analysis.promptWords) ? analysis.promptWords : [];
 
-  // 2. Full query phrase contained directly in the book title -> 88% - 96%
-  if (cleanQuery.length >= 2 && cleanTitle.includes(cleanQuery)) {
+  // 2. Full query phrase contained directly in the book title (strictly at word boundary) -> 88% - 96%
+  const phraseRegex = new RegExp(`\\b${escapeRegExp(cleanQuery)}`, "i");
+  if (cleanQuery.length >= 2 && phraseRegex.test(cleanTitle)) {
     const wholeWordMatch = titleWords.includes(cleanQuery) || cleanTitle.startsWith(cleanQuery);
     const lengthRatio = Math.min(1, cleanQuery.length / Math.max(1, cleanTitle.length));
     const base = wholeWordMatch ? 88 : 82;
@@ -421,32 +436,24 @@ export function computeAccurateMatchPercentage(row, analysis) {
 
     for (const pw of promptWords) {
       const pwLower = pw.toLowerCase();
+      const hasWordHit = titleWords.some((tw) => matchesWordToken(tw, pwLower));
+
       if (titleWords.includes(pwLower)) {
         exactTitleWordHits++;
         partialTitleWordHits++;
-      } else if (
-        cleanTitle.includes(pwLower) ||
-        (pwLower.length >= 4 && titleWords.some((tw) => tw.startsWith(pwLower) || pwLower.startsWith(tw)))
-      ) {
+      } else if (hasWordHit) {
         partialTitleWordHits++;
       }
 
-      if (normAuthor.includes(pwLower)) authorHits++;
-      if (normCategory.includes(pwLower)) catHits++;
-      if (normSummary.includes(pwLower)) summaryHits++;
+      if (new RegExp(`\\b${escapeRegExp(pwLower)}`, "i").test(normAuthor)) authorHits++;
+      if (new RegExp(`\\b${escapeRegExp(pwLower)}`, "i").test(normCategory)) catHits++;
+      if (new RegExp(`\\b${escapeRegExp(pwLower)}`, "i").test(normSummary)) summaryHits++;
     }
 
     // Count how many of the book's significant title words were matched by the prompt
     let matchedBookTitleWords = 0;
     for (const tw of effectiveTitleWords) {
-      if (
-        promptWords.some(
-          (pw) =>
-            tw === pw ||
-            tw.includes(pw) ||
-            (pw.length >= 4 && (tw.startsWith(pw) || pw.startsWith(tw)))
-        )
-      ) {
+      if (promptWords.some((pw) => matchesWordToken(tw, pw.toLowerCase()))) {
         matchedBookTitleWords++;
       }
     }
@@ -676,8 +683,12 @@ export async function executeAiSearch({ prompt, file, limit = 40, department = n
             existingTitles.add(cbTitle);
             const fb = formatCatalogBook(cb);
             let titleHits = 0;
+            const cbTokens = cbTitle.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
             for (const pw of promptWords) {
-              if (cbTitle.includes(pw.toLowerCase())) titleHits++;
+              const pwL = pw.toLowerCase();
+              if (cbTokens.some((t) => matchesWordToken(t, pwL))) {
+                titleHits++;
+              }
             }
             const rowItem = {
               ...fb,
@@ -704,7 +715,7 @@ export async function executeAiSearch({ prompt, file, limit = 40, department = n
       const titleOrAuthorRows = rows.filter((r) => {
         if (Number(r.title_hits) > 0) return true;
         const authorLower = String(r.author || "").toLowerCase();
-        return promptWords.some((pw) => authorLower.includes(pw));
+        return promptWords.some((pw) => new RegExp(`\\b${escapeRegExp(pw)}`, "i").test(authorLower));
       });
       if (titleOrAuthorRows.length > 0) {
         rows = titleOrAuthorRows;
@@ -771,12 +782,19 @@ export async function executeAiSearch({ prompt, file, limit = 40, department = n
 
   // Structure user-facing AI analysis summary
   const topTopics = (promptWords.length > 0 ? promptWords : keywords)
+    .filter((k) => k && k.length >= 2 && !STOP_WORDS.has(String(k).toLowerCase()))
     .slice(0, 6)
     .map((k) => k.charAt(0).toUpperCase() + k.slice(1));
   const fileNotice = file?.name ? `Analyzed file "${file.name}"` : "Analyzed prompt";
-  const intentNotice = analysis.isDirectiveSimilarToFile
-    ? `Identified topic: ${analysis.detectedSubject}. Recommending relevant library books matching the file.`
-    : `Matching library references for ${analysis.detectedSubject}.`;
+
+  let intentNotice = "";
+  if (analysis.isDirectiveSimilarToFile) {
+    intentNotice = `Identified topic: ${analysis.detectedSubject}. Recommending relevant library books matching the file.`;
+  } else if (promptWords.length > 0) {
+    intentNotice = `Found ${books.length} books specifically matching "${analysis.detectedSubject}".`;
+  } else {
+    intentNotice = `Matching library references for ${analysis.detectedSubject}.`;
+  }
 
   const aiAnalysis = {
     fileName: file?.name || "",

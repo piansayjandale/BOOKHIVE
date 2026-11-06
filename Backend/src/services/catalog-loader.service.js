@@ -95,7 +95,7 @@ function getPrefixIndex() {
 /**
  * Search books by title prefix
  */
-export function searchCatalogByPrefix(query, limit = 50) {
+export function searchCatalogByPrefix(query, limit = 50, strictPrefix = false) {
   if (!query) return [];
 
   const normQuery = query.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
@@ -127,7 +127,9 @@ export function searchCatalogByPrefix(query, limit = 50) {
     if (exactMatches.length + prefixMatches.length >= limit * 2) break;
   }
 
-  return [...exactMatches, ...prefixMatches, ...containsMatches].slice(0, limit);
+  return strictPrefix
+    ? [...exactMatches, ...prefixMatches].slice(0, limit)
+    : [...exactMatches, ...prefixMatches, ...containsMatches].slice(0, limit);
 }
 
 /**

@@ -22,6 +22,7 @@ const TARGET_ACCOUNT = {
   idNumber: "LIB-2026-0001",
   plaintextPassword: "BookHiveLibrarian!2026",
   role: "Librarian",
+  subRole: "Technical Librarian",
   department: "Library Services",
   course: "Library Services",
   qrCode: "e1a10000-lib-4050-8000-000000000001",

@@ -2,13 +2,12 @@ import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 
 import { adminRepository } from "@/lib/admin/repository";
-import { createSessionToken, getSessionCookieOptions, SESSION_COOKIE } from "@/lib/auth";
+import { createSessionToken, getSessionCookieOptions, invalidateSessionCache, SESSION_COOKIE } from "@/lib/auth";
 import { getDashboardPathForRole } from "@/lib/routing";
 import { loginSchema } from "@/lib/validation";
 import type { SessionUser } from "@/lib/types";
 import { BACKEND_URL } from "@/lib/config";
 import { pool } from "@/lib/db";
-import { FALLBACK_USERS_ROSTER } from "@/lib/data/users-roster";
 
 export const runtime = "nodejs";
 
@@ -62,13 +61,41 @@ const DEV_CREDENTIALS: Record<string, any> = {
     password: "BookHiveAdmin!2026",
     idNumber: "ADM-2026-0001",
   },
+  "dale@wnu.sti.edu.ph": {
+    id: "a27ee733-1bf0-4532-8683-37d23c41b3a2",
+    name: "Jan Dale B. Piansay",
+    email: "dale@wnu.sti.edu.ph",
+    role: "Librarian",
+    subRole: "Circulation Librarian",
+    password: "BookHiveLibrarian!2026",
+    idNumber: "23-1111-222",
+  },
+  "23-1111-222": {
+    id: "a27ee733-1bf0-4532-8683-37d23c41b3a2",
+    name: "Jan Dale B. Piansay",
+    email: "dale@wnu.sti.edu.ph",
+    role: "Librarian",
+    subRole: "Circulation Librarian",
+    password: "BookHiveLibrarian!2026",
+    idNumber: "23-1111-222",
+  },
   "librarian@stiwnu.edu.ph": {
-    id: "user-002",
+    id: "821b7b9e-bd26-40a5-b4b3-91ba308130db",
     name: "Yana Brich R. Palmares",
     email: "librarian@stiwnu.edu.ph",
     role: "Librarian",
+    subRole: "Technical Librarian",
     password: "BookHiveLibrarian!2026",
-    idNumber: "LIB-2026-0001",
+    idNumber: "23-1111-111",
+  },
+  "23-1111-111": {
+    id: "821b7b9e-bd26-40a5-b4b3-91ba308130db",
+    name: "Yana Brich R. Palmares",
+    email: "librarian@stiwnu.edu.ph",
+    role: "Librarian",
+    subRole: "Technical Librarian",
+    password: "BookHiveLibrarian!2026",
+    idNumber: "23-1111-111",
   },
   "lib-2026-0001": {
     id: "user-002",
@@ -198,7 +225,7 @@ export async function POST(request: Request) {
 
     try {
       const userRes = await pool.query(
-        `SELECT id, name, email, id_number, password_hash, role, department, course, permissions
+        `SELECT id, name, email, id_number, password_hash, role, sub_role, department, course, permissions
          FROM users
          WHERE LOWER(email) = $1 OR LOWER(id_number) = $1
          LIMIT 1`,
@@ -223,6 +250,7 @@ export async function POST(request: Request) {
             role: u.role,
             department: u.department,
             course: u.course,
+            subRole: u.sub_role || (u.role === "Librarian" ? (u.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian") : null),
             permissions: u.permissions,
           };
         }
@@ -254,8 +282,9 @@ export async function POST(request: Request) {
       }
     }
 
-    // 3. Fall back to verified local users roster
+    // 3. Fall back to verified local users roster (lazy-loaded only when DB + backend miss)
     if (!account) {
+      const { FALLBACK_USERS_ROSTER } = await import("@/lib/data/users-roster");
       const matchedRosterUser = FALLBACK_USERS_ROSTER.find(
         (u) =>
           u.email.toLowerCase() === identifier ||
@@ -277,6 +306,7 @@ export async function POST(request: Request) {
             role: matchedRosterUser.role,
             department: matchedRosterUser.department,
             course: matchedRosterUser.course,
+            subRole: (matchedRosterUser as any).subRole || ((matchedRosterUser as any).sub_role) || null,
             permissions: (matchedRosterUser as any).permissions || null,
           };
         }
@@ -340,11 +370,20 @@ export async function POST(request: Request) {
       settings: true,
     };
 
+    const resolvedSubRole =
+      account.subRole ||
+      (account.role === "Librarian"
+        ? account.name?.includes("Jan Dale")
+          ? "Circulation Librarian"
+          : "Technical Librarian"
+        : undefined);
+
     const session: SessionUser = {
       id: account.id,
       name: account.name,
       email: account.email,
       role: account.role as any,
+      subRole: resolvedSubRole,
       avatar: account.name
         .split(" ")
         .filter(Boolean)
@@ -354,21 +393,21 @@ export async function POST(request: Request) {
       permissions: account.permissions || defaultPermissions,
     };
 
-    try {
-      await adminRepository.registerAuthEvent(session.name, "Signed in to BookHive", "success");
-    } catch (logError) {
-      // If logging fails, continue anyway
-      console.warn("Failed to log auth event:", logError);
-    }
+    invalidateSessionCache(session.id);
+    invalidateSessionCache(session.email);
+    void adminRepository
+      .registerAuthEvent(session.name, "Signed in to BookHive", "success")
+      .catch((logError) => {
+        console.warn("Failed to log auth event:", logError);
+      });
 
     const response = NextResponse.json({
       user: session,
       redirectPath: getDashboardPathForRole(session.role as any),
     });
-    response.cookies.set(SESSION_COOKIE, await createSessionToken(session), getSessionCookieOptions());
-    if (backendToken) {
-      response.cookies.set("bookhive_backend_token", backendToken, getSessionCookieOptions());
-    }
+    const sessionToken = await createSessionToken(session);
+    response.cookies.set(SESSION_COOKIE, sessionToken, getSessionCookieOptions());
+    response.cookies.set("bookhive_backend_token", backendToken || sessionToken, getSessionCookieOptions());
 
     return response;
   } catch (error) {

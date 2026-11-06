@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import AnimatedScreen from "../components/AnimatedScreen";
+import PageCircleLoader from "../components/PageCircleLoader";
 import { useThemeColors } from "../hooks/useThemeColors";
 import { getCachedAllBooks, setCachedAllBooks, getPersonalizedRecommendedBooks, saveBookToViewHistory } from "../data/store";
 import { API_URL, getAuthHeaders } from "../data/authService";
@@ -592,10 +593,7 @@ export default function DepartmentBooksScreen() {
       {/* BOOKS LIST */}
       {loading && departmentRecords.length === 0 ? (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.accentBlue} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading {departmentName} records...
-          </Text>
+          <PageCircleLoader label={`Loading ${departmentName} records...`} />
         </View>
       ) : departmentRecords.length === 0 ? (
         <View style={styles.emptyContainer}>

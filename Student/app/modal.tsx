@@ -10,7 +10,7 @@ export default function ModalScreen() {
   return (
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
       <Text style={[styles.title, { color: theme.textPrimary }]}>This is a modal</Text>
-      <TouchableOpacity onPress={() => router.replace('/')} style={[styles.link, { backgroundColor: theme.accentGold }]}>
+      <TouchableOpacity onPress={() => router.replace('/(tabs)')} style={[styles.link, { backgroundColor: theme.accentGold }]}>
         <Text style={[styles.linkText, { color: isDarkMode ? "#080F1E" : "#FFFFFF" }]}>Go to home screen</Text>
       </TouchableOpacity>
     </AnimatedScreen>

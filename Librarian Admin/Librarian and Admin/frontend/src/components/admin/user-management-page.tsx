@@ -15,6 +15,7 @@ const emptyUserForm = {
   idNumber: "",
   email: "",
   role: "Student",
+  subRole: "Technical Librarian",
   department: "Circulation",
   course: "",
 };
@@ -26,7 +27,7 @@ const STATUS_STYLE: Record<string, string> = {
   Returned: "bg-sky-500/10 text-sky-400 border-sky-500/20",
 };
 
-function RoleBadge({ role }: { role: string }) {
+function RoleBadge({ role, subRole }: { role: string; subRole?: string }) {
   const styles: Record<string, string> = {
     "Super Admin": "bg-purple-500/10 text-purple-400 border-purple-500/20",
     SUPER_ADMIN: "bg-purple-500/10 text-purple-400 border-purple-500/20",
@@ -35,9 +36,16 @@ function RoleBadge({ role }: { role: string }) {
     Student: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
   };
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${styles[role] || "bg-slate-500/10 text-slate-400 border-slate-500/20"}`}>
-      {role}
-    </span>
+    <div className="flex flex-col items-start gap-1">
+      <span className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${styles[role] || "bg-slate-500/10 text-slate-400 border-slate-500/20"}`}>
+        {role}
+      </span>
+      {subRole && (
+        <span className="text-[11px] font-semibold text-sky-300">
+          {subRole}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -110,6 +118,7 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
       idNumber: user.idNumber,
       email: user.email,
       role: user.role,
+      subRole: user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian"),
       department: user.department,
       course: user.course,
     });
@@ -274,7 +283,7 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
                   </td>
                   <td className="px-5 py-4 text-xs font-mono text-slate-300 whitespace-nowrap">{user.idNumber}</td>
                   <td className="px-5 py-4 whitespace-nowrap">
-                    <RoleBadge role={user.role} />
+                    <RoleBadge role={user.role} subRole={user.subRole || (user.name?.includes("Jan Dale") ? "Circulation Librarian" : user.name?.includes("Palmares") ? "Technical Librarian" : undefined)} />
                   </td>
                   <td className="px-5 py-4 whitespace-nowrap">
                     <DepartmentBadge department={user.department} />
@@ -550,15 +559,33 @@ export function UserManagementPage({ tabs }: { tabs?: ReactNode }) {
             <FieldLabel label="Role">
               <select
                 value={form.role}
-                onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}
+                onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as any, subRole: current.subRole || "Technical Librarian" }))}
                 className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] py-2.5 px-4 text-sm text-white focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
               >
                 <option value="Admin">Admin</option>
+                <option value="Librarian">Librarian</option>
                 <option value="Technical Librarian">Technical Librarian</option>
                 <option value="Circulation Librarian">Circulation Librarian</option>
                 <option value="Student">Student</option>
               </select>
             </FieldLabel>
+            {(form.role === "Librarian" || form.role.includes("Librarian")) && (
+              <FieldLabel label="Sub Role">
+                <select
+                  value={form.subRole || "Technical Librarian"}
+                  onChange={(event) => setForm((current) => ({ ...current, subRole: event.target.value }))}
+                  className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface-muted)] py-2.5 px-4 text-sm text-white focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-soft)]"
+                >
+                  <option value="Technical Librarian">Technical Librarian</option>
+                  <option value="Acquisitions Librarian">Acquisitions Librarian</option>
+                  <option value="Metadata Librarian">Metadata Librarian</option>
+                  <option value="Circulation Librarian">Circulation Librarian</option>
+                  <option value="Information Services Librarian">Information Services Librarian</option>
+                  <option value="Periodicals Librarian">Periodicals Librarian</option>
+                  <option value="Serials Librarian">Serials Librarian</option>
+                </select>
+              </FieldLabel>
+            )}
             <FieldLabel label="Section">
               <select
                 value={form.department}

@@ -65,6 +65,7 @@ export async function GET(request: Request) {
         email,
         id_number AS "idNumber",
         role,
+        sub_role AS "subRole",
         department,
         course,
         year_level AS "yearLevel",
@@ -108,6 +109,7 @@ export async function POST(request: Request) {
       idNumber,
       email,
       role = "Student",
+      subRole,
       department = "General Reference",
       course = "Library Operations",
       yearLevel,
@@ -130,9 +132,9 @@ export async function POST(request: Request) {
       `INSERT INTO users (
          name, id_number, email, password_hash, role, department, course,
          year_level, section, status, qr_code, last_active
-       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'Active', $10, NOW())
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'Active', $11, NOW())
        RETURNING
-         id, name, id_number AS "idNumber", email, role, department, course,
+         id, name, id_number AS "idNumber", email, role, sub_role AS "subRole", department, course,
          year_level AS "yearLevel", section, status, permissions,
          qr_code AS "qrCode", last_active AS "lastActive", created_at AS "createdAt", updated_at AS "updatedAt"`,
       [
@@ -141,6 +143,7 @@ export async function POST(request: Request) {
         email,
         passwordHash,
         role,
+        role === "Librarian" ? (subRole || "Technical Librarian") : null,
         department,
         course,
         yearLevel || null,

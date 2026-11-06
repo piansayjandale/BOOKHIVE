@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { RecordsPage } from "@/components/super-admin/records-page";
+import { LazySuperAdminRecordsPage } from "@/components/lazy-modules";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8 text-white">Loading Records...</div>}>
-      <RecordsPage />
+    <Suspense fallback={<PageCircleLoader />}>
+      <LazySuperAdminRecordsPage />
     </Suspense>
   );
 }

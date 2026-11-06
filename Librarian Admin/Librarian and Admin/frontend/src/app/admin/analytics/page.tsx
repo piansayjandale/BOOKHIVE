@@ -1,5 +1,5 @@
-import { AnalyticsPage } from "@/components/admin/analytics-page";
+import { LazyAnalyticsPage } from "@/components/lazy-modules";
 
 export default function Page() {
-  return <AnalyticsPage />;
+  return <LazyAnalyticsPage />;
 }

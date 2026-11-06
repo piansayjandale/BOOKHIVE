@@ -700,7 +700,8 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
           .filter((u) => String(u.id) === id || String(u.id_number) === id)
           .map((u) => ({
             ...u,
-            idNumber: u.id_number || "",
+            idNumber: u.id_number || u.idNumber || "",
+            subRole: u.sub_role || u.subRole || (u.role === "Librarian" ? (u.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian") : null),
             yearLevel: u.year_level || "",
             lastActive: u.last_active || u.created_at || new Date().toISOString(),
           }));
@@ -714,7 +715,8 @@ export async function executeLocalSqlFallback(rawSql: string, params: any[] = []
 
       const mapped = filtered.map((u) => ({
         ...u,
-        idNumber: u.id_number || "",
+        idNumber: u.id_number || u.idNumber || "",
+        subRole: u.sub_role || u.subRole || (u.role === "Librarian" ? (u.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian") : null),
         yearLevel: u.year_level || "",
         qrCode: u.qr_code || "",
         lastActive: u.last_active || u.created_at || new Date().toISOString(),

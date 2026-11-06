@@ -136,10 +136,12 @@ export const searchBooksByKeyword = (query: string, limit = 100): Book[] => {
   const coreQuery =
     rawQuery
       .replace(
-        /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+        /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need|is\s+there\s+any)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+|materials?\s+)?(((that|which)\s+(is|are)\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+|related\s+to\s+|regarding\s+))?/i,
         ""
       )
-      .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+      .replace(/^(books?\s+|novels?\s+|references?\s+|materials?\s+)(((that|which)\s+(is|are)\s+)?(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+|related\s+to\s+|regarding\s+))/i, "")
+      .replace(/^(that\s+is\s+|which\s+is\s+|that\s+are\s+|which\s+are\s+)(about\s+|related\s+to\s+|on\s+|for\s+|regarding\s+)?/i, "")
+      .replace(/^(related\s+to\s+|about\s+|regarding\s+|on\s+)/i, "")
       .trim() || rawQuery;
 
   const allWords = coreQuery
@@ -150,17 +152,32 @@ export const searchBooksByKeyword = (query: string, limit = 100): Book[] => {
   const words = filteredWords.length > 0 ? filteredWords : allWords;
   if (words.length === 0) return [];
 
+  const stemWord = (w: string) => w.replace(/(ing|tions|tion|ments|ment|s|es|ed|ic|ical|ist|ists)$/i, "");
+
+  const matchesKeyword = (tokens: string[], kw: string): boolean => {
+    if (tokens.includes(kw)) return true;
+    const kwStem = stemWord(kw);
+    return tokens.some((t) => {
+      if (t === kw) return true;
+      const tStem = stemWord(t);
+      if (kwStem.length >= 3 && tStem.length >= 3 && kwStem === tStem) return true;
+      if (kw.length >= 4 && t.startsWith(kw)) return true;
+      if (kwStem.length >= 4 && t.startsWith(kwStem)) return true;
+      return false;
+    });
+  };
+
   const exactAndAllTitleMatches: Book[] = [];
   const partialTitleMatches: Book[] = [];
   const metadataMatches: Book[] = [];
 
   for (let i = 0; i < liveBooksCatalog.length; i++) {
     const b = liveBooksCatalog[i];
-    const titleLower = (b.title || "").toLowerCase();
+    const titleTokens = (b.title || "").toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
 
     let titleHits = 0;
     for (const w of words) {
-      if (titleLower.includes(w)) {
+      if (matchesKeyword(titleTokens, w)) {
         titleHits++;
       }
     }
@@ -171,10 +188,14 @@ export const searchBooksByKeyword = (query: string, limit = 100): Book[] => {
     } else if (titleHits > 0 && partialTitleMatches.length < limit) {
       partialTitleMatches.push(b);
     } else if (metadataMatches.length < limit) {
-      const metaText = `${b.author} ${b.category || ""} ${b.department} ${b.summary || ""}`.toLowerCase();
+      const metaTokens = `${b.author || ""} ${b.category || ""} ${b.department || ""} ${b.summary || ""}`
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter(Boolean);
       let metaHits = 0;
       for (const w of words) {
-        if (metaText.includes(w)) metaHits++;
+        if (matchesKeyword(metaTokens, w)) metaHits++;
       }
       if (metaHits > 0) {
         metadataMatches.push(b);

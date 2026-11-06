@@ -3,6 +3,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import {
   BellRing,
+  BookOpen,
   Check,
   CheckCircle2,
   ClipboardList,
@@ -16,6 +17,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Users,
   X,
@@ -35,6 +37,7 @@ import { cn } from "@/lib/utils";
 import { useNotice } from "@/components/providers/notice-provider";
 import { useSession } from "@/components/providers/session-provider";
 import { useTheme } from "@/components/providers/theme-provider";
+import { dashboardSocket } from "@/lib/socket";
 
 export type PlatformType = "web" | "mobile";
 
@@ -48,16 +51,16 @@ export interface PermissionModuleDef {
   platform: PlatformType;
 }
 
-export const LIBRARIAN_WEB_MODULES: PermissionModuleDef[] = [
-  {
-    key: "records",
-    label: "Cataloging",
-    shortLabel: "Cataloging",
-    icon: ClipboardList,
-    path: "/librarian/records",
-    description: "Cataloging, viewing records, adding books, and CSV batch import.",
-    platform: "web",
-  },
+export interface SubRestrictionDef {
+  key: LibrarianPermissionKey;
+  label: string;
+  shortLabel: string;
+  icon: any;
+  path: string;
+  description: string;
+}
+
+export const CATALOGING_SUB_RESTRICTIONS: SubRestrictionDef[] = [
   {
     key: "export",
     label: "Export Catalog",
@@ -65,7 +68,6 @@ export const LIBRARIAN_WEB_MODULES: PermissionModuleDef[] = [
     icon: Download,
     path: "Catalog Export (CSV)",
     description: "Export book records catalog to CSV and spreadsheet format.",
-    platform: "web",
   },
   {
     key: "import",
@@ -74,6 +76,44 @@ export const LIBRARIAN_WEB_MODULES: PermissionModuleDef[] = [
     icon: Upload,
     path: "CSV Batch Import",
     description: "Upload and batch import book records catalog via CSV.",
+  },
+  {
+    key: "catalogDigitized",
+    label: "Digitized Queue & Cataloging Tab",
+    shortLabel: "Digitized Tab",
+    icon: Sparkles,
+    path: "Digitized Queue Switcher",
+    description: "Allows librarian to access the Digitized tab to review and catalog scanned books.",
+  },
+  {
+    key: "catalogDropdown",
+    label: "Books Added Activity Dropdown",
+    shortLabel: "Activity Dropdown",
+    icon: BookOpen,
+    path: "Books Added Overview",
+    description: "Toggles the dropdown icon and other librarians' stats overview. The books added counter badge remains visible.",
+  },
+];
+
+export const TRANSACTIONS_SUB_RESTRICTIONS: SubRestrictionDef[] = [
+  {
+    key: "transactionDropdown",
+    label: "Approved by Librarian Dropdown",
+    shortLabel: "Approval Dropdown",
+    icon: CheckCircle2,
+    path: "Approval Overview Dropdown",
+    description: "Toggles the dropdown icon and other librarians' approval stats overview. The approved counter badge remains visible.",
+  },
+];
+
+export const LIBRARIAN_WEB_MODULES: PermissionModuleDef[] = [
+  {
+    key: "records",
+    label: "Cataloging",
+    shortLabel: "Cataloging",
+    icon: ClipboardList,
+    path: "/librarian/records",
+    description: "Cataloging, viewing records, adding books, digitized queue, and sub-features.",
     platform: "web",
   },
   {
@@ -165,6 +205,9 @@ export const DEFAULT_PERMISSIONS: LibrarianPermissions = {
   settings: true,
   export: true,
   import: true,
+  catalogDigitized: true,
+  catalogDropdown: true,
+  transactionDropdown: true,
   mobileCatalog: true,
   mobileStudentPass: true,
   mobileReturns: true,
@@ -192,6 +235,17 @@ export function RestrictionsPage() {
   const [selectedLibrarian, setSelectedLibrarian] = useState<LibrarianAccount | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [modalPlatform, setModalPlatform] = useState<PlatformType>("web");
+
+  // Sub-Restrictions Pop-Up Modal State
+  const [subModalOpen, setSubModalOpen] = useState(false);
+  const [subModalModuleKey, setSubModalModuleKey] = useState<"records" | "transactions">("records");
+  const [subModalLibrarianId, setSubModalLibrarianId] = useState<string | null>(null);
+
+  const openSubModal = (moduleKey: "records" | "transactions", librarianId?: string) => {
+    setSubModalModuleKey(moduleKey);
+    setSubModalLibrarianId(librarianId || filteredLibrarians[0]?.id || librarians[0]?.id || null);
+    setSubModalOpen(true);
+  };
 
   // Current active modules based on platform toggle
   const activeModules = useMemo(() => {
@@ -224,6 +278,9 @@ export function RestrictionsPage() {
           settings: acc.permissions?.settings !== false,
           export: acc.permissions?.export !== false,
           import: acc.permissions?.import !== false,
+          catalogDigitized: (acc.permissions as any)?.catalogDigitized !== false,
+          catalogDropdown: (acc.permissions as any)?.catalogDropdown !== false,
+          transactionDropdown: (acc.permissions as any)?.transactionDropdown !== false,
           mobileCatalog: acc.permissions?.mobileCatalog !== false,
           mobileStudentPass: studentDeskAllowed,
           mobileReturns: studentDeskAllowed,
@@ -268,11 +325,50 @@ export function RestrictionsPage() {
         updated.mobileReservations = nextVal;
         updated.mobileViolations = nextVal;
       }
+      // When toggling activity dropdown in either Cataloging or Transactions, synchronize both activity dropdowns
+      if (key === "catalogDropdown" || key === "transactionDropdown") {
+        (updated as any).catalogDropdown = nextVal;
+        (updated as any).transactionDropdown = nextVal;
+        (updated as any).dropdown = nextVal;
+      }
       return {
         ...prev,
         [librarianId]: updated,
       };
     });
+  };
+
+  // Set all sub-restrictions for a specific module and librarian
+  const handleSetSubRestrictionsAll = async (
+    librarianId: string,
+    moduleKey: "records" | "transactions",
+    value: boolean
+  ) => {
+    const current = localPermissions[librarianId] || { ...DEFAULT_PERMISSIONS };
+    const updated = { ...current };
+    const subList =
+      moduleKey === "records" ? CATALOGING_SUB_RESTRICTIONS : TRANSACTIONS_SUB_RESTRICTIONS;
+    subList.forEach((sub) => {
+      updated[sub.key] = value;
+    });
+    if (moduleKey === "records") {
+      (updated as any).transactionDropdown = value;
+      (updated as any).dropdown = value;
+    } else if (moduleKey === "transactions") {
+      (updated as any).catalogDropdown = value;
+      (updated as any).dropdown = value;
+    }
+
+    setLocalPermissions((prev) => ({
+      ...prev,
+      [librarianId]: updated,
+    }));
+
+    // Auto-save and broadcast immediately so clicks take effect in real time
+    const targetLib = librarians.find((l) => l.id === librarianId);
+    if (targetLib) {
+      await handleSavePermissions(targetLib, updated);
+    }
   };
 
   // Bulk set permissions for a librarian (platform specific or all)
@@ -289,6 +385,11 @@ export function RestrictionsPage() {
         LIBRARIAN_WEB_MODULES.forEach((m) => {
           updated[m.key] = value;
         });
+        updated.export = value;
+        updated.import = value;
+        (updated as any).catalogDigitized = value;
+        (updated as any).catalogDropdown = value;
+        (updated as any).transactionDropdown = value;
       }
 
       if (targetPlatform === "mobile" || targetPlatform === "all") {
@@ -329,6 +430,9 @@ export function RestrictionsPage() {
         settings: librarian.permissions?.settings !== false,
         export: librarian.permissions?.export !== false,
         import: librarian.permissions?.import !== false,
+        catalogDigitized: (librarian.permissions as any)?.catalogDigitized !== false,
+        catalogDropdown: (librarian.permissions as any)?.catalogDropdown !== false,
+        transactionDropdown: (librarian.permissions as any)?.transactionDropdown !== false,
         mobileCatalog: librarian.permissions?.mobileCatalog !== false,
         mobileStudentPass: studentDeskAllowed,
         mobileReturns: studentDeskAllowed,
@@ -342,8 +446,8 @@ export function RestrictionsPage() {
   };
 
   // Save permissions for a specific librarian
-  const handleSavePermissions = async (librarian: LibrarianAccount) => {
-    const perms = localPermissions[librarian.id];
+  const handleSavePermissions = async (librarian: LibrarianAccount, customPerms?: LibrarianPermissions) => {
+    const perms = customPerms || localPermissions[librarian.id];
     if (!perms) return;
 
     setSavingId(librarian.id);
@@ -360,14 +464,27 @@ export function RestrictionsPage() {
       }
 
       const result = await res.json();
-      const updatedUser = result.user;
+      const updatedUser = result.user || { id: librarian.id, permissions: perms };
+
+      // Update localPermissions with saved state
+      setLocalPermissions((prev) => ({
+        ...prev,
+        [librarian.id]: updatedUser.permissions || perms,
+      }));
 
       // Update librarians list with saved permissions
       setLibrarians((prev) =>
         prev.map((item) =>
-          item.id === librarian.id ? { ...item, permissions: updatedUser.permissions } : item
+          item.id === librarian.id ? { ...item, permissions: updatedUser.permissions || perms } : item
         )
       );
+
+      // Broadcast mutation across browser tabs and websockets in real time
+      dashboardSocket.emit("user:mutated", {
+        id: librarian.id,
+        user: updatedUser,
+        payload: updatedUser,
+      });
 
       const allModules = [...LIBRARIAN_WEB_MODULES, ...LIBRARIAN_MOBILE_MODULES];
       const restrictedCount = allModules.filter((m) => perms[m.key] === false).length;
@@ -429,9 +546,17 @@ export function RestrictionsPage() {
     if (!current || !original) return false;
 
     const allModules = [...LIBRARIAN_WEB_MODULES, ...LIBRARIAN_MOBILE_MODULES];
-    return allModules.some(
+    const mainDirty = allModules.some(
       (m) => (current[m.key] ?? true) !== (original[m.key] ?? true)
     );
+    const subDirty =
+      (current.export ?? true) !== (original.export ?? true) ||
+      (current.import ?? true) !== (original.import ?? true) ||
+      ((current as any).catalogDigitized ?? true) !== ((original as any).catalogDigitized ?? true) ||
+      ((current as any).catalogDropdown ?? true) !== ((original as any).catalogDropdown ?? true) ||
+      ((current as any).transactionDropdown ?? true) !== ((original as any).transactionDropdown ?? true);
+
+    return mainDirty || subDirty;
   };
 
   return (
@@ -703,14 +828,56 @@ export function RestrictionsPage() {
                     <th className="px-5 py-4 min-w-[220px]">Librarian Account</th>
                     {activeModules.map((mod) => {
                       const Icon = mod.icon;
+                      const hasSub = mod.key === "records" || mod.key === "transactions";
                       return (
-                        <th key={mod.key} className="px-2 py-4 text-center min-w-[115px]" title={mod.description}>
-                          <div className="flex flex-col items-center gap-1.5">
-                            <Icon className={cn("h-4 w-4", isLight ? "text-[#0274BB]" : "text-[#FCD400]")} />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-center leading-tight">
-                              {mod.shortLabel}
-                            </span>
-                          </div>
+                        <th key={mod.key} className="px-2 py-4 text-center min-w-[125px]" title={mod.description}>
+                          {hasSub ? (
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => openSubModal(mod.key as "records" | "transactions")}
+                              className="group flex flex-col items-center gap-1 cursor-pointer transition-transform active:scale-95 select-none"
+                              title={`Click to open ${mod.label} Sub-Restrictions popup`}
+                            >
+                              <div
+                                className={cn(
+                                  "relative flex h-8 w-8 items-center justify-center rounded-xl border shadow-2xs transition-all",
+                                  isLight
+                                    ? "border-slate-200 bg-white group-hover:border-[#0274BB] group-hover:bg-sky-50 text-[#0274BB]"
+                                    : "border-white/10 bg-white/5 group-hover:border-[#FCD400] group-hover:bg-white/10 text-[#FCD400]"
+                                )}
+                              >
+                                <Icon className="h-4 w-4 transition-transform group-hover:scale-110" />
+                                <span
+                                  className={cn(
+                                    "absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full text-[8px] font-black shadow-xs",
+                                    isLight ? "bg-[#0274BB] text-white" : "bg-[#FCD400] text-slate-950"
+                                  )}
+                                  title="Has sub-restrictions"
+                                >
+                                  ⚙
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-center leading-tight group-hover:text-[#0274BB] dark:group-hover:text-[#FCD400]">
+                                {mod.shortLabel}
+                              </span>
+                              <span
+                                className={cn(
+                                  "text-[9px] font-semibold underline decoration-dotted transition-colors",
+                                  isLight ? "text-[#0274BB]/80 group-hover:text-[#0274BB]" : "text-[#FCD400]/80 group-hover:text-[#FCD400]"
+                                )}
+                              >
+                                Sub-Rules ▾
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-1.5">
+                              <Icon className={cn("h-4 w-4", isLight ? "text-[#0274BB]" : "text-[#FCD400]")} />
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-center leading-tight">
+                                {mod.shortLabel}
+                              </span>
+                            </div>
+                          )}
                         </th>
                       );
                     })}
@@ -791,51 +958,87 @@ export function RestrictionsPage() {
                         {/* Checkbox columns for the active platform */}
                         {activeModules.map((mod) => {
                           const checked = perms[mod.key] ?? true;
+                          const hasSub = mod.key === "records" || mod.key === "transactions";
+                          const subActiveCount =
+                            mod.key === "records"
+                              ? [
+                                  perms.export !== false,
+                                  perms.import !== false,
+                                  (perms as any).catalogDigitized !== false,
+                                  (perms as any).catalogDropdown !== false,
+                                ].filter(Boolean).length
+                              : [
+                                  (perms as any).transactionDropdown !== false,
+                                ].filter(Boolean).length;
+                          const subTotalCount = mod.key === "records" ? 4 : 1;
+
                           return (
                             <td key={mod.key} className="px-3 py-4 text-center">
-                              <label
-                                className="group inline-flex cursor-pointer flex-col items-center justify-center p-1"
-                                title={`${checked ? "Disable" : "Enable"} ${mod.label} for ${librarian.name}`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={() => handleTogglePermission(librarian.id, mod.key)}
-                                  className="sr-only"
-                                />
-                                <div
-                                  className={cn(
-                                    "flex h-7 w-7 items-center justify-center rounded-lg border transition-all duration-200 group-active:scale-95",
-                                    checked
-                                      ? isLight
-                                        ? "border-emerald-500 bg-emerald-500 text-white shadow-xs"
-                                        : "border-[#FCD400]/80 bg-[#FCD400]/20 text-[#FCD400] shadow-[0_0_12px_rgba(252,212,0,0.25)]"
-                                      : isLight
-                                        ? "border-slate-300 bg-slate-100 text-slate-400 hover:border-red-400 hover:bg-red-50 hover:text-red-500"
-                                        : "border-red-500/30 bg-red-500/10 text-red-400 hover:border-red-500/50"
-                                  )}
+                              <div className="flex flex-col items-center justify-center">
+                                <label
+                                  className="group inline-flex cursor-pointer flex-col items-center justify-center p-1"
+                                  title={`${checked ? "Disable" : "Enable"} ${mod.label} for ${librarian.name}`}
                                 >
-                                  {checked ? (
-                                    <Check className="h-4 w-4 stroke-[3]" />
-                                  ) : (
-                                    <X className="h-4 w-4 stroke-[2.5]" />
-                                  )}
-                                </div>
-                                <span
-                                  className={cn(
-                                    "mt-1 text-[9px] font-semibold uppercase tracking-wider",
-                                    checked
-                                      ? isLight
-                                        ? "text-emerald-700"
-                                        : "text-slate-400"
-                                      : isLight
-                                        ? "text-slate-500"
-                                        : "text-red-400/90"
-                                  )}
-                                >
-                                  {checked ? "Visible" : "Hidden"}
-                                </span>
-                              </label>
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => handleTogglePermission(librarian.id, mod.key)}
+                                    className="sr-only"
+                                  />
+                                  <div
+                                    className={cn(
+                                      "flex h-7 w-7 items-center justify-center rounded-lg border transition-all duration-200 group-active:scale-95",
+                                      checked
+                                        ? isLight
+                                          ? "border-emerald-500 bg-emerald-500 text-white shadow-xs"
+                                          : "border-[#FCD400]/80 bg-[#FCD400]/20 text-[#FCD400] shadow-[0_0_12px_rgba(252,212,0,0.25)]"
+                                        : isLight
+                                          ? "border-slate-300 bg-slate-100 text-slate-400 hover:border-red-400 hover:bg-red-50 hover:text-red-500"
+                                          : "border-red-500/30 bg-red-500/10 text-red-400 hover:border-red-500/50"
+                                    )}
+                                  >
+                                    {checked ? (
+                                      <Check className="h-4 w-4 stroke-[3]" />
+                                    ) : (
+                                      <X className="h-4 w-4 stroke-[2.5]" />
+                                    )}
+                                  </div>
+                                  <span
+                                    className={cn(
+                                      "mt-1 text-[9px] font-semibold uppercase tracking-wider",
+                                      checked
+                                        ? isLight
+                                          ? "text-emerald-700"
+                                          : "text-slate-400"
+                                        : isLight
+                                          ? "text-slate-500"
+                                          : "text-red-400/90"
+                                    )}
+                                  >
+                                    {checked ? "Visible" : "Hidden"}
+                                  </span>
+                                </label>
+
+                                {hasSub && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openSubModal(mod.key as "records" | "transactions", librarian.id);
+                                    }}
+                                    className={cn(
+                                      "mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-bold border transition-all active:scale-95 cursor-pointer shadow-2xs select-none",
+                                      isLight
+                                        ? "border-slate-200 bg-slate-50 text-slate-700 hover:border-[#0274BB] hover:bg-sky-50 hover:text-[#0274BB]"
+                                        : "border-white/10 bg-white/5 text-slate-300 hover:border-[#FCD400] hover:bg-[#FCD400]/10 hover:text-[#FCD400]"
+                                    )}
+                                    title={`Configure ${mod.label} Sub-Restrictions for ${librarian.name}`}
+                                  >
+                                    <SlidersHorizontal className="h-2.5 w-2.5 shrink-0 opacity-80" />
+                                    <span>{subActiveCount}/{subTotalCount} Sub</span>
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           );
                         })}
@@ -1181,6 +1384,332 @@ export function RestrictionsPage() {
               </button>
             </div>
           </div>
+        </AdminModal>
+      )}
+
+      {/* Sub-Restrictions Modal specifically for Cataloging & Transactions */}
+      {subModalOpen && (
+        <AdminModal
+          open={subModalOpen}
+          onClose={async () => {
+            const currentSubLibrarian = librarians.find((l) => l.id === subModalLibrarianId);
+            if (currentSubLibrarian && isDirty(currentSubLibrarian.id)) {
+              await handleSavePermissions(currentSubLibrarian);
+            }
+            setSubModalOpen(false);
+          }}
+          title={
+            subModalModuleKey === "records"
+              ? "Cataloging Sub-Restrictions"
+              : "Circulation Queue & Transactions Sub-Restrictions"
+          }
+          description={
+            subModalModuleKey === "records"
+              ? "Fine-tune individual functionalities within the Cataloging page: restrict CSV export, CSV import, digitized queue tab, and books added activity dropdown."
+              : "Fine-tune individual functionalities within the Transactions page: restrict the approval counter badge and activity dropdown."
+          }
+        >
+          {(() => {
+            const currentSubLibrarian =
+              librarians.find((l) => l.id === subModalLibrarianId) || librarians[0];
+            if (!currentSubLibrarian) return null;
+
+            const subPerms = localPermissions[currentSubLibrarian.id] || DEFAULT_PERMISSIONS;
+            const subList =
+              subModalModuleKey === "records"
+                ? CATALOGING_SUB_RESTRICTIONS
+                : TRANSACTIONS_SUB_RESTRICTIONS;
+            const activeSubCount = subList.filter((s) => subPerms[s.key] !== false).length;
+
+            return (
+              <div className="space-y-6">
+                {/* Librarian Account Selector Header */}
+                <div
+                  className={cn(
+                    "flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 shadow-xs",
+                    isLight ? "border-slate-200 bg-slate-50/80" : "border-white/10 bg-[#0F1D29]/90"
+                  )}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className={cn(
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-base font-black shadow-xs",
+                        isLight ? "bg-[#FFF300] text-[#0274BB]" : "bg-[#FCD400] text-slate-950"
+                      )}
+                    >
+                      {currentSubLibrarian.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h4 className={cn("font-bold text-sm truncate", isLight ? "text-slate-900" : "text-white")}>
+                          {currentSubLibrarian.name}
+                        </h4>
+                        <span
+                          className={cn(
+                            "rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider",
+                            isLight ? "bg-sky-100 text-[#0274BB]" : "bg-[#0274BB]/30 text-sky-300"
+                          )}
+                        >
+                          {currentSubLibrarian.subRole || currentSubLibrarian.department || "Librarian"}
+                        </span>
+                      </div>
+                      <p className={cn("text-xs truncate mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>
+                        {currentSubLibrarian.email} • ID: {currentSubLibrarian.idNumber}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Switch Librarian Select */}
+                  <div className="flex items-center gap-2">
+                    <span className={cn("text-xs font-semibold", isLight ? "text-slate-500" : "text-slate-400")}>
+                      Librarian:
+                    </span>
+                    <select
+                      value={currentSubLibrarian.id}
+                      onChange={(e) => setSubModalLibrarianId(e.target.value)}
+                      className={cn(
+                        "rounded-xl border px-3 py-1.5 text-xs font-bold outline-none shadow-xs transition-all cursor-pointer",
+                        isLight
+                          ? "border-slate-300 bg-white text-slate-800 focus:border-[#0274BB]"
+                          : "border-white/15 bg-white/5 text-white focus:border-[#FCD400]"
+                      )}
+                    >
+                      {librarians.map((l) => (
+                        <option key={l.id} value={l.id} className="text-slate-900 dark:text-slate-100 dark:bg-slate-900">
+                          {l.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Module Switcher Tabs inside Sub-Restrictions Modal */}
+                <div
+                  className={cn(
+                    "flex items-center p-1 rounded-xl border shadow-xs transition-colors",
+                    isLight ? "bg-slate-100 border-slate-200" : "bg-[#0F1D29] border-white/10"
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setSubModalModuleKey("records")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-xs font-bold transition-all cursor-pointer",
+                      subModalModuleKey === "records"
+                        ? isLight
+                          ? "bg-[#0274BB] !text-white shadow-xs"
+                          : "bg-[#FCD400] text-slate-950 shadow-xs"
+                        : isLight
+                        ? "text-slate-600 hover:text-slate-900"
+                        : "text-slate-400 hover:text-white"
+                    )}
+                    style={subModalModuleKey === "records" && isLight ? { color: "#ffffff" } : undefined}
+                  >
+                    <ClipboardList className={cn("h-4 w-4", subModalModuleKey === "records" && isLight && "!text-white stroke-white")} />
+                    <span>Cataloging Controls ({CATALOGING_SUB_RESTRICTIONS.length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSubModalModuleKey("transactions")}
+                    className={cn(
+                      "flex-1 flex items-center justify-center gap-2 rounded-lg py-2 text-xs font-bold transition-all cursor-pointer",
+                      subModalModuleKey === "transactions"
+                        ? isLight
+                          ? "bg-[#0274BB] !text-white shadow-xs"
+                          : "bg-[#FCD400] text-slate-950 shadow-xs"
+                        : isLight
+                        ? "text-slate-600 hover:text-slate-900"
+                        : "text-slate-400 hover:text-white"
+                    )}
+                    style={subModalModuleKey === "transactions" && isLight ? { color: "#ffffff" } : undefined}
+                  >
+                    <Sparkles className={cn("h-4 w-4", subModalModuleKey === "transactions" && isLight && "!text-white stroke-white")} />
+                    <span>Transactions Controls ({TRANSACTIONS_SUB_RESTRICTIONS.length})</span>
+                  </button>
+                </div>
+
+                {/* Sub-Restrictions Summary & Quick Toggles */}
+                <div className="flex items-center justify-between gap-3 border-b border-inherit pb-3">
+                  <div>
+                    <h4 className={cn("text-xs font-bold uppercase tracking-wider", isLight ? "text-slate-700" : "text-slate-300")}>
+                      Configuring {subModalModuleKey === "records" ? "Cataloging" : "Transactions"} Controls
+                    </h4>
+                    <p className={cn("text-xs mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>
+                      {activeSubCount} of {subList.length} sub-functionalities currently visible
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSetSubRestrictionsAll(currentSubLibrarian.id, subModalModuleKey, true)}
+                      className={cn(
+                        "rounded-lg border px-3 py-1 text-xs font-bold transition-all active:scale-95 cursor-pointer",
+                        isLight
+                          ? "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                          : "border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                      )}
+                    >
+                      Allow All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetSubRestrictionsAll(currentSubLibrarian.id, subModalModuleKey, false)}
+                      className={cn(
+                        "rounded-lg border px-3 py-1 text-xs font-bold transition-all active:scale-95 cursor-pointer",
+                        isLight
+                          ? "border-red-300 bg-red-50 text-red-800 hover:bg-red-100"
+                          : "border-red-500/30 bg-red-500/10 text-red-300 hover:bg-red-500/20"
+                      )}
+                    >
+                      Restrict All
+                    </button>
+                  </div>
+                </div>
+
+                {/* Sub-Restrictions List */}
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+                  {subList.map((sub) => {
+                    const SubIcon = sub.icon;
+                    const checked = subPerms[sub.key] !== false;
+
+                    return (
+                      <div
+                        key={sub.key}
+                        onClick={() => handleTogglePermission(currentSubLibrarian.id, sub.key)}
+                        className={cn(
+                          "flex cursor-pointer items-start justify-between rounded-2xl border p-4 transition-all shadow-xs",
+                          checked
+                            ? isLight
+                              ? "border-[#0274BB]/30 bg-sky-50/60 hover:border-[#0274BB]/50"
+                              : "border-[#FCD400]/30 bg-[#152E47]/40 hover:border-[#FCD400]/60"
+                            : isLight
+                              ? "border-slate-200 bg-slate-50/70 hover:border-slate-300 opacity-80"
+                              : "border-white/5 bg-slate-950/40 hover:border-white/10 opacity-75"
+                        )}
+                      >
+                        <div className="flex items-start gap-3.5 min-w-0 pr-3">
+                          <div
+                            className={cn(
+                              "mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border shadow-xs transition-colors",
+                              checked
+                                ? isLight
+                                  ? "border-sky-300 bg-white text-[#0274BB]"
+                                  : "border-[#FCD400]/40 bg-[#FCD400]/20 text-[#FCD400]"
+                                : isLight
+                                  ? "border-slate-200 bg-slate-100 text-slate-400"
+                                  : "border-white/10 bg-white/5 text-slate-500"
+                            )}
+                          >
+                            <SubIcon className="h-5 w-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={cn("font-bold text-sm", isLight ? "text-slate-900" : "text-white")}>
+                                {sub.label}
+                              </span>
+                              <span className={cn("font-mono text-[10px] px-1.5 py-0.5 rounded border", isLight ? "bg-white border-slate-200 text-slate-600" : "bg-white/5 border-white/10 text-slate-400")}>
+                                {sub.path}
+                              </span>
+                            </div>
+                            <p className={cn("mt-1 text-xs leading-relaxed", isLight ? "text-slate-600" : "text-slate-300")}>
+                              {sub.description}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Toggle Checkbox Display */}
+                        <div className="flex items-center gap-2 pt-1 shrink-0">
+                          <span
+                            className={cn(
+                              "text-xs font-bold uppercase tracking-wider",
+                              checked
+                                ? isLight
+                                  ? "text-emerald-700 font-extrabold"
+                                  : "text-emerald-400 font-extrabold"
+                                : isLight
+                                  ? "text-slate-500"
+                                  : "text-slate-400"
+                            )}
+                          >
+                            {checked ? "Visible" : "Hidden"}
+                          </span>
+                          <div
+                            className={cn(
+                              "flex h-7 w-7 items-center justify-center rounded-lg border transition-all duration-200",
+                              checked
+                                ? isLight
+                                  ? "border-emerald-500 bg-emerald-500 text-white shadow-xs"
+                                  : "border-[#FCD400]/80 bg-[#FCD400]/20 text-[#FCD400] shadow-[0_0_12px_rgba(252,212,0,0.25)]"
+                                : isLight
+                                  ? "border-slate-300 bg-slate-100 text-slate-400"
+                                  : "border-red-500/30 bg-red-500/10 text-red-400"
+                            )}
+                          >
+                            {checked ? (
+                              <Check className="h-4 w-4 stroke-[3]" />
+                            ) : (
+                              <X className="h-4 w-4 stroke-[2.5]" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Sticky Modal Actions Footer */}
+                <div className={cn(
+                  "sticky bottom-0 z-20 flex flex-wrap items-center justify-between gap-3 border-t py-3.5 px-6 -mx-6 -mb-6 rounded-b-2xl shadow-xl backdrop-blur-md",
+                  isLight ? "border-slate-200 bg-white/95 text-slate-800" : "border-white/10 bg-[#0F1D29]/95 text-white"
+                )}>
+                  <div className="text-xs font-semibold text-slate-500">
+                    Changes take effect across web and mobile in real time.
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (isDirty(currentSubLibrarian.id)) {
+                          await handleSavePermissions(currentSubLibrarian);
+                        }
+                        setSubModalOpen(false);
+                      }}
+                      className={cn(
+                        "rounded-xl border px-4 py-2 text-sm font-semibold transition-colors cursor-pointer",
+                        isLight
+                          ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-100"
+                          : "border-white/10 text-slate-300 hover:bg-white/5"
+                      )}
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleSavePermissions(currentSubLibrarian);
+                        setSubModalOpen(false);
+                      }}
+                      disabled={savingId === currentSubLibrarian.id}
+                      className={cn(
+                        "btn-save-active flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-bold shadow-lg transition-all active:scale-95 cursor-pointer",
+                        isLight
+                          ? "bg-[#0274BB] !text-white hover:bg-[#02609c]"
+                          : "bg-[#FCD400] text-slate-950 hover:bg-[#ffe14d]"
+                      )}
+                      style={isLight ? { color: "#ffffff" } : undefined}
+                    >
+                      <Save className={cn("h-4 w-4", isLight && "!text-white stroke-white")} />
+                      <span className={cn(isLight && "!text-white")} style={isLight ? { color: "#ffffff" } : undefined}>
+                        Save Restrictions
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </AdminModal>
       )}
     </div>

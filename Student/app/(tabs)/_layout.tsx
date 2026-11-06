@@ -891,6 +891,7 @@ export default function Layout() {
           sceneStyle: { backgroundColor: theme.background },
           lazy: true,
         }}
+        backBehavior="history"
       >
         <Tabs.Screen
           name="index"

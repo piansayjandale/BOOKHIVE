@@ -1,5 +1,5 @@
-import { RestrictionsPage } from "@/components/admin/restrictions-page";
+import { LazyRestrictionsPage } from "@/components/lazy-modules";
 
 export default function Page() {
-  return <RestrictionsPage />;
+  return <LazyRestrictionsPage />;
 }

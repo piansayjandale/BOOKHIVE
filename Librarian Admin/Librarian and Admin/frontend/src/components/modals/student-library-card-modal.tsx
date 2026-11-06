@@ -29,7 +29,7 @@ function formatBorrowDateTime(dateStr?: string | Date) {
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
-    const ymd = d.toISOString().split("T")[0];
+    const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const time = d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: true });
     return `${ymd} ${time}`;
   } catch {
@@ -42,7 +42,7 @@ function formatDueDate(dateStr?: string | Date) {
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return String(dateStr);
-    return d.toISOString().split("T")[0];
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   } catch {
     return String(dateStr);
   }
@@ -422,25 +422,37 @@ export function StudentLibraryCardModal({
                     if (!r) return "";
                     const candidate = r.dueDate || r.due_date || (r.returnDate && r.returnDate !== "Returned" && r.returnDate !== "Reservation" ? r.returnDate : undefined);
                     if (candidate && candidate !== "Returned" && candidate !== "Reservation" && candidate !== "7 days" && candidate !== "Pending") {
-                      try {
-                        const d = new Date(candidate);
-                        if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
-                        if (typeof candidate === "string" && candidate.includes("-")) return candidate.split("T")[0];
-                      } catch {}
+                      return formatDueDate(candidate);
                     }
-                    const startCandidate = r.borrowDate || r.pickupDate || r.dateReserved || (r.date && r.date !== "Returned" && r.date !== "Pending" ? r.date : undefined) || r.requestedAt;
+                    const startCandidate = r.requestedAt || r.borrowDate || r.pickupDate || r.dateReserved || (r.date && r.date !== "Returned" && r.date !== "Pending" ? r.date : undefined);
                     if (startCandidate) {
                       try {
                         const d = new Date(startCandidate);
                         if (!isNaN(d.getTime())) {
                           d.setDate(d.getDate() + 7);
-                          return d.toISOString().split("T")[0];
+                          return formatDueDate(d);
                         }
                       } catch {}
                     }
                     const fallback = new Date();
                     fallback.setDate(fallback.getDate() + 7);
-                    return fallback.toISOString().split("T")[0];
+                    return formatDueDate(fallback);
+                  };
+
+                  const resolveRowReturnDate = (itemRow: any): string => {
+                    if (!itemRow) return "";
+                    const rawCandidate =
+                      itemRow.returnedAt ||
+                      itemRow.returned_at ||
+                      (itemRow.returnDate && itemRow.returnDate !== "Returned" && itemRow.returnDate !== "Reservation" ? itemRow.returnDate : undefined) ||
+                      (itemRow.decidedAt && (itemRow.status === 'Returned' || itemRow.status === 'Completed' || itemRow.isReturned) ? itemRow.decidedAt : undefined) ||
+                      itemRow.dueDate ||
+                      itemRow.due_date;
+                    if (rawCandidate && rawCandidate !== "Returned" && rawCandidate !== "Reservation" && rawCandidate !== "7 days" && rawCandidate !== "Pending") {
+                      const formatted = formatDueDate(rawCandidate);
+                      if (formatted) return formatted;
+                    }
+                    return resolveRowDueDate(itemRow);
                   };
 
                   let dueReturnText = "";
@@ -448,7 +460,7 @@ export function StudentLibraryCardModal({
 
                   if (row) {
                     // Due return date always shows the due date for every book regardless of status
-                    dueReturnText = resolveRowDueDate(row);
+                    dueReturnText = isReturned ? resolveRowReturnDate(row) : isReservation ? "Reservation" : resolveRowDueDate(row);
 
                     if (isReturned) {
                       highlightClass = "";

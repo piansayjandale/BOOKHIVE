@@ -1,6 +1,6 @@
 import { getUniqueBookCover } from "../../data/bookCovers";
 import { BookCoverImage } from "../../components/BookCoverImage";
-import React, { useCallback, useEffect, useState, useRef } from "react";
+import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import {
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
+import PageCircleLoader from "../../components/PageCircleLoader";
 import * as Clipboard from "expo-clipboard";
 
 import {
@@ -34,6 +35,7 @@ import {
 
 import {
   getReservations,
+  getLibraryCardHistory,
   removeReservation,
   ReservationBook,
   subscribe,
@@ -318,6 +320,31 @@ export default function BookDetailsScreen() {
     };
   }, [id, title, isbn, params.isbn]);
 
+  const libraryCardHistory = useMemo(() => getLibraryCardHistory(), []);
+  const localMatchingLedger = useMemo(() => {
+    return libraryCardHistory.filter(
+      (r) =>
+        (r.id === id ||
+          (isbn && r.isbn === isbn) ||
+          (params.isbn && r.isbn === params.isbn) ||
+          (r.title && title && r.title.toLowerCase() === title.toLowerCase())) &&
+        (r.action === 'Borrow' || (r as any).type === 'Borrow' || !r.action) &&
+        (r.status === 'Approved' || r.status === 'Picked Up' || r.status === 'On Loan' || r.status === 'Completed' || r.status === 'Returned' || r.isReturned)
+    );
+  }, [libraryCardHistory, id, isbn, params.isbn, title]);
+
+  const formatDateCell = (raw: any): string => {
+    if (!raw) return "";
+    const s = String(raw).trim();
+    if (s === "Returned" || s === "Reservation" || s === "Pending" || s === "7 days") return "";
+    if (s.includes("T")) return s.split("T")[0];
+    if (s.includes(" ")) {
+      const firstToken = s.split(" ")[0];
+      if (firstToken.includes("-") || firstToken.includes("/")) return firstToken;
+    }
+    return s;
+  };
+
   const matchingRequests = reservations.filter(
     (book) =>
       book.id === id ||
@@ -379,6 +406,14 @@ export default function BookDetailsScreen() {
     !isMyActiveLoan &&
     ((liveBookData?.borrowedCount !== undefined ? liveBookData.borrowedCount > 0 : false) || !!liveBookData?.activeLoan);
 
+  const isBookPickedUp = Boolean(
+    activeRequest?.isPickedUp ||
+    activeRequest?.pickedUpAt ||
+    requestStatus === 'Picked Up' ||
+    (requestStatus && String(requestStatus).toLowerCase().includes('picked up')) ||
+    (liveBookData?.activeLoan && Boolean((liveBookData.activeLoan as any)?.isPickedUp || (liveBookData.activeLoan as any)?.pickedUpAt || (liveBookData.activeLoan as any)?.status === 'Picked Up'))
+  );
+
   const studentIdentifier =
     user?.studentId ||
     user?.qrCode ||
@@ -406,8 +441,12 @@ export default function BookDetailsScreen() {
   const isBorrowLimitReached = activeBorrowCount >= borrowLimit;
   const hasOverdueLoans = overdueBooks.length > 0;
 
-  const rawStatus = (params.status as string) || (params.availability as string) || "";
-  const rawAvailable = (params.available as string) || "";
+  const rawStatus = (liveBookData?.status as string) || (liveBookData?.availability as string) || (params.status as string) || (params.availability as string) || "";
+  const rawAvailable = liveBookData?.availableCopies !== undefined
+    ? (Number(liveBookData.availableCopies) > 0 ? "true" : "false")
+    : (liveBookData?.availability
+        ? (liveBookData.availability.toLowerCase() === "available" ? "true" : "false")
+        : ((params.available as string) || ""));
 
   const volume = (params.volume as string) || "Single Volume / None";
   const edition = (params.edition as string) || "Single Edition / None";
@@ -445,28 +484,34 @@ export default function BookDetailsScreen() {
     : `₱${Number(String(rawPrice).replace(/[^0-9.]/g, "") || "450").toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Copies distribution aligned with backend and web system
-  const effectiveBorrowed = Math.max(
-    liveBookData?.borrowedCount !== undefined ? Number(liveBookData.borrowedCount) : 0,
-    liveBookData?.borrowed_count !== undefined ? Number(liveBookData.borrowed_count) : 0,
-    liveBookData?.unavailableCopies !== undefined ? Number(liveBookData.unavailableCopies) : 0,
-    params.borrowedCount ? Number(params.borrowedCount) : 0,
-    params.borrowed_count ? Number(params.borrowed_count) : 0
-  );
+  const effectiveBorrowed = liveBookData?.unavailableCopies !== undefined
+    ? Number(liveBookData.unavailableCopies)
+    : (liveBookData?.borrowedCount !== undefined
+        ? Number(liveBookData.borrowedCount)
+        : (liveBookData?.borrowed_count !== undefined
+            ? Number(liveBookData.borrowed_count)
+            : (params.unavailableCopies !== undefined
+                ? Number(params.unavailableCopies)
+                : (params.borrowedCount ? Number(params.borrowedCount) : (params.borrowed_count ? Number(params.borrowed_count) : 0)))));
 
-  const unavailableCopies = effectiveBorrowed > 0 || liveBookData?.borrowedCount !== undefined || liveBookData?.borrowed_count !== undefined
-    ? Math.min(totalCopies, Math.max(effectiveBorrowed, isApprovedLoan ? 1 : 0))
-    : (isApprovedLoan ? 1 : ((rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable") ? totalCopies : 0));
+  const unavailableCopies = liveBookData?.unavailableCopies !== undefined
+    ? Math.min(totalCopies, Math.max(Number(liveBookData.unavailableCopies), isApprovedLoan ? 1 : 0))
+    : (liveBookData?.borrowedCount !== undefined || liveBookData?.borrowed_count !== undefined || effectiveBorrowed > 0
+        ? Math.min(totalCopies, Math.max(effectiveBorrowed, isApprovedLoan ? 1 : 0))
+        : (isApprovedLoan ? 1 : ((rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable") ? totalCopies : 0)));
 
-  const reservedCopies = liveBookData?.reservedCount !== undefined
-    ? Math.min(totalCopies - unavailableCopies, Math.max(Number(liveBookData.reservedCount), (isPendingBorrowApproval || isReservationWaitlist) ? 1 : 0))
-    : ((isPendingBorrowApproval || isReservationWaitlist || rawStatus.toLowerCase() === "reserved" || rawAvailable.toLowerCase() === "reserved") ? Math.min(1, Math.max(0, totalCopies - unavailableCopies)) : (params.reservedCopies ? Number(params.reservedCopies) : (params.reservedCount ? Math.min(totalCopies - unavailableCopies, Number(params.reservedCount)) : 0)));
+  const reservedCopies = liveBookData?.reservedCopies !== undefined
+    ? Math.min(totalCopies - unavailableCopies, Number(liveBookData.reservedCopies))
+    : (liveBookData?.reservedCount !== undefined
+        ? Math.min(totalCopies - unavailableCopies, Math.max(Number(liveBookData.reservedCount), (isPendingBorrowApproval || isReservationWaitlist) ? 1 : 0))
+        : ((isPendingBorrowApproval || isReservationWaitlist || rawStatus.toLowerCase() === "reserved" || rawAvailable.toLowerCase() === "reserved") ? Math.min(1, Math.max(0, totalCopies - unavailableCopies)) : (params.reservedCopies ? Number(params.reservedCopies) : (params.reservedCount ? Math.min(totalCopies - unavailableCopies, Number(params.reservedCount)) : 0))));
 
   const computedAvailableFallback = Math.max(0, totalCopies - unavailableCopies - reservedCopies);
 
   const availableCopies = liveBookData?.availableCopies !== undefined
-    ? Math.min(computedAvailableFallback, Number(liveBookData.availableCopies))
+    ? Math.max(0, Math.min(totalCopies - unavailableCopies - reservedCopies, Number(liveBookData.availableCopies)))
     : (params.availableCopies !== undefined && !isNaN(Number(params.availableCopies)) && Number(params.availableCopies) >= 0
-        ? Math.min(computedAvailableFallback, Number(params.availableCopies))
+        ? Math.max(0, Math.min(totalCopies - unavailableCopies - reservedCopies, Number(params.availableCopies)))
         : (rawStatus.toLowerCase() === "unavailable" || rawAvailable === "false" || rawAvailable.toLowerCase() === "unavailable"
             ? 0
             : computedAvailableFallback));
@@ -557,7 +602,6 @@ export default function BookDetailsScreen() {
 
   useEffect(() => {
     if (!hasBookDetails) {
-      router.replace("/");
       return;
     }
 
@@ -709,12 +753,14 @@ export default function BookDetailsScreen() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const handleBack = useCallback(() => {
-    if (params.from === "notifications" || String(params.from) === "notifications") {
+    const fromSource = String(params.from || "").toLowerCase();
+
+    if (fromSource === "notifications") {
       router.replace("/notifications");
       return;
     }
 
-    if (params.from === "department" || String(params.from) === "department") {
+    if (fromSource === "department") {
       const targetDept =
         (params.fromDepartment as string) ||
         (params.department as string) ||
@@ -727,30 +773,23 @@ export default function BookDetailsScreen() {
       return;
     }
 
-    if (params.from === "search") {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)/search");
-      }
+    if (fromSource === "search") {
+      router.replace("/(tabs)/search");
       return;
     }
 
-    if (params.from === "books") {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)/books");
-      }
+    if (fromSource === "books" || fromSource === "my-books") {
+      router.replace("/(tabs)/books");
       return;
     }
 
-    if (params.from === "reservations") {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)/reservations");
-      }
+    if (fromSource === "reservations" || fromSource === "library-card") {
+      router.replace("/(tabs)/reservations");
+      return;
+    }
+
+    if (fromSource === "home") {
+      router.replace("/(tabs)");
       return;
     }
 
@@ -815,9 +854,10 @@ export default function BookDetailsScreen() {
       router.push({
         pathname: '/borrow',
         params: {
+          id: liveBookData?.id || id,
           title,
           author,
-          isbn: (params.isbn as string) || '',
+          isbn: liveBookData?.isbn || (params.isbn as string) || isbn || '',
           department: studentDept,
           action: 'Borrow',
         },
@@ -829,9 +869,10 @@ export default function BookDetailsScreen() {
     router.push({
       pathname: '/borrow',
       params: {
+        id: liveBookData?.id || id,
         title,
         author,
-        isbn: (params.isbn as string) || '',
+        isbn: liveBookData?.isbn || (params.isbn as string) || isbn || '',
         department: studentDept,
         action: 'Reserve',
       },
@@ -1039,13 +1080,6 @@ export default function BookDetailsScreen() {
               <Text style={[styles.heroAuthorText, { color: theme.textSecondary }]} numberOfLines={2}>
                 by <Text style={{ fontWeight: "700", color: isDarkMode ? theme.accentGold : "#0274BB" }}>{author}</Text>
               </Text>
-
-              {/* Rating & Review */}
-              <View style={styles.heroRatingRow}>
-                <Ionicons name="star" size={13} color="#F59E0B" />
-                <Text style={[styles.heroRatingScore, { color: theme.textPrimary }]}>{rating}</Text>
-                <Text style={[styles.heroRatingCount, { color: theme.textSecondary }]}>({reviews} reviews)</Text>
-              </View>
             </View>
           </View>
 
@@ -1276,6 +1310,9 @@ export default function BookDetailsScreen() {
               <View style={[styles.bookCardColDate, { borderRightColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.15)" }]}>
                 <Text style={[styles.bookCardColHeadText, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>Borrow Date:</Text>
               </View>
+              <View style={[styles.bookCardColReturnDate, { borderRightColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.15)" }]}>
+                <Text style={[styles.bookCardColHeadText, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>Return Date:</Text>
+              </View>
               <View style={styles.bookCardColName}>
                 <Text style={[styles.bookCardColHeadText, { color: isDarkMode ? theme.textSecondary : "#0274BB", fontWeight: "700" }]}>Borrower’s Name:</Text>
               </View>
@@ -1284,21 +1321,37 @@ export default function BookDetailsScreen() {
             {/* 10 Fixed Ledger Rows */}
             <View style={styles.bookCardRowsWrapper}>
               {Array.from({ length: 10 }).map((_, idx) => {
-                const ledgerEntry = liveBookData?.ledger ? liveBookData.ledger[idx] : null;
-                const hasLedger = Boolean(liveBookData?.ledger && liveBookData.ledger.length > 0);
+                const ledgerEntry = liveBookData?.ledger && liveBookData.ledger.length > 0
+                  ? liveBookData.ledger[idx]
+                  : localMatchingLedger[idx] || null;
+                const hasLedger = Boolean((liveBookData?.ledger && liveBookData.ledger.length > 0) || localMatchingLedger.length > 0);
                 const isFirstActiveRow = idx === 0 && !hasLedger && (isApprovedLoan || isBorrowedByOther || !!liveBookData?.activeLoan);
 
                 let borrowDate = "";
+                let returnDate = "";
                 let borrowerName = "";
 
                 if (ledgerEntry) {
-                  const rawD = ledgerEntry.borrowDate || ledgerEntry.requestedAt || ledgerEntry.decidedAt || ledgerEntry.date;
-                  borrowDate = rawD ? String(rawD).split("T")[0] : "";
+                  const rawBorrow = ledgerEntry.borrowDate || ledgerEntry.requestedAt || ledgerEntry.date;
+                  borrowDate = formatDateCell(rawBorrow);
+
+                  const isReturnedEntry = ledgerEntry.status === 'Returned' || ledgerEntry.status === 'Completed' || ledgerEntry.isReturned;
+                  const rawReturn =
+                    ledgerEntry.returnedAt ||
+                    (isReturnedEntry ? ledgerEntry.decidedAt : null) ||
+                    ledgerEntry.returnDate ||
+                    ledgerEntry.dueDate;
+                  returnDate = formatDateCell(rawReturn);
+
                   borrowerName = ledgerEntry.borrowerName || ledgerEntry.studentName || (isMyActiveLoan ? (user?.fullName || "Student Borrower") : "Student Borrower");
                 } else if (isFirstActiveRow) {
                   const source = liveBookData?.activeLoan || (isApprovedLoan ? activeRequest : null);
-                  const rawD = source?.borrowDate || source?.pickupDate || source?.requestedAt || source?.decidedAt || source?.date;
-                  borrowDate = rawD ? String(rawD).split("T")[0] : (isMyActiveLoan ? new Date().toISOString().split("T")[0] : "");
+                  const rawBorrow = source?.borrowDate || source?.pickupDate || source?.requestedAt || source?.decidedAt || source?.date;
+                  borrowDate = formatDateCell(rawBorrow) || (isMyActiveLoan ? new Date().toISOString().split("T")[0] : "");
+
+                  const rawReturn = source?.returnedAt || source?.returnDate || source?.dueDate;
+                  returnDate = formatDateCell(rawReturn);
+
                   borrowerName = source?.borrowerName || source?.studentName || (isMyActiveLoan ? (user?.fullName || "Student Borrower") : "Active Borrower");
                 }
 
@@ -1307,6 +1360,11 @@ export default function BookDetailsScreen() {
                     <View style={[styles.bookCardCellDate, { borderRightColor: theme.cardBorder }]}>
                       <Text style={[styles.bookCardCellDateText, { color: theme.textSecondary }]} numberOfLines={1}>
                         {borrowDate || " "}
+                      </Text>
+                    </View>
+                    <View style={[styles.bookCardCellReturnDate, { borderRightColor: theme.cardBorder }]}>
+                      <Text style={[styles.bookCardCellDateText, { color: theme.textSecondary }]} numberOfLines={1}>
+                        {returnDate || " "}
                       </Text>
                     </View>
                     <View style={styles.bookCardCellName}>
@@ -1376,9 +1434,10 @@ export default function BookDetailsScreen() {
                     router.push({
                       pathname: '/borrow',
                       params: {
+                        id: liveBookData?.id || id,
                         title,
                         author,
-                        isbn: (params.isbn as string) || '',
+                        isbn: liveBookData?.isbn || (params.isbn as string) || isbn || '',
                         department: studentDept,
                         action: 'Borrow',
                       },
@@ -1454,19 +1513,28 @@ export default function BookDetailsScreen() {
             <TouchableOpacity
               style={[
                 styles.cancelReservationSolidBtn,
-                isSubmitting && { opacity: 0.6 },
+                (isSubmitting || isBookPickedUp) && { opacity: 0.6, backgroundColor: isDarkMode ? "#334155" : "#94A3B8" },
               ]}
-              disabled={isSubmitting}
-              onPress={() => setCancelModalVisible(true)}
-              activeOpacity={0.85}
+              disabled={isSubmitting || isBookPickedUp}
+              onPress={() => {
+                if (isBookPickedUp) {
+                  Alert.alert(
+                    "Book Already Picked Up",
+                    "This book has already been physically picked up from the library. Active physical loans cannot be cancelled and must be returned directly to the library desk."
+                  );
+                  return;
+                }
+                setCancelModalVisible(true);
+              }}
+              activeOpacity={isBookPickedUp ? 1 : 0.85}
             >
               {isSubmitting ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
-                  <Ionicons name="close-circle-outline" size={19} color="#FFFFFF" />
+                  <Ionicons name={isBookPickedUp ? "lock-closed-outline" : "close-circle-outline"} size={19} color="#FFFFFF" />
                   <Text style={styles.cancelReservationSolidBtnText}>
-                    {isApprovedLoan ? "Cancel Loan" : "Cancel Borrow Request"}
+                    {isBookPickedUp ? "Already Picked Up (Cannot Cancel)" : (isApprovedLoan ? "Cancel Loan" : "Cancel Borrow Request")}
                   </Text>
                 </>
               )}
@@ -1833,6 +1901,14 @@ export default function BookDetailsScreen() {
                     style={[styles.confirmCancelBtn, isSubmitting && { opacity: 0.6 }]}
                     disabled={isSubmitting}
                     onPress={async () => {
+                      if (isBookPickedUp) {
+                        setCancelModalVisible(false);
+                        Alert.alert(
+                          "Book Already Picked Up",
+                          "This book has already been physically picked up. Active loans cannot be cancelled and must be returned to the library desk."
+                        );
+                        return;
+                      }
                       setIsSubmitting(true);
                       try {
                         await removeReservation(activeRequest?.id || id);
@@ -2497,20 +2573,27 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255, 255, 255, 0.08)",
   },
   bookCardColDate: {
-    width: 110,
-    paddingHorizontal: 10,
+    width: 92,
+    paddingHorizontal: 6,
+    paddingVertical: 5,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(255, 255, 255, 0.08)",
+  },
+  bookCardColReturnDate: {
+    width: 92,
+    paddingHorizontal: 6,
     paddingVertical: 5,
     borderRightWidth: 1,
     borderRightColor: "rgba(255, 255, 255, 0.08)",
   },
   bookCardColName: {
     flex: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 5,
   },
   bookCardColHeadText: {
     color: "#CBD5E1",
-    fontSize: 10.5,
+    fontSize: 10,
     fontWeight: "800",
   },
   bookCardRowsWrapper: {},
@@ -2522,20 +2605,27 @@ const styles = StyleSheet.create({
     borderBottomColor: "rgba(255, 255, 255, 0.04)",
   },
   bookCardCellDate: {
-    width: 110,
-    paddingHorizontal: 10,
+    width: 92,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRightWidth: 1,
+    borderRightColor: "rgba(255, 255, 255, 0.04)",
+  },
+  bookCardCellReturnDate: {
+    width: 92,
+    paddingHorizontal: 6,
     paddingVertical: 3,
     borderRightWidth: 1,
     borderRightColor: "rgba(255, 255, 255, 0.04)",
   },
   bookCardCellDateText: {
     color: "#94A3B8",
-    fontSize: 10,
+    fontSize: 9.5,
     fontFamily: "monospace",
   },
   bookCardCellName: {
     flex: 1,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 3,
   },
   bookCardCellNameText: {

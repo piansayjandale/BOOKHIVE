@@ -42,13 +42,18 @@ export default function RequestConfirmation() {
 
   const params = useLocalSearchParams();
 
+  const formatMDY = (d: Date) => {
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+  };
+
   const reservationDate =
     (params.reservationDate as string) ||
-    new Date().toISOString().split("T")[0];
+    formatMDY(new Date());
 
-  const defaultReturnDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
+  const defaultReturnDate = formatMDY(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
 
   const returnDate =
     (params.returnDate as string && params.returnDate !== "Not set")

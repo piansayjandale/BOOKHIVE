@@ -316,6 +316,7 @@ export async function POST(request: Request) {
     query: string;
     department: string;
     mode: string;
+    skipLog?: boolean;
     uploadedContext: string;
     fileNames: string[];
   };
@@ -325,6 +326,7 @@ export async function POST(request: Request) {
     const query = String(formData.get("query") ?? "");
     const department = String(formData.get("department") ?? "All");
     const mode = String(formData.get("mode") ?? "prefix");
+    const skipLog = formData.get("skipLog") === "true" || formData.get("skipLog") === "1";
     const files = formData.getAll("files").filter((file): file is File => file instanceof File);
     const uploadContext = await extractUploadContext(files);
     
@@ -332,6 +334,7 @@ export async function POST(request: Request) {
       query,
       department,
       mode,
+      skipLog,
       uploadedContext: uploadContext.text,
       fileNames: uploadContext.fileNames,
     };
@@ -341,6 +344,7 @@ export async function POST(request: Request) {
       query: body.query ?? "",
       department: body.department ?? "All",
       mode: body.mode ?? "prefix",
+      skipLog: Boolean(body.skipLog),
       uploadedContext: body.uploadedContext ?? "",
       fileNames: body.fileNames ?? [],
     };
@@ -403,25 +407,25 @@ export async function POST(request: Request) {
         const p2 = `the ${rawClean}%`;
         const p3 = `a ${rawClean}%`;
         const p4 = `an ${rawClean}%`;
-        const p5 = `%${rawClean}%`;
+        const alphaPrefix = `${rawClean.replace(/\s+/g, "")}%`;
 
         const prefixIdx = paramIdx++;
         const thePrefixIdx = paramIdx++;
         const aPrefixIdx = paramIdx++;
         const anPrefixIdx = paramIdx++;
-        const subIdx = paramIdx++;
+        const alphaIdx = paramIdx++;
         const exactIdx = paramIdx++;
 
-        params.push(p1, p2, p3, p4, p5, rawClean);
+        params.push(p1, p2, p3, p4, alphaPrefix, rawClean);
 
         sql += ` AND (
           LOWER(title) LIKE LOWER($${prefixIdx})
           OR LOWER(title) LIKE LOWER($${thePrefixIdx})
           OR LOWER(title) LIKE LOWER($${aPrefixIdx})
           OR LOWER(title) LIKE LOWER($${anPrefixIdx})
-          OR LOWER(title) LIKE LOWER($${subIdx})
-          OR LOWER(author) LIKE LOWER($${subIdx})
-          OR LOWER(isbn) LIKE LOWER($${subIdx})
+          OR regexp_replace(LOWER(title), '[^a-z0-9]', '', 'g') LIKE LOWER($${alphaIdx})
+          OR regexp_replace(regexp_replace(LOWER(title), '^(the|a|an)\\s+', '', 'i'), '[^a-z0-9]', '', 'g') LIKE LOWER($${alphaIdx})
+          OR LOWER(isbn) LIKE LOWER($${prefixIdx})
         )`;
 
         sql += `
@@ -429,8 +433,8 @@ export async function POST(request: Request) {
             CASE
               WHEN LOWER(title) = LOWER($${exactIdx}) THEN 1
               WHEN LOWER(title) LIKE LOWER($${prefixIdx}) THEN 2
-              WHEN LOWER(title) LIKE LOWER($${thePrefixIdx}) OR LOWER(title) LIKE LOWER($${aPrefixIdx}) OR LOWER(title) LIKE LOWER($${anPrefixIdx}) THEN 3
-              WHEN LOWER(title) LIKE LOWER($${subIdx}) THEN 4
+              WHEN regexp_replace(LOWER(title), '[^a-z0-9]', '', 'g') LIKE LOWER($${alphaIdx}) THEN 3
+              WHEN LOWER(title) LIKE LOWER($${thePrefixIdx}) OR LOWER(title) LIKE LOWER($${aPrefixIdx}) OR LOWER(title) LIKE LOWER($${anPrefixIdx}) THEN 4
               ELSE 5
             END,
             title ASC
@@ -516,6 +520,10 @@ export async function POST(request: Request) {
         .filter((r) => isPrefixFilter || r.relevance > 0);
 
       results.sort((a, b) => (b.relevance !== a.relevance ? b.relevance - a.relevance : a.title.localeCompare(b.title)));
+    }
+
+    if (payload.skipLog) {
+      return NextResponse.json({ results, logs: [] });
     }
 
     // 3. Log search query in Neon DB

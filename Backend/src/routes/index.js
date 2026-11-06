@@ -76,6 +76,8 @@ apiRouter.get("/circulation/settings", asyncHandler(studentController.getSetting
 // Digitized Books Queue (Mobile Scanner Intake)
 apiRouter.get("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.listDigitizedBooks));
 apiRouter.post("/digitized-books", optionalAuthenticateToken, asyncHandler(adminController.addDigitizedBook));
+apiRouter.patch("/digitized-books/:id", optionalAuthenticateToken, asyncHandler(adminController.updateDigitizedBook));
+apiRouter.put("/digitized-books/:id", optionalAuthenticateToken, asyncHandler(adminController.updateDigitizedBook));
 apiRouter.post("/digitized-books/:id/approve", optionalAuthenticateToken, asyncHandler(adminController.approveDigitizedBook));
 apiRouter.delete("/digitized-books/:id", optionalAuthenticateToken, asyncHandler(adminController.deleteDigitizedBook));
 

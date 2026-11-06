@@ -16,7 +16,7 @@ import AnimatedScreen from '../components/AnimatedScreen';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useThemeColors } from '../hooks/useThemeColors';
-import { fetchStudentCardAndViolations, extractIdentifierFromQr, ScannedStudentCardData, isDueToReturn, loadStudentIdCardsForUser, rotateIdCardSlot, StudentIdCardsData, parseDateToMs } from '../data/store';
+import { fetchStudentCardAndViolations, extractIdentifierFromQr, ScannedStudentCardData, isDueToReturn, loadStudentIdCardsForUser, rotateIdCardSlot, StudentIdCardsData, parseDateToMs, formatLocalDate, formatBorrowDateTime } from '../data/store';
 import { API_URL, getAuthHeaders } from '../data/authService';
 import socketService from '../services/socketService';
 import axios from 'axios';
@@ -541,44 +541,53 @@ export default function ScannedCardScreen() {
       if (!book) return "";
       const candidate = book.dueDate || book.due_date || (book.returnDate && book.returnDate !== "Returned" && book.returnDate !== "Reservation" ? book.returnDate : undefined);
       if (candidate && candidate !== "Returned" && candidate !== "Reservation" && candidate !== "7 days" && candidate !== "Pending") {
-        try {
-          const d = new Date(candidate);
-          if (!isNaN(d.getTime())) {
-            return d.toISOString().split("T")[0];
-          }
-          if (typeof candidate === "string" && candidate.includes("-")) {
-            return candidate.split("T")[0];
-          }
-        } catch {}
+        const formatted = formatLocalDate(candidate);
+        if (formatted) return formatted;
       }
-      const startCandidate = book.borrowDate || book.pickupDate || book.dateReserved || (book.date && book.date !== "Returned" && book.date !== "Pending" ? book.date : undefined) || book.requestedAt;
+      const startCandidate = (book as any).requestedAt || book.borrowDate || book.pickupDate || book.dateReserved || (book.date && book.date !== "Returned" && book.date !== "Pending" ? book.date : undefined);
       if (startCandidate) {
         try {
           const d = new Date(startCandidate);
           if (!isNaN(d.getTime())) {
             d.setDate(d.getDate() + 7);
-            return d.toISOString().split("T")[0];
+            return formatLocalDate(d);
           }
         } catch {}
       }
       const fallback = new Date();
       fallback.setDate(fallback.getDate() + 7);
-      return fallback.toISOString().split("T")[0];
+      return formatLocalDate(fallback);
+    };
+
+    const resolveItemReturnDate = (book: any): string => {
+      if (!book) return "";
+      const rawCandidate =
+        book.returnedAt ||
+        book.returned_at ||
+        (book.returnDate && book.returnDate !== "Returned" && book.returnDate !== "Reservation" ? book.returnDate : undefined) ||
+        (book.decidedAt && (book.status === 'Returned' || book.status === 'Completed' || book.isReturned) ? book.decidedAt : undefined) ||
+        book.dueDate ||
+        book.due_date;
+
+      if (rawCandidate && rawCandidate !== "Returned" && rawCandidate !== "Reservation" && rawCandidate !== "7 days" && rawCandidate !== "Pending") {
+        const formatted = formatLocalDate(rawCandidate);
+        if (formatted) return formatted;
+      }
+      return resolveItemDueDate(book);
     };
 
     let dueReturnText = "";
     let highlightType: "none" | "green" | "violet" | "red" = "none";
 
     if (item) {
-      // Due return date always shows the due date for every book regardless of status
-      dueReturnText = resolveItemDueDate(item);
-
       if (isReturned) {
+        dueReturnText = resolveItemReturnDate(item);
         highlightType = "none";
       } else if (isReservation) {
-        // Active reservations appear in VIOLET indicating reservation status
+        dueReturnText = "Reservation";
         highlightType = "violet";
       } else {
+        dueReturnText = resolveItemDueDate(item);
         if (isDueToReturn((item as any)?.dueDate || (item as any)?.due_date || dueReturnText)) {
           highlightType = "red";
         } else {
@@ -589,7 +598,13 @@ export default function ScannedCardScreen() {
 
     return {
       id: item?.id || `empty-row-${index}`,
-      borrowDate: item?.borrowDate || (item as any)?.pickupDate || (item as any)?.dateReserved || "",
+      borrowDate: (() => {
+        const rawBorrow = (item as any)?.requestedAt || item?.borrowDate || (item as any)?.pickupDate || (item as any)?.dateReserved || "";
+        if (!rawBorrow) return "";
+        return typeof rawBorrow === 'string' && !rawBorrow.includes('T') && (rawBorrow.includes('am') || rawBorrow.includes('pm') || rawBorrow.includes('AM') || rawBorrow.includes('PM'))
+          ? rawBorrow
+          : formatBorrowDateTime(rawBorrow);
+      })(),
       dueReturnDate: dueReturnText,
       bookTitle: item?.bookTitle || "",
       hasData: !!item,

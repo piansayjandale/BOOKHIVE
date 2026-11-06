@@ -1,10 +1,10 @@
-import { ProfilePage } from "@/components/admin/profile-page";
+import { LazyProfilePage } from "@/components/lazy-modules";
 import { PermissionGuard } from "@/components/auth/permission-guard";
 
 export default function Page() {
   return (
     <PermissionGuard permission="settings">
-      <ProfilePage />
+      <LazyProfilePage />
     </PermissionGuard>
   );
 }

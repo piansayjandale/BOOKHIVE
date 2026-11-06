@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { SuperAdminSettingsPage } from "@/components/super-admin/settings-page";
+import { LazySuperAdminSettingsPage } from "@/components/lazy-modules";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8 text-white">Loading Settings...</div>}>
-      <SuperAdminSettingsPage />
+    <Suspense fallback={<PageCircleLoader />}>
+      <LazySuperAdminSettingsPage />
     </Suspense>
   );
 }

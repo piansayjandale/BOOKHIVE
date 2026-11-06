@@ -70,12 +70,18 @@ async function queryDbTransactions(
       t.due_date AS "dueDate",
       t.decided_by AS "decidedBy",
       t.decided_at AS "decidedAt",
-      t.student_id_image AS "studentIdImage",
+      CASE WHEN t.status = 'Pending' THEN t.student_id_image ELSE NULL END AS "studentIdImage",
+      CASE WHEN t.student_id_image IS NOT NULL AND length(t.student_id_image) > 0 THEN true ELSE false END AS "hasStudentIdImage",
       t.comment,
       t.available_at AS "availableAt",
       t.expires_at AS "expiresAt",
       t.picked_up_at AS "pickedUpAt",
       CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
+      t.assigned_to AS "assignedTo",
+      COALESCE(t.assigned_librarian_name, u_asgn.name) AS "assignedLibrarianName",
+      COALESCE(t.assigned_librarian_role, COALESCE(NULLIF(u_asgn.sub_role, ''), u_asgn.role::text)) AS "assignedLibrarianRole",
+      COALESCE(t.approved_by_name, u_dec.name, t.assigned_librarian_name, u_asgn.name) AS "approvedByName",
+      COALESCE(t.approved_by_role, COALESCE(NULLIF(u_dec.sub_role, ''), u_dec.role::text), COALESCE(NULLIF(u_asgn.sub_role, ''), u_asgn.role::text)) AS "approvedByRole",
       CASE
         WHEN t.type = 'Reservation' AND t.status IN ('Pending', 'Approved') THEN (
           SELECT COUNT(*)::int + 1
@@ -92,6 +98,8 @@ async function queryDbTransactions(
       END as "queuePosition"
     FROM transactions t
     LEFT JOIN users u ON t.user_id = u.id
+    LEFT JOIN users u_dec ON t.decided_by = u_dec.id
+    LEFT JOIN users u_asgn ON t.assigned_to = u_asgn.id
     LEFT JOIN LATERAL (
       SELECT author, cover_img, department
       FROM books b

@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE } from "@/lib/auth";
+import { SESSION_COOKIE, getSession, createSessionToken } from "@/lib/auth";
 import { BACKEND_URL } from "@/lib/config";
 
 export async function proxyToBackend(path: string, request: Request, customBody?: string) {
@@ -11,8 +11,12 @@ export async function proxyToBackend(path: string, request: Request, customBody?
     );
   }
 
+  const session = await getSession().catch(() => null);
+  const sessionToken = session ? await createSessionToken(session).catch(() => "") : "";
+
   const cookieStore = await cookies();
   const token =
+    sessionToken ||
     cookieStore.get("bookhive_backend_token")?.value ||
     cookieStore.get(SESSION_COOKIE)?.value;
 
@@ -47,7 +51,7 @@ export async function proxyToBackend(path: string, request: Request, customBody?
       headers,
       body,
       cache: "no-store",
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(45000),
     });
 
     const rawText = await response.text();

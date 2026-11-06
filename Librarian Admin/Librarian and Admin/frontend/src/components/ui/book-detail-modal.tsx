@@ -16,6 +16,8 @@ export interface BorrowHistoryEntry {
   bookTitle?: string;
   isbn?: string;
   borrowDate?: string;
+  returnDate?: string;
+  returnedAt?: string;
   borrowerName?: string;
   studentName?: string;
   studentId?: string;
@@ -293,6 +295,21 @@ function resolveBorrowDate(tx: any): string {
   return formatBorrowDate(rawDate);
 }
 
+function resolveReturnDate(tx: any): string {
+  const isRet = tx.status === "Returned" || tx.status === "Completed" || tx.isReturned;
+  const rawDate =
+    tx.returnedAt ||
+    tx.returned_at ||
+    (isRet ? (tx.decidedAt || tx.decided_at) : undefined) ||
+    tx.returnDate ||
+    tx.return_date ||
+    tx.dueDate ||
+    tx.due_date;
+
+  if (!rawDate || rawDate === "Returned" || rawDate === "Reservation" || rawDate === "Pending") return "";
+  return formatBorrowDate(rawDate);
+}
+
 const TOTAL_BOOK_CARD_ROWS = 12;
 
 const availabilityClasses = (availability?: BookAvailability | string, isLight: boolean = false) => {
@@ -351,6 +368,7 @@ export function BookDetailModal({
             allTxMap.set(entry.id || `prop-${idx}`, {
               id: entry.id || `prop-${idx}`,
               borrowDate: resolveBorrowDate(entry),
+              returnDate: resolveReturnDate(entry),
               borrowerName: resolveBorrowerName(entry),
               status: entry.status || "Approved",
               type: entry.type || "Borrow",
@@ -374,6 +392,7 @@ export function BookDetailModal({
               allTxMap.set(t.id || `api-${t.isbn || t.resourceTitle}`, {
                 id: t.id,
                 borrowDate: resolveBorrowDate(t),
+                returnDate: resolveReturnDate(t),
                 borrowerName: resolveBorrowerName(t),
                 status: t.status,
                 type: t.type,
@@ -394,6 +413,7 @@ export function BookDetailModal({
               allTxMap.set(t.id || `admin-${t.isbn || t.resourceTitle}`, {
                 id: t.id,
                 borrowDate: resolveBorrowDate(t),
+                returnDate: resolveReturnDate(t),
                 borrowerName: resolveBorrowerName(t),
                 status: t.status,
                 type: t.type,
@@ -430,6 +450,7 @@ export function BookDetailModal({
                   allTxMap.set(r.id || `local-res-${idx}`, {
                     id: r.id || `local-res-${idx}`,
                     borrowDate: resolveBorrowDate(r),
+                    returnDate: resolveReturnDate(r),
                     borrowerName: resolveBorrowerName(r, storedProfileName),
                     status: r.status || "Approved",
                     type: r.action === "Reserve" ? "Reservation" : "Borrow",
@@ -449,6 +470,7 @@ export function BookDetailModal({
                   allTxMap.set(h.id || `local-hist-${idx}`, {
                     id: h.id || `local-hist-${idx}`,
                     borrowDate: resolveBorrowDate(h),
+                    returnDate: resolveReturnDate(h),
                     borrowerName: resolveBorrowerName(h, storedProfileName),
                     status: h.status || "Completed",
                     type: h.action === "Reserve" ? "Reservation" : "Borrow",
@@ -468,6 +490,7 @@ export function BookDetailModal({
                   allTxMap.set(g.id || `local-gen-${idx}`, {
                     id: g.id || `local-gen-${idx}`,
                     borrowDate: resolveBorrowDate(g),
+                    returnDate: resolveReturnDate(g),
                     borrowerName: resolveBorrowerName(g, storedProfileName),
                     status: g.status,
                     type: g.type,
@@ -865,12 +888,18 @@ export function BookDetailModal({
                 isLight ? "border-slate-300 bg-[#F0F7FF] text-[#0274BB]" : "border-white/15 bg-white/[0.03] text-slate-200"
               )}>
                 <div className={cn(
-                  "w-[120px] sm:w-[140px] shrink-0 px-3.5 py-2 border-r-2",
+                  "w-[105px] sm:w-[125px] shrink-0 px-3 py-2 border-r-2",
                   isLight ? "border-slate-300 font-extrabold" : "border-white/15"
                 )}>
                   Borrow Date:
                 </div>
-                <div className={cn("flex-1 min-w-0 px-3.5 py-2", isLight ? "font-extrabold" : "")}>
+                <div className={cn(
+                  "w-[105px] sm:w-[125px] shrink-0 px-3 py-2 border-r-2",
+                  isLight ? "border-slate-300 font-extrabold" : "border-white/15"
+                )}>
+                  Return Date:
+                </div>
+                <div className={cn("flex-1 min-w-0 px-3 py-2", isLight ? "font-extrabold" : "")}>
                   Borrower’s Name:
                 </div>
               </div>
@@ -883,6 +912,7 @@ export function BookDetailModal({
                 {Array.from({ length: Math.max(TOTAL_BOOK_CARD_ROWS, borrowHistory.length) }).map((_, idx) => {
                   const entry = borrowHistory[idx];
                   const borrowDateFormatted = entry?.borrowDate ? formatBorrowDate(entry.borrowDate) : "";
+                  const returnDateFormatted = entry?.returnDate ? formatBorrowDate(entry.returnDate) : "";
                   const borrowerName = entry?.borrowerName || "";
 
                   return (
@@ -896,13 +926,19 @@ export function BookDetailModal({
                       )}
                     >
                       <div className={cn(
-                        "w-[120px] sm:w-[140px] shrink-0 px-3.5 py-1.5 font-mono text-[11px] sm:text-xs truncate flex items-center border-r-2",
+                        "w-[105px] sm:w-[125px] shrink-0 px-3 py-1.5 font-mono text-[11px] sm:text-xs truncate flex items-center border-r-2",
                         isLight ? "border-slate-300 text-slate-800 font-bold" : "border-white/10 text-slate-300"
                       )}>
                         {borrowDateFormatted ? borrowDateFormatted : <span className="opacity-0 select-none">&nbsp;</span>}
                       </div>
                       <div className={cn(
-                        "flex-1 min-w-0 px-3.5 py-1.5 text-xs truncate flex items-center",
+                        "w-[105px] sm:w-[125px] shrink-0 px-3 py-1.5 font-mono text-[11px] sm:text-xs truncate flex items-center border-r-2",
+                        isLight ? "border-slate-300 text-slate-800 font-bold" : "border-white/10 text-slate-300"
+                      )}>
+                        {returnDateFormatted ? returnDateFormatted : <span className="opacity-0 select-none">&nbsp;</span>}
+                      </div>
+                      <div className={cn(
+                        "flex-1 min-w-0 px-3 py-1.5 text-xs truncate flex items-center",
                         isLight ? "text-slate-900 font-semibold" : "text-slate-200 font-medium"
                       )}>
                         {borrowerName ? borrowerName : <span className="opacity-0 select-none">&nbsp;</span>}

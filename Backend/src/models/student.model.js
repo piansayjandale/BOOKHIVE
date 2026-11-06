@@ -344,7 +344,7 @@ export const studentModel = {
           b.edition,
           b.copies,
           b.accession_number AS "accessionNumber",
-          COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+          COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending', 'Picked Up', 'On Loan') THEN 1 END), 0)::int AS "borrowedCount",
           COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
           COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
         FROM paged_books b
@@ -472,6 +472,7 @@ export const studentModel = {
           t.requested_at AS "requestedAt",
           t.decided_at AS "decidedAt",
           t.due_date AS "dueDate",
+          CASE WHEN t.status = 'Returned' THEN t.decided_at ELSE NULL END AS "returnedAt",
           t.picked_up_at AS "pickedUpAt",
           CASE WHEN t.picked_up_at IS NOT NULL THEN true ELSE false END AS "isPickedUp",
           t.status,
@@ -488,7 +489,7 @@ export const studentModel = {
       `;
       const countQuery = `
         SELECT
-          COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END)::int AS "borrowedCount",
+          COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending', 'Picked Up', 'On Loan') THEN 1 END)::int AS "borrowedCount",
           COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "heldCount",
           COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.available_at IS NULL OR t.expires_at <= NOW()) THEN 1 END)::int AS "waitlistCount",
           COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END)::int AS "reservedCount"
@@ -505,7 +506,7 @@ export const studentModel = {
 
       const ledger = txRes.rows || [];
       const counts = countRes.rows[0] || {};
-      const activeLoan = ledger.find(t => t.type === 'Borrow' && t.status === 'Approved') || null;
+      const activeLoan = ledger.find(t => t.type === 'Borrow' && (t.status === 'Approved' || t.status === 'Picked Up' || t.status === 'On Loan')) || null;
       const borrowedCount = Number(counts.borrowedCount || 0);
       const heldCount = Number(counts.heldCount || 0);
       const waitlistCount = Number(counts.waitlistCount || 0);
@@ -625,7 +626,7 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type = 'Borrow' AND t.status IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending', 'Picked Up', 'On Loan') THEN 1 END), 0)::int AS "borrowedCount",
             COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
             COALESCE(COUNT(CASE WHEN t.type = 'Reservation' AND t.status IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount"
           FROM books b
@@ -795,7 +796,7 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending', 'Picked Up', 'On Loan') THEN 1 END), 0)::int AS "borrowedCount",
             COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
             COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
             ${relevanceSql}
@@ -858,7 +859,7 @@ export const studentModel = {
             b.edition,
             b.copies,
             b.accession_number AS "accessionNumber",
-            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending') THEN 1 END), 0)::int AS "borrowedCount",
+            COALESCE(COUNT(CASE WHEN t.type::text = 'Borrow' AND t.status::text IN ('Approved', 'Pending', 'Picked Up', 'On Loan') THEN 1 END), 0)::int AS "borrowedCount",
             COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND t.available_at IS NOT NULL AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "heldCount",
             COALESCE(COUNT(CASE WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Pending') AND (t.expires_at IS NULL OR t.expires_at > NOW()) THEN 1 END), 0)::int AS "reservedCount",
             (
@@ -1009,6 +1010,19 @@ export const studentModel = {
           CASE WHEN t.status = 'Approved' THEN t.decided_at ELSE NULL END AS "approvedAt",
           CASE WHEN t.status = 'Returned' THEN t.decided_at ELSE NULL END AS "returnedAt",
           CASE 
+            WHEN u_dec.role::text IN ('admin', 'superadmin') OR lower(COALESCE(t.approved_by_role, '')) IN ('admin', 'superadmin', 'administrator')
+            THEN COALESCE(t.assigned_librarian_name, u_asgn.name, 'Yana Brich R. Palmares')
+            ELSE COALESCE(t.approved_by_name, u_dec.name, t.assigned_librarian_name, u_asgn.name, 'Yana Brich R. Palmares')
+          END AS "approvedByName",
+          CASE 
+            WHEN u_dec.role::text IN ('admin', 'superadmin') OR lower(COALESCE(t.approved_by_role, '')) IN ('admin', 'superadmin', 'administrator')
+            THEN COALESCE(t.assigned_librarian_role, COALESCE(NULLIF(u_asgn.sub_role, ''), 'Technical Librarian'), 'Technical Librarian')
+            ELSE COALESCE(t.approved_by_role, COALESCE(NULLIF(u_dec.sub_role, ''), NULLIF(u_dec.role::text, 'admin')), 'Technical Librarian')
+          END AS "approvedByRole",
+          t.assigned_to AS "assignedTo",
+          COALESCE(t.assigned_librarian_name, u_asgn.name) AS "assignedLibrarianName",
+          COALESCE(t.assigned_librarian_role, COALESCE(NULLIF(u_asgn.sub_role, ''), u_asgn.role::text)) AS "assignedLibrarianRole",
+          CASE 
             WHEN t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved') THEN (
               SELECT COUNT(*)::int + 1
               FROM transactions sub
@@ -1023,6 +1037,8 @@ export const studentModel = {
             ELSE NULL
           END AS "queuePosition"
         FROM transactions t
+        LEFT JOIN users u_dec ON t.decided_by = u_dec.id
+        LEFT JOIN users u_asgn ON t.assigned_to = u_asgn.id
         LEFT JOIN LATERAL (
           SELECT *
           FROM books b
@@ -1055,6 +1071,38 @@ export const studentModel = {
     }
   },
 
+  async getLeastLoadedLibrarian() {
+    try {
+      const query = `
+        SELECT 
+          u.id, 
+          u.name, 
+          COALESCE(NULLIF(u.sub_role, ''), u.role::text) AS role_title,
+          COUNT(CASE WHEN t.status = 'Pending' THEN 1 END)::int AS pending_count
+        FROM users u
+        LEFT JOIN transactions t ON t.assigned_to = u.id
+        WHERE u.role::text != 'Super Admin'
+          AND (u.role::text ILIKE '%librarian%' OR u.role::text IN ('Staff', 'Admin'))
+          AND (u.status = 'Active' OR u.status IS NULL)
+          AND (u.permissions IS NULL OR (u.permissions->>'transactions')::text != 'false')
+        GROUP BY u.id, u.name, u.sub_role, u.role
+        ORDER BY pending_count ASC, RANDOM()
+        LIMIT 1
+      `;
+      const res = await pool.query(query);
+      if (res.rows.length > 0) {
+        return {
+          id: res.rows[0].id,
+          name: res.rows[0].name,
+          role: res.rows[0].role_title,
+        };
+      }
+    } catch (err) {
+      console.warn("getLeastLoadedLibrarian fallback:", err.message);
+    }
+    return null;
+  },
+
   async borrowBook(userId, bookId, payload = {}) {
     try {
       const {
@@ -1071,9 +1119,22 @@ export const studentModel = {
       const finalDept = department && String(department).trim() ? String(department).trim() : 'Circulation';
       const finalTitle = resourceTitle && String(resourceTitle).trim() ? String(resourceTitle).trim() : 'Library Book';
       let validDueDate = null;
-      if (dueDate && String(dueDate) !== 'Not set' && !isNaN(new Date(dueDate).getTime())) {
-        validDueDate = new Date(dueDate).toISOString();
-      } else {
+      if (dueDate && String(dueDate) !== 'Not set') {
+        const dStr = String(dueDate).trim();
+        const mmddMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+        if (mmddMatch) {
+          const m = parseInt(mmddMatch[1], 10) - 1;
+          const d = parseInt(mmddMatch[2], 10);
+          const y = parseInt(mmddMatch[3], 10);
+          const h = mmddMatch[4] ? parseInt(mmddMatch[4], 10) : 23;
+          const min = mmddMatch[5] ? parseInt(mmddMatch[5], 10) : 59;
+          const dt = new Date(y, m, d, h, min, 59);
+          if (!isNaN(dt.getTime())) validDueDate = dt.toISOString();
+        } else if (!isNaN(new Date(dueDate).getTime())) {
+          validDueDate = new Date(dueDate).toISOString();
+        }
+      }
+      if (!validDueDate) {
         validDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       }
 
@@ -1242,6 +1303,7 @@ export const studentModel = {
             warnIfNotOffline("DB student:borrowBook avail check fallback:", availErr.message);
           }
 
+          const assignedLibrarian = await this.getLeastLoadedLibrarian();
           const query = `
             INSERT INTO transactions (
               user_id,
@@ -1254,14 +1316,18 @@ export const studentModel = {
               status,
               due_date,
               requested_at,
-              student_id_image
+              student_id_image,
+              assigned_to,
+              assigned_librarian_name,
+              assigned_librarian_role
             )
             VALUES (
               (SELECT id FROM users WHERE id::text = $1 OR lower(id_number) = lower($3) OR lower(email) = lower($1) LIMIT 1),
               COALESCE(NULLIF($2, ''), (SELECT name FROM users WHERE id::text = $1 OR lower(id_number) = lower($3) OR lower(email) = lower($1) LIMIT 1), 'Student Borrower'),
               $3, $4, $5, $6,
               'Borrow', 'Pending',
-              $7, NOW(), $8
+              $7, NOW(), $8,
+              $9, $10, $11
             )
             RETURNING
               id,
@@ -1275,7 +1341,10 @@ export const studentModel = {
               status,
               requested_at AS "requestedAt",
               due_date AS "dueDate",
-              student_id_image AS "studentIdImage"
+              student_id_image AS "studentIdImage",
+              assigned_to AS "assignedTo",
+              assigned_librarian_name AS "assignedLibrarianName",
+              assigned_librarian_role AS "assignedLibrarianRole"
           `;
 
           const { rows } = await pool.query(query, [
@@ -1287,6 +1356,9 @@ export const studentModel = {
             finalDept,
             validDueDate,
             studentIdImage,
+            assignedLibrarian?.id || null,
+            assignedLibrarian?.name || null,
+            assignedLibrarian?.role || null,
           ]);
           row = rows[0];
 
@@ -1356,9 +1428,22 @@ export const studentModel = {
       const finalDept = department && String(department).trim() ? String(department).trim() : 'Circulation';
       const finalTitle = resourceTitle && String(resourceTitle).trim() ? String(resourceTitle).trim() : 'Library Book';
       let validDueDate = null;
-      if (dueDate && String(dueDate) !== 'Not set' && !isNaN(new Date(dueDate).getTime())) {
-        validDueDate = new Date(dueDate).toISOString();
-      } else {
+      if (dueDate && String(dueDate) !== 'Not set') {
+        const dStr = String(dueDate).trim();
+        const mmddMatch = dStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+        if (mmddMatch) {
+          const m = parseInt(mmddMatch[1], 10) - 1;
+          const d = parseInt(mmddMatch[2], 10);
+          const y = parseInt(mmddMatch[3], 10);
+          const h = mmddMatch[4] ? parseInt(mmddMatch[4], 10) : 23;
+          const min = mmddMatch[5] ? parseInt(mmddMatch[5], 10) : 59;
+          const dt = new Date(y, m, d, h, min, 59);
+          if (!isNaN(dt.getTime())) validDueDate = dt.toISOString();
+        } else if (!isNaN(new Date(dueDate).getTime())) {
+          validDueDate = new Date(dueDate).toISOString();
+        }
+      }
+      if (!validDueDate) {
         validDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       }
 
@@ -1414,6 +1499,7 @@ export const studentModel = {
           // fallback queue position 1
         }
 
+        const assignedLibrarian = await this.getLeastLoadedLibrarian();
         const query = `
           INSERT INTO transactions (
             user_id,
@@ -1428,7 +1514,10 @@ export const studentModel = {
             requested_at,
             student_id_image,
             available_at,
-            expires_at
+            expires_at,
+            assigned_to,
+            assigned_librarian_name,
+            assigned_librarian_role
           )
           VALUES (
             (SELECT id FROM users WHERE id::text = $1 OR lower(id_number) = lower($3) OR lower(email) = lower($1) LIMIT 1),
@@ -1436,7 +1525,8 @@ export const studentModel = {
             'Reservation', 'Pending',
             $7, NOW(), $8,
             NULL,
-            NULL
+            NULL,
+            $9, $10, $11
           )
           RETURNING
             id,
@@ -1452,7 +1542,10 @@ export const studentModel = {
             due_date AS "dueDate",
             student_id_image AS "studentIdImage",
             available_at AS "availableAt",
-            expires_at AS "expiresAt"
+            expires_at AS "expiresAt",
+            assigned_to AS "assignedTo",
+            assigned_librarian_name AS "assignedLibrarianName",
+            assigned_librarian_role AS "assignedLibrarianRole"
         `;
 
         const { rows } = await pool.query(query, [
@@ -1464,6 +1557,9 @@ export const studentModel = {
           finalDept,
           validDueDate,
           studentIdImage,
+          assignedLibrarian?.id || null,
+          assignedLibrarian?.name || null,
+          assignedLibrarian?.role || null,
         ]);
         row = rows[0];
         if (row) {
@@ -2365,7 +2461,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           date: v.createdAt ? new Date(v.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
         }));
 
-        // Dynamically compute overdue active loans
+                // Dynamically compute overdue active loans (only past due date, 1-day timer expired)
         const overdueSql = `
           SELECT
             t.id,
@@ -2378,7 +2474,7 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
           WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
             AND t.type = 'Borrow'
             AND t.status = 'Approved'
-            AND t.due_date < NOW()
+            AND t.due_date::date < CURRENT_DATE
         `;
         const { rows: overdueRows } = await pool.query(overdueSql, [String(student.id), String(student.idNumber)]);
         overdueRows.forEach(ov => {
@@ -2392,6 +2488,35 @@ Return ONLY a JSON object of this format with no markdown formatting or backtick
             status: "Active Penalty",
             remarks: `Overdue by ${days} day(s). Standard fine ₱50/day applied.`,
             date: ov.dueDate ? new Date(ov.dueDate).toISOString().split('T')[0] : "Overdue",
+          });
+        });
+
+        // Dynamically compute returned loans that were returned after the due date (considered violation)
+        const lateReturnSql = `
+          SELECT
+            t.id,
+            t.resource_title AS "bookTitle",
+            t.isbn,
+            t.due_date AS "dueDate",
+            t.decided_at AS "returnedAt",
+            t.decided_at::date - t.due_date::date AS "daysLate"
+          FROM transactions t
+          WHERE (t.user_id::text = $1 OR lower(t.student_id) = lower($2))
+            AND t.type = 'Borrow'
+            AND t.status = 'Returned'
+            AND t.decided_at IS NOT NULL
+            AND t.decided_at::date > t.due_date::date
+        `;
+        const { rows: lateReturnRows } = await pool.query(lateReturnSql, [String(student.id), String(student.idNumber)]);
+        lateReturnRows.forEach(lr => {
+          violations.push({
+            id: `late-return-${lr.id}`,
+            bookTitle: lr.bookTitle || "Returned Book",
+            violationType: "Late Book Return",
+            penaltyAmount: 50.0,
+            status: "Active Penalty",
+            remarks: `Returned after agreed due date (${lr.dueDate ? new Date(lr.dueDate).toISOString().split('T')[0] : 'due date'}). Standard late return fine applied.`,
+            date: lr.dueDate ? new Date(lr.dueDate).toISOString().split('T')[0] : "Late Return",
           });
         });
       } catch (violErr) {

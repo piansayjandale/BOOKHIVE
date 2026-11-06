@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
-import { FALLBACK_USERS_ROSTER } from "@/lib/data/users-roster";
 
 export const runtime = "nodejs";
 
@@ -99,6 +98,7 @@ export async function GET(
     }
 
     if (!student) {
+      const { FALLBACK_USERS_ROSTER } = await import("@/lib/data/users-roster");
       const low = cleanId.toLowerCase();
       const unhyphenated = low.replace(/[^a-z0-9]/g, "");
       const match = FALLBACK_USERS_ROSTER.find(

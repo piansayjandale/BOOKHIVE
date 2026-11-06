@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AnimatedScreen from '../../components/AnimatedScreen';
+import PageCircleLoader from '../../components/PageCircleLoader';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { useThemeColors } from '../../hooks/useThemeColors';
@@ -30,6 +31,8 @@ import {
   isDueToReturn,
   syncTransactionsWithBackend,
   parseDateToMs,
+  formatLocalDate,
+  formatBorrowDateTime,
 } from '../../data/store';
 
 export default function ReservationsScreen() {
@@ -44,6 +47,13 @@ export default function ReservationsScreen() {
   const [outerContentHeight, setOuterContentHeight] = useState(0);
   const [showQrModal, setShowQrModal] = useState(false);
   const [showIdCardsModal, setShowIdCardsModal] = useState(false);
+  const handleHeaderBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)");
+    }
+  };
   const [activeReservations, setActiveReservations] = useState<ReservationBook[]>(
     getUpcomingReservations()
   );
@@ -275,44 +285,55 @@ export default function ReservationsScreen() {
       if (!book) return "";
       const candidate = book.dueDate || book.due_date || (book.returnDate && book.returnDate !== "Returned" && book.returnDate !== "Reservation" ? book.returnDate : undefined);
       if (candidate && candidate !== "Returned" && candidate !== "Reservation" && candidate !== "7 days" && candidate !== "Pending") {
-        try {
-          const d = new Date(candidate);
-          if (!isNaN(d.getTime())) {
-            return d.toISOString().split("T")[0];
-          }
-          if (typeof candidate === "string" && candidate.includes("-")) {
-            return candidate.split("T")[0];
-          }
-        } catch {}
+        const formatted = formatLocalDate(candidate);
+        if (formatted) return formatted;
       }
-      const startCandidate = book.borrowDate || book.pickupDate || book.dateReserved || (book.date && book.date !== "Returned" && book.date !== "Pending" ? book.date : undefined) || book.requestedAt;
+      const startCandidate = book.requestedAt || book.borrowDate || book.pickupDate || book.dateReserved || (book.date && book.date !== "Returned" && book.date !== "Pending" ? book.date : undefined);
       if (startCandidate) {
         try {
           const d = new Date(startCandidate);
           if (!isNaN(d.getTime())) {
             d.setDate(d.getDate() + 7);
-            return d.toISOString().split("T")[0];
+            return formatLocalDate(d);
           }
         } catch {}
       }
       const fallback = new Date();
       fallback.setDate(fallback.getDate() + 7);
-      return fallback.toISOString().split("T")[0];
+      return formatLocalDate(fallback);
+    };
+
+    const resolveItemReturnDate = (book: any): string => {
+      if (!book) return "";
+      const rawCandidate =
+        book.returnedAt ||
+        book.returned_at ||
+        (book.returnDate && book.returnDate !== "Returned" && book.returnDate !== "Reservation" ? book.returnDate : undefined) ||
+        (book.decidedAt && (book.status === 'Returned' || book.status === 'Completed' || book.isReturned) ? book.decidedAt : undefined) ||
+        book.dueDate ||
+        book.due_date;
+
+      if (rawCandidate && rawCandidate !== "Returned" && rawCandidate !== "Reservation" && rawCandidate !== "7 days" && rawCandidate !== "Pending") {
+        const formatted = formatLocalDate(rawCandidate);
+        if (formatted) return formatted;
+      }
+      return resolveItemDueDate(book);
     };
 
     let dueReturnText = "";
     let highlightType: 'none' | 'green' | 'violet' | 'red' = 'none';
 
     if (item) {
-      // Due return date always shows the due date for every book regardless of status
-      dueReturnText = resolveItemDueDate(item);
-
       if (isReturned) {
+        dueReturnText = resolveItemReturnDate(item);
         highlightType = 'none';
       } else if (isReservation) {
         // Active reservations appear in VIOLET indicating reservation status
+        dueReturnText = "Reservation";
         highlightType = "violet";
       } else {
+        // Due return date shows the due date for active borrowed loans
+        dueReturnText = resolveItemDueDate(item);
         // Green for active loans, Red when due to return today or overdue
         if (isDueToReturn(item?.dueDate || (item as any)?.due_date || dueReturnText)) {
           highlightType = "red";
@@ -324,11 +345,13 @@ export default function ReservationsScreen() {
 
     let borrowDateText = "";
     if (item) {
-      const rawBorrow = item?.borrowDate || item?.pickupDate || item?.dateReserved || (item?.date !== 'Returned' ? item?.date : "") || "";
+      const rawBorrow = item?.requestedAt || item?.borrowDate || item?.pickupDate || item?.dateReserved || (item?.date !== 'Returned' ? item?.date : "") || "";
       if (rawBorrow) {
-        borrowDateText = typeof rawBorrow === 'string' ? (rawBorrow.includes('T') ? rawBorrow.split('T')[0] : rawBorrow) : new Date(rawBorrow).toISOString().split('T')[0];
+        borrowDateText = typeof rawBorrow === 'string' && !rawBorrow.includes('T') && (rawBorrow.includes('am') || rawBorrow.includes('pm') || rawBorrow.includes('AM') || rawBorrow.includes('PM'))
+          ? rawBorrow
+          : formatBorrowDateTime(rawBorrow);
       } else {
-        borrowDateText = new Date().toISOString().split("T")[0];
+        borrowDateText = formatBorrowDateTime(new Date());
       }
     }
 
@@ -336,7 +359,7 @@ export default function ReservationsScreen() {
       id: item?.id || `empty-row-${index}`,
       borrowDate: borrowDateText,
       dueReturnDate: dueReturnText,
-      bookTitle: item?.title || item?.resourceTitle || (item as any)?.resource_title || (item as any)?.bookTitle || "",
+      bookTitle: item?.title || (item as any)?.resourceTitle || (item as any)?.resource_title || (item as any)?.bookTitle || "",
       hasData: !!item,
       isReturned,
       isReservation,
@@ -350,7 +373,7 @@ export default function ReservationsScreen() {
     <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
       {/* GLOBAL SCREEN HEADER */}
       <View style={[styles.header, { paddingTop: 18 + insets.top, height: 70 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
-        <TouchableOpacity onPress={() => router.push("/")} activeOpacity={0.7}>
+        <TouchableOpacity onPress={handleHeaderBack} activeOpacity={0.7}>
           <Ionicons
             name="arrow-back"
             size={24}

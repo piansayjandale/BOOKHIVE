@@ -25,6 +25,7 @@ import {
   FileText,
   Info,
   Library,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -34,6 +35,8 @@ import {
   Tag,
   Trash2,
   Upload,
+  UserPlus,
+  Users,
   X,
 } from "lucide-react";
 
@@ -295,18 +298,77 @@ function parseCSV(text: string) {
 export function RecordsModule({ variant }: { variant?: "technical" | "circulation" | "admin" | "librarian" } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user } = useSession();
+  const { user, refreshUser } = useSession();
+
+  // Revalidate fresh user permissions from database on mount
+  useEffect(() => {
+    void refreshUser();
+  }, [refreshUser]);
+
   const { theme } = useTheme();
   const isLight = theme === "light";
   const isTechnical = true;
   const canAddBook = true;
   const canExport = user?.role?.toUpperCase().includes("ADMIN") || (user?.permissions as any)?.export !== false;
   const canImport = user?.role?.toUpperCase().includes("ADMIN") || (user?.permissions as any)?.import !== false;
+  const canDigitized = user?.role?.toUpperCase().includes("ADMIN") || (user?.permissions as any)?.catalogDigitized !== false;
+  const canCatalogDropdown =
+    user?.role?.toUpperCase().includes("ADMIN") ||
+    ((user?.permissions as any)?.catalogDropdown !== false &&
+     (user?.permissions as any)?.transactionDropdown !== false &&
+     (user?.permissions as any)?.dropdown !== false);
   const [books, setBooks]           = useState<BookRecord[]>([]);
   const [totalBooks, setTotalBooks] = useState(0);
   const [search, setSearch]         = useState("");
   const searchField = "title";
   const [dailyBooksAdded, setDailyBooksAdded] = useState(0);
+  const [isRefreshingCatalog, setIsRefreshingCatalog] = useState(false);
+
+  const isTechnicalLibrarian = useMemo(() => {
+    if (!user) return false;
+    const role = (user.role || "").toLowerCase();
+    const subRole = (user.subRole || "").toLowerCase();
+    const name = (user.name || "").toLowerCase();
+
+    if (subRole.includes("technical")) return true;
+    if (role.includes("technical")) return true;
+    if (variant === "technical") return true;
+    if (role.includes("librarian") && !subRole) {
+      if (name.includes("yana")) return true;
+      if (!name.includes("jan dale") && !subRole.includes("circulation")) return true;
+    }
+    return false;
+  }, [user, variant]);
+
+  const [librarianStats, setLibrarianStats] = useState<
+    Array<{ id: string; name: string; subRole?: string; booksAdded: number; todayBooksAdded: number }>
+  >([]);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [statTimeframe, setStatTimeframe] = useState<"all" | "today">("all");
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!isDropdownOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isDropdownOpen]);
 
   const deptFromQuery = searchParams.get("department");
   const [department, setDepartment] = useState<Department | "All">(() => {
@@ -412,6 +474,12 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   // ── Segmented Toggle: "records" vs "digitized" ──────────────
   const [activeTab, setActiveTab] = useState<"records" | "digitized">("records");
 
+  useEffect(() => {
+    if (!canDigitized && activeTab === "digitized") {
+      setActiveTab("records");
+    }
+  }, [canDigitized, activeTab]);
+
   // ── Digitized Queue State (Librarian Mobile Intake) ──────────
   const [digitizedBooks, setDigitizedBooks] = useState<any[]>([]);
   const [digitizedLoading, setDigitizedLoading] = useState(false);
@@ -420,8 +488,50 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   const [selectedDigitizedForReview, setSelectedDigitizedForReview] = useState<any | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewForm, setReviewForm] = useState<any>(null);
+  const [reviewAuthors, setReviewAuthors] = useState<string[]>([""]);
   const [isApproving, setIsApproving] = useState(false);
+  const [isSavingChanges, setIsSavingChanges] = useState(false);
+  const [catalogSuccessModal, setCatalogSuccessModal] = useState<{
+    open: boolean;
+    title: string;
+    bookTitle: string;
+    message?: string;
+    type?: "success" | "saved" | "info";
+  } | null>(null);
   const [expandedRawTextId, setExpandedRawTextId] = useState<string | null>(null);
+
+  const getLibrarianRole = useCallback(
+    (name: string): string => {
+      const lower = (name || "").toLowerCase().trim();
+      if (!lower) return "Technical Librarian";
+      if (user?.name && lower.includes(user.name.toLowerCase())) {
+        if (user.subRole) return user.subRole;
+        if (user.role && user.role !== "Librarian") return user.role;
+      }
+      const match = librarianStats.find(
+        (l) => l.name && l.name.toLowerCase().includes(lower)
+      );
+      if (match?.subRole) return match.subRole;
+
+      if (lower.includes("jan dale") || lower.includes("dale") || lower.includes("circulation")) {
+        return "Circulation Librarian";
+      }
+      if (lower.includes("yana") || lower.includes("palmares") || lower.includes("technical")) {
+        return "Technical Librarian";
+      }
+      if (lower.includes("maria") || lower.includes("santos")) {
+        return "Circulation Librarian";
+      }
+      if (lower.includes("joseph") || lower.includes("tan")) {
+        return "Technical Librarian";
+      }
+      if (lower.includes("villanueva") || lower.includes("ryan")) {
+        return "Circulation Librarian";
+      }
+      return "Technical Librarian";
+    },
+    [librarianStats, user]
+  );
 
   const reviewGenreOptions = useMemo(() => {
     const set = new Set<string>();
@@ -521,6 +631,14 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       coverImg: attachedCover,
     };
 
+    const rawAuthor = String(book.author || "").trim();
+    let initialAuthors: string[] = [""];
+    if (rawAuthor) {
+      const split = rawAuthor.split(/[,;&]|\band\b/i).map((s: string) => s.trim()).filter(Boolean);
+      initialAuthors = split.length > 0 ? split : [rawAuthor];
+    }
+    setReviewAuthors(initialAuthors);
+
     const generatedCall = generateCallNumber(initialReview);
     const generatedAcc = generateAccessionNumber(initialReview);
 
@@ -530,6 +648,85 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       accessionNumber: book.accessionNumber || generatedAcc,
     });
     setShowReviewModal(true);
+  };
+
+  const handleAddReviewAuthor = () => {
+    setReviewAuthors((prev) => [...prev, ""]);
+  };
+
+  const handleRemoveReviewAuthor = (index: number) => {
+    setReviewAuthors((prev) => {
+      if (prev.length <= 1) return [""];
+      const next = prev.filter((_, i) => i !== index);
+      const joined = next.map((a) => a.trim()).filter(Boolean).join(", ");
+      handleReviewFieldChange("author", joined);
+      return next;
+    });
+  };
+
+  const handleReviewAuthorChange = (index: number, val: string) => {
+    setReviewAuthors((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      const joined = next.map((a) => a.trim()).filter(Boolean).join(", ");
+      handleReviewFieldChange("author", joined);
+      return next;
+    });
+  };
+
+  const handleSaveDigitizedChanges = async () => {
+    if (!selectedDigitizedForReview || !reviewForm) return;
+    setIsSavingChanges(true);
+    try {
+      const combinedAuthors =
+        reviewAuthors.map((a) => a.trim()).filter(Boolean).join(", ") ||
+        reviewForm.author ||
+        "Unknown Author";
+      const payload = {
+        ...reviewForm,
+        author: combinedAuthors,
+        scannedBy:
+          selectedDigitizedForReview.scannedBy ||
+          selectedDigitizedForReview.scanned_by ||
+          user?.name ||
+          "Yana Brich R. Palmares",
+        isbn: sanitizeIsbn(reviewForm.isbn),
+        price: reviewForm.price ? Number(String(reviewForm.price).replace(/,/g, "")) : 0,
+      };
+      const res = await fetch(`/api/records/digitized/${selectedDigitizedForReview.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to save digitized record changes.");
+      }
+      setDigitizedBooks((prev) =>
+        prev.map((b) =>
+          b.id === selectedDigitizedForReview.id
+            ? {
+                ...b,
+                ...payload,
+              }
+            : b
+        )
+      );
+      const savedTitle = reviewForm.title || "Digitized Record";
+      setShowReviewModal(false);
+      setSelectedDigitizedForReview(null);
+      setCatalogSuccessModal({
+        open: true,
+        title: "Changes Saved!",
+        bookTitle: savedTitle,
+        message: `Changes for "${savedTitle}" have been successfully saved to the digitized queue.`,
+        type: "saved",
+      });
+    } catch (err: any) {
+      alert("Save Error: " + (err.message || String(err)));
+    } finally {
+      setIsSavingChanges(false);
+    }
   };
 
   const handleReviewFieldChange = (field: string, value: any) => {
@@ -572,8 +769,18 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
           coverUri: coverToSave,
         });
       }
+      const combinedAuthors =
+        reviewAuthors.map((a) => a.trim()).filter(Boolean).join(", ") ||
+        reviewForm.author ||
+        "Unknown Author";
       const payload = {
         ...reviewForm,
+        author: combinedAuthors,
+        scannedBy:
+          selectedDigitizedForReview.scannedBy ||
+          selectedDigitizedForReview.scanned_by ||
+          user?.name ||
+          "Yana Brich R. Palmares",
         isbn: sanitizeIsbn(reviewForm.isbn),
         price: reviewForm.price ? Number(String(reviewForm.price).replace(/,/g, "")) : 0,
         coverImg: coverToSave,
@@ -590,13 +797,20 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         throw new Error(errData.message || "Failed to approve and catalog book.");
       }
 
+      const approvedTitle = reviewForm.title || "Cataloged Book";
       setDigitizedBooks(prev => prev.filter(b => b.id !== selectedDigitizedForReview.id));
       setShowReviewModal(false);
       setSelectedDigitizedForReview(null);
 
       void loadBooks();
       void fetchDailyAdded();
-      alert(`✓ Successfully Cataloged!\n"${reviewForm.title}" is now officially published to the library catalog.`);
+      setCatalogSuccessModal({
+        open: true,
+        title: "Successfully Cataloged!",
+        bookTitle: approvedTitle,
+        message: `"${approvedTitle}" is now officially published to the library catalog.`,
+        type: "success",
+      });
     } catch (err: any) {
       alert("Cataloging Error: " + (err.message || String(err)));
     } finally {
@@ -880,35 +1094,56 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
       const res = await fetch("/api/records/daily-count");
       if (res.ok) {
         const data = await res.json();
-        if (typeof data.count === "number") {
+        if (Array.isArray(data.librarians)) {
+          setLibrarianStats(data.librarians);
+
+          // Find current user's personal today count
+          const myStat = user?.name
+            ? data.librarians.find(
+                (l: any) =>
+                  (user.id && l.id === user.id) ||
+                  (l.name && user.name && l.name.toLowerCase().includes(user.name.toLowerCase())) ||
+                  (user.name && l.name && user.name.toLowerCase().includes(l.name.toLowerCase()))
+              )
+            : null;
+
+          if (myStat) {
+            setDailyBooksAdded(myStat.todayBooksAdded);
+          } else if (typeof data.personalCount === "number") {
+            setDailyBooksAdded(data.personalCount);
+          } else if (typeof data.count === "number") {
+            setDailyBooksAdded(data.count);
+          }
+        } else if (typeof data.count === "number") {
           setDailyBooksAdded(data.count);
         }
       }
     } catch {}
-  }, []);
+  }, [user]);
 
   useEffect(() => {
     void fetchDailyAdded();
   }, [fetchDailyAdded]);
 
   const loadBooks = useCallback(async () => {
-    const params = new URLSearchParams({
-      search: deferredSearch,
-      searchField,
-      department,
-      page: String(page),
-      pageSize: String(pageSize),
-    });
-    const res = await fetch(`/api/records?${params}`);
-    if (!res.ok) return;
-    const payload = (await res.json()) as { books: BookRecord[]; total: number; addedToday?: number };
-    startTransition(() => {
-      setBooks(payload.books);
-      setTotalBooks(payload.total);
-      if (typeof payload.addedToday === "number") {
-        setDailyBooksAdded(payload.addedToday);
-      }
-    });
+    try {
+      const params = new URLSearchParams({
+        search: deferredSearch,
+        searchField,
+        department,
+        page: String(page),
+        pageSize: String(pageSize),
+      });
+      const res = await fetch(`/api/records?${params}`);
+      if (!res.ok) return;
+      const payload = (await res.json()) as { books: BookRecord[]; total: number; addedToday?: number };
+      startTransition(() => {
+        setBooks(Array.isArray(payload.books) ? payload.books : []);
+        setTotalBooks(typeof payload.total === "number" ? payload.total : 0);
+      });
+    } catch (err) {
+      console.warn("Records loadBooks fetch notice:", err);
+    }
   }, [deferredSearch, searchField, department, page]);
 
   useEffect(() => { void loadBooks(); }, [loadBooks]);
@@ -970,6 +1205,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
     e.preventDefault();
     setSubmitting(true);
     const combinedAuthor = authors.map((a) => a.trim()).filter(Boolean).join(", ") || form.author.trim();
+    const actorLabel = user ? `${user.role} ${user.name}` : undefined;
     await fetch("/api/records", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -978,6 +1214,8 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         author: combinedAuthor,
         price: form.price ? Number(String(form.price).replace(/,/g, "")) : 0,
         availability: normalizeStatus(form.availability),
+        actor: actorLabel,
+        actorName: actorLabel,
       }),
     });
     setForm(emptyBookForm);
@@ -989,9 +1227,13 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
   }
 
   async function handleDelete(id: string) {
-    await fetch(`/api/records/${id}`, { method: "DELETE" });
-    await loadBooks();
-    void fetchDailyAdded();
+    try {
+      await fetch(`/api/records/${id}`, { method: "DELETE" });
+      await loadBooks();
+      void fetchDailyAdded();
+    } catch (err) {
+      console.warn("Records delete error:", err);
+    }
   }
 
   // Inventory Summary Metrics (accurate client synchronization)
@@ -1080,76 +1322,308 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
         </div>
 
         <div className="shrink-0 flex items-center gap-3">
-          {/* Daily Ingestion Log Counter - Moved before Records */}
-          <div
-            className={cn(
-              "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-2xs transition-all",
-              isLight
-                ? "bg-emerald-50/90 border-emerald-300 text-emerald-800"
-                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+          {/* Daily Ingestion Log Counter with Librarian Activity Dropdown */}
+          <div className="relative" ref={dropdownRef}>
+            <div
+              onClick={() => {
+                if (canCatalogDropdown) {
+                  setIsDropdownOpen((prev) => !prev);
+                  void fetchDailyAdded();
+                }
+              }}
+              role={canCatalogDropdown ? "button" : undefined}
+              aria-haspopup={canCatalogDropdown ? "true" : undefined}
+              aria-expanded={canCatalogDropdown ? isDropdownOpen : undefined}
+              className={cn(
+                "flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold shadow-2xs transition-all select-none",
+                canCatalogDropdown ? "cursor-pointer" : "cursor-default",
+                isLight
+                  ? canCatalogDropdown
+                    ? "bg-emerald-50/90 border-emerald-300 text-emerald-800 hover:bg-emerald-100/90 hover:border-emerald-400"
+                    : "bg-emerald-50/80 border-emerald-200 text-emerald-800"
+                  : canCatalogDropdown
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-500/40"
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+              )}
+              title={
+                canCatalogDropdown
+                  ? `Click to view books added by librarians. Today's total: ${dailyBooksAdded}`
+                  : `Today's total books added: ${dailyBooksAdded}`
+              }
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <BookOpen className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                {dailyBooksAdded}
+              </span>
+              <span className="hidden sm:inline font-bold">
+                {dailyBooksAdded === 1 ? "Book Added Today" : "Books Added Today"}
+              </span>
+              <span className="sm:hidden font-bold">Today</span>
+
+              {/* Extended Dropdown Indicator: only shown if dropdown restriction is lifted */}
+              {canCatalogDropdown && (
+                <>
+                  <span
+                    className={cn(
+                      "h-3.5 w-[1px] ml-0.5 shrink-0",
+                      isLight ? "bg-emerald-300/80" : "bg-emerald-500/30"
+                    )}
+                  />
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                      isLight ? "text-emerald-700" : "text-emerald-300",
+                      isDropdownOpen && "rotate-180"
+                    )}
+                  />
+                </>
+              )}
+            </div>
+
+            {/* Dropdown Menu for all librarians - only rendered if permission allowed */}
+            {canCatalogDropdown && isDropdownOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  "absolute right-0 top-full mt-2 w-84 sm:w-96 rounded-2xl border shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl",
+                  isLight
+                    ? "bg-white/98 border-slate-200 shadow-slate-300/60 text-slate-800"
+                    : "bg-[#0b1626]/98 border-white/10 shadow-black/90 text-white"
+                )}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-inherit">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={cn(
+                        "flex h-8 w-8 items-center justify-center rounded-xl shrink-0 shadow-2xs",
+                        isLight ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-300"
+                      )}
+                    >
+                      <BookOpen className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider leading-none">
+                        Books Added by Librarian
+                      </h4>
+                      <p
+                        className={cn(
+                          "text-[10px] mt-1 font-semibold leading-none",
+                          isLight ? "text-slate-500" : "text-slate-400"
+                        )}
+                      >
+                        {librarianStats.length}{" "}
+                        {librarianStats.length === 1
+                          ? "cataloger with active access"
+                          : "catalogers with active access"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Filter Toggle: All Time vs Today */}
+                  <div
+                    className={cn(
+                      "flex items-center p-0.5 rounded-lg border text-[11px] font-bold",
+                      isLight ? "bg-slate-100 border-slate-200" : "bg-white/5 border-white/10"
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStatTimeframe("all");
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md transition-all cursor-pointer font-extrabold text-[10px] uppercase tracking-wide",
+                        statTimeframe === "all"
+                          ? isLight
+                            ? "bg-white text-emerald-700 shadow-xs"
+                            : "bg-emerald-500/25 text-emerald-300 shadow-xs"
+                          : isLight
+                          ? "text-slate-500 hover:text-slate-800"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      All Time
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStatTimeframe("today");
+                      }}
+                      className={cn(
+                        "px-2.5 py-1 rounded-md transition-all cursor-pointer font-extrabold text-[10px] uppercase tracking-wide",
+                        statTimeframe === "today"
+                          ? isLight
+                            ? "bg-white text-emerald-700 shadow-xs"
+                            : "bg-emerald-500/25 text-emerald-300 shadow-xs"
+                          : isLight
+                          ? "text-slate-500 hover:text-slate-800"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      Today
+                    </button>
+                  </div>
+                </div>
+
+                {/* Librarian List */}
+                <div className="mt-3 space-y-1.5 max-h-72 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {librarianStats.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-slate-400">
+                      No librarians with cataloging permission found.
+                    </div>
+                  ) : (
+                    librarianStats.map((lib) => {
+                      const count = statTimeframe === "today" ? lib.todayBooksAdded : lib.booksAdded;
+                      const initials =
+                        lib.name
+                          .split(" ")
+                          .filter((p) => p && !p.endsWith("."))
+                          .slice(0, 2)
+                          .map((p) => p[0]?.toUpperCase())
+                          .join("") || "LIB";
+
+                      return (
+                        <div
+                          key={lib.id}
+                          className={cn(
+                            "flex items-center justify-between p-2.5 rounded-xl transition-all border",
+                            isLight
+                              ? "bg-slate-50/80 border-slate-200/70 hover:bg-slate-100/80 hover:border-slate-300"
+                              : "bg-white/[0.03] border-white/5 hover:bg-white/[0.07] hover:border-white/10"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            {/* Initials Badge */}
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF300] text-xs font-black text-[#0274BB] shadow-2xs">
+                              {initials}
+                            </div>
+                            <div className="min-w-0">
+                              <p
+                                className={cn(
+                                  "text-xs font-bold truncate leading-tight",
+                                  isLight ? "text-slate-900" : "text-white"
+                                )}
+                                title={lib.name}
+                              >
+                                {lib.name}
+                              </p>
+                              <p
+                                className={cn(
+                                  "text-[10px] truncate leading-tight mt-0.5",
+                                  isLight ? "text-sky-700 font-semibold" : "text-sky-300 font-medium"
+                                )}
+                              >
+                                {lib.subRole || "Librarian"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Number Counter Badge Beside Name */}
+                          <div className="flex flex-col items-end shrink-0 pl-1">
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black border tabular-nums shadow-2xs",
+                                count > 0
+                                  ? isLight
+                                    ? "bg-emerald-100 border-emerald-300 text-emerald-800"
+                                    : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                                  : isLight
+                                  ? "bg-slate-100 border-slate-200 text-slate-500"
+                                  : "bg-white/5 border-white/10 text-slate-400"
+                              )}
+                              title={`${count} books added ${statTimeframe === "today" ? "today" : "in total"}`}
+                            >
+                              <BookOpen className="h-3 w-3 shrink-0 opacity-80" />
+                              <span>{count}</span>
+                            </span>
+                            <span
+                              className={cn(
+                                "text-[9px] mt-0.5 font-medium",
+                                isLight ? "text-slate-400" : "text-slate-500"
+                              )}
+                            >
+                              {statTimeframe === "today"
+                                ? `${lib.booksAdded} total`
+                                : lib.todayBooksAdded > 0
+                                ? `+${lib.todayBooksAdded} today`
+                                : "books added"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Footer Note */}
+                <div
+                  className={cn(
+                    "mt-3 pt-2.5 border-t border-inherit flex items-center justify-between text-[10px] font-medium",
+                    isLight ? "text-slate-400" : "text-slate-500"
+                  )}
+                >
+                  <span>Librarian Activity Overview</span>
+                  <span>All Registered Librarians</span>
+                </div>
+              </div>
             )}
-            title={`Total books added to the catalog today: ${dailyBooksAdded}`}
-          >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </span>
-            <BookOpen className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-            <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
-              {dailyBooksAdded}
-            </span>
-            <span className="hidden sm:inline font-bold">
-              {dailyBooksAdded === 1 ? "Book Added Today" : "Books Added Today"}
-            </span>
-            <span className="sm:hidden font-bold">Today</span>
           </div>
 
           {/* Records & Digitized Segmented Toggle - Placed immediately after Daily Counter */}
-          <div className={cn(
-            "flex items-center p-1 rounded-xl border transition-all",
-            isLight
-              ? "bg-slate-100/90 border-[#cbd5e1] shadow-2xs"
-              : "bg-white/5 border-white/10"
-          )}>
-            <button
-              type="button"
-              onClick={() => setActiveTab("records")}
-              className={cn(
-                "flex items-center justify-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-[92px]",
-                activeTab === "records"
-                  ? isLight
-                    ? "bg-[#0274BB] text-white shadow-sm ring-1 ring-[#0274BB]/20"
-                    : "bg-[#0274BB] text-white shadow-md"
-                  : isLight
-                    ? "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-              )}
-            >
-              <BookOpen className="h-3.5 w-3.5" />
-              <span>Records</span>
-            </button>
+          {canDigitized && (
+            <div className={cn(
+              "flex items-center p-1 rounded-xl border transition-all",
+              isLight
+                ? "bg-slate-100/90 border-[#cbd5e1] shadow-2xs"
+                : "bg-white/5 border-white/10"
+            )}>
+              <button
+                type="button"
+                onClick={() => setActiveTab("records")}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-[92px]",
+                  activeTab === "records"
+                    ? isLight
+                      ? "bg-[#0274BB] text-white shadow-sm ring-1 ring-[#0274BB]/20"
+                      : "bg-[#0274BB] text-white shadow-md"
+                    : isLight
+                      ? "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span>Records</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab("digitized");
-                void fetchDigitizedBooks();
-              }}
-              className={cn(
-                "flex items-center justify-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-[92px]",
-                activeTab === "digitized"
-                  ? isLight
-                    ? "bg-[#0274BB] text-white shadow-sm ring-1 ring-[#0274BB]/20"
-                    : "bg-[#0274BB] text-white shadow-md"
-                  : isLight
-                    ? "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-              )}
-            >
-              <Sparkles className={cn("h-3.5 w-3.5", activeTab === "digitized" ? "text-amber-300" : "text-amber-500")} />
-              <span>Digitized</span>
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab("digitized");
+                  void fetchDigitizedBooks();
+                }}
+                className={cn(
+                  "flex items-center justify-center gap-2 px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer min-w-[92px]",
+                  activeTab === "digitized"
+                    ? isLight
+                      ? "bg-[#0274BB] text-white shadow-sm ring-1 ring-[#0274BB]/20"
+                      : "bg-[#0274BB] text-white shadow-md"
+                    : isLight
+                      ? "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <Sparkles className={cn("h-3.5 w-3.5", activeTab === "digitized" ? "text-amber-300" : "text-amber-500")} />
+                <span>Digitized</span>
+              </button>
+            </div>
+          )}
 
           {/* Export Button - Blue Highlight */}
           {canExport && (
@@ -1304,6 +1778,32 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 )}
               />
             </div>
+
+            {/* Refresh Button - height 42px matching Department dropdown */}
+            <button
+              type="button"
+              onClick={async () => {
+                setIsRefreshingCatalog(true);
+                try {
+                  void refreshUser();
+                  await loadBooks();
+                  if (canDigitized) void fetchDigitizedBooks();
+                } finally {
+                  setIsRefreshingCatalog(false);
+                }
+              }}
+              disabled={isRefreshingCatalog}
+              className={cn(
+                "flex items-center gap-2 h-[42px] px-4 rounded-xl text-sm font-semibold shadow-xs transition-all active:scale-95 cursor-pointer disabled:opacity-50",
+                isLight
+                  ? "border border-slate-300 bg-white text-slate-700 hover:border-[#0274BB] hover:text-[#0274BB] hover:bg-slate-50"
+                  : "border border-white/20 bg-white/5 text-slate-200 hover:border-[#FCD400] hover:text-[#FCD400] hover:bg-white/10"
+              )}
+              title="Refresh Catalog and Permissions"
+            >
+              <RefreshCw className={cn("h-4 w-4", isRefreshingCatalog && "animate-spin text-[#0274BB]")} />
+              <span>Refresh</span>
+            </button>
           </div>
 
       {/* ── Table ──────────────────────────────────────────── */}
@@ -1565,15 +2065,15 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
               />
             </div>
 
-            {/* Refresh Button - height 42px matching the dropdown */}
+            {/* Refresh Button - height 42px matching the dropdown with visible stroke */}
             <button
               onClick={() => void fetchDigitizedBooks()}
               disabled={digitizedLoading}
               className={cn(
-                "flex items-center gap-2 h-[42px] px-4 rounded-xl border text-sm font-semibold transition active:scale-95 cursor-pointer shadow-xs",
+                "flex items-center gap-2 h-[42px] px-4 rounded-xl border-2 text-sm font-semibold transition active:scale-95 cursor-pointer shadow-xs",
                 isLight
-                  ? "border border-slate-300 bg-white text-slate-800 hover:border-slate-400 hover:bg-slate-50"
-                  : "border-white/10 bg-white/5 text-slate-200 hover:border-white/20 hover:bg-white/10"
+                  ? "border-slate-400/90 bg-white text-slate-800 hover:border-[#0274BB] hover:text-[#0274BB] hover:bg-slate-50"
+                  : "border-white/30 bg-white/5 text-slate-200 hover:border-[#FCD400] hover:text-[#FCD400] hover:bg-white/10"
               )}
               title="Refresh Queue from Mobile App"
             >
@@ -1598,6 +2098,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                     : "bg-[#0F1D29]/95 text-slate-400 border-white/10"
                 )}>
                   <tr>
+                    <th className="px-5 py-3.5 text-left">Librarian</th>
                     <th className="px-5 py-3.5 text-left">Book / Author</th>
                     <th className="px-5 py-3.5 text-left">Department</th>
                     <th className="px-5 py-3.5 text-left">ISBN</th>
@@ -1618,6 +2119,19 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                       department: (book.department && departmentOptions.includes(book.department as any) ? book.department : "Circulation") as Department,
                       genres: book.genre || book.category || "General",
                     }) || "CIR-13A.5";
+                    const rawScannedBy = (book.scannedBy || book.scanned_by || "").trim();
+                    const librariansList: string[] = (() => {
+                      if (Array.isArray(book.librarians) && book.librarians.length > 0) {
+                        return book.librarians.map((l: any) => String(l).trim()).filter(Boolean);
+                      }
+                      if (!rawScannedBy || rawScannedBy.toLowerCase().includes("mobile app") || rawScannedBy.toLowerCase().includes("scanner")) {
+                        return [user?.name || "Yana Brich R. Palmares"];
+                      }
+                      if (rawScannedBy.includes(",")) {
+                        return rawScannedBy.split(",").map((s: string) => s.trim()).filter(Boolean);
+                      }
+                      return [rawScannedBy];
+                    })();
 
                     return (
                       <tr
@@ -1630,6 +2144,36 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                         )}
                         onClick={() => handleOpenReviewModal(book)}
                       >
+                        {/* 0. Librarian Fullname(s) (Captured & submitted by) */}
+                        <td className="px-5 py-4 whitespace-nowrap">
+                          <div className="flex flex-col gap-2">
+                            {librariansList.map((libName, idx) => {
+                              const role = getLibrarianRole(libName);
+                              return (
+                                <div key={`lib-row-${book.id}-${idx}`} className="flex items-center gap-2.5">
+                                  <div className="sidebar-profile-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF300] text-xs font-black text-[#0274BB] shadow-sm">
+                                    {(libName || "L").charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className={cn(
+                                      "font-bold text-[13px] leading-snug line-clamp-1",
+                                      isLight ? "text-slate-800" : "text-white"
+                                    )}>
+                                      {libName}
+                                    </div>
+                                    <div className={cn(
+                                      "text-[10px] font-bold uppercase tracking-wider",
+                                      isLight ? "text-[#0274BB]" : "text-sky-200"
+                                    )}>
+                                      {role}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+
                         {/* 1. Book / Author (Exact Picture 2 & 3 placement with Cover Preview on left) */}
                         <td className="px-5 py-4 max-w-[330px]">
                           <div className="flex items-center gap-3.5">
@@ -1713,17 +2257,22 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                           </span>
                         </td>
 
-                        {/* 7. Action (Exact Picture 3 placement: Action buttons) */}
+                        {/* 7. Action */}
                         <td className="px-5 py-4 text-center">
                           <div className="flex items-center justify-center gap-2">
                             <button
                               type="button"
                               onClick={(e) => { e.stopPropagation(); handleOpenReviewModal(book); }}
-                              className="relative -left-2.5 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0274BB] text-white text-xs font-bold hover:brightness-110 active:scale-95 shadow-sm transition cursor-pointer"
+                              className={cn(
+                                "rounded-xl p-2 transition-all active:scale-95 inline-flex items-center justify-center cursor-pointer shadow-xs",
+                                isLight
+                                  ? "border border-sky-400/60 bg-[#0274BB] text-white hover:bg-[#02629e] hover:shadow-sky-500/20"
+                                  : "border border-sky-400/30 bg-[#0274BB] text-white hover:brightness-110 hover:shadow-sky-500/20"
+                              )}
                               title="Review & Complete Cataloging"
+                              aria-label="Review & Complete Cataloging"
                             >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              <span>Review & Catalog</span>
+                              <Pencil className="h-4 w-4" />
                             </button>
                             <button
                               type="button"
@@ -1750,7 +2299,7 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                   {/* Empty state when no books in queue */}
                   {filteredDigitizedBooks.length === 0 && (
                     <tr>
-                      <td colSpan={7} className={cn("py-20 text-center", isLight ? "text-slate-500" : "text-slate-400")}>
+                      <td colSpan={8} className={cn("py-20 text-center", isLight ? "text-slate-500" : "text-slate-400")}>
                         <div className={cn(
                           "mx-auto flex h-16 w-16 items-center justify-center rounded-2xl mb-4 transition-colors",
                           isLight ? "bg-amber-50 text-amber-600 border border-amber-200" : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
@@ -1960,18 +2509,56 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
 
               {/* Row 2: Author & ISBN */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <label className="grid gap-1.5">
-                  <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
-                    Author <span className="text-red-500">*</span>
-                  </span>
-                  <input
-                    required
-                    className="modal-input"
-                    value={reviewForm.author}
-                    onChange={(e) => handleReviewFieldChange("author", e.target.value)}
-                    placeholder="e.g. Betty"
-                  />
-                </label>
+                <div className="grid gap-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
+                      Author <span className="text-red-500">*</span>
+                    </span>
+                    {reviewAuthors.length > 1 && (
+                      <span className={cn("text-[10px] font-medium", isLight ? "text-slate-500" : "text-slate-400")}>
+                        {reviewAuthors.filter(Boolean).length} author{reviewAuthors.filter(Boolean).length > 1 ? "s" : ""}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-2">
+                    {reviewAuthors.map((authorName, index) => (
+                      <div key={`review-author-${index}`} className="relative flex items-center">
+                        <input
+                          required={index === 0}
+                          className="modal-input pr-9"
+                          value={authorName}
+                          onChange={(e) => handleReviewAuthorChange(index, e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              handleAddReviewAuthor();
+                            }
+                          }}
+                          placeholder={index === 0 ? "e.g. Robert C. Martin" : `Co-author ${index + 1}`}
+                        />
+                        {index === 0 ? (
+                          <button
+                            type="button"
+                            onClick={handleAddReviewAuthor}
+                            className="absolute right-2 p-1.5 rounded-lg text-[#FCD400] hover:bg-white/10 transition cursor-pointer"
+                            title="Add another author"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveReviewAuthor(index)}
+                            className="absolute right-2 p-1.5 rounded-lg text-rose-400 hover:bg-white/10 transition cursor-pointer"
+                            title="Remove author"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
                 <label className="grid gap-1.5">
                   <span className={cn("text-[11px] font-bold tracking-wide uppercase", isLight ? "text-slate-600" : "text-slate-400")}>
                     ISBN <span className="text-red-500">*</span>
@@ -2198,6 +2785,20 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                   Cancel
                 </button>
                 <button
+                  type="button"
+                  onClick={handleSaveDigitizedChanges}
+                  disabled={isSavingChanges || isApproving}
+                  className={cn(
+                    "px-4 py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer active:scale-95 shadow-xs disabled:opacity-60",
+                    isLight
+                      ? "border-sky-300 bg-sky-50 text-[#0274BB] hover:bg-sky-100"
+                      : "border-sky-500/40 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25"
+                  )}
+                  title="Save edited fields and assigned librarians to the digitized queue without publishing to catalog yet"
+                >
+                  {isSavingChanges ? "Saving..." : "Save Changes"}
+                </button>
+                <button
                   type="submit"
                   disabled={isApproving}
                   className={cn(
@@ -2219,6 +2820,127 @@ export function RecordsModule({ variant }: { variant?: "technical" | "circulatio
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cataloging Success / Confirmation Pop-Up Modal ─────────────────────────────── */}
+      {catalogSuccessModal?.open && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={() => setCatalogSuccessModal(null)}
+          />
+
+          {/* Modal Card */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "relative z-10 w-full max-w-md rounded-3xl border p-6 sm:p-8 text-center shadow-2xl animate-in zoom-in-95 duration-200",
+              isLight
+                ? "bg-white border-slate-200 text-slate-800 shadow-slate-400/30"
+                : "bg-[#0B1520] border-white/10 text-white shadow-black/80"
+            )}
+          >
+            {/* Close Button */}
+            <button
+              type="button"
+              onClick={() => setCatalogSuccessModal(null)}
+              className={cn(
+                "absolute right-4 top-4 rounded-xl p-2 transition cursor-pointer",
+                isLight ? "text-slate-400 hover:bg-slate-100 hover:text-slate-700" : "text-slate-400 hover:bg-white/10 hover:text-white"
+              )}
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* Icon */}
+            <div
+              className={cn(
+                "mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border shadow-sm",
+                catalogSuccessModal.type === "saved"
+                  ? isLight
+                    ? "bg-sky-50 border-sky-200 text-[#0274BB]"
+                    : "bg-sky-500/15 border-sky-500/30 text-sky-300"
+                  : isLight
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-600"
+                  : "bg-emerald-500/15 border-emerald-500/30 text-emerald-400"
+              )}
+            >
+              {catalogSuccessModal.type === "saved" ? (
+                <Check className="h-8 w-8 stroke-[2.5]" />
+              ) : (
+                <CheckCircle2 className="h-8 w-8 stroke-[2.5]" />
+              )}
+            </div>
+
+            {/* Sub-badge */}
+            <span
+              className={cn(
+                "inline-block rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wider mb-2 border",
+                catalogSuccessModal.type === "saved"
+                  ? isLight
+                    ? "bg-sky-100/80 border-sky-300 text-[#0274BB]"
+                    : "bg-sky-500/20 border-sky-500/30 text-sky-200"
+                  : isLight
+                  ? "bg-emerald-100/80 border-emerald-300 text-emerald-800"
+                  : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+              )}
+            >
+              {catalogSuccessModal.type === "saved" ? "Queue Record Updated" : "Official Catalog Publication"}
+            </span>
+
+            {/* Title */}
+            <h3 className="text-xl font-black tracking-tight mb-2">
+              {catalogSuccessModal.title}
+            </h3>
+
+            {/* Message */}
+            <p className={cn("text-xs sm:text-sm leading-relaxed mb-6 font-medium", isLight ? "text-slate-600" : "text-slate-300")}>
+              {catalogSuccessModal.type === "saved" ? (
+                <span>{catalogSuccessModal.message}</span>
+              ) : (
+                <>
+                  <span className="font-bold underline decoration-emerald-500/60 decoration-2">
+                    {catalogSuccessModal.bookTitle}
+                  </span>{" "}
+                  is now officially published to the library catalog and accessible to all students and faculty.
+                </>
+              )}
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-2.5">
+              {catalogSuccessModal.type === "success" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatalogSuccessModal(null);
+                    setActiveTab("records");
+                  }}
+                  className={cn(
+                    "flex-1 py-3 px-4 rounded-xl border text-xs font-bold transition cursor-pointer active:scale-95 shadow-2xs",
+                    isLight
+                      ? "border-slate-300 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                      : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
+                  )}
+                >
+                  View in Records
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setCatalogSuccessModal(null)}
+                className={cn(
+                  "flex-1 py-3 px-4 rounded-xl text-xs font-bold shadow-md active:scale-95 transition cursor-pointer",
+                  "bg-[#0274BB] hover:bg-[#025a91] text-white"
+                )}
+              >
+                {catalogSuccessModal.type === "success" ? "Done" : "Continue"}
+              </button>
+            </div>
           </div>
         </div>
       )}

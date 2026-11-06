@@ -1,5 +1,5 @@
-import { AnnouncementsModule } from "@/components/modules/announcements-module";
+import { LazyAnnouncementsModule } from "@/components/lazy-modules";
 
 export default function AdminAnnouncementsPage() {
-  return <AnnouncementsModule variant="admin" />;
+  return <LazyAnnouncementsModule variant="admin" />;
 }

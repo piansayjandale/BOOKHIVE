@@ -29,6 +29,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 
 import { AdminPageHeader } from "@/components/admin/shared";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 import { useTheme } from "@/components/providers/theme-provider";
 import { requestJson } from "@/lib/admin/client";
 import type { AdminBookRecord, AdminBooksPayload } from "@/lib/admin/types";
@@ -133,7 +134,7 @@ export function CatalogPage() {
   const { theme } = useTheme();
   const isLight = theme === "light";
 
-  const { vitals, refresh: refreshVitals } = useSuperAdminVitals({ pollingIntervalMs: 3000 });
+  const { vitals } = useSuperAdminVitals({ pollingIntervalMs: 20000 });
 
   const [payload, setPayload] = useState<AdminBooksPayload | null>(null);
   const [search, setSearch] = useState("");
@@ -151,7 +152,6 @@ export function CatalogPage() {
 
   const loadBooks = useCallback(async () => {
     setRefreshing(true);
-    void refreshVitals();
     try {
       const statusParam = status === "All" ? "Active" : status;
       const nextPayload = await requestJson<AdminBooksPayload>(
@@ -163,7 +163,7 @@ export function CatalogPage() {
     } finally {
       setRefreshing(false);
     }
-  }, [deferredSearch, department, page, pageSize, status, refreshVitals]);
+  }, [deferredSearch, department, page, pageSize, status]);
 
   useEffect(() => {
     void loadBooks();
@@ -603,7 +603,9 @@ export function CatalogPage() {
         </div>
 
         {/* ── Content View ────────────────────────────────────────── */}
-        {filteredBooks.length === 0 ? (
+        {!payload ? (
+          <PageCircleLoader />
+        ) : filteredBooks.length === 0 ? (
           /* Empty State */
           <div
             className={cn(

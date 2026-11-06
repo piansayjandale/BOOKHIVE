@@ -90,12 +90,14 @@
 
 .login-form input {
   width: 100%;
-  border: none;
-  border-bottom: 1px solid #cccccc;
-  padding: 8px 0;
-  background: transparent;
+  border: 1.5px solid #000000;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #ffffff;
   font-size: 14px;
-  color: #333333;
+  color: #000000;
+  outline: none;
+  box-sizing: border-box;
 }
 
 .login-form input::placeholder {

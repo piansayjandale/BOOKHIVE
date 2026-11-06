@@ -25,17 +25,19 @@ import {
   Search,
   SlidersHorizontal,
   X,
+  ZoomIn,
 } from "lucide-react";
 
 import dashboardSocket from "@/lib/socket";
 import { useNotice } from "@/components/providers/notice-provider";
 import { useTheme } from "@/components/providers/theme-provider";
+import { useSession } from "@/components/providers/session-provider";
 import type {
   TransactionRecord,
   TransactionStatus,
   TransactionType,
 } from "@/lib/types";
-import { formatDateTime, formatDate, getTodayString, cn, formatCourseShortcut, isDueToReturn, isDateOverdue } from "@/lib/utils";
+import { formatDateTime, formatDate, getTodayString, cn, formatCourseShortcut, isDueToReturn, isDateOverdue, parseDateOnly } from "@/lib/utils";
 import { StudentLibraryCardModal } from "@/components/modals/student-library-card-modal";
 import { BookDetailModal, type BookDetailPayload } from "@/components/ui/book-detail-modal";
 import { BookCoverImage } from "@/components/ui/book-cover-image";
@@ -64,7 +66,6 @@ const FILTER_OPTIONS: FilterOption[] = [
   { value: "Pending",      label: "Pending",      dotColor: "bg-amber-500" },
   { value: "Approved",     label: "Approved",     dotColor: "bg-emerald-500" },
   { value: "Due",          label: "Due to Return",dotColor: "bg-red-500" },
-  { value: "Declined",     label: "Declined",     dotColor: "bg-rose-500" },
   { value: "Returned",     label: "Returned",     dotColor: "bg-sky-500" },
   { value: "Reservations", label: "Reservations", dotColor: "bg-purple-500" },
   { value: "Cancelled",    label: "Cancelled",    dotColor: "bg-rose-600" },
@@ -290,7 +291,7 @@ export const isActiveReservation = (t: TransactionRecord): boolean => {
 };
 
 export const isCancelledRecord = (t: TransactionRecord): boolean => {
-  return t.status === "Cancelled";
+  return t.status === "Cancelled" || t.status === "Declined";
 };
 
 /* ── Custom Status Filter Dropdown ───────────────────────────────────────── */
@@ -491,6 +492,85 @@ export function TransactionsModule() {
   const { notify } = useNotice();
   const { theme } = useTheme();
   const isLight = theme === "light";
+  const { user, refreshUser } = useSession();
+
+  // Revalidate fresh user permissions from database on mount
+  useEffect(() => {
+    void refreshUser();
+  }, [refreshUser]);
+
+  const canTransactionDropdown =
+    user?.role?.toUpperCase().includes("ADMIN") ||
+    ((user?.permissions as any)?.transactionDropdown !== false &&
+     (user?.permissions as any)?.catalogDropdown !== false &&
+     (user?.permissions as any)?.dropdown !== false);
+
+  // Librarian Approval Stats & Dropdown State
+  const [librarianApprovalStats, setLibrarianApprovalStats] = useState<
+    Array<{ id: string; name: string; subRole?: string; approvedCount: number; todayApprovedCount: number }>
+  >([]);
+  const [personalApprovalCount, setPersonalApprovalCount] = useState<number>(0);
+  const [personalTodayApprovalCount, setPersonalTodayApprovalCount] = useState<number>(0);
+  const [isApprovalDropdownOpen, setIsApprovalDropdownOpen] = useState(false);
+  const [approvalStatTimeframe, setApprovalStatTimeframe] = useState<"all" | "today">("today");
+  const approvalDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const fetchLibrarianApprovalStats = useCallback(async () => {
+    try {
+      const res = await fetch("/api/transactions/daily-count");
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data.librarians)) {
+          setLibrarianApprovalStats(data.librarians);
+          const myStat = user?.name
+            ? data.librarians.find(
+                (l: any) =>
+                  (user.id && l.id === user.id) ||
+                  (l.name && user.name && l.name.toLowerCase().includes(user.name.toLowerCase())) ||
+                  (user.name && l.name && user.name.toLowerCase().includes(l.name.toLowerCase()))
+              )
+            : null;
+
+          if (myStat) {
+            setPersonalTodayApprovalCount(myStat.todayApprovedCount || 0);
+            setPersonalApprovalCount(myStat.approvedCount || 0);
+          } else {
+            setPersonalTodayApprovalCount(data.personalTodayCount ?? data.count ?? 0);
+            setPersonalApprovalCount(data.personalTotalCount ?? 0);
+          }
+        }
+      }
+    } catch {
+      // resilience fallback
+    }
+  }, [user?.id, user?.name]);
+
+  useEffect(() => {
+    void fetchLibrarianApprovalStats();
+  }, [fetchLibrarianApprovalStats]);
+
+  useEffect(() => {
+    if (!isApprovalDropdownOpen) return;
+
+    const handleClickOutside = (e: MouseEvent) => {
+      if (approvalDropdownRef.current && !approvalDropdownRef.current.contains(e.target as Node)) {
+        setIsApprovalDropdownOpen(false);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setIsApprovalDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isApprovalDropdownOpen]);
 
   // 1. Master persistent state for all transactions (Single Source of Truth)
   const [allTransactions, setAllTransactions] = useState<TransactionRecord[]>([]);
@@ -499,13 +579,86 @@ export function TransactionsModule() {
   // 2. Local table filtering & sorting state (Primary Status & Category Filter)
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("All");
-  const [selectedDate, setSelectedDate] = useState<string>(() => getTodayString());
+  const [selectedDate, setSelectedDate] = useState<string>("");
   const [isDateFilterActive, setIsDateFilterActive] = useState<boolean>(false);
   const [sortBy, setSortBy] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   const deferredSearch = useDeferredValue(search);
+
+  // Exclusive Circulation Librarian Privileges Check
+  const isCirculationLibrarian = useMemo(() => {
+    if (!user) return false;
+    const role = (user.role || "").toLowerCase();
+    const subRole = (user.subRole || "").toLowerCase();
+    const name = (user.name || "").toLowerCase();
+
+    // Circulation Librarian or Administrator with full privileges
+    if (role.includes("admin")) return true;
+    if (subRole.includes("circulation") || role.includes("circulation")) return true;
+    if (name.includes("jan dale")) return true;
+    return false;
+  }, [user]);
+
+  // Circulation toggle: "all" vs "distributed" (exclusive to Circulation Librarian)
+  const [circulationToggle, setCirculationToggle] = useState<"all" | "distributed">("all");
+
+  // Non-circulation librarians are strictly restricted to distributed transactions
+  const effectiveScope: "all" | "distributed" = isCirculationLibrarian ? circulationToggle : "distributed";
+
+  // Helper: check if a transaction was distributed to or handled by the target librarian
+  const isDistributedToUser = useCallback((txn: TransactionRecord, targetUser: any) => {
+    if (!targetUser) return false;
+    const targetId = String(targetUser.id || "");
+    const targetName = (targetUser.name || "").trim().toLowerCase();
+
+    const assignedId = txn.assignedTo ? String(txn.assignedTo) : "";
+    const assignedName = (txn.assignedLibrarianName || "").trim().toLowerCase();
+    const decidedId = (txn as any).decidedBy ? String((txn as any).decidedBy) : "";
+    const approvedName = (txn.approvedByName || "").trim().toLowerCase();
+
+    const matchesId = Boolean(targetId && (assignedId === targetId || decidedId === targetId));
+    const matchesName = Boolean(
+      targetName &&
+      (
+        assignedName === targetName ||
+        approvedName === targetName ||
+        (assignedName && targetName.includes(assignedName)) ||
+        (assignedName && assignedName.includes(targetName)) ||
+        (approvedName && targetName.includes(approvedName)) ||
+        (approvedName && approvedName.includes(targetName))
+      )
+    );
+
+    return matchesId || matchesName;
+  }, []);
+
+  // Compute transactions distributed to the current librarian
+  const distributedTransactionsCount = useMemo(() => {
+    if (!user) return 0;
+    const rawList = Array.isArray(allTransactions) ? allTransactions : [];
+    return rawList.filter((t) => isDistributedToUser(t, user)).length;
+  }, [allTransactions, user, isDistributedToUser]);
+
+  // Scoped transaction set based on role and active toggle
+  const scopedTransactions = useMemo(() => {
+    const rawList = Array.isArray(allTransactions) ? allTransactions : [];
+    const seen = new Set<string>();
+    const list: TransactionRecord[] = [];
+    for (const t of rawList) {
+      if (t.id && !seen.has(t.id)) {
+        seen.add(t.id);
+        list.push(t);
+      }
+    }
+
+    if (effectiveScope === "distributed") {
+      return list.filter((t) => isDistributedToUser(t, user));
+    }
+
+    return list;
+  }, [allTransactions, effectiveScope, user, isDistributedToUser]);
 
   // 3. Interactive Student Library Card Modal State
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<{
@@ -526,6 +679,39 @@ export function TransactionsModule() {
     transaction: TransactionRecord;
   } | null>(null);
   const [declineComment, setDeclineComment] = useState("");
+  const [enlargedModalImage, setEnlargedModalImage] = useState<string | null>(null);
+
+  // Auto-fetch full student ID image on-demand if missing from transaction summary
+  useEffect(() => {
+    if (!confirmModalData?.transaction) return;
+    const tx = confirmModalData.transaction;
+    const existingImg = tx.studentIdImage || (tx as any).student_id_image;
+    if (!existingImg) {
+      let isMounted = true;
+      fetch(`/api/transactions/${tx.id}`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (!isMounted || !data?.transaction) return;
+          const fullImg = data.transaction.studentIdImage || data.transaction.student_id_image;
+          if (fullImg) {
+            setConfirmModalData((prev) => {
+              if (!prev || prev.transaction.id !== tx.id) return prev;
+              return {
+                ...prev,
+                transaction: {
+                  ...prev.transaction,
+                  studentIdImage: fullImg,
+                },
+              };
+            });
+          }
+        })
+        .catch(() => {});
+      return () => {
+        isMounted = false;
+      };
+    }
+  }, [confirmModalData?.transaction?.id]);
 
   const handleOpenBookModal = async (txn: TransactionRecord) => {
     // 1. Initial immediate payload so modal opens with zero delay
@@ -592,7 +778,7 @@ export function TransactionsModule() {
 
   // Ensure selected date is automatically set to today on mount, with filter inactive so all transactions show initially
   useEffect(() => {
-    setSelectedDate(getTodayString());
+    setSelectedDate("");
     setIsDateFilterActive(false);
   }, []);
 
@@ -628,6 +814,7 @@ export function TransactionsModule() {
   const reloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadAllTransactions = useCallback(async () => {
+    void fetchLibrarianApprovalStats();
     try {
       // Always request the comprehensive list (status=All) to maintain global counters
       const res = await fetch("/api/transactions?status=All&type=All");
@@ -774,7 +961,7 @@ export function TransactionsModule() {
       console.warn("Failed to fetch transactions:", err);
       return false;
     }
-  }, []);
+  }, [fetchLibrarianApprovalStats]);
 
   const scheduleReloadTransactions = useCallback((delay = 400) => {
     if (reloadTimeoutRef.current) {
@@ -787,18 +974,10 @@ export function TransactionsModule() {
 
   /* ── Global Decoupled Summary Metrics (5 Metric Cards) ────────────────── */
 
-  // These counters are derived strictly from the master allTransactions array.
+  // These counters are derived from the active scopedTransactions (All for circulation librarian, Distributed for others).
   // They are completely decoupled from local search/status filters and maintain strict boundary isolation.
   const globalCounts = useMemo(() => {
-    const rawList = Array.isArray(allTransactions) ? allTransactions : [];
-    const seen = new Set<string>();
-    const list: TransactionRecord[] = [];
-    for (const t of rawList) {
-      if (t.id && !seen.has(t.id)) {
-        seen.add(t.id);
-        list.push(t);
-      }
-    }
+    const list = scopedTransactions;
     return {
       pending:      list.filter((t) => t.status === "Pending").length,
       approved:     list.filter((t) => t.status === "Approved").length,
@@ -808,22 +987,13 @@ export function TransactionsModule() {
       cancelled:    list.filter(isCancelledRecord).length,
       total:        list.length,
     };
-  }, [allTransactions]);
+  }, [scopedTransactions]);
 
   /* ── Derived Filtered Table Dataset (Strict Boundary Isolation) ──────── */
 
   // Local table view is computed dynamically in-memory with strict queue segregation.
   const filteredTransactions = useMemo(() => {
-    const rawList = Array.isArray(allTransactions) ? allTransactions : [];
-    const seen = new Set<string>();
-    const list: TransactionRecord[] = [];
-    for (const t of rawList) {
-      if (t.id && !seen.has(t.id)) {
-        seen.add(t.id);
-        list.push(t);
-      }
-    }
-    let result = list;
+    let result = scopedTransactions;
 
     // 1. Strict Status & Type Boundary Filtering
     switch (status) {
@@ -861,7 +1031,7 @@ export function TransactionsModule() {
         break;
       case "All":
       default:
-        result = list;
+        result = scopedTransactions;
         break;
     }
 
@@ -879,17 +1049,28 @@ export function TransactionsModule() {
       );
     }
 
-    // 3. Date Filter (only active when user has explicitly selected/changed the date)
-    if (isDateFilterActive && selectedDate) {
-      const startOfDay = new Date(`${selectedDate}T00:00:00`).getTime();
-      const endOfDay = new Date(`${selectedDate}T23:59:59.999`).getTime();
-      result = result.filter((t) => {
-        const rawDate = t.requestedAt || (t as any).createdAt;
-        if (!rawDate) return false;
-        const time = new Date(rawDate).getTime();
-        if (Number.isNaN(time)) return false;
-        return time >= startOfDay && time <= endOfDay;
-      });
+        // 3. Date Filter: If a date is picked, show all transactions created or requested on that specific date
+    if (selectedDate) {
+      const selParsed = parseDateOnly(selectedDate);
+      if (selParsed) {
+        result = result.filter((t) => {
+          const candidateDates = [
+            t.requestedAt,
+            (t as any).createdAt,
+            (t as any).requested_at,
+            (t as any).created_at,
+            (t as any).borrowDate,
+            (t as any).borrow_date,
+            (t as any).date,
+          ];
+          return candidateDates.some((c) => {
+            if (!c) return false;
+            const p = parseDateOnly(c);
+            if (!p) return false;
+            return p.year === selParsed.year && p.month === selParsed.month && p.day === selParsed.day;
+          });
+        });
+      }
     }
 
     // 4. Sorting
@@ -911,7 +1092,7 @@ export function TransactionsModule() {
     }
 
     return result;
-  }, [allTransactions, status, deferredSearch, isDateFilterActive, selectedDate, sortBy, sortDir]);
+  }, [scopedTransactions, status, deferredSearch, isDateFilterActive, selectedDate, sortBy, sortDir]);
 
   /* ── Real-Time Synchronization & Polling Lifecycle ────────────────────── */
 
@@ -947,10 +1128,13 @@ export function TransactionsModule() {
         const title = data.resourceTitle || data.title || "Book";
         const student = data.studentName || "A student";
 
-        notify(
-          `${student} submitted a ${isReservation ? "reservation hold" : "borrow request"} for "${title}".`,
-          "info"
-        );
+        const isDistributedToMe = isDistributedToUser(data as any, user);
+        if (isCirculationLibrarian || isDistributedToMe) {
+          notify(
+            `${student} submitted a ${isReservation ? "reservation hold" : "borrow request"} for "${title}".`,
+            "info"
+          );
+        }
 
         // Optimistically ingest or update new incoming item in master dataset
         setAllTransactions((prev) => {
@@ -1083,10 +1267,13 @@ export function TransactionsModule() {
           );
         }
 
-        notify(
-          `Item "${data.resourceTitle || data.title || "Book"}" marked as Returned in real-time.`,
-          "success"
-        );
+        const isDistributedToMe = isDistributedToUser(data as any, user);
+        if (isCirculationLibrarian || isDistributedToMe) {
+          notify(
+            `Item "${data.resourceTitle || data.title || "Book"}" marked as Returned in real-time.`,
+            "success"
+          );
+        }
 
         scheduleReloadTransactions(600);
       }
@@ -1130,6 +1317,22 @@ export function TransactionsModule() {
       }
       scheduleReloadTransactions(300);
     });
+
+    const unsubscribeUserMutation = dashboardSocket.subscribeToUserMutation(() => {
+      scheduleReloadTransactions(100);
+      fetchLibrarianApprovalStats();
+    });
+
+    const handlePermissionsUpdated = () => {
+      scheduleReloadTransactions(100);
+      fetchLibrarianApprovalStats();
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("permissions:updated", handlePermissionsUpdated);
+      window.addEventListener("transaction:updated", handlePermissionsUpdated);
+      window.addEventListener("user:updated", handlePermissionsUpdated);
+    }
 
     // 2. Optimized Polling with Page Visibility API & Exponential Backoff
     let timeoutId: any = null;
@@ -1184,10 +1387,16 @@ export function TransactionsModule() {
       if (typeof document !== "undefined") {
         document.removeEventListener("visibilitychange", handleVisibilityChange);
       }
+      if (typeof window !== "undefined") {
+        window.removeEventListener("permissions:updated", handlePermissionsUpdated);
+        window.removeEventListener("transaction:updated", handlePermissionsUpdated);
+        window.removeEventListener("user:updated", handlePermissionsUpdated);
+      }
       unsubscribeBorrow();
       unsubscribeReturn();
       unsubscribeCancel();
       unsubscribeNotification();
+      unsubscribeUserMutation();
     };
   }, [loadAllTransactions]);
 
@@ -1280,6 +1489,9 @@ export function TransactionsModule() {
             isbn: targetTxn?.isbn,
             studentId: targetTxn?.studentId,
             studentName: targetTxn?.studentName,
+            approverId: user?.id,
+            approverName: user?.name || "Jan Dale B. Piansay",
+            approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
           }),
         });
 
@@ -1307,6 +1519,9 @@ export function TransactionsModule() {
                   isbn: matched.isbn,
                   studentId: matched.studentId,
                   studentName: matched.studentName,
+                  approverId: user?.id,
+                  approverName: user?.name || "Jan Dale B. Piansay",
+                  approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
                 }),
               });
             }
@@ -1450,6 +1665,8 @@ export function TransactionsModule() {
             expiresAt: nextStatus === "Approved" && t.type !== "Reservation" ? (t.expiresAt || expiresAt) : t.expiresAt,
             pickedUpAt: nextStatus === "Approved" ? (t.pickedUpAt ?? null) : t.pickedUpAt,
             isPickedUp: nextStatus === "Approved" ? Boolean(t.isPickedUp) : t.isPickedUp,
+            approvedByName: user?.name || t.approvedByName || "Librarian",
+            approvedByRole: (user as any)?.subRole || user?.role || t.approvedByRole || "Librarian",
             comment: comment || t.comment,
             updatedAt: now,
           } : t))
@@ -1487,6 +1704,9 @@ export function TransactionsModule() {
             studentId: targetTxn?.studentId,
             studentName: targetTxn?.studentName,
             type: targetTxn?.type,
+            approverId: user?.id,
+            approverName: user?.name || "Jan Dale B. Piansay",
+            approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
           }),
         });
 
@@ -1517,6 +1737,9 @@ export function TransactionsModule() {
                   studentId: matched.studentId,
                   studentName: matched.studentName,
                   type: matched.type,
+                  approverId: user?.id,
+                  approverName: user?.name || "Jan Dale B. Piansay",
+                  approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
                 }),
               });
             }
@@ -1570,7 +1793,7 @@ export function TransactionsModule() {
         });
 
         try {
-          dashboardSocket.emit("transaction:decided", {
+          dashboardSocket.publishTransactionDecided({
             id: serverTx?.id || id,
             status: nextStatus,
             comment: serverTx?.comment || comment,
@@ -1578,7 +1801,8 @@ export function TransactionsModule() {
             isbn: targetTxn?.isbn,
             studentId: targetTxn?.studentId,
             studentName: targetTxn?.studentName,
-            type: targetTxn?.type,
+            type: targetTxn?.type || (nextStatus === "Approved" ? "Borrow" : undefined),
+            dueDate: serverTx?.dueDate || (nextStatus === "Approved" ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() : undefined),
           });
         } catch (sockErr) {
           console.warn("Failed to emit socket transaction:decided:", sockErr);
@@ -1665,6 +1889,9 @@ export function TransactionsModule() {
             isbn: targetTxn?.isbn,
             studentId: targetTxn?.studentId,
             studentName: targetTxn?.studentName,
+            approverId: user?.id,
+            approverName: user?.name || "Jan Dale B. Piansay",
+            approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
           }),
         });
 
@@ -1692,6 +1919,9 @@ export function TransactionsModule() {
                   isbn: matched.isbn,
                   studentId: matched.studentId,
                   studentName: matched.studentName,
+                  approverId: user?.id,
+                  approverName: user?.name || "Jan Dale B. Piansay",
+                  approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
                 }),
               });
             }
@@ -1736,6 +1966,21 @@ export function TransactionsModule() {
               )
             );
           });
+        }
+
+        try {
+          dashboardSocket.publishTransactionDecided({
+            id: serverTx?.id || id,
+            status: "Approved",
+            type: "Borrow",
+            resourceTitle,
+            isbn: targetTxn?.isbn,
+            studentId: targetTxn?.studentId,
+            studentName: targetTxn?.studentName,
+            dueDate,
+          });
+        } catch (sockErr) {
+          console.warn("Failed to emit socket transaction:decided on convert:", sockErr);
         }
       } catch (err) {
         console.error("Failed to convert reservation to borrow, rolling back:", err);
@@ -1810,6 +2055,9 @@ export function TransactionsModule() {
             isbn: targetTxn?.isbn,
             studentId: targetTxn?.studentId,
             studentName: targetTxn?.studentName,
+            approverId: user?.id,
+            approverName: user?.name || "Jan Dale B. Piansay",
+            approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
           }),
         });
 
@@ -1838,6 +2086,9 @@ export function TransactionsModule() {
                   isbn: matched.isbn,
                   studentId: matched.studentId,
                   studentName: matched.studentName,
+                  approverId: user?.id,
+                  approverName: user?.name || "Jan Dale B. Piansay",
+                  approverRole: (user as any)?.subRole || (user as any)?.role || "Circulation Librarian",
                 }),
               });
             }
@@ -1918,22 +2169,277 @@ export function TransactionsModule() {
             Track borrows, returns, and reservations — approve or decline in real time.
           </p>
         </div>
-        <button
-          suppressHydrationWarning
-          type="button"
-          onClick={() => {
-            void loadAllTransactions();
-          }}
-          className={cn(
-            "flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition shadow-sm active:scale-95 cursor-pointer",
-            isLight
-              ? "bg-[#FFF300] text-[#0274BB] border border-[#ebd000] hover:bg-[#ebd000]"
-              : "bg-[#FCD400] text-[#0b1c2c] shadow-[#FCD400]/20 hover:brightness-110"
-          )}
-        >
-          <RotateCcw className="h-4 w-4" />
-          Refresh
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Number counter before the refresh button with Dropdown */}
+          <div className="relative" ref={approvalDropdownRef}>
+            <div
+              onClick={() => {
+                if (canTransactionDropdown) {
+                  setIsApprovalDropdownOpen((prev) => !prev);
+                  void fetchLibrarianApprovalStats();
+                }
+              }}
+              role={canTransactionDropdown ? "button" : undefined}
+              aria-haspopup={canTransactionDropdown ? "true" : undefined}
+              aria-expanded={canTransactionDropdown ? isApprovalDropdownOpen : undefined}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 sm:py-2.5 rounded-xl border text-xs font-bold shadow-2xs transition-all select-none",
+                canTransactionDropdown ? "cursor-pointer" : "cursor-default",
+                isLight
+                  ? canTransactionDropdown
+                    ? "bg-emerald-50/90 border-emerald-300 text-emerald-800 hover:bg-emerald-100/90 hover:border-emerald-400"
+                    : "bg-emerald-50/80 border-emerald-200 text-emerald-800"
+                  : canTransactionDropdown
+                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300 hover:bg-emerald-500/20 hover:border-emerald-500/40"
+                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+              )}
+              title={
+                canTransactionDropdown
+                  ? `Click to view approvals by librarians. Your approvals: ${personalTodayApprovalCount} today (${personalApprovalCount} all-time)`
+                  : `Your approvals: ${personalTodayApprovalCount} today (${personalApprovalCount} all-time)`
+              }
+            >
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="text-sm font-black text-emerald-700 dark:text-emerald-300">
+                {approvalStatTimeframe === "today" ? personalTodayApprovalCount : personalApprovalCount}
+              </span>
+              <span className="hidden sm:inline font-bold">
+                {approvalStatTimeframe === "today"
+                  ? (personalTodayApprovalCount === 1 ? "Approved Today" : "Approved Today")
+                  : (personalApprovalCount === 1 ? "Approved Total" : "Approved Total")}
+              </span>
+              <span className="sm:hidden font-bold">
+                {approvalStatTimeframe === "today" ? "Today" : "Total"}
+              </span>
+
+              {/* Extended Dropdown Indicator: only shown if dropdown restriction is lifted */}
+              {canTransactionDropdown && (
+                <>
+                  <span
+                    className={cn(
+                      "h-3.5 w-[1px] ml-0.5 shrink-0",
+                      isLight ? "bg-emerald-300/80" : "bg-emerald-500/30"
+                    )}
+                  />
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
+                      isLight ? "text-emerald-700" : "text-emerald-300",
+                      isApprovalDropdownOpen && "rotate-180"
+                    )}
+                  />
+                </>
+              )}
+            </div>
+
+            {/* Dropdown Menu specifically for Librarian Approval Stats - only if permission granted */}
+            {canTransactionDropdown && isApprovalDropdownOpen && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={cn(
+                  "absolute right-0 top-full mt-2 w-84 sm:w-96 rounded-2xl border shadow-2xl p-4 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl",
+                  isLight
+                    ? "bg-white/98 border-slate-200 shadow-slate-300/60 text-slate-800"
+                    : "bg-[#0b1626]/98 border-white/10 shadow-black/90 text-white"
+                )}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-inherit">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={cn(
+                        "flex h-7 w-7 items-center justify-center rounded-lg border shadow-2xs",
+                        isLight
+                          ? "bg-emerald-100/90 border-emerald-300 text-emerald-800"
+                          : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                      )}
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black uppercase tracking-wider leading-none">
+                        Approved by Librarian
+                      </h4>
+                      <p
+                        className={cn(
+                          "text-[10px] mt-1 font-semibold leading-none",
+                          isLight ? "text-slate-500" : "text-slate-400"
+                        )}
+                      >
+                        {librarianApprovalStats.length}{" "}
+                        {librarianApprovalStats.length === 1
+                          ? "librarian with active access"
+                          : "librarians with active access"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Filter Toggle: All Time vs Today */}
+                  <div
+                    className={cn(
+                      "flex items-center rounded-xl p-0.5 border shadow-2xs",
+                      isLight
+                        ? "bg-slate-100 border-slate-200/90"
+                        : "bg-white/5 border-white/10"
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setApprovalStatTimeframe("all")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider transition-all cursor-pointer select-none",
+                        approvalStatTimeframe === "all"
+                          ? isLight
+                            ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                            : "bg-[#0274BB] text-white shadow-xs"
+                          : isLight
+                          ? "text-slate-500 hover:text-slate-800"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      ALL TIME
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setApprovalStatTimeframe("today")}
+                      className={cn(
+                        "px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wider transition-all cursor-pointer select-none",
+                        approvalStatTimeframe === "today"
+                          ? isLight
+                            ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                            : "bg-emerald-600 text-white shadow-xs"
+                          : isLight
+                          ? "text-slate-500 hover:text-slate-800"
+                          : "text-slate-400 hover:text-white"
+                      )}
+                    >
+                      TODAY
+                    </button>
+                  </div>
+                </div>
+
+                {/* Librarian List */}
+                <div className="mt-3 space-y-1.5 max-h-72 overflow-y-auto pr-0.5 custom-scrollbar">
+                  {librarianApprovalStats.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-slate-400">
+                      No librarian accounts found.
+                    </div>
+                  ) : (
+                    librarianApprovalStats.map((lib) => {
+                      const count =
+                        approvalStatTimeframe === "today" ? lib.todayApprovedCount : lib.approvedCount;
+                      const initial = (lib.name || "L").charAt(0).toUpperCase();
+
+                      return (
+                        <div
+                          key={lib.id || lib.name}
+                          className={cn(
+                            "flex items-center justify-between p-2 rounded-xl border transition-all",
+                            isLight
+                              ? "bg-slate-50/70 border-slate-200/70 hover:bg-slate-100/80 hover:border-slate-300"
+                              : "bg-white/[0.02] border-white/5 hover:bg-white/[0.05] hover:border-white/10"
+                          )}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            {/* Avatar icon matching BookHive standard */}
+                            <div className="sidebar-profile-avatar flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#FFF300] text-xs font-black text-[#0274BB] shadow-xs">
+                              {initial}
+                            </div>
+                            <div className="min-w-0">
+                              <p
+                                className={cn(
+                                  "text-xs font-bold truncate leading-tight",
+                                  isLight ? "text-slate-900" : "text-white"
+                                )}
+                                title={lib.name}
+                              >
+                                {lib.name}
+                              </p>
+                              <p
+                                className={cn(
+                                  "text-[10px] truncate leading-tight mt-0.5",
+                                  isLight ? "text-sky-700 font-semibold" : "text-sky-300 font-medium"
+                                )}
+                              >
+                                {lib.subRole || "Librarian"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Number Counter Badge Beside Name */}
+                          <div className="flex flex-col items-end shrink-0 pl-1">
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black border tabular-nums shadow-2xs",
+                                count > 0
+                                  ? isLight
+                                    ? "bg-emerald-100 border-emerald-300 text-emerald-800"
+                                    : "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
+                                  : isLight
+                                  ? "bg-slate-100 border-slate-200 text-slate-500"
+                                  : "bg-white/5 border-white/10 text-slate-400"
+                              )}
+                              title={`${count} approvals ${approvalStatTimeframe === "today" ? "today" : "in total"}`}
+                            >
+                              <CheckCircle2 className="h-3 w-3 shrink-0 opacity-80" />
+                              <span>{count}</span>
+                            </span>
+                            <span
+                              className={cn(
+                                "text-[9px] mt-0.5 font-medium",
+                                isLight ? "text-slate-400" : "text-slate-500"
+                              )}
+                            >
+                              {approvalStatTimeframe === "today"
+                                ? `${lib.approvedCount} total`
+                                : lib.todayApprovedCount > 0
+                                ? `+${lib.todayApprovedCount} today`
+                                : "approvals"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Footer Note */}
+                <div
+                  className={cn(
+                    "mt-3 pt-2.5 border-t border-inherit flex items-center justify-between text-[10px] font-medium",
+                    isLight ? "text-slate-400" : "text-slate-500"
+                  )}
+                >
+                  <span>Librarian Approvals Overview</span>
+                  <span>All Active Librarians</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <button
+            suppressHydrationWarning
+            type="button"
+            onClick={() => {
+              void refreshUser();
+              void loadAllTransactions();
+              void fetchLibrarianApprovalStats();
+            }}
+            className={cn(
+              "flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold transition shadow-sm active:scale-95 cursor-pointer",
+              isLight
+                ? "bg-[#FFF300] text-[#0274BB] border border-[#ebd000] hover:bg-[#ebd000]"
+                : "bg-[#FCD400] text-[#0b1c2c] shadow-[#FCD400]/20 hover:brightness-110"
+            )}
+          >
+            <RotateCcw className="h-4 w-4" />
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* ── Global Decoupled Summary Metric Cards (5 Responsive Cards) ── */}
@@ -1954,11 +2460,11 @@ export function TransactionsModule() {
             filterKey: "Approved",
           },
           {
-            label: "Declined",
-            value: globalCounts.declined,
+            label: "Cancelled",
+            value: globalCounts.cancelled,
             color: "#EF4444",
             icon: X,
-            filterKey: "Declined",
+            filterKey: "Cancelled",
           },
           {
             label: "Returned",
@@ -2069,18 +2575,13 @@ export function TransactionsModule() {
             />
             <input
               type="date"
-              value={selectedDate || getTodayString()}
+              value={selectedDate}
               onChange={(e) => {
-                const val = e.target.value;
-                if (val) {
-                  setSelectedDate(val);
-                  setIsDateFilterActive(true);
-                } else {
-                  setIsDateFilterActive(false);
-                  setSelectedDate(getTodayString());
-                }
+                const val = e.target.value || "";
+                setSelectedDate(val);
+                setIsDateFilterActive(Boolean(val));
               }}
-              title={isDateFilterActive ? `Filtered by ${selectedDate}` : "Filter transactions by date"}
+              title={selectedDate ? `Filtered by ${selectedDate}` : "Filter transactions by date"}
               className={cn(
                 "date-selector-input w-full rounded-xl py-2.5 pl-10 pr-9 text-xs sm:text-sm font-bold transition-all focus:outline-none cursor-pointer bg-transparent",
                 isLight
@@ -2088,13 +2589,13 @@ export function TransactionsModule() {
                   : "[color-scheme:dark] text-white"
               )}
             />
-            {isDateFilterActive && (
+            {Boolean(selectedDate) && (
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
+                  setSelectedDate("");
                   setIsDateFilterActive(false);
-                  setSelectedDate(getTodayString());
                 }}
                 className={cn(
                   "absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-1 transition-colors cursor-pointer z-20",
@@ -2116,6 +2617,66 @@ export function TransactionsModule() {
           onChange={(newStatus) => setStatus(newStatus)}
           isLight={isLight}
         />
+
+        {/* Circulation Librarian Exclusive Toggle: All vs Distributed */}
+        {isCirculationLibrarian && (
+          <div className={cn(
+            "flex items-center rounded-xl p-1 border transition-all shrink-0",
+            isLight ? "bg-slate-100/80 border-slate-200/90" : "bg-[#0F1D29] border-white/10"
+          )}>
+            <button
+              type="button"
+              onClick={() => setCirculationToggle("all")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                circulationToggle === "all"
+                  ? isLight
+                    ? "bg-white text-[#0274BB] shadow-xs"
+                    : "bg-[#152E47] text-[#FCD400] shadow-xs"
+                  : isLight
+                  ? "text-slate-600 hover:text-slate-900"
+                  : "text-slate-400 hover:text-white"
+              )}
+              title="View all transactions across the entire library system"
+            >
+              <span>All</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.5 rounded-full font-bold",
+                circulationToggle === "all"
+                  ? isLight ? "bg-blue-100 text-[#0274BB]" : "bg-white/15 text-[#FCD400]"
+                  : isLight ? "bg-slate-200/70 text-slate-700" : "bg-white/10 text-slate-300"
+              )}>
+                {allTransactions.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setCirculationToggle("distributed")}
+              className={cn(
+                "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5",
+                circulationToggle === "distributed"
+                  ? isLight
+                    ? "bg-white text-[#0274BB] shadow-xs"
+                    : "bg-[#152E47] text-[#FCD400] shadow-xs"
+                  : isLight
+                  ? "text-slate-600 hover:text-slate-900"
+                  : "text-slate-400 hover:text-white"
+              )}
+              title="Go to the distributed queue assigned to you"
+            >
+              <span>Distributed</span>
+              <span className={cn(
+                "text-[10px] px-1.5 py-0.5 rounded-full font-bold",
+                circulationToggle === "distributed"
+                  ? isLight ? "bg-blue-100 text-[#0274BB]" : "bg-white/15 text-[#FCD400]"
+                  : isLight ? "bg-slate-200/70 text-slate-700" : "bg-white/10 text-slate-300"
+              )}>
+                {distributedTransactionsCount}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Table Container (Sized to show 8 students comfortably) ───── */}
@@ -2236,6 +2797,28 @@ export function TransactionsModule() {
                           </span>
                         ) : null}
                       </div>
+
+                      {/* Decided Sign-off (Approved or Declined) */}
+                      {txn.status !== "Pending" && txn.approvedByName ? (
+                        <div className="mt-1.5 flex items-center gap-1 text-[11px] leading-tight flex-wrap">
+                          <span className={isLight ? "text-slate-500 font-medium" : "text-slate-400 font-medium"}>
+                            {txn.status === "Declined" || txn.status === "Cancelled" ? "Declined by:" : "Approved by:"}
+                          </span>
+                          <span className={cn(
+                            "font-bold",
+                            txn.status === "Declined" || txn.status === "Cancelled"
+                              ? isLight ? "text-rose-600" : "text-rose-400"
+                              : isLight ? "text-emerald-700" : "text-emerald-400"
+                          )}>
+                            {txn.approvedByName}
+                          </span>
+                          {txn.approvedByRole ? (
+                            <span className={cn("text-[10px] font-medium", isLight ? "text-[#0274BB]" : "text-[#38BDF8]")}>
+                              ({txn.approvedByRole})
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </button>
                   </td>
 
@@ -2538,9 +3121,10 @@ export function TransactionsModule() {
       {/* ── Footer ──────────────────────────────────────────────────── */}
       <div className={cn("flex items-center justify-between text-xs pb-2 font-medium", isLight ? "text-slate-600" : "text-slate-400")}>
         <span>
-          Showing {filteredTransactions.length.toLocaleString()} of {allTransactions.length.toLocaleString()} transaction{allTransactions.length !== 1 ? "s" : ""}
+          Showing {filteredTransactions.length.toLocaleString()} of {scopedTransactions.length.toLocaleString()} transaction{scopedTransactions.length !== 1 ? "s" : ""}
           {status !== "All" && ` · Filter: ${status}`}
           {isDateFilterActive && selectedDate && ` · Date: ${formatDate(selectedDate)}`}
+          {isCirculationLibrarian && ` · View: ${circulationToggle === "all" ? "All Queue" : "Distributed"}`}
         </span>
         <span className="flex items-center gap-1.5 text-[10px]">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -2704,9 +3288,14 @@ export function TransactionsModule() {
                     Student ID Picture / Attachment
                   </span>
                   {Boolean(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image) ? (
-                    <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                      Photo Attached
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEnlargedModalImage(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image)}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 hover:bg-emerald-500/20 transition cursor-pointer"
+                    >
+                      <ZoomIn className="h-3 w-3" />
+                      <span>Photo Attached • View Large</span>
+                    </button>
                   ) : (
                     <span className="text-[11px] font-medium text-slate-400">
                       No Photo Attached
@@ -2715,12 +3304,20 @@ export function TransactionsModule() {
                 </div>
 
                 {Boolean(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image) ? (
-                  <div className="relative aspect-[16/9] w-full max-h-48 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-black/10 flex items-center justify-center shadow-inner">
+                  <div
+                    onClick={() => setEnlargedModalImage(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image)}
+                    className="group relative aspect-[16/9] w-full max-h-52 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-black/10 flex items-center justify-center shadow-inner cursor-pointer hover:border-emerald-500/50 transition"
+                    title="Click to view full size ID"
+                  >
                     <img
                       src={confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image}
                       alt="Student ID Verification"
-                      className="h-full w-full object-contain"
+                      className="h-full w-full object-contain transition group-hover:scale-[1.02]"
                     />
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white text-xs font-bold">
+                      <ZoomIn className="h-4 w-4" />
+                      <span>Click to enlarge</span>
+                    </div>
                   </div>
                 ) : (
                   <div className={cn("h-20 w-full rounded-xl border border-dashed flex flex-col items-center justify-center gap-1 text-xs", isLight ? "border-slate-300 bg-slate-100/50 text-slate-400" : "border-slate-700 bg-white/5 text-slate-500")}>
@@ -2791,6 +3388,35 @@ export function TransactionsModule() {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full-size ID Image Enlargement Lightbox */}
+      {enlargedModalImage && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setEnlargedModalImage(null)}
+        >
+          <div
+            className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-2"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setEnlargedModalImage(null)}
+              className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/90 cursor-pointer transition active:scale-95 shadow-md"
+              aria-label="Close enlarged preview"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={enlargedModalImage}
+              alt="Enlarged Student ID"
+              className="max-h-[85vh] max-w-[85vw] object-contain rounded-lg"
+            />
           </div>
         </div>
       )}

@@ -50,9 +50,18 @@ export const pool: pg.Pool = {
 
     try {
       const res = await rawPool.query(text, params);
+      if (Array.isArray(res)) {
+        const last = res[res.length - 1];
+        const lastRows = Array.isArray(last?.rows) ? last.rows : [];
+        return {
+          rows: lastRows as T[],
+          rowCount: last?.rowCount ?? lastRows.length,
+        };
+      }
+      const rows = Array.isArray(res?.rows) ? res.rows : [];
       return {
-        rows: res.rows as T[],
-        rowCount: res.rowCount ?? res.rows.length,
+        rows: rows as T[],
+        rowCount: res?.rowCount ?? rows.length,
       };
     } catch (err: any) {
       if (isQuotaOrConnError(err)) {

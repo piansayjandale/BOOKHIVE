@@ -77,7 +77,32 @@ export default function ReservationDetailsScreen() {
     (params.transactionId as string) ||
     "";
 
+  const allRes = getUpcomingReservations();
+  const matchedRes = allRes.find(
+    (r) =>
+      (reservationId && String(r.id) === String(reservationId)) ||
+      (r.title && r.title.toLowerCase().trim() === title.toLowerCase().trim())
+  );
+
+  const isBookPickedUp = Boolean(
+    params.isPickedUp === "true" ||
+    String(params.isPickedUp) === "true" ||
+    (params as any).isPickedUp === true ||
+    params.status === "Picked Up" ||
+    params.pickedUpAt ||
+    matchedRes?.isPickedUp ||
+    (matchedRes as any)?.pickedUpAt ||
+    matchedRes?.status === "Picked Up"
+  );
+
   const handleCancelPress = () => {
+    if (isBookPickedUp) {
+      Alert.alert(
+        "Book Already Picked Up",
+        "This book has already been physically picked up from the library. Active loans cannot be cancelled and must be returned directly to the library desk."
+      );
+      return;
+    }
     setShowCancelModal(true);
   };
 
@@ -118,8 +143,25 @@ export default function ReservationDetailsScreen() {
   ];
 
   const handleBack = useCallback(() => {
-    if (params.from === "notifications" || String(params.from) === "notifications") {
+    const fromSource = String(params.from || "").toLowerCase();
+    if (fromSource === "notifications") {
       router.replace("/notifications");
+      return;
+    }
+    if (fromSource === "reservations" || fromSource === "library-card") {
+      router.replace("/(tabs)/reservations");
+      return;
+    }
+    if (fromSource === "search") {
+      router.replace("/(tabs)/search");
+      return;
+    }
+    if (fromSource === "books") {
+      router.replace("/(tabs)/books");
+      return;
+    }
+    if (fromSource === "home") {
+      router.replace("/(tabs)");
       return;
     }
     if (router.canGoBack()) {
@@ -290,11 +332,18 @@ export default function ReservationDetailsScreen() {
 
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.cancelButton]}
+            style={[
+              styles.actionButton,
+              styles.cancelButton,
+              isBookPickedUp && { backgroundColor: isDarkMode ? "#334155" : "#94A3B8", opacity: 0.6 },
+            ]}
             onPress={handleCancelPress}
-            activeOpacity={0.8}
+            disabled={isCancelling || isBookPickedUp}
+            activeOpacity={isBookPickedUp ? 1 : 0.8}
           >
-            <Text style={[styles.cancelButtonText, { color: "#FFFFFF" }]}>Cancel Reservation</Text>
+            <Text style={[styles.cancelButtonText, { color: "#FFFFFF" }]}>
+              {isBookPickedUp ? "Already Picked Up (Cannot Cancel)" : "Cancel Reservation"}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity

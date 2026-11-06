@@ -1,6 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@700;800;900&display=swap');
 
-/* BOOKHIVE Login Page Styles - Pixel-perfect to reference image */
+/* ==========================================================================
+   BOOKHIVE Login Page Styles - Reverted 1:1 to Classic Design (Picture 1)
+   ========================================================================== */
 
 .login-bg {
   position: fixed;
@@ -9,6 +11,8 @@
   height: 100vh;
   object-fit: cover;
   z-index: 0;
+  filter: blur(2px);
+  transform: scale(1.02);
 }
 
 .login-bg-overlay {
@@ -28,31 +32,39 @@
   justify-content: center;
   position: relative;
   z-index: 2;
-  font-family: 'Segoe UI', Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background: none;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .login-container {
-  width: 900px;
-  height: 520px;
+  width: 890px;
+  max-width: 95vw;
+  min-height: 520px;
   display: flex;
-  border-radius: 24px;
+  border-radius: 28px;
   overflow: hidden;
-  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.18);
-  background: rgba(255,255,255,0.18);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.35);
+  background: #ffffff;
+  position: relative;
+  z-index: 2;
 }
 
-.left-panel {
-  width: 45%;
-  height: 100%;
+/* ==========================================================================
+   LEFT PANEL (STI Yellow Banner with Logo and "LIBRARY")
+   ========================================================================== */
+.left-panel,
+.login-card-left {
+  width: 44%;
+  min-height: 100%;
   position: relative;
-  background: #FFF200;
-  border-top-left-radius: 24px;
-  border-bottom-left-radius: 24px;
-  overflow: hidden;
+  background-color: #FFF200;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 40px 24px;
+  box-sizing: border-box;
 }
 
 .sti-brand-container {
@@ -61,16 +73,14 @@
   align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 32px 24px;
-  box-sizing: border-box;
   text-align: center;
 }
 
 .sti-brand-logo {
   width: 82%;
-  max-width: 270px;
+  max-width: 250px;
   height: auto;
-  max-height: 190px;
+  max-height: 180px;
   object-fit: contain;
   display: block;
   user-select: none;
@@ -83,7 +93,7 @@
 }
 
 .sti-brand-library {
-  font-family: 'Roboto Slab', 'Rockwell', 'Rockwell Extra Bold', 'Clarendon', 'Century Schoolbook', 'Georgia', serif;
+  font-family: 'Roboto Slab', 'Rockwell', 'Georgia', serif;
   font-size: 32px;
   font-weight: 900;
   letter-spacing: 0.25em;
@@ -97,46 +107,43 @@
   line-height: 1.1;
 }
 
-.login-left-img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-.login-left-img-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(18, 28, 44, 0.32);
-}
-
-.right-panel {
-  width: 55%;
-  height: 100%;
+/* ==========================================================================
+   RIGHT PANEL (Clean White Form Container)
+   ========================================================================== */
+.right-panel,
+.login-card-right {
+  width: 56%;
+  min-height: 100%;
   position: relative;
-  background: #fff;
-  border-top-right-radius: 24px;
-  border-bottom-right-radius: 24px;
+  background-color: #ffffff;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  padding: 0 48px;
-  transition: background-color 0.25s ease, color 0.25s ease;
+  padding: 48px 44px;
+  box-sizing: border-box;
 }
 
-.title,
-.login-title {
-  font-size: 42px;
-  font-weight: 700;
+.login-title,
+.title {
+  font-size: 38px;
+  font-weight: 800;
   color: #000000;
-  margin-bottom: 8px;
+  margin: 0 0 4px 0;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
+  font-family: inherit;
 }
 
-.subtitle,
-.login-subtitle {
-  font-size: 18px;
-  color: #000000;
-  margin-bottom: 32px;
+.login-subtitle,
+.subtitle {
+  font-size: 16px;
+  color: #1f2937;
+  margin: 0 0 28px 0;
+  font-weight: 400;
+}
+
+.login-form {
+  width: 100%;
 }
 
 .form-group,
@@ -144,162 +151,237 @@
   margin-bottom: 20px;
 }
 
-.label,
-.login-label {
+.login-label,
+.label {
   display: block;
-  font-size: 12px;
+  font-size: 11px;
   color: #000000;
-  font-weight: 700;
-  margin-bottom: 4px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+  text-transform: uppercase;
 }
 
-.input,
-.login-input {
-  width: 100%;
-  padding: 8px 0;
-  border: none;
-  border-bottom: 1.5px solid #cbd5e1;
-  font-size: 16px;
-  color: #000000;
-  caret-color: #000000;
-  background: transparent;
-  outline: none;
-  transition: border-color 0.18s;
+/* ==========================================================================
+   INPUTS (Crisp White Background with Black Stroke and Visible Bold Black Font)
+   ========================================================================== */
+.login-page input[type="text"],
+.login-page input[type="email"],
+.login-page input[type="password"],
+.login-page .input,
+.login-page .login-input {
+  width: 100% !important;
+  height: 46px !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  caret-color: #000000 !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  line-height: normal !important;
+  padding: 0 14px !important;
+  border: 1.5px solid #000000 !important;
+  border-radius: 8px !important;
+  outline: none !important;
+  box-shadow: none !important;
+  box-sizing: border-box !important;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
 }
 
-.input::placeholder,
-.login-input::placeholder {
-  color: #64748b;
-  opacity: 0.7;
-  font-size: 16px;
+.login-page input[type="password"] {
+  padding-right: 42px !important;
 }
 
-.input:focus,
-.login-input:focus {
-  border-bottom: 1.5px solid #f7d000;
+.login-page input[type="text"]:focus,
+.login-page input[type="email"]:focus,
+.login-page input[type="password"]:focus,
+.login-page .input:focus,
+.login-page .login-input:focus {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #000000 !important;
+  border: 1.5px solid #000000 !important;
+  border-color: #000000 !important;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.15) !important;
+  outline: none !important;
+}
+
+.login-page input::placeholder,
+.login-page .input::placeholder,
+.login-page .login-input::placeholder {
+  color: #64748b !important;
+  opacity: 1 !important;
+}
+
+/* Browser Autofill Fix: Keep white background, black stroke, and bold black text */
+.login-page input:-webkit-autofill,
+.login-page input:-webkit-autofill:hover,
+.login-page input:-webkit-autofill:focus,
+.login-page input:-webkit-autofill:active {
+  -webkit-text-fill-color: #000000 !important;
+  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  box-shadow: 0 0 0px 1000px #ffffff inset !important;
+  caret-color: #000000 !important;
+  border: 1.5px solid #000000 !important;
+  transition: background-color 5000s ease-in-out 0s;
 }
 
 .password-input-wrapper {
   position: relative;
-}
-
-.input::-ms-reveal,
-.input::-ms-clear {
-  display: none;
+  width: 100%;
 }
 
 .password-toggle {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  color: #000000;
+  position: absolute !important;
+  right: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  padding: 4px !important;
+  color: #000000 !important;
+  z-index: 2 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: color 0.15s ease, opacity 0.15s ease;
 }
 
+.password-toggle:hover {
+  color: #334155 !important;
+  opacity: 0.8 !important;
+}
 
+.password-toggle svg {
+  color: #000000 !important;
+  stroke: #000000 !important;
+}
+
+.password-toggle:hover svg {
+  color: #334155 !important;
+  stroke: #334155 !important;
+}
+
+/* ==========================================================================
+   OPTIONS ROW (Remember Checkbox & Forgot Password Link)
+   ========================================================================== */
 .options-row,
-.login-options {
+.login-options-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: -8px;
-  margin-bottom: 24px;
+  margin-top: 14px;
+  margin-bottom: 22px;
 }
 
 .remember,
-.login-remember {
+.login-checkbox-label {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 14px;
-  color: #000000;
-  font-weight: 500;
+  gap: 8px;
+  font-size: 13px;
+  color: #000000 !important;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
 }
+
+.remember span,
+.login-checkbox-label span {
+  color: #000000 !important;
+  font-weight: 600;
+}
+
 .remember input[type="checkbox"],
-.login-remember input[type="checkbox"] {
+.login-checkbox-label input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: #f7d000;
+  accent-color: #000000;
+  border: 1.5px solid #000000 !important;
+  border-radius: 4px;
   margin: 0;
+  cursor: pointer;
 }
 
 .forgot-password,
 .login-forgot {
-  font-size: 14px;
-  color: #000000;
+  font-size: 13px;
+  color: #000000 !important;
   text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
   transition: color 0.18s;
-  font-weight: 500;
 }
 
 .forgot-password:hover,
 .login-forgot:hover {
-  color: #000000;
   text-decoration: underline;
+  color: #0072ce !important;
 }
 
+/* ==========================================================================
+   SUBMIT BUTTON (Vibrant Yellow #F7D000 with Bold Black Text)
+   ========================================================================== */
 .submit-btn,
-.login-submit-btn {
+.login-submit-btn,
+.login-btn {
   width: 100%;
   height: 46px;
   background: #f7d000;
   color: #000000;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 15px;
+  font-weight: 800;
   text-transform: uppercase;
+  letter-spacing: 0.05em;
   border: none;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(247, 208, 0, 0.13);
+  box-shadow: 0 2px 8px rgba(247, 208, 0, 0.2);
   cursor: pointer;
-  margin-top: 8px;
-  transition: background 0.18s, box-shadow 0.18s;
+  transition: background 0.18s, box-shadow 0.18s, transform 0.05s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .submit-btn:hover:not(:disabled),
-.login-submit-btn:hover:not(:disabled) {
+.login-submit-btn:hover:not(:disabled),
+.login-btn:hover:not(:disabled) {
   background: #e6c200;
-  box-shadow: 0 4px 16px rgba(247, 208, 0, 0.18);
+  box-shadow: 0 4px 14px rgba(247, 208, 0, 0.3);
+}
+
+.submit-btn:active:not(:disabled),
+.login-submit-btn:active:not(:disabled),
+.login-btn:active:not(:disabled) {
+  transform: scale(0.99);
 }
 
 .submit-btn:disabled,
-.login-submit-btn:disabled {
-  opacity: 0.7;
+.login-submit-btn:disabled,
+.login-btn:disabled {
+  opacity: 0.65;
   cursor: not-allowed;
 }
 
-.bottom-link {
-  text-align: center;
-  margin-top: 32px;
-  color: #000000;
-  font-size: 15px;
-  transition: color 0.18s;
-}
-
-.bottom-link:hover {
-  color: #000000;
-}
-
-.create-account {
-  color: inherit;
-  text-decoration: none;
-}
-
+/* ==========================================================================
+   ERROR MESSAGE
+   ========================================================================== */
 .login-error {
   background: #fee2e2;
   color: #dc2626;
-  padding: 10px;
+  padding: 10px 14px;
   border-radius: 8px;
   margin-bottom: 16px;
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #fca5a5;
+  text-align: center;
 }
 
-/* =========================================
-   Forgot Password Modal
-   ========================================= */
+/* ==========================================================================
+   FORGOT PASSWORD MODAL (Institutional Security Assistance Dialog)
+   ========================================================================== */
 .forgot-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -569,236 +651,35 @@
   color: #1e293b;
 }
 
-@media (max-width: 1000px) {
-  .login-container {
-    width: 98vw;
-    min-width: 0;
-    max-width: 99vw;
-    height: 98vh;
-  }
-  .right-panel {
-    padding: 0 18px;
-  }
-  .sti-brand-library {
-    font-size: 26px;
-    letter-spacing: 0.2em;
-    padding-left: 0.2em;
-  }
-}
-
-@media (max-width: 700px) {
+/* ==========================================================================
+   RESPONSIVE DESIGN (Tablets & Mobile Phones)
+   ========================================================================== */
+@media (max-width: 820px) {
   .login-container {
     flex-direction: column;
-    width: 100vw;
-    height: 100vh;
-    border-radius: 0;
-    box-shadow: none;
+    width: 94vw;
+    min-height: auto;
+    border-radius: 20px;
   }
-  .left-panel {
-    display: none;
+  .left-panel,
+  .login-card-left {
+    width: 100%;
+    padding: 28px 20px;
   }
-  .right-panel {
-    width: 100vw;
-    border-radius: 0;
-    padding: 0 12px;
-    justify-content: flex-start;
+  .sti-brand-logo {
+    max-height: 120px;
   }
-  .bottom-link {
-    margin-top: 18px;
+  .sti-brand-library {
+    font-size: 24px;
+    margin-top: 10px;
   }
-}
-
-/* =========================================
-   Theme Toggle on Login Card
-   ========================================= */
-
-/* Card In-panel Toggle Button */
-.card-theme-toggle-btn {
-  position: absolute;
-  top: 26px;
-  right: 28px;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
-  color: #000000;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  z-index: 5;
-}
-
-.card-theme-toggle-btn:hover {
-  background: #f1f5f9;
-  border-color: #94a3b8;
-  color: #000000;
-  transform: scale(1.05);
-}
-
-/* =========================================
-   Login Page Light Mode Explicit Overrides
-   ========================================= */
-
-html[data-theme="light"] .title,
-[data-theme="light"] .title,
-html[data-theme="light"] .login-title,
-[data-theme="light"] .login-title,
-html[data-theme="light"] .subtitle,
-[data-theme="light"] .subtitle,
-html[data-theme="light"] .login-subtitle,
-[data-theme="light"] .login-subtitle,
-html[data-theme="light"] .label,
-[data-theme="light"] .label,
-html[data-theme="light"] .login-label,
-[data-theme="light"] .login-label,
-html[data-theme="light"] .remember,
-[data-theme="light"] .remember,
-html[data-theme="light"] .login-remember,
-[data-theme="light"] .login-remember,
-html[data-theme="light"] .login-checkbox-label,
-[data-theme="light"] .login-checkbox-label,
-html[data-theme="light"] .login-checkbox-label span,
-[data-theme="light"] .login-checkbox-label span,
-html[data-theme="light"] .forgot-password,
-[data-theme="light"] .forgot-password,
-html[data-theme="light"] .login-forgot,
-[data-theme="light"] .login-forgot,
-html[data-theme="light"] .bottom-link,
-[data-theme="light"] .bottom-link {
-  color: #000000 !important;
-}
-
-html[data-theme="light"] .input,
-[data-theme="light"] .input,
-html[data-theme="light"] .login-input,
-[data-theme="light"] .login-input {
-  color: #000000 !important;
-  caret-color: #000000 !important;
-  border-bottom: 1.5px solid #cbd5e1;
-}
-
-html[data-theme="light"] .input::placeholder,
-[data-theme="light"] .input::placeholder,
-html[data-theme="light"] .login-input::placeholder,
-[data-theme="light"] .login-input::placeholder {
-  color: rgba(0, 0, 0, 0.45) !important;
-}
-
-html[data-theme="light"] .input:-webkit-autofill,
-[data-theme="light"] .input:-webkit-autofill,
-html[data-theme="light"] .login-input:-webkit-autofill,
-[data-theme="light"] .login-input:-webkit-autofill {
-  -webkit-text-fill-color: #000000 !important;
-  caret-color: #000000 !important;
-  transition: background-color 5000s ease-in-out 0s;
-}
-
-html[data-theme="light"] .password-toggle,
-[data-theme="light"] .password-toggle {
-  color: #000000 !important;
-}
-
-html[data-theme="light"] .password-toggle svg,
-[data-theme="light"] .password-toggle svg {
-  color: #000000 !important;
-  stroke: #000000 !important;
-}
-
-/* Force Login Page to strictly stay in Light Mode */
-.login-page,
-.login-page .login-container,
-.login-page .right-panel {
-  color-scheme: light;
-}
-
-
-/* =====================================================================
-   LOGIN INPUTS: CRISP WHITE BACKGROUND WITH BOLD BLACK FONT (PICTURE 2)
-   Overrides global dark theme and browser defaults
-   ===================================================================== */
-.login-page input[type="text"],
-.login-page input[type="email"],
-.login-page input[type="password"],
-.login-page .input,
-.login-page .login-input {
-  width: 100% !important;
-  background: #ffffff !important;
-  background-color: #ffffff !important;
-  color: #000000 !important;
-  caret-color: #000000 !important;
-  font-size: 15px !important;
-  font-weight: 500 !important;
-  line-height: 1.5 !important;
-  padding: 10px 14px !important;
-  border: 1.5px solid #cbd5e1 !important;
-  border-radius: 8px !important;
-  outline: none !important;
-  box-shadow: none !important;
-  box-sizing: border-box !important;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease !important;
-}
-
-.login-page input[type="password"] {
-  padding-right: 42px !important;
-}
-
-.login-page input[type="text"]:focus,
-.login-page input[type="email"]:focus,
-.login-page input[type="password"]:focus,
-.login-page .input:focus,
-.login-page .login-input:focus {
-  background: #ffffff !important;
-  background-color: #ffffff !important;
-  color: #000000 !important;
-  border-color: #f7d000 !important;
-  box-shadow: 0 0 0 3px rgba(247, 208, 0, 0.28) !important;
-  outline: none !important;
-}
-
-.login-page input::placeholder,
-.login-page .input::placeholder,
-.login-page .login-input::placeholder {
-  color: #94a3b8 !important;
-  opacity: 1 !important;
-}
-
-/* Chrome / Safari / Edge Autofill Fix: force white bg and black text */
-.login-page input:-webkit-autofill,
-.login-page input:-webkit-autofill:hover,
-.login-page input:-webkit-autofill:focus,
-.login-page input:-webkit-autofill:active {
-  -webkit-text-fill-color: #000000 !important;
-  -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
-  box-shadow: 0 0 0px 1000px #ffffff inset !important;
-  caret-color: #000000 !important;
-  transition: background-color 5000s ease-in-out 0s;
-}
-
-.login-page .password-input-wrapper {
-  position: relative;
-  width: 100%;
-}
-
-.login-page .password-toggle {
-  position: absolute !important;
-  right: 12px !important;
-  top: 50% !important;
-  transform: translateY(-50%) !important;
-  background: transparent !important;
-  border: none !important;
-  cursor: pointer !important;
-  padding: 4px !important;
-  color: #000000 !important;
-  z-index: 2 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-}
-
-.login-page .password-toggle svg {
-  color: #000000 !important;
-  stroke: #000000 !important;
+  .right-panel,
+  .login-card-right {
+    width: 100%;
+    padding: 32px 24px;
+  }
+  .login-title,
+  .title {
+    font-size: 32px;
+  }
 }

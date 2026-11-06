@@ -70,7 +70,12 @@ function mapDigitizedRow(row: any) {
     rawText: stripEmbeddedCoverUri(raw),
     coverImage: coverUri,
     coverImg: coverUri,
-    scannedBy: row.scanned_by || row.scannedBy || "Librarian Mobile App",
+    scannedBy:
+      (row.scanned_by && !row.scanned_by.includes("Librarian Mobile App") && !row.scanned_by.includes("Scanner"))
+        ? row.scanned_by
+        : (row.scannedBy && !row.scannedBy.includes("Librarian Mobile App") && !row.scannedBy.includes("Scanner"))
+        ? row.scannedBy
+        : "Yana Brich R. Palmares",
     status: row.status || "Pending Review",
     createdAt: row.created_at || new Date().toISOString(),
     updatedAt: row.updated_at || new Date().toISOString(),
@@ -198,7 +203,9 @@ export async function POST(request: Request) {
         body.ocrEngine || "Tesseract Neural OCR",
         Number(body.confidence ?? 95.0),
         body.rawText || "",
-        body.scannedBy || "Librarian Mobile App",
+        (body.scannedBy && !body.scannedBy.includes("Librarian Mobile App") && !body.scannedBy.includes("Scanner"))
+          ? body.scannedBy
+          : (body.capturedBy || body.librarianName || "Yana Brich R. Palmares"),
       ]
     );
 

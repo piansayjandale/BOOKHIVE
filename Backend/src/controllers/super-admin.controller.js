@@ -23,7 +23,7 @@ export const superAdminController = {
   },
 
   async createUser(req, res) {
-    const { name, email, idNumber, password, role, department, course, status, yearLevel, section } = req.body;
+    const { name, email, idNumber, password, role, subRole, department, course, status, yearLevel, section } = req.body;
 
     if (!name || !email || !idNumber || !role) {
       return res.status(400).json({ message: "Name, email, ID number, and role are required." });
@@ -36,6 +36,7 @@ export const superAdminController = {
         idNumber,
         password,
         role,
+        subRole: subRole || (role === "Librarian" ? "Technical Librarian" : null),
         department,
         course,
         status: status || "Active",
@@ -71,7 +72,7 @@ export const superAdminController = {
 
   async updateUser(req, res) {
     const { id } = req.params;
-    const { name, email, idNumber, role, department, course, status, password, yearLevel, section } = req.body;
+    const { name, email, idNumber, role, subRole, department, course, status, password, yearLevel, section } = req.body;
 
     try {
       const updated = await superAdminModel.updateUser(id, {
@@ -79,6 +80,7 @@ export const superAdminController = {
         email,
         idNumber,
         role,
+        subRole,
         department,
         course,
         status,

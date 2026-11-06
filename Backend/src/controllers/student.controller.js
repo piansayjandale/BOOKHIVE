@@ -20,12 +20,10 @@ import { processPaperScan, verifyStudentIdCardsOcr } from "../services/ocr.servi
 import { executeAiSearch } from "../services/ai-search.service.js";
 import { invalidateDashboardCache, onCacheInvalidation } from "./admin.controller.js";
 
-let studentBooksCache = null;
-let studentBooksCacheExpiry = 0;
+const studentBooksCacheByLimit = new Map();
 
 export function invalidateStudentBooksCache() {
-  studentBooksCache = null;
-  studentBooksCacheExpiry = 0;
+  studentBooksCacheByLimit.clear();
 }
 onCacheInvalidation(invalidateStudentBooksCache);
 
@@ -322,8 +320,11 @@ export const studentController = {
 
       // Fast-path: return cached initial catalog for instant response (< 2ms)
       const now = Date.now();
-      if (page === 1 && limit <= 100 && studentBooksCache && now < studentBooksCacheExpiry) {
-        return res.json(studentBooksCache);
+      if (page === 1 && limit <= 200) {
+        const cachedEntry = studentBooksCacheByLimit.get(limit);
+        if (cachedEntry && now < cachedEntry.expiry) {
+          return res.json(cachedEntry.payload);
+        }
       }
 
       const result = await studentModel.getAvailableBooks(page, limit).catch((err) => {
@@ -338,9 +339,11 @@ export const studentController = {
         limit,
       };
 
-      if (page === 1 && limit <= 100 && responsePayload.books.length > 0) {
-        studentBooksCache = responsePayload;
-        studentBooksCacheExpiry = now + 60 * 1000;
+      if (page === 1 && limit <= 200 && responsePayload.books.length > 0) {
+        studentBooksCacheByLimit.set(limit, {
+          payload: responsePayload,
+          expiry: now + 60 * 1000,
+        });
       }
 
       return res.json(responsePayload);
@@ -396,25 +399,27 @@ export const studentController = {
       const department = req.user?.department || "General";
       const matchesCount = result?.total || result?.books?.length || 0;
 
-      try {
-        const cleanPrompt = String(q).trim();
-        await pool.query(
-          `DELETE FROM ai_search_logs 
-           WHERE (mode = 'filter' OR mode = 'prefix')
-             AND (
-               LOWER(TRIM(prompt)) = LOWER(TRIM($1))
-               OR ($1 ILIKE TRIM(prompt) || '%' AND LENGTH(TRIM(prompt)) < LENGTH($1))
-             )
-             AND (actor_id = $2 OR actor_name = $3)`,
-          [cleanPrompt, actorId, actorName]
-        );
-        await pool.query(
-          "INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, mode, matches_found) VALUES ($1, $2, $3, $4, 'filter', $5)",
-          [actorId, actorName, cleanPrompt, department, matchesCount]
-        );
-      } catch (logErr) {
-        console.warn("[studentController.searchBooks] Telemetry insert warning:", logErr.message);
-      }
+      const cleanPrompt = String(q).trim();
+      void (async () => {
+        try {
+          await pool.query(
+            `DELETE FROM ai_search_logs 
+             WHERE (mode = 'filter' OR mode = 'prefix')
+               AND (
+                 LOWER(TRIM(prompt)) = LOWER(TRIM($1))
+                 OR ($1 ILIKE TRIM(prompt) || '%' AND LENGTH(TRIM(prompt)) < LENGTH($1))
+               )
+               AND (actor_id = $2 OR actor_name = $3)`,
+            [cleanPrompt, actorId, actorName]
+          );
+          await pool.query(
+            "INSERT INTO ai_search_logs (actor_id, actor_name, prompt, department, mode, matches_found) VALUES ($1, $2, $3, $4, 'filter', $5)",
+            [actorId, actorName, cleanPrompt, department, matchesCount]
+          );
+        } catch (logErr) {
+          console.warn("[studentController.searchBooks] Telemetry insert warning:", logErr.message);
+        }
+      })();
 
       // Broadcast real-time search telemetry event to Super Admin (includes refreshed vitals)
       try {

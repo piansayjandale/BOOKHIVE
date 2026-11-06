@@ -5,6 +5,7 @@ export interface RosterUser {
   idNumber: string;
   password_hash: string;
   role: string;
+  subRole?: string;
   department: string;
   course: string;
   yearLevel: string;
@@ -311,6 +312,7 @@ export const FALLBACK_USERS_ROSTER: RosterUser[] = [
     "idNumber": "23-1111-111",
     "password_hash": "$2b$10$NSvvMDJYCc6oj0JTjhHpBuR.4pfA4p5Bqe9bXew3QlOC8GYa9DVNe",
     "role": "Librarian",
+    "subRole": "Technical Librarian",
     "department": "CICT",
     "course": "Library Services",
     "yearLevel": "4TH",
@@ -330,6 +332,7 @@ export const FALLBACK_USERS_ROSTER: RosterUser[] = [
     "idNumber": "23-1111-222",
     "password_hash": "$2b$10$IMVnmjRm3e16zgFUTbtbjeQwPdaiRCI5B0tNsDIbLQ5CEFblPYZQS",
     "role": "Librarian",
+    "subRole": "Circulation Librarian",
     "department": "Library Services",
     "course": "Library Services",
     "yearLevel": "",

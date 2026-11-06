@@ -25,6 +25,7 @@ import {
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { useNotice } from "@/components/providers/notice-provider";
+import { useNavigationTransition } from "@/components/providers/navigation-provider";
 import { AdminPageHeader, AdminSection } from "@/components/admin/shared";
 import { BookDetailModal } from "@/components/ui/book-detail-modal";
 import { BookCoverImage } from "@/components/ui/book-cover-image";
@@ -83,6 +84,7 @@ const itemVariants = {
 export function AiSearchPage() {
   const { notify } = useNotice();
   const router = useRouter();
+  const { startNavigation } = useNavigationTransition();
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const [query, setQuery] = useState(() => searchParams.get("query") ?? "");
@@ -175,10 +177,71 @@ export function AiSearchPage() {
 
   function handleToggleFilter(newMode: boolean) {
     setIsPrefixFilter(newMode);
-    if (query.trim()) {
-      void executeSearch(query, department, true, newMode);
+    if (!newMode) {
+      setPayload(null);
+      setLoading(false);
     }
   }
+
+  // Live automatic prefix filtering ONLY when Filter Mode toggle (isPrefixFilter) is ON
+  useEffect(() => {
+    if (!isPrefixFilter) {
+      return;
+    }
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setLoading(false);
+      setPayload(null);
+      setCurrentPage(1);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch("/api/admin/prompt-search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            query: trimmed,
+            department,
+            mode: "prefix",
+            skipLog: true,
+          }),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          throw new Error("Prefix filter failed");
+        }
+        const data = (await res.json()) as PromptSearchPayload;
+        if (!controller.signal.aborted) {
+          startTransition(() => {
+            setPayload((prev) => ({
+              results: Array.isArray(data?.results) ? data.results : [],
+              logs: prev?.logs ?? logs,
+            }));
+            setCurrentPage(1);
+          });
+        }
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          console.warn("Live prefix filter error:", err);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }, 180);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, department, isPrefixFilter]);
 
   useEffect(() => {
     const queryParam = searchParams.get("query") ?? "";
@@ -259,7 +322,17 @@ export function AiSearchPage() {
         actions={
           <button
             type="button"
-            onClick={() => router.push(pathname.includes("/librarian") ? "/librarian/history" : "/admin/history")}
+            onClick={() => {
+              const dest = pathname.startsWith("/technical")
+                ? "/technical/history"
+                : pathname.startsWith("/circulation")
+                ? "/circulation/history"
+                : pathname.startsWith("/librarian")
+                ? "/librarian/history"
+                : "/admin/history";
+              startNavigation(dest);
+              router.push(dest);
+            }}
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-2.5 text-xs font-bold text-slate-700 dark:text-white shadow-sm hover:bg-slate-50 dark:hover:bg-white/10 transition-all cursor-pointer"
           >
             <History className="h-4 w-4 text-[#0274BB] dark:text-[#FFD600]" />
@@ -386,11 +459,37 @@ export function AiSearchPage() {
                   : "Ask BookHive or search prompt/keywords..."
               }
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setQuery(val);
+                if (isPrefixFilter && !val.trim()) {
+                  setPayload(null);
+                  setLoading(false);
+                  setCurrentPage(1);
+                }
+              }}
               onFocus={() => setIsFocused(true)}
               onBlur={() => setIsFocused(false)}
               className="flex-1 bg-transparent text-[15px] text-white placeholder-slate-400 outline-none"
             />
+
+            {query.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  setQuery("");
+                  if (isPrefixFilter) {
+                    setPayload(null);
+                    setLoading(false);
+                    setCurrentPage(1);
+                  }
+                }}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                title="Clear search input"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
 
             <div className="flex items-center gap-2">
               {/* Attachment upload: active only in AI Prompt mode */}
@@ -582,14 +681,14 @@ export function AiSearchPage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {visibleResults.map((result) => {
                       const relevance = result.relevance;
-                      const isHigh = relevance >= 90;
-                      const isMedium = relevance >= 75;
-
-                      const relevanceBadgeClass = isHigh
-                        ? "bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
-                        : isMedium
-                        ? "bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs"
-                        : "bg-sky-50 text-sky-700 border border-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800 font-extrabold rounded-full px-2.5 py-0.5 text-xs shadow-xs";
+                      const relevanceBadgeClass =
+                        relevance >= 90
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 font-black rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                          : relevance >= 70
+                          ? "bg-yellow-50 text-yellow-800 border border-yellow-300 dark:bg-yellow-950/40 dark:text-yellow-300 dark:border-yellow-700 font-black rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                          : relevance >= 40
+                          ? "bg-orange-50 text-orange-700 border border-orange-300 dark:bg-orange-950/40 dark:text-orange-300 dark:border-orange-700 font-black rounded-full px-2.5 py-0.5 text-xs shadow-xs"
+                          : "bg-rose-50 text-rose-700 border border-rose-300 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-700 font-black rounded-full px-2.5 py-0.5 text-xs shadow-xs";
 
                       return (
                         <tr
@@ -597,14 +696,16 @@ export function AiSearchPage() {
                           onClick={() => setSelectedBook(result)}
                           className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 transition-colors cursor-pointer group"
                         >
-                          <td className="px-5 py-3.5 max-w-[330px]">
+                          <td className="px-5 py-3.5 min-w-[220px] max-w-[380px]">
                             <div className="flex items-center gap-3.5">
                               <BookCoverImage book={result} size="sm" />
                               <div className="min-w-0 flex-1">
-                                <div className="font-bold text-sm text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors truncate">
+                                <div className={`font-bold text-slate-900 dark:text-white group-hover:text-[#0274BB] dark:group-hover:text-amber-300 transition-colors leading-snug break-words ${
+                                  (result.title || "").length > 55 ? "text-xs" : "text-sm"
+                                }`}>
                                   {result.title}
                                 </div>
-                                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                                <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                                   By <span className="font-semibold text-slate-800 dark:text-slate-200">{result.author}</span>
                                 </div>
                               </div>

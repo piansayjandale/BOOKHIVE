@@ -2,42 +2,64 @@ import os from "os";
 import bcrypt from "bcryptjs";
 import { pool } from "../db/pool.js";
 
+let cachedVitalsPayload = null;
+let cachedVitalsExpiry = 0;
+
 export const superAdminModel = {
   // 1. Dashboard Vitals & High-Level Throughput
   async getDashboardVitals() {
+    const now = Date.now();
+    if (cachedVitalsPayload && now < cachedVitalsExpiry) {
+      return cachedVitalsPayload;
+    }
+
     try {
-      const statsQuery = `
-        SELECT
-          (SELECT COUNT(*) FROM users) AS "totalUsers",
-          (SELECT COUNT(*) FROM users WHERE role IN ('Super Admin', 'SUPER_ADMIN')) AS "superAdminsCount",
-          (SELECT COUNT(*) FROM users WHERE role IN ('Admin', 'ADMIN')) AS "adminsCount",
-          (SELECT COUNT(*) FROM users WHERE role IN ('Librarian', 'Circulation Librarian', 'CIRCULATION_LIBRARIAN', 'Technical Librarian', 'TECHNICAL_LIBRARIAN')) AS "librariansCount",
-          (SELECT COUNT(*) FROM users WHERE role IN ('Student', 'STUDENT')) AS "studentsCount",
-          (SELECT COUNT(*) FROM books WHERE archived_at IS NULL) AS "activeBooksCount",
-          (SELECT COUNT(*) FROM books WHERE archived_at IS NOT NULL) AS "archivedBooksCount",
-          (SELECT COUNT(*) FROM books WHERE archived_at IS NULL AND availability = 'Available') AS "shelfReadyBooksCount",
-          (SELECT COUNT(*) FROM transactions) AS "totalTransactions",
-          (SELECT COUNT(*) FROM transactions WHERE status = 'Pending') AS "pendingTransactions",
-          (SELECT COUNT(*) FROM transactions WHERE type = 'Borrow' AND status = 'Approved') AS "activeBorrows",
-          (SELECT COUNT(*) FROM transactions WHERE type = 'Borrow') AS "totalBorrows",
-          (SELECT COUNT(*) FROM transactions WHERE type = 'Return' OR status = 'Returned') AS "totalReturns",
-          (SELECT COUNT(*) FROM transactions WHERE type = 'Reservation') AS "totalReservations",
-          (SELECT COUNT(*) FROM ai_search_logs) AS "totalAiSearches",
-          (SELECT COALESCE(SUM(matches_found), 0) FROM ai_search_logs) AS "totalSearchResults",
-          (SELECT COUNT(*) FROM activity_logs) AS "totalAuditLogs"
-      `;
+      const [usersRes, booksRes, txRes, searchRes, auditRes, settingsRes] = await Promise.all([
+        pool.query(`
+          SELECT
+            COUNT(*) AS "totalUsers",
+            COALESCE(SUM(CASE WHEN role IN ('Super Admin', 'SUPER_ADMIN') THEN 1 ELSE 0 END), 0) AS "superAdminsCount",
+            COALESCE(SUM(CASE WHEN role IN ('Admin', 'ADMIN') THEN 1 ELSE 0 END), 0) AS "adminsCount",
+            COALESCE(SUM(CASE WHEN role IN ('Librarian', 'Circulation Librarian', 'CIRCULATION_LIBRARIAN', 'Technical Librarian', 'TECHNICAL_LIBRARIAN') THEN 1 ELSE 0 END), 0) AS "librariansCount",
+            COALESCE(SUM(CASE WHEN role IN ('Student', 'STUDENT') THEN 1 ELSE 0 END), 0) AS "studentsCount"
+          FROM users
+        `),
+        pool.query(`
+          SELECT
+            COALESCE(SUM(CASE WHEN archived_at IS NULL THEN 1 ELSE 0 END), 0) AS "activeBooksCount",
+            COALESCE(SUM(CASE WHEN archived_at IS NOT NULL THEN 1 ELSE 0 END), 0) AS "archivedBooksCount",
+            COALESCE(SUM(CASE WHEN archived_at IS NULL AND availability = 'Available' THEN 1 ELSE 0 END), 0) AS "shelfReadyBooksCount"
+          FROM books
+        `),
+        pool.query(`
+          SELECT
+            COUNT(*) AS "totalTransactions",
+            COALESCE(SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END), 0) AS "pendingTransactions",
+            COALESCE(SUM(CASE WHEN type = 'Borrow' AND status = 'Approved' THEN 1 ELSE 0 END), 0) AS "activeBorrows",
+            COALESCE(SUM(CASE WHEN type = 'Borrow' THEN 1 ELSE 0 END), 0) AS "totalBorrows",
+            COALESCE(SUM(CASE WHEN type = 'Return' OR status = 'Returned' THEN 1 ELSE 0 END), 0) AS "totalReturns",
+            COALESCE(SUM(CASE WHEN type = 'Reservation' THEN 1 ELSE 0 END), 0) AS "totalReservations"
+          FROM transactions
+        `),
+        pool.query(`SELECT COUNT(*) AS "totalAiSearches", COALESCE(SUM(matches_found), 0) AS "totalSearchResults" FROM ai_search_logs`),
+        pool.query(`SELECT COUNT(*) AS "totalAuditLogs" FROM activity_logs`),
+        pool.query("SELECT * FROM system_settings WHERE id = 1 LIMIT 1"),
+      ]);
 
-      const { rows } = await pool.query(statsQuery);
-      const row = rows[0] || {};
-
-      const settingsRes = await pool.query("SELECT * FROM system_settings WHERE id = 1 LIMIT 1");
+      const row = {
+        ...(usersRes.rows[0] || {}),
+        ...(booksRes.rows[0] || {}),
+        ...(txRes.rows[0] || {}),
+        ...(searchRes.rows[0] || {}),
+        ...(auditRes.rows[0] || {}),
+      };
       const settings = settingsRes.rows[0] || {};
 
       const freeMem = os.freemem();
       const totalMem = os.totalmem();
       const memoryUsagePercent = Math.round(((totalMem - freeMem) / totalMem) * 100);
 
-      return {
+      const payload = {
         vitals: {
           totalUsers: Number(row.totalUsers || 0),
           superAdminsCount: Number(row.superAdminsCount || 0),
@@ -68,6 +90,9 @@ export const superAdminModel = {
           institutionalSyncStatus: "Synchronized (STI WNU)",
         },
       };
+      cachedVitalsPayload = payload;
+      cachedVitalsExpiry = Date.now() + 3000;
+      return payload;
     } catch (error) {
       if (error && error.code !== "DB_OFFLINE") {
         console.warn("superAdminModel.getDashboardVitals DB fallback:", error.message);
@@ -144,6 +169,7 @@ export const superAdminModel = {
           u.id_number AS "idNumber",
           u.email,
           u.role,
+          u.sub_role AS "subRole",
           u.department,
           u.course,
           u.status,
@@ -167,7 +193,7 @@ export const superAdminModel = {
     }
   },
 
-  async createUser({ name, email, idNumber, password, role, department, course, status = "Active", yearLevel, section }) {
+  async createUser({ name, email, idNumber, password, role, subRole, department, course, status = "Active", yearLevel, section }) {
     const r = String(role || "").trim();
     let permissions = {
       home: true,
@@ -201,12 +227,12 @@ export const superAdminModel = {
     const passwordHash = await bcrypt.hash(password || "BookHiveDefault!2026", 10);
     const query = `
       INSERT INTO users (
-        name, email, id_number, password_hash, role, department, course, status,
+        name, email, id_number, password_hash, role, sub_role, department, course, status,
         permissions, year_level, section, qr_code
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, gen_random_uuid())
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, gen_random_uuid())
       RETURNING
-        id, name, id_number AS "idNumber", email, role, department, course, status,
+        id, name, id_number AS "idNumber", email, role, sub_role AS "subRole", department, course, status,
         permissions, year_level AS "yearLevel", section,
         avatar, qr_code AS "qrCode", last_active AS "lastActive", created_at AS "createdAt"
     `;
@@ -216,6 +242,7 @@ export const superAdminModel = {
       idNumber.trim(),
       passwordHash,
       role,
+      r.toLowerCase().includes("librarian") ? (subRole || "Technical Librarian") : null,
       department || "General",
       course || "General",
       status,
@@ -242,7 +269,7 @@ export const superAdminModel = {
     return createdUser;
   },
 
-  async updateUser(id, { name, email, idNumber, role, department, course, status, password, yearLevel, section }) {
+  async updateUser(id, { name, email, idNumber, role, subRole, department, course, status, password, yearLevel, section }) {
     const sets = [];
     const values = [];
 
@@ -261,6 +288,10 @@ export const superAdminModel = {
     if (role) {
       values.push(role);
       sets.push(`role = $${values.length}`);
+    }
+    if (subRole !== undefined) {
+      values.push(subRole);
+      sets.push(`sub_role = $${values.length}`);
     }
     if (department) {
       values.push(department);
@@ -296,7 +327,7 @@ export const superAdminModel = {
       SET ${sets.join(", ")}, updated_at = NOW()
       WHERE id::text = $${values.length}::text
       RETURNING
-        id, name, id_number AS "idNumber", email, role, department, course, status,
+        id, name, id_number AS "idNumber", email, role, sub_role AS "subRole", department, course, status,
         permissions, year_level AS "yearLevel", section,
         avatar, qr_code AS "qrCode", last_active AS "lastActive", created_at AS "createdAt", updated_at AS "updatedAt"
     `;

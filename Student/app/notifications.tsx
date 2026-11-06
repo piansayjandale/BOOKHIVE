@@ -16,19 +16,24 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AnimatedScreen from '../components/AnimatedScreen';
+import PageCircleLoader from '../components/PageCircleLoader';
 import { useThemeColors } from '../hooks/useThemeColors';
 import { getLiveBooks } from '../data/books';
 import {
   clearNotifications,
   getNotifications,
   markNotificationRead,
+  markAllNotificationsAsRead,
   deleteNotification,
+  syncNotifications,
   NotificationItem,
   ReceiptData,
   getOrGenerateReceipt,
   subscribe,
   deduplicateNotifications,
   isDueToReturn,
+  formatDueDate,
+  resolveReceiptLibrarian,
 } from '../data/store';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -45,27 +50,89 @@ export default function NotificationsScreen() {
   const [selectedBook, setSelectedBook] = useState<any | null>(null);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState<NotificationItem | null>(null);
 
-  const isReceiptDue = Boolean(selectedReceipt?.returnDate && isDueToReturn(selectedReceipt.returnDate));
-  const isReservationReceipt = Boolean(
-    selectedReceipt?.isReservation ||
-    selectedReceipt?.status?.toLowerCase().includes("reservation") ||
-    selectedReceipt?.status?.toLowerCase().includes("queued") ||
-    selectedReceipt?.status?.toLowerCase().includes("waitlist") ||
-    (selectedReceipt as any)?.action === "Reserve" ||
-    (selectedReceipt as any)?.type === "Reservation"
+  const isReturnReceipt = Boolean(
+    selectedReceipt &&
+    (
+      selectedReceipt.receiptType === "RETURN_SUCCESS" ||
+      selectedReceipt.status?.toLowerCase() === "returned" ||
+      selectedReceipt.status?.toLowerCase() === "completed" ||
+      (selectedReceipt as any)?.isReturned === true
+    )
   );
-  const isBorrowApproved = Boolean(
+
+  const isReceiptDue = Boolean(
+    !isReturnReceipt &&
+    (
+      selectedReceipt?.receiptType === "DUE_REMINDER" ||
+      selectedReceipt?.status?.toLowerCase().includes("due") ||
+      (selectedReceipt?.returnDate && isDueToReturn(selectedReceipt.returnDate))
+    )
+  );
+
+  const isReservationReceipt = Boolean(
+    !isReturnReceipt &&
+    !isReceiptDue &&
+    (
+      selectedReceipt?.isReservation ||
+      selectedReceipt?.receiptType === "RESERVATION_QUEUED" ||
+      selectedReceipt?.receiptType === "RESERVATION_APPROVED" ||
+      selectedReceipt?.status?.toLowerCase().includes("reservation") ||
+      selectedReceipt?.status?.toLowerCase().includes("queued") ||
+      selectedReceipt?.status?.toLowerCase().includes("waitlist") ||
+      (selectedReceipt as any)?.action === "Reserve" ||
+      (selectedReceipt as any)?.type === "Reservation"
+    )
+  );
+
+  const isPickedUpReceipt = Boolean(
+    !isReturnReceipt &&
+    !isReceiptDue &&
     !isReservationReceipt &&
     selectedReceipt &&
     (
+      selectedReceipt.receiptType === "PICKUP_SUCCESS" ||
+      selectedReceipt.isPickedUp === true ||
+      selectedReceipt.status?.toLowerCase().includes("picked")
+    )
+  );
+
+  const isBorrowApproved = Boolean(
+    !isReturnReceipt &&
+    !isReceiptDue &&
+    !isReservationReceipt &&
+    !isPickedUpReceipt &&
+    selectedReceipt &&
+    (
+      selectedReceipt.receiptType === "BORROW_APPROVED" ||
       selectedReceipt.status?.toLowerCase() === "approved" ||
       selectedReceipt.status?.toLowerCase() === "ready for pickup" ||
       selectedReceipt.status?.toLowerCase().includes("approved")
     )
   );
 
+  const approvingLibrarian = resolveReceiptLibrarian(selectedReceipt);
+
+  const receiptClassificationTitle = selectedReceipt?.receiptTypeLabel || (
+    isReturnReceipt ? "RETURN SUCCESS" :
+    isReceiptDue ? "DUE RETURN REMINDER" :
+    isBorrowApproved ? "BORROW REQUEST APPROVED" :
+    isPickedUpReceipt ? "PICK UP SUCCESS" :
+    isReservationReceipt ? "RESERVATION APPROVED" :
+    "ACTIVE CIRCULATION LOAN"
+  );
+
+  const receiptClassificationSub = selectedReceipt?.receiptTypeSub || (
+    isReturnReceipt ? "Book Successfully Returned • Circulation Clearance Slip" :
+    isReceiptDue ? "Return book on or before deadline to keep account clear." :
+    isBorrowApproved ? "Official circulation loan approval. Claim copy at desk." :
+    isPickedUpReceipt ? "Book claimed at desk • Active circulation loan." :
+    isReservationReceipt ? "Queued waitlist confirmation slip." :
+    "Official BookHive Library circulation record."
+  );
+
   useEffect(() => {
     setNotifications(deduplicateNotifications(getNotifications()));
+    void syncNotifications(true);
     return subscribe(() => {
       setNotifications(deduplicateNotifications(getNotifications()));
     });
@@ -89,19 +156,23 @@ export default function NotificationsScreen() {
     return () => backSubscription.remove();
   }, [router]);
 
-  const handleMarkRead = (id: string) => {
-    markNotificationRead(id);
-    setNotifications(getNotifications());
+  const handleMarkRead = async (id: string) => {
+    const updated = await markNotificationRead(id);
+    setNotifications(deduplicateNotifications(updated));
   };
 
-  const handleDelete = (id: string) => {
-    deleteNotification(id);
-    setNotifications(getNotifications());
+  const handleDelete = async (id: string) => {
+    const updated = await deleteNotification(id);
+    setNotifications(deduplicateNotifications(updated));
   };
 
-  const handleClearAll = () => {
-    clearNotifications();
-    setNotifications(getNotifications());
+  const handleReadAll = async () => {
+    const updated = await markAllNotificationsAsRead();
+    // Keep notifications visible: if currently viewing 'unread' tab, switch to 'all' so they don't disappear
+    if (activeTab === 'unread') {
+      setActiveTab('all');
+    }
+    setNotifications(deduplicateNotifications(updated));
   };
 
   const resolveBookInfo = (item: NotificationItem) => {
@@ -432,7 +503,8 @@ export default function NotificationsScreen() {
                      titleLower.includes("request") || titleLower.includes("reservation") || 
                      titleLower.includes("declined") || titleLower.includes("failed") || 
                      titleLower.includes("cancel") || titleLower.includes("due") || 
-                     titleLower.includes("overdue") || titleLower.includes("deadline");
+                     titleLower.includes("overdue") || titleLower.includes("deadline") ||
+                     titleLower.includes("pickup") || titleLower.includes("picked up");
     return !isBook && !isUpdate;
   }).length;
 
@@ -448,7 +520,8 @@ export default function NotificationsScreen() {
                      titleLower.includes("request") || titleLower.includes("reservation") || 
                      titleLower.includes("declined") || titleLower.includes("failed") || 
                      titleLower.includes("cancel") || titleLower.includes("due") || 
-                     titleLower.includes("overdue") || titleLower.includes("deadline");
+                     titleLower.includes("overdue") || titleLower.includes("deadline") ||
+                     titleLower.includes("pickup") || titleLower.includes("picked up");
     const isGeneral = !isBook && !isUpdate;
 
     if (activeTab === 'unread') return !item.read;
@@ -490,8 +563,34 @@ export default function NotificationsScreen() {
         </Text>
 
         {notifications.length > 0 ? (
-          <TouchableOpacity style={[styles.clearBtn, { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.12)' : '#FEF2F2', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.25)' : '#FECACA' }]} onPress={handleClearAll}>
-            <Text style={styles.clearText}>Clear All</Text>
+          <TouchableOpacity
+            style={[
+              styles.clearBtn,
+              {
+                backgroundColor: unreadCount > 0 
+                  ? (isDarkMode ? 'rgba(255, 215, 0, 0.15)' : '#FEF3C7')
+                  : (isDarkMode ? 'rgba(255, 255, 255, 0.04)' : '#F1F5F9'),
+                borderColor: unreadCount > 0 
+                  ? (isDarkMode ? 'rgba(255, 215, 0, 0.4)' : '#FCD34D')
+                  : (isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#E2E8F0'),
+                opacity: unreadCount > 0 ? 1 : 0.6,
+              }
+            ]}
+            onPress={handleReadAll}
+            disabled={unreadCount === 0}
+            activeOpacity={0.7}
+          >
+            <Text style={[
+              styles.clearText, 
+              { 
+                color: unreadCount > 0 
+                  ? (isDarkMode ? theme.accentGold : '#B45309')
+                  : (isDarkMode ? '#94A3B8' : '#64748B'), 
+                fontWeight: '700' 
+              }
+            ]}>
+              {unreadCount > 0 ? 'Read All' : 'All Read'}
+            </Text>
           </TouchableOpacity>
         ) : (
           <View style={{ width: 40 }} />
@@ -783,31 +882,159 @@ export default function NotificationsScreen() {
             <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
               {/* Receipt Title & Status Pill */}
               <View style={styles.receiptTitleBlock}>
+                {/* Specific Notification Receipt Type Banner / Note */}
+                <View style={[
+                  styles.receiptTypeBanner,
+                  isReturnReceipt
+                    ? { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : '#F0FDF4', borderColor: isDarkMode ? '#10B981' : '#86EFAC' }
+                    : isBorrowApproved
+                    ? { backgroundColor: isDarkMode ? 'rgba(2, 116, 187, 0.15)' : '#EFF6FF', borderColor: isDarkMode ? '#0284C7' : '#93C5FD' }
+                    : isPickedUpReceipt
+                    ? { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : '#F0FDF4', borderColor: isDarkMode ? '#10B981' : '#86EFAC' }
+                    : isReservationReceipt
+                    ? { backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.15)' : '#FAF5FF', borderColor: isDarkMode ? '#A855F7' : '#D8B4FE' }
+                    : { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2', borderColor: isDarkMode ? '#EF4444' : '#FCA5A5' }
+                ]}>
+                  <View style={[
+                    styles.receiptTypeIconBox,
+                    {
+                      backgroundColor: isReturnReceipt
+                        ? '#10B981'
+                        : isBorrowApproved
+                        ? '#0284C7'
+                        : isPickedUpReceipt
+                        ? '#10B981'
+                        : isReservationReceipt
+                        ? '#9333EA'
+                        : '#EF4444'
+                    }
+                  ]}>
+                    <Ionicons
+                      name={
+                        isReturnReceipt
+                          ? "checkmark-done-circle"
+                          : isBorrowApproved
+                          ? "shield-checkmark"
+                          : isPickedUpReceipt
+                          ? "checkmark-circle"
+                          : isReservationReceipt
+                          ? "bookmark"
+                          : "alert-circle"
+                      }
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.receiptTypeHeaderRow}>
+                      <Text style={[styles.receiptTypeLabelTag, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                        NOTIFICATION RECEIPT
+                      </Text>
+                      <View style={[
+                        styles.receiptTypeBadgePill,
+                        {
+                          backgroundColor: isReturnReceipt
+                            ? (isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#D1FAE5')
+                            : isBorrowApproved
+                            ? (isDarkMode ? 'rgba(2, 116, 187, 0.3)' : '#DBEAFE')
+                            : isPickedUpReceipt
+                            ? (isDarkMode ? 'rgba(16, 185, 129, 0.3)' : '#D1FAE5')
+                            : isReservationReceipt
+                            ? (isDarkMode ? 'rgba(147, 51, 234, 0.3)' : '#F3E8FF')
+                            : (isDarkMode ? 'rgba(255, 255, 255, 0.1)' : '#F1F5F9')
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.receiptTypeBadgePillText,
+                          {
+                            color: isReturnReceipt
+                              ? (isDarkMode ? '#34D399' : '#059669')
+                              : isReceiptDue
+                              ? (isDarkMode ? '#F87171' : '#DC2626')
+                              : isBorrowApproved
+                              ? (isDarkMode ? '#38BDF8' : '#0274BB')
+                              : isPickedUpReceipt
+                              ? (isDarkMode ? '#34D399' : '#059669')
+                              : isReservationReceipt
+                              ? (isDarkMode ? '#C084FC' : '#7C3AED')
+                              : (isDarkMode ? '#CBD5E1' : '#334155')
+                          }
+                        ]}>
+                          {receiptClassificationTitle}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.receiptTypeDescText, { color: isDarkMode ? '#CBD5E1' : '#475569' }]}>
+                      {receiptClassificationSub}
+                    </Text>
+                  </View>
+                </View>
+
                 <Text style={[styles.receiptDocumentTitle, { color: theme.textPrimary }]}>
-                  {isReservationReceipt ? "RESERVATION QUEUE SLIP" : "CIRCULATION LOAN SLIP"}
+                  {isReturnReceipt
+                    ? "CIRCULATION RETURN CLEARANCE"
+                    : isReceiptDue
+                    ? "DUE RETURN DEADLINE REMINDER"
+                    : isReservationReceipt
+                    ? "RESERVATION QUEUE SLIP"
+                    : isBorrowApproved
+                    ? "BORROW APPROVAL SLIP • PICKUP PASS"
+                    : isPickedUpReceipt
+                    ? "CIRCULATION LOAN SLIP (ACTIVE)"
+                    : "CIRCULATION LOAN SLIP"}
                 </Text>
 
                 {/* Live Status Pill */}
                 <View style={[
                   styles.receiptBadge,
-                  isReservationReceipt
+                  isReturnReceipt
+                    ? { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.35)' }
+                    : isReservationReceipt
                     ? { backgroundColor: 'rgba(168, 85, 247, 0.12)', borderColor: 'rgba(168, 85, 247, 0.35)' }
                     : isReceiptDue
                     ? { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.35)' }
+                    : isBorrowApproved
+                    ? { backgroundColor: 'rgba(2, 116, 187, 0.12)', borderColor: 'rgba(2, 116, 187, 0.35)' }
                     : { backgroundColor: 'rgba(16, 185, 129, 0.12)', borderColor: 'rgba(16, 185, 129, 0.35)' }
                 ]}>
                   <View style={[
                     styles.receiptStatusDot,
-                    { backgroundColor: isReservationReceipt ? '#A855F7' : isReceiptDue ? '#EF4444' : '#10B981' }
+                    {
+                      backgroundColor: isReturnReceipt
+                        ? '#10B981'
+                        : isReservationReceipt
+                        ? '#A855F7'
+                        : isReceiptDue
+                        ? '#EF4444'
+                        : isBorrowApproved
+                        ? '#0284C7'
+                        : '#10B981'
+                    }
                   ]} />
                   <Text style={[
                     styles.receiptBadgeText,
-                    { color: isReservationReceipt ? (isDarkMode ? '#C084FC' : '#7C3AED') : isReceiptDue ? '#EF4444' : '#10B981' }
+                    {
+                      color: isReturnReceipt
+                        ? '#10B981'
+                        : isReservationReceipt
+                        ? (isDarkMode ? '#C084FC' : '#7C3AED')
+                        : isReceiptDue
+                        ? '#EF4444'
+                        : isBorrowApproved
+                        ? (isDarkMode ? '#38BDF8' : '#0274BB')
+                        : '#10B981'
+                    }
                   ]}>
-                    {isReservationReceipt
+                    {isReturnReceipt
+                      ? "RETURNED • LOAN CLEARED"
+                      : isReservationReceipt
                       ? `QUEUED RESERVATION (QUE #${selectedReceipt?.queuePosition || '1'})`
                       : isReceiptDue
                       ? "DUE FOR RETURN TODAY"
+                      : isBorrowApproved
+                      ? "READY FOR PICKUP (CLAIM BOOK)"
+                      : isPickedUpReceipt
+                      ? "PICKED UP / ACTIVE LOAN"
                       : (selectedReceipt?.status?.toUpperCase() || "ACTIVE LOAN")}
                   </Text>
                 </View>
@@ -818,6 +1045,50 @@ export default function NotificationsScreen() {
                   <Text style={[styles.receiptNumberText, { color: isDarkMode ? '#CBD5E1' : '#475569' }]}>
                     Slip No: {selectedReceipt?.receiptNumber}
                   </Text>
+                  <Text style={[
+                    styles.receiptSlipTypeSuffix,
+                    {
+                      color: isReturnReceipt
+                        ? (isDarkMode ? '#34D399' : '#059669')
+                        : isBorrowApproved
+                        ? (isDarkMode ? '#38BDF8' : '#0274BB')
+                        : isPickedUpReceipt
+                        ? (isDarkMode ? '#34D399' : '#059669')
+                        : isReservationReceipt
+                        ? (isDarkMode ? '#C084FC' : '#7C3AED')
+                        : (isDarkMode ? '#94A3B8' : '#64748B')
+                    }
+                  ]}>
+                    • {receiptClassificationTitle}
+                  </Text>
+                </View>
+
+                {/* Approving Librarian Sign-Off Card (Below Slip No, Above Book Details) */}
+                <View style={[
+                  styles.receiptApproverCard,
+                  {
+                    backgroundColor: isDarkMode ? '#102237' : '#F0FDF4',
+                    borderColor: isDarkMode ? '#1E3A5F' : '#BBF7D0',
+                  }
+                ]}>
+                  <View style={styles.receiptApproverAvatar}>
+                    <Ionicons name="shield-checkmark" size={16} color="#10B981" />
+                  </View>
+                  <View style={styles.receiptApproverInfo}>
+                    <Text style={[styles.receiptApproverTag, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                      APPROVED BY LIBRARIAN
+                    </Text>
+                    <Text style={[styles.receiptApproverName, { color: theme.textPrimary }]} numberOfLines={1}>
+                      {approvingLibrarian.name}
+                    </Text>
+                    <Text style={[styles.receiptApproverRole, { color: isDarkMode ? '#38BDF8' : '#0284C7' }]}>
+                      {approvingLibrarian.role}
+                    </Text>
+                  </View>
+                  <View style={[styles.receiptApproverBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+                    <Ionicons name="checkmark-done" size={11} color="#10B981" />
+                    <Text style={styles.receiptApproverBadgeText}>VERIFIED</Text>
+                  </View>
                 </View>
               </View>
 
@@ -972,6 +1243,95 @@ export default function NotificationsScreen() {
                     </View>
                   </View>
                 </View>
+              ) : isReturnReceipt ? (
+                <View style={styles.receiptSection}>
+                  <View style={styles.sectionHeaderRow}>
+                    <Ionicons name="checkmark-done-circle-outline" size={13} color="#10B981" />
+                    <Text style={[styles.receiptSectionHeader, { color: '#10B981' }]}>
+                      RETURN CLEARANCE RECORD
+                    </Text>
+                  </View>
+
+                  <View style={styles.receiptDateGrid}>
+                    <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <View style={styles.dateBoxHeader}>
+                        <Ionicons name="calendar-outline" size={12} color="#64748B" />
+                        <Text style={styles.receiptDateBoxLabel}>DATE BORROWED</Text>
+                      </View>
+                      <Text style={[styles.receiptDateBoxValue, { color: theme.textPrimary }]}>
+                        {selectedReceipt?.borrowDate || "Nov 05, 2026"}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.receiptDateBox, { backgroundColor: isDarkMode ? '#101F33' : '#F8FAFC', borderColor: isDarkMode ? '#1E324A' : '#E2E8F0' }]}>
+                      <View style={styles.dateBoxHeader}>
+                        <Ionicons name="checkmark-done-circle-outline" size={13} color="#10B981" />
+                        <Text style={[styles.receiptDateBoxLabel, { color: '#10B981' }]}>DATE RETURNED</Text>
+                      </View>
+                      <Text style={[styles.receiptDateBoxValue, { color: '#10B981', fontWeight: '800' }]}>
+                        {selectedReceipt?.returnedDate || selectedReceipt?.returnDate || selectedReceipt?.pickupDate || "Returned"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* Return Clearance Hero Card */}
+                  <View style={[
+                    styles.receiptDueHeroCard,
+                    {
+                      backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.12)' : '#ECFDF5',
+                      borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.35)' : '#A7F3D0',
+                    }
+                  ]}>
+                    <View style={styles.dueHeroTopRow}>
+                      <View style={styles.dueHeroLabelGroup}>
+                        <Ionicons
+                          name="checkmark-done-circle"
+                          size={16}
+                          color={isDarkMode ? '#34D399' : '#059669'}
+                        />
+                        <Text style={[
+                          styles.dueHeroTitle,
+                          { color: isDarkMode ? '#34D399' : '#059669' }
+                        ]}>
+                          RETURN STATUS: CLEARED
+                        </Text>
+                      </View>
+
+                      <View style={[
+                        styles.dueHeroStatusPill,
+                        { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#D1FAE5' }
+                      ]}>
+                        <Text style={[
+                          styles.dueHeroStatusPillText,
+                          { color: isDarkMode ? '#34D399' : '#047857' }
+                        ]}>
+                          LOAN CLOSED
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Text style={[
+                      styles.dueHeroDateValue,
+                      { color: isDarkMode ? '#34D399' : '#047857' }
+                    ]}>
+                      {selectedReceipt?.returnedDate || selectedReceipt?.returnDate || "Returned & Cleared"}
+                    </Text>
+
+                    <View style={styles.dueHeroNoticeRow}>
+                      <Ionicons
+                        name="shield-checkmark-outline"
+                        size={13}
+                        color={isDarkMode ? '#34D399' : '#059669'}
+                      />
+                      <Text style={[
+                        styles.dueHeroNoticeText,
+                        { color: isDarkMode ? '#94A3B8' : '#64748B' }
+                      ]}>
+                        Physical copy inspected and safely returned to library collection. Your student account has no active liability for this book.
+                      </Text>
+                    </View>
+                  </View>
+                </View>
               ) : (
                 <View style={styles.receiptSection}>
                   <View style={styles.sectionHeaderRow}>
@@ -1048,7 +1408,7 @@ export default function NotificationsScreen() {
                       styles.dueHeroDateValue,
                       { color: isReceiptDue ? (isDarkMode ? '#F87171' : '#DC2626') : (isDarkMode ? '#38BDF8' : '#0369A1') }
                     ]}>
-                      {selectedReceipt?.returnDate}
+                      {formatDueDate(selectedReceipt?.returnDate)}
                     </Text>
 
                     <View style={styles.dueHeroNoticeRow}>
@@ -1196,9 +1556,15 @@ export default function NotificationsScreen() {
                     ]}
                     onPress={() => {
                       Alert.alert(
-                        isReservationReceipt ? "Reservation Slip Saved" : "Receipt Saved",
+                        isReservationReceipt
+                          ? "Reservation Slip Saved"
+                          : isReturnReceipt
+                          ? "Return Clearance Saved"
+                          : "Receipt Saved",
                         isReservationReceipt
                           ? `Reservation slip #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
+                          : isReturnReceipt
+                          ? `Circulation return clearance #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
                           : `Circulation receipt #${selectedReceipt?.receiptNumber} has been logged to your digital library card records.`
                       );
                     }}
@@ -1206,7 +1572,7 @@ export default function NotificationsScreen() {
                   >
                     <Ionicons name="download-outline" size={16} color={isDarkMode ? '#0F1D2B' : '#FFFFFF'} />
                     <Text style={[styles.receiptSaveBtnText, { color: isDarkMode ? '#0F1D2B' : '#FFFFFF' }]}>
-                      {isReservationReceipt ? "Save Slip" : "Save Receipt"}
+                      {isReservationReceipt ? "Save Slip" : isReturnReceipt ? "Save Clearance" : "Save Receipt"}
                     </Text>
                   </TouchableOpacity>
 
@@ -1804,6 +2170,56 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.5,
   },
+  receiptTypeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    marginBottom: 12,
+    width: '100%',
+  },
+  receiptTypeIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptTypeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    marginBottom: 3,
+  },
+  receiptTypeLabelTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  receiptTypeBadgePill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+  },
+  receiptTypeBadgePillText: {
+    fontSize: 10.5,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  receiptTypeDescText: {
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: '500',
+  },
+  receiptSlipTypeSuffix: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
   slipPillBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1815,6 +2231,58 @@ const styles = StyleSheet.create({
   receiptNumberText: {
     fontSize: 11,
     fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  receiptApproverCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 12,
+    borderWidth: 1,
+    width: '100%',
+  },
+  receiptApproverAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptApproverInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  receiptApproverTag: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    marginBottom: 1,
+  },
+  receiptApproverName: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  receiptApproverRole: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  receiptApproverBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  receiptApproverBadgeText: {
+    fontSize: 9.5,
+    fontWeight: '800',
+    color: '#10B981',
     letterSpacing: 0.5,
   },
   ticketDividerContainer: {

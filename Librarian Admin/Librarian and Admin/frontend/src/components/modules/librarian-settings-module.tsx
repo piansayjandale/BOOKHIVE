@@ -10,7 +10,7 @@ import type { SystemPreference } from "@/lib/types";
 
 export function LibrarianSettingsModule() {
   const { user, setUser } = useSession();
-  const { setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<SystemPreference | null>(null);
   const [profile, setProfile] = useState<{
     name: string;
@@ -27,7 +27,7 @@ export function LibrarianSettingsModule() {
         fetch("/api/settings"),
         fetch("/api/profile"),
       ]);
-      const settingsPayload = (await settingsRes.json()) as { settings: SystemPreference };
+      const settingsPayload = (await settingsRes.json()) as any;
       const profilePayload = (await profileRes.json()) as {
         id: string;
         name: string;
@@ -38,8 +38,15 @@ export function LibrarianSettingsModule() {
         avatar: string;
       };
 
+      const loadedSettings: SystemPreference = settingsPayload?.settings || settingsPayload;
+      const activeTheme = theme || loadedSettings?.theme || "light";
+      const resolvedSettings: SystemPreference = {
+        ...loadedSettings,
+        theme: (activeTheme === "light" || activeTheme === "dark") ? activeTheme : "light",
+      };
+
       startTransition(() => {
-        setSettings(settingsPayload.settings);
+        setSettings(resolvedSettings);
         setProfile({
           name: profilePayload.name,
           email: profilePayload.email,
@@ -56,6 +63,12 @@ export function LibrarianSettingsModule() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    if (theme && settings && settings.theme !== theme) {
+      setSettings((current) => (current ? { ...current, theme } : current));
+    }
+  }, [theme]);
 
   async function saveProfileAndSettings(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -212,17 +225,17 @@ export function LibrarianSettingsModule() {
                 <span className="text-xs font-semibold text-slate-400">Theme Mode</span>
                 <select
                   className="w-full rounded-xl border border-white/10 bg-white/5 py-2.5 px-4 text-sm text-white focus:border-[#FCD400]/50 focus:outline-none transition-colors"
-                  value={settings.theme}
-                  onChange={(event) =>
+                  value={theme || settings.theme}
+                  onChange={(event) => {
+                    const newTheme = event.target.value as "light" | "dark";
                     setSettings((current) =>
-                      current
-                        ? { ...current, theme: event.target.value as SystemPreference["theme"] }
-                        : current,
-                    )
-                  }
+                      current ? { ...current, theme: newTheme } : current,
+                    );
+                    setTheme(newTheme);
+                  }}
                 >
-                  <option value="dark" className="bg-[#0F1D29]">Dark</option>
-                  <option value="light" className="bg-[#0F1D29]">Light</option>
+                  <option value="light" className="bg-white text-slate-900 dark:bg-[#0F1D29] dark:text-white">Light</option>
+                  <option value="dark" className="bg-white text-slate-900 dark:bg-[#0F1D29] dark:text-white">Dark</option>
                 </select>
               </label>
             </div>
@@ -269,8 +282,8 @@ export function LibrarianSettingsModule() {
             </div>
 
             <div className="mt-2 flex items-center gap-4">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#60a5fa,#38bdf8)] text-lg font-black text-white shadow-md">
-                {user?.avatar ?? "LB"}
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#FFF300] text-xl font-black text-[#0274BB] shadow-sm">
+                {user?.avatar || (user?.name ? user.name.split(" ").filter(Boolean).map((n) => n[0]).slice(0, 2).join("").toUpperCase() : "YB")}
               </div>
               <div>
                 <p className="text-lg font-bold text-white">{user?.name ?? "Library Staff"}</p>
@@ -285,7 +298,7 @@ export function LibrarianSettingsModule() {
               </div>
               <div className="rounded-xl border border-white/8 bg-[#152E47]/60 px-4 py-3 backdrop-blur">
                 <p className="text-[9px] font-bold tracking-[0.18em] text-slate-400 uppercase">Theme Mode</p>
-                <p className="mt-0.5 text-sm font-semibold text-white capitalize">{settings.theme}</p>
+                <p className="mt-0.5 text-sm font-semibold text-white capitalize">{theme || settings.theme}</p>
               </div>
             </div>
           </div>

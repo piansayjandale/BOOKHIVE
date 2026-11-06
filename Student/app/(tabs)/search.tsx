@@ -12,13 +12,15 @@ import {
   Switch,
   Animated,
   Platform,
+  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
+import PageCircleLoader from "../../components/PageCircleLoader";
 import axios from "axios";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { useThemeColors } from "../../hooks/useThemeColors";
 import {
   Feather,
@@ -154,6 +156,51 @@ export const calculateMatchPercentage = (
   return Math.min(98, Math.round(baseScore + ratio * 20));
 };
 
+const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const stemWord = (w: string) => w.replace(/(ing|tions|tion|ments|ment|s|es|ed|ic|ical|ist|ists)$/i, "");
+
+export const getRelevanceBadgeColor = (match: number, isDarkMode: boolean) => {
+  const rounded = Math.round(match);
+  if (rounded >= 90) {
+    // 90% - 100%: Green
+    return {
+      bg: isDarkMode ? "rgba(34, 197, 94, 0.2)" : "#DCFCE7",
+      border: isDarkMode ? "rgba(74, 222, 128, 0.45)" : "#86EFAC",
+      text: isDarkMode ? "#4ADE80" : "#15803D",
+    };
+  }
+  if (rounded >= 70) {
+    // 70% - 89% (includes 70%-80%): Yellow
+    return {
+      bg: isDarkMode ? "rgba(250, 204, 21, 0.2)" : "#FEF9C3",
+      border: isDarkMode ? "rgba(250, 204, 21, 0.45)" : "#FDE047",
+      text: isDarkMode ? "#FACC15" : "#A16207",
+    };
+  }
+  if (rounded >= 40) {
+    // 40% - 69% (includes 40%-60%): Orange
+    return {
+      bg: isDarkMode ? "rgba(249, 115, 22, 0.2)" : "#FFEDD5",
+      border: isDarkMode ? "rgba(251, 146, 60, 0.45)" : "#FDBA74",
+      text: isDarkMode ? "#FB923C" : "#C2410C",
+    };
+  }
+  // 10% - 39% (includes 10%-30%): Red
+  return {
+    bg: isDarkMode ? "rgba(239, 68, 68, 0.2)" : "#FEE2E2",
+    border: isDarkMode ? "rgba(248, 113, 113, 0.45)" : "#FCA5A5",
+    text: isDarkMode ? "#F87171" : "#B91C1C",
+  };
+};
+
+export const getTitleFontSize = (title: string = "") => {
+  const len = title.length;
+  if (len <= 26) return 15.5;
+  if (len <= 48) return 14;
+  if (len <= 72) return 12.5;
+  return 11.5;
+};
+
 /**
  * AI Natural Language Prompt & Keyword Relevance Scoring Calculation
  * (Used when the Filter Toggle is OFF)
@@ -177,10 +224,12 @@ export const calculateAiPromptMatchPercentage = (
   const coreQuery =
     rawQuery
       .replace(
-        /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+)?/i,
+        /^(please\s+)?(can\s+you\s+)?(find|show|search|get|give|recommend|suggest|look\s+for|looking\s+for|i\s+want\s+to\s+read|i\s+need|is\s+there\s+any)\s+(me\s+)?(a\s+|an\s+|the\s+|some\s+|any\s+)?(books?\s+|novels?\s+|references?\s+|titles?\s+|materials?\s+)?(((that|which)\s+(is|are)\s+)?(about\s+|on\s+|for\s+|titled\s+|called\s+|named\s+|by\s+|with\s+|related\s+to\s+|regarding\s+))?/i,
         ""
       )
-      .replace(/^(books?\s+|novels?\s+|references?\s+)(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+)/i, "")
+      .replace(/^(books?\s+|novels?\s+|references?\s+|materials?\s+)(((that|which)\s+(is|are)\s+)?(about\s+|on\s+|for\s+|like\s+|titled\s+|called\s+|related\s+to\s+|regarding\s+))/i, "")
+      .replace(/^(that\s+is\s+|which\s+is\s+|that\s+are\s+|which\s+are\s+)(about\s+|related\s+to\s+|on\s+|for\s+|regarding\s+)?/i, "")
+      .replace(/^(related\s+to\s+|about\s+|regarding\s+|on\s+)/i, "")
       .trim() || rawQuery;
 
   const normalizedQuery = coreQuery.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
@@ -210,24 +259,26 @@ export const calculateAiPromptMatchPercentage = (
   const sigTitleWords = titleWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
   const effectiveTitleWords = sigTitleWords.length > 0 ? sigTitleWords : titleWords;
 
-  // 2. Exact Query Phrase in Title or Author -> 92% - 99%
-  if (normalizedQuery.length >= 2 && normalizedTitle.includes(normalizedQuery)) {
+  // 2. Exact Query Phrase in Title (Must match word boundary, NOT middle of words like "conscience" for "science")
+  const isPhraseInTitle = new RegExp(`\\b${escapeRegExp(normalizedQuery)}\\b`, "i").test(normalizedTitle) ||
+                          new RegExp(`\\b${escapeRegExp(normalizedQuery)}`, "i").test(normalizedTitle);
+  if (normalizedQuery.length >= 2 && isPhraseInTitle) {
     const isWholeWord = titleWords.includes(normalizedQuery) || normalizedTitle.startsWith(normalizedQuery);
     const ratio = Math.min(1, normalizedQuery.length / Math.max(1, normalizedTitle.length));
     return Math.min(99, Math.round((isWholeWord ? 94 : 90) + ratio * 5));
   }
 
-  if (normalizedQuery.length > 3 && normalizedAuthor.length > 0 && normalizedAuthor.includes(normalizedQuery)) {
+  const isPhraseInAuthor = new RegExp(`\\b${escapeRegExp(normalizedQuery)}\\b`, "i").test(normalizedAuthor);
+  if (normalizedQuery.length > 3 && normalizedAuthor.length > 0 && isPhraseInAuthor) {
     return 90;
   }
 
-  // 3. Tokenize natural language prompt and extract significant AI keywords
+  // 3. Tokenize natural language prompt and extract significant AI keywords (Never treat stop words as meaningful keywords)
   const allWords = normalizedQuery.split(/\s+/).filter(Boolean);
   const filteredWords = allWords.filter((w) => w.length >= 2 && !STOP_WORDS.has(w));
-  const isDirective = DIRECTIVE_PATTERNS.some((p) => p.test(rawQuery));
-  const meaningfulWords = filteredWords.length > 0 ? filteredWords : isDirective ? [] : allWords;
+  const meaningfulWords = filteredWords;
 
-  // If user only provided directive phrases (e.g. "is there any books similar to this file?")
+  // If user only provided directive phrases or stop words
   if (meaningfulWords.length === 0) {
     if (hasFileAttached) {
       return 80;
@@ -242,18 +293,29 @@ export const calculateAiPromptMatchPercentage = (
   let catMatches = 0;
 
   for (const kw of meaningfulWords) {
+    const kwStem = stemWord(kw);
+    // Strict word-boundary and stemming matching:
+    // A word "conscience" must NEVER match keyword "science"!
+    // A word "decoding" or "Coo" must NEVER match keyword "coding" or "cooking"!
+    const hasWordHit = titleWords.some((tw) => {
+      if (tw === kw) return true;
+      const twStem = stemWord(tw);
+      if (kwStem.length >= 3 && twStem.length >= 3 && kwStem === twStem) return true;
+      if (kw.length >= 4 && tw.startsWith(kw)) return true;
+      if (kwStem.length >= 4 && tw.startsWith(kwStem)) return true;
+      return false;
+    });
+
     if (titleWords.includes(kw)) {
       exactTitleWordMatches++;
       titleMatches++;
-    } else if (
-      normalizedTitle.includes(kw) ||
-      (kw.length >= 4 && titleWords.some((tw) => tw.startsWith(kw) || kw.startsWith(tw)))
-    ) {
+    } else if (hasWordHit) {
       titleMatches++;
     }
-    if (normalizedAuthor.includes(kw)) authorMatches++;
-    if (normalizedCat.includes(kw)) catMatches++;
-    if (normalizedDesc.includes(kw)) descMatches++;
+
+    if (new RegExp(`\\b${escapeRegExp(kw)}`, "i").test(normalizedAuthor)) authorMatches++;
+    if (new RegExp(`\\b${escapeRegExp(kw)}`, "i").test(normalizedCat)) catMatches++;
+    if (new RegExp(`\\b${escapeRegExp(kw)}`, "i").test(normalizedDesc)) descMatches++;
   }
 
   const totalMatches = titleMatches + authorMatches + descMatches + catMatches;
@@ -264,9 +326,15 @@ export const calculateAiPromptMatchPercentage = (
   let matchedBookWords = 0;
   for (const tw of effectiveTitleWords) {
     if (
-      meaningfulWords.some(
-        (kw) => tw === kw || tw.includes(kw) || (kw.length >= 4 && (tw.startsWith(kw) || kw.startsWith(tw)))
-      )
+      meaningfulWords.some((kw) => {
+        if (tw === kw) return true;
+        const kwStem = stemWord(kw);
+        const twStem = stemWord(tw);
+        if (kwStem.length >= 3 && twStem.length >= 3 && kwStem === twStem) return true;
+        if (kw.length >= 4 && tw.startsWith(kw)) return true;
+        if (kwStem.length >= 4 && tw.startsWith(kwStem)) return true;
+        return false;
+      })
     ) {
       matchedBookWords++;
     }
@@ -365,11 +433,80 @@ export default function SearchScreen() {
   const { isDarkMode, theme } = useThemeColors();
   const handledParamQRef = useRef<string | null>(null);
   const handledParamFileRef = useRef<string | null>(null);
+  const [isContentReady, setIsContentReady] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [books, setBooks] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [isPrefixFilter, setIsPrefixFilter] = useState(true);
+
+  // Animation for automatically hiding search icon & paperclip icon when typing prompt with filter off
+  const promptIconsAnim = useRef(new Animated.Value(!isPrefixFilter && searchText.trim().length > 0 ? 0 : 1)).current;
+
+  // Animation for smoothly showing search results on analyze or enter
+  const resultsFadeAnim = useRef(new Animated.Value(1)).current;
+  const resultsTranslateY = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const shouldHide = !isPrefixFilter && searchText.trim().length > 0;
+    Animated.timing(promptIconsAnim, {
+      toValue: shouldHide ? 0 : 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [isPrefixFilter, searchText]);
+
+  const triggerResultsAnimation = useCallback(() => {
+    resultsFadeAnim.setValue(0);
+    resultsTranslateY.setValue(18);
+    Animated.parallel([
+      Animated.timing(resultsFadeAnim, {
+        toValue: 1,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(resultsTranslateY, {
+        toValue: 0,
+        duration: 380,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [resultsFadeAnim, resultsTranslateY]);
+
+  useEffect(() => {
+    if (!loading && (searchText.trim().length > 0 || selectedFile !== null)) {
+      triggerResultsAnimation();
+    }
+  }, [loading]);
+
+  const searchIconWidth = promptIconsAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 24],
+  });
+  const searchIconOpacity = promptIconsAnim.interpolate({
+    inputRange: [0, 0.4, 1],
+    outputRange: [0, 0, 1],
+  });
+  const searchIconMarginRight = promptIconsAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 8],
+  });
+
+  const clipIconWidth = promptIconsAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 32],
+  });
+  const clipIconOpacity = promptIconsAnim.interpolate({
+    inputRange: [0, 0.4, 1],
+    outputRange: [0, 0, 1],
+  });
+  const clipIconMarginRight = promptIconsAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, 6],
+  });
 
   const aiPulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -391,6 +528,9 @@ export default function SearchScreen() {
     pulse.start();
     return () => pulse.stop();
   }, []);
+
+  // Maintain search query and results context while user navigates to book details and back
+  // (State persists smoothly during the active search session)
 
   const handleSearchTextChange = (text: string) => {
     setSearchText(text);
@@ -1234,7 +1374,10 @@ export default function SearchScreen() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView
+        {!isContentReady ? (
+          <PageCircleLoader label="Loading search catalog..." />
+        ) : (
+          <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{
             paddingBottom: 120,
@@ -1329,12 +1472,24 @@ export default function SearchScreen() {
                 borderRadius: 27,
               }
             ]}>
-              <Feather
-                name="search"
-                size={18}
-                color={isDarkMode ? theme.accentGold : "#94A3B8"}
-                style={{ marginTop: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? 6 : 0 }}
-              />
+              {/* ANIMATED SEARCH ICON (Hides smoothly when prompt is typed with filter OFF) */}
+              <Animated.View
+                style={{
+                  width: searchIconWidth,
+                  opacity: searchIconOpacity,
+                  marginRight: searchIconMarginRight,
+                  overflow: "hidden",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginTop: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? 6 : 0,
+                }}
+              >
+                <Feather
+                  name="search"
+                  size={18}
+                  color={isDarkMode ? theme.accentGold : "#94A3B8"}
+                />
+              </Animated.View>
 
               <TextInput
                 ref={inputRef}
@@ -1350,6 +1505,7 @@ export default function SearchScreen() {
                     minHeight: !isPrefixFilter ? Math.max(38, inputHeight) : 38,
                     paddingTop: Platform.OS === 'ios' ? (!isPrefixFilter ? 6 : 0) : (!isPrefixFilter ? 4 : 0),
                     paddingBottom: Platform.OS === 'ios' ? (!isPrefixFilter ? 6 : 0) : (!isPrefixFilter ? 4 : 0),
+                    marginLeft: !isPrefixFilter && searchText.trim().length > 0 ? 4 : 10,
                   }
                 ]}
                 multiline={!isPrefixFilter}
@@ -1363,25 +1519,36 @@ export default function SearchScreen() {
                   if (!isPrefixFilter && searchText.trim().length >= 2) {
                     saveSearchQuery(searchText.trim());
                   }
+                  triggerResultsAnimation();
                   fetchBooks(searchText);
                 }}
                 returnKeyType="search"
               />
 
-              {/* ATTACHMENT BUTTON */}
-              <TouchableOpacity
-                style={[
-                  styles.iconButton,
-                  { marginTop: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? 4 : 0 }
-                ]}
-                onPress={pickDocument}
+              {/* ATTACHMENT BUTTON (Hides smoothly when prompt is typed with filter OFF) */}
+              <Animated.View
+                style={{
+                  width: clipIconWidth,
+                  opacity: clipIconOpacity,
+                  marginRight: clipIconMarginRight,
+                  overflow: "hidden",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginTop: !isPrefixFilter && (searchText.length > 20 || inputHeight > 42) ? 4 : 0,
+                }}
               >
-                <Feather
-                  name="paperclip"
-                  size={18}
-                  color={isDarkMode ? theme.accentGold : "#64748B"}
-                />
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.iconButton}
+                  onPress={pickDocument}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather
+                    name="paperclip"
+                    size={18}
+                    color={isDarkMode ? theme.accentGold : "#64748B"}
+                  />
+                </TouchableOpacity>
+              </Animated.View>
 
               {/* ACTION BUTTON (Matches Web System) */}
               <TouchableOpacity
@@ -1389,6 +1556,7 @@ export default function SearchScreen() {
                   if (!isPrefixFilter && searchText.trim().length >= 2) {
                     saveSearchQuery(searchText.trim());
                   }
+                  triggerResultsAnimation();
                   fetchBooks(searchText);
                 }}
                 activeOpacity={0.85}
@@ -1473,7 +1641,15 @@ export default function SearchScreen() {
 
           {/* SEARCH ACTIVE STATE: RESULTS & PAGINATION */}
           {isSearchActive && (
-            <View style={styles.resultsContainer}>
+            <Animated.View
+              style={[
+                styles.resultsContainer,
+                {
+                  opacity: resultsFadeAnim,
+                  transform: [{ translateY: resultsTranslateY }],
+                },
+              ]}
+            >
               {/* RESULTS HEADER */}
               <View style={styles.resultHeader}>
                 <Text style={[styles.resultTitle, { color: theme.textSecondary }]}>
@@ -1658,28 +1834,59 @@ export default function SearchScreen() {
                       {/* LEFT: TITLE & AUTHOR */}
                       <View style={styles.cardLeftContent}>
                         <Text
-                          style={[styles.bookTitle, { color: theme.textPrimary }]}
-                          numberOfLines={1}
+                          style={[
+                            styles.bookTitle,
+                            {
+                              color: theme.textPrimary,
+                              fontSize: getTitleFontSize(info.title),
+                              lineHeight: Math.round(getTitleFontSize(info.title) * 1.3),
+                            },
+                          ]}
+                          numberOfLines={4}
                         >
                           {info.title}
                         </Text>
                         <Text
-                          style={[styles.authorText, { color: theme.textSecondary }]}
-                          numberOfLines={1}
+                          style={[styles.authorText, { color: theme.textSecondary, marginTop: 4 }]}
+                          numberOfLines={2}
                         >
                           By: {authorNames}
                         </Text>
                       </View>
 
-                      {/* RIGHT: MATCH BADGE */}
-                      <View style={[styles.matchBadge, { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg, borderColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : theme.badgeYellowBorder, borderWidth: 1 }]}>
-                        <Text style={[styles.matchPercentText, { color: isDarkMode ? "#FFD700" : theme.badgeYellowText, fontWeight: "900" }]}>
-                          {match}%
-                        </Text>
-                        <Text style={[styles.matchLabelText, { color: isDarkMode ? "#FFD700" : theme.badgeYellowText, fontWeight: "800" }]}>
-                          MATCH
-                        </Text>
-                      </View>
+                      {/* RIGHT: MATCH BADGE (Highlight: 10%-30% Red, 40%-60% Orange, 70%-80% Yellow, 90%-100% Green) */}
+                      {(() => {
+                        const badgeColor = getRelevanceBadgeColor(match, isDarkMode);
+                        return (
+                          <View
+                            style={[
+                              styles.matchBadge,
+                              {
+                                backgroundColor: badgeColor.bg,
+                                borderColor: badgeColor.border,
+                                borderWidth: 1.5,
+                              },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.matchPercentText,
+                                { color: badgeColor.text, fontWeight: "900" },
+                              ]}
+                            >
+                              {Math.round(match)}%
+                            </Text>
+                            <Text
+                              style={[
+                                styles.matchLabelText,
+                                { color: badgeColor.text, fontWeight: "800" },
+                              ]}
+                            >
+                              MATCH
+                            </Text>
+                          </View>
+                        );
+                      })()}
                     </TouchableOpacity>
                   );
                 })
@@ -1742,9 +1949,10 @@ export default function SearchScreen() {
                   </TouchableOpacity>
                 </View>
               )}
-            </View>
+            </Animated.View>
           )}
         </ScrollView>
+        )}
       </AnimatedScreen>
     );
 }

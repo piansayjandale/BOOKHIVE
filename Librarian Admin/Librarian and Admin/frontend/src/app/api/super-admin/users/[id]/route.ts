@@ -24,6 +24,7 @@ async function handleUpdateSuperAdminUser(
       idNumber,
       email,
       role,
+      subRole,
       department,
       course,
       status,
@@ -50,6 +51,10 @@ async function handleUpdateSuperAdminUser(
     if (role !== undefined) {
       values.push(role);
       sets.push(`role = $${values.length}`);
+    }
+    if (subRole !== undefined) {
+      values.push(subRole);
+      sets.push(`sub_role = $${values.length}`);
     }
     if (department !== undefined) {
       values.push(department);
@@ -87,7 +92,7 @@ async function handleUpdateSuperAdminUser(
        SET ${sets.join(", ")}, updated_at = NOW()
        WHERE id::text = $${values.length}::text
        RETURNING
-         id, name, id_number AS "idNumber", email, role, department, course, status,
+         id, name, id_number AS "idNumber", email, role, sub_role AS "subRole", department, course, status,
          permissions, year_level AS "yearLevel", section,
          avatar, qr_code AS "qrCode", last_active AS "lastActive", created_at AS "createdAt", updated_at AS "updatedAt"`,
       values

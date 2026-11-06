@@ -1,6 +1,5 @@
-import { ReportsModule } from "@/components/modules/reports-module";
+import { LazyReportsModule } from "@/components/lazy-modules";
 
 export default function ReportsPage() {
-  return <ReportsModule />;
+  return <LazyReportsModule />;
 }
-

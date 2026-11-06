@@ -47,6 +47,30 @@ export async function PATCH(
       } else {
         updatedUser = { id, permissions };
       }
+
+      if (permissions && permissions.transactions === false) {
+        try {
+          await pool.query(
+            `UPDATE transactions
+             SET assigned_to = (
+               SELECT id FROM users
+               WHERE role IN ('circulation_librarian', 'technical_librarian', 'librarian')
+                 AND is_active = true
+                 AND id != $1
+                 AND (permissions IS NULL OR (permissions->>'transactions')::boolean IS NOT FALSE)
+               ORDER BY (
+                 SELECT COUNT(*) FROM transactions t2
+                 WHERE t2.assigned_to = users.id AND t2.status = 'Pending'
+               ) ASC
+               LIMIT 1
+             )
+             WHERE assigned_to = $1 AND status = 'Pending'`,
+            [id]
+          );
+        } catch (reassignErr) {
+          console.warn("Failed to reassign pending transactions in direct DB fallback:", reassignErr);
+        }
+      }
     } catch (dbErr: any) {
       console.error("Direct database update failed:", dbErr);
       return NextResponse.json(

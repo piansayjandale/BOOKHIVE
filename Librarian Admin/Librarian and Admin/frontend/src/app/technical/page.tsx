@@ -1,5 +1,5 @@
-import { DashboardFigma } from "@/components/dashboard/dashboard-figma";
+import { LazyDashboardFigma } from "@/components/lazy-modules";
 
 export default function TechnicalHomePage() {
-  return <DashboardFigma variant="technical" />;
+  return <LazyDashboardFigma variant="technical" />;
 }

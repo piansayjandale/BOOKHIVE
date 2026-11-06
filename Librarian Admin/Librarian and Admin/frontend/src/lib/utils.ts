@@ -10,11 +10,10 @@ export function formatDate(value: string) {
     return "Unknown";
   }
 
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  return `${month}/${day}/${year}`;
 }
 
 export function formatDateTime(value: string) {
@@ -23,21 +22,43 @@ export function formatDateTime(value: string) {
     return "Unknown";
   }
 
-  return new Intl.DateTimeFormat("en-PH", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+  const time = date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  return `${month}/${day}/${year} ${time}`;
 }
 
 export function getTodayString(): string {
   const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${month}/${day}/${year}`;
+}
+
+export function formatLocalDate(dateInput?: string | number | Date | null): string {
+  if (!dateInput) return "";
+  if (typeof dateInput === "string") {
+    const trimmed = dateInput.trim();
+    if (!trimmed || trimmed.toLowerCase() === "returned" || trimmed.toLowerCase() === "pending" || trimmed.toLowerCase() === "reservation" || trimmed.toLowerCase() === "7 days") {
+      return "";
+    }
+    if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(trimmed)) {
+      const parts = trimmed.split("-");
+      return `${parts[1].padStart(2, "0")}/${parts[2].padStart(2, "0")}/${parts[0]}`;
+    }
+    if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}$/.test(trimmed)) {
+      const parts = trimmed.split(/[\/\-]/);
+      return `${parts[0].padStart(2, "0")}/${parts[1].padStart(2, "0")}/${parts[2]}`;
+    }
+  }
+  const d = new Date(dateInput);
+  if (Number.isNaN(d.getTime())) return typeof dateInput === "string" ? dateInput : "";
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return `${month}/${day}/${year}`;
 }
 
 export function parseDateOnly(dateStr?: string | Date | null): { year: number; month: number; day: number } | null {
@@ -47,13 +68,25 @@ export function parseDateOnly(dateStr?: string | Date | null): { year: number; m
     return { year: dateStr.getFullYear(), month: dateStr.getMonth(), day: dateStr.getDate() };
   }
   const str = String(dateStr).trim();
-  const isoMatch = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-  if (isoMatch) {
-    return {
-      year: parseInt(isoMatch[1], 10),
-      month: parseInt(isoMatch[2], 10) - 1,
-      day: parseInt(isoMatch[3], 10),
-    };
+  if (/^\d{1,2}[\/\-]\d{1,2}[\/\-](\d{4})$/.test(str)) {
+    const match = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (match) {
+      return {
+        month: parseInt(match[1], 10) - 1,
+        day: parseInt(match[2], 10),
+        year: parseInt(match[3], 10),
+      };
+    }
+  }
+  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(str)) {
+    const match = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (match) {
+      return {
+        year: parseInt(match[1], 10),
+        month: parseInt(match[2], 10) - 1,
+        day: parseInt(match[3], 10),
+      };
+    }
   }
   const d = new Date(str);
   if (Number.isNaN(d.getTime())) return null;

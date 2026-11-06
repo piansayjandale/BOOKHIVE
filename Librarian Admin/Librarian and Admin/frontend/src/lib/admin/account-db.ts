@@ -17,6 +17,8 @@ type AccountUserRow = {
   idNumber: string;
   email: string;
   role: Role;
+  subRole?: string;
+  sub_role?: string;
   department: Department;
   course: string;
   status: AdminUserRecord["status"];
@@ -49,6 +51,7 @@ function mapUserRow(row: AccountUserRow): AdminUserRecord {
     idNumber: row.idNumber || "",
     email: row.email,
     role: row.role,
+    subRole: row.subRole || row.sub_role || (row.role === "Librarian" ? (row.name?.includes("Jan Dale") ? "Circulation Librarian" : "Technical Librarian") : undefined),
     department: row.department,
     course: row.course || "",
     status: (row.status as AdminUserRecord["status"]) || "Active",
@@ -234,6 +237,7 @@ export async function listRecentAccountUsers(limit = 5) {
         COALESCE(id_number, '') AS "idNumber",
         email,
         COALESCE(role, 'Student') AS role,
+        sub_role AS "subRole",
         COALESCE(department, 'Circulation') AS department,
         COALESCE(course, '') AS course,
         COALESCE(status, 'Active') AS status,
@@ -312,6 +316,7 @@ export async function listAccountUsers(options: {
           COALESCE(id_number, '') AS "idNumber",
           email,
           COALESCE(role, 'Student') AS role,
+          sub_role AS "subRole",
           COALESCE(department, 'Circulation') AS department,
           COALESCE(course, '') AS course,
           COALESCE(status, 'Active') AS status,
@@ -403,6 +408,7 @@ export async function updateAccountUser(
         department = COALESCE($6, department),
         course = COALESCE($7, course),
         status = COALESCE($8, status),
+        sub_role = COALESCE($9, sub_role),
         updated_at = NOW()
       WHERE id::text = $1::text
       RETURNING
@@ -425,6 +431,7 @@ export async function updateAccountUser(
       updates.department ?? null,
       updates.course ?? null,
       updates.status ?? null,
+      updates.subRole ?? null,
     ],
   );
 

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { usePathname } from "next/navigation";
 
 import { Sidebar } from "@/components/layout/sidebar";
 import { Topbar } from "@/components/layout/topbar";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 import type { DashboardVariant } from "@/lib/dashboard-config";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +52,9 @@ export function AppShell({
               isReportsPage ? "mt-4 flex-1 h-full min-h-0 overflow-hidden flex flex-col" : "mt-6"
             )}
           >
-            {children}
+            <Suspense fallback={<PageCircleLoader />}>
+              {children}
+            </Suspense>
           </div>
         </div>
       </main>

@@ -22,7 +22,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useNavigationTransition } from "@/components/providers/navigation-provider";
 
 import { VirtualizedList } from "@/components/ui/virtualized-list";
 import type { HistoryEntry } from "@/lib/types";
@@ -134,6 +135,23 @@ export function isPickupEntry(entry: { action?: string; detail?: string; module?
 
 export function HistoryModule() {
   const router = useRouter();
+  const pathname = usePathname() || "";
+  const { startNavigation } = useNavigationTransition();
+  const searchBasePath = pathname.startsWith("/technical")
+    ? "/technical"
+    : pathname.startsWith("/circulation")
+    ? "/circulation"
+    : pathname.startsWith("/admin")
+    ? "/admin"
+    : "/librarian";
+  const navigateToSearch = useCallback(
+    (q: string, dept: string, isFilter: boolean) => {
+      const dest = `${searchBasePath}/ai-prompt-search?query=${encodeURIComponent(q)}&department=${encodeURIComponent(dept)}&filter=${isFilter ? "1" : "0"}`;
+      startNavigation(dest);
+      router.push(dest);
+    },
+    [router, searchBasePath, startNavigation],
+  );
   const { theme } = useTheme();
   const { user } = useSession();
   const activeActor = user?.name || "Yana Brich R. Palmares";
@@ -914,9 +932,7 @@ export function HistoryModule() {
                       <tr
                         key={entry.id}
                         onClick={() => {
-                          router.push(
-                            `/librarian/ai-prompt-search?query=${encodeURIComponent(entry.query)}&department=${encodeURIComponent(entry.department)}&filter=${isFilter ? "1" : "0"}`,
-                          );
+                          navigateToSearch(entry.query, entry.department, isFilter);
                         }}
                         className="hover:bg-slate-50/80 dark:hover:bg-white/[0.03] transition-colors cursor-pointer group"
                       >
@@ -1002,9 +1018,7 @@ export function HistoryModule() {
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                router.push(
-                                  `/librarian/ai-prompt-search?query=${encodeURIComponent(entry.query)}&department=${encodeURIComponent(entry.department)}&filter=${isFilter ? "1" : "0"}`,
-                                );
+                                navigateToSearch(entry.query, entry.department, isFilter);
                               }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-[#0274BB] hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"
                               title="Run this search"
@@ -1039,9 +1053,7 @@ export function HistoryModule() {
                   <div
                     key={entry.id}
                     onClick={() => {
-                      router.push(
-                        `/librarian/ai-prompt-search?query=${encodeURIComponent(entry.query)}&department=${encodeURIComponent(entry.department)}&filter=${isFilter ? "1" : "0"}`,
-                      );
+                      navigateToSearch(entry.query, entry.department, isFilter);
                     }}
                     className="flex flex-col justify-between p-5 bg-white dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm hover:shadow-md hover:border-amber-400 text-left transition-all duration-200 group w-full cursor-pointer relative overflow-hidden"
                   >

@@ -38,6 +38,7 @@ import {
   getReservationHistory,
   ReservationBook,
   getNotifications,
+  syncNotifications,
   NotificationItem,
   setBooksTabOverride,
   getLibraryPoints,
@@ -51,6 +52,7 @@ import {
   getBorrowedBooks,
   getReservedBooks,
   syncTransactionsWithBackend,
+  getStudentProfile,
 } from "../../data/store";
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -325,14 +327,78 @@ function getCategoryThemedPalette(category?: string, title?: string, isDarkMode:
   };
 }
 
+function getCategoryGenreColor(genreOrCategory?: string, isDarkMode: boolean = true): string {
+  if (!genreOrCategory) return isDarkMode ? "#94A3B8" : "#64748B";
+  const norm = genreOrCategory.toLowerCase();
+  if (norm.includes("fiction") && !norm.includes("non")) {
+    return isDarkMode ? "#14B8A6" : "#0D9488"; // teal/emerald
+  }
+  if (norm.includes("children") || norm.includes("young") || norm.includes("adult")) {
+    return isDarkMode ? "#818CF8" : "#6366F1"; // lavender/indigo
+  }
+  if (norm.includes("art") || norm.includes("folk") || norm.includes("folklore")) {
+    return isDarkMode ? "#F59E0B" : "#D97706"; // amber
+  }
+  if (norm.includes("play") || norm.includes("media") || norm.includes("game")) {
+    return isDarkMode ? "#FB7185" : "#E11D48"; // rose
+  }
+  if (norm.includes("history") || norm.includes("social")) {
+    return isDarkMode ? "#F59E0B" : "#D97706"; // amber
+  }
+  if (norm.includes("periodical") || norm.includes("journal") || norm.includes("news")) {
+    return isDarkMode ? "#0D9488" : "#0F766E"; // teal
+  }
+  if (norm.includes("special") || norm.includes("reserve")) {
+    return isDarkMode ? "#C084FC" : "#9333EA"; // purple
+  }
+  if (norm.includes("general") || norm.includes("collection")) {
+    return isDarkMode ? "#F59E0B" : "#D97706"; // amber
+  }
+  if (norm.includes("science") || norm.includes("tech")) {
+    return isDarkMode ? "#38BDF8" : "#0284C7"; // sky blue
+  }
+  return isDarkMode ? "#94A3B8" : "#64748B";
+}
 
+function getBookCoverBadge(book: any, categoryTitle?: string): string | null {
+  if (!book) return null;
+  const catLower = (categoryTitle || "").toLowerCase();
+  if (catLower.includes("new")) {
+    return "New";
+  }
+  if (catLower.includes("recommended")) {
+    return "Top Pick";
+  }
+  if (catLower.includes("filipiniana")) {
+    return "Heritage";
+  }
+  if (catLower.includes("special")) {
+    return "Special";
+  }
+  if (catLower.includes("circulation")) {
+    if (book.edition && book.edition !== "Single Edition / None") {
+      return "Edition";
+    }
+    return "General";
+  }
+  if (book.edition && book.edition !== "Single Edition / None") {
+    return "Edition";
+  }
+  if (book.category && book.category.length < 15) {
+    return book.category;
+  }
+  return null;
+}
 
 export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const insets = useSafeAreaInsets();
   
-  const displayName = user?.fullName || "Student";
+  const profile = React.useMemo(() => getStudentProfile(), []);
+  const studentDisplayName = user?.fullName || profile?.name || "Student";
+  const avatarUri = user?.avatar || profile?.avatar || "";
+  const hasValidAvatar = Boolean(avatarUri && avatarUri.trim().length > 0);
 
   const [announcements, setAnnouncements] = React.useState<AnnouncementItem[]>(
     getAnnouncements()
@@ -398,11 +464,12 @@ export default function HomeScreen() {
     const unsubDecided = socketService.subscribeToTransactionDecided(() => {
       setActiveReservations(getUpcomingReservations());
       setLibraryCardBooks(getLibraryCardHistory());
+      setNotifications(getNotifications());
     });
 
     // Poll notifications & announcements every 15 seconds to sync in real-time
     const interval = setInterval(() => {
-      getNotifications();
+      void syncNotifications(false);
       void syncAnnouncementsWithBackend(false);
     }, 15000);
 
@@ -685,6 +752,11 @@ export default function HomeScreen() {
         const mappedTrending = trendingArray.map((book: any, idx: number) => {
           const charSum = book.title ? book.title.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0) : 0;
           const pseudoRating = (4.5 + (charSum % 5) / 10).toFixed(1);
+          const totalCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+          const availableCopies = book.availableCopies !== undefined && book.availableCopies !== null && !isNaN(Number(book.availableCopies))
+            ? Number(book.availableCopies)
+            : (book.availability ? (book.availability.toLowerCase() === "available" ? totalCopies : 0) : totalCopies);
+          const isAvail = availableCopies > 0;
           return {
             id: String(book.id || `trending-${idx}`),
             title: book.title || "Untitled Book",
@@ -694,14 +766,21 @@ export default function HomeScreen() {
             department: book.department || "Circulation",
             isbn: book.isbn || "",
             shelf: book.shelfLocation || book.shelf || "CIR-01A.1",
-            available: String(book.availability ? book.availability.toLowerCase() === "available" : true),
+            available: String(isAvail),
+            status: isAvail ? "Available" : (book.status || book.availability || "Unavailable"),
+            availability: isAvail ? "Available" : (book.status || book.availability || "Unavailable"),
+            availableCopies,
+            totalCopies,
+            borrowedCount: Number(book.borrowedCount || 0),
+            unavailableCopies: Number(book.unavailableCopies || Math.max(0, totalCopies - availableCopies)),
+            reservedCount: Number(book.reservedCount || 0),
             year: book.publicationDate ? String(book.publicationDate).substring(0, 4) : "2026",
             publicationDate: book.publicationDate || "2026-09-01",
             pages: String(book.pages && book.pages > 0 ? book.pages : "320"),
             language: book.language || "English",
             description: book.summary || book.description || "",
             coverImage: book.coverImg || book.coverUrl || book.coverImage || getUniqueBookCover(book),
-            copies: String(book.copies !== undefined && book.copies !== null ? book.copies : 1),
+            copies: String(totalCopies),
             volume: book.volume || "Single Volume / None",
             edition: book.edition || "Single Edition / None",
             accessionNumber: book.accessionNumber || "",
@@ -1136,97 +1215,92 @@ export default function HomeScreen() {
     };
   };
 
+  const screenWidth = Dimensions.get("window").width;
+  const trendingCardWidth = screenWidth - 32;
+
   return (
-    <AnimatedScreen style={[styles.container, { backgroundColor: theme.background }]}>
+    <AnimatedScreen style={[styles.container, { backgroundColor: isDarkMode ? "#080F1E" : theme.background }]}>
       {/* HEADER */}
-      <View style={[styles.header, { paddingTop: insets.top, height: 60 + insets.top, backgroundColor: theme.headerBg, borderBottomColor: theme.headerBorder }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            paddingTop: insets.top,
+            height: 56 + insets.top,
+            backgroundColor: isDarkMode ? "#080F1E" : theme.headerBg,
+            borderBottomColor: isDarkMode ? "rgba(255,255,255,0.06)" : theme.headerBorder,
+          },
+        ]}
+      >
         <View style={styles.headerLeftContainer}>
           <TouchableOpacity
-            style={styles.hamburgerBtn}
+            style={styles.avatarTouchable}
             onPress={() => router.push("/(tabs)/profile")}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
             accessibilityLabel="Open profile"
           >
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.12)" : "rgba(2, 116, 187, 0.08)",
-              borderWidth: 1,
-              borderColor: isDarkMode ? "rgba(255, 215, 0, 0.25)" : "rgba(2, 116, 187, 0.15)",
-              justifyContent: "center",
-              alignItems: "center"
-            }}>
-              <MaterialCommunityIcons
-                name="account-circle-outline"
-                size={22}
-                color={isDarkMode ? theme.accentGold : theme.brandBlue}
-              />
-            </View>
+            {hasValidAvatar ? (
+              <Image source={{ uri: avatarUri }} style={styles.headerAvatar} />
+            ) : (
+              <View
+                style={[
+                  styles.headerAvatarFallback,
+                  { backgroundColor: isDarkMode ? "#16233B" : "#E2E8F0" },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account"
+                  size={20}
+                  color={isDarkMode ? "#FFD700" : "#0274BB"}
+                />
+              </View>
+            )}
           </TouchableOpacity>
 
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 7 }}>
-            <Ionicons
-              name="bookmark"
-              size={18}
-              color={isDarkMode ? theme.accentGold : "#FCD400"}
-            />
-            <Text style={[styles.headerTitle, { color: theme.headerTitle }]}>
-              BookHive Monitor
-            </Text>
+          <View style={styles.headerBrandRow}>
+            <Ionicons name="flag" size={16} color="#FFD700" />
+            <Text style={styles.headerTitleText}>BookHive Monitor</Text>
           </View>
         </View>
 
         <View style={styles.headerRight}>
           <TouchableOpacity
-            style={styles.themeToggleBtn}
-            onPress={() => {
-              toggleTheme();
-            }}
+            style={[
+              styles.circleHeaderBtn,
+              {
+                backgroundColor: isDarkMode ? "#16233B" : "#F1F5F9",
+                borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+              },
+            ]}
+            onPress={toggleTheme}
+            activeOpacity={0.75}
           >
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: isDarkMode ? "#17233D" : "#F1F5F9",
-              borderWidth: 1,
-              borderColor: theme.cardBorder,
-              justifyContent: "center",
-              alignItems: "center"
-            }}>
-              <Ionicons
-                name={isDarkMode ? "sunny-outline" : "moon-outline"}
-                size={18}
-                color={isDarkMode ? theme.accentGold : "#64748B"}
-              />
-            </View>
+            <Ionicons
+              name={isDarkMode ? "sunny-outline" : "moon-outline"}
+              size={17}
+              color={isDarkMode ? "#94A3B8" : "#64748B"}
+            />
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.notificationButtonRelative}
-            onPress={() =>
-              router.push("/notifications")
-            }
+            style={[
+              styles.circleHeaderBtn,
+              {
+                backgroundColor: isDarkMode ? "#16233B" : "#F1F5F9",
+                borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+              },
+            ]}
+            onPress={() => router.push("/notifications")}
+            activeOpacity={0.75}
           >
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 18,
-              backgroundColor: isDarkMode ? "#17233D" : "#F1F5F9",
-              borderWidth: 1,
-              borderColor: theme.cardBorder,
-              justifyContent: "center",
-              alignItems: "center"
-            }}>
-              <Ionicons
-                name="notifications-outline"
-                size={19}
-                color={isDarkMode ? theme.accentGold : "#64748B"}
-              />
-            </View>
+            <Ionicons
+              name="notifications-outline"
+              size={18}
+              color={isDarkMode ? "#94A3B8" : "#64748B"}
+            />
             {unreadCount > 0 && (
-              <View style={styles.badgeContainerRelative}>
-                <Text style={styles.badgeText}>
+              <View style={styles.redBadgeCircle}>
+                <Text style={styles.redBadgeText}>
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </Text>
               </View>
@@ -1276,36 +1350,56 @@ export default function HomeScreen() {
                 setIsRefreshing(false);
               }
             }}
-            tintColor={theme.accentGold}
-            colors={[theme.accentGold]}
+            tintColor="#FFD700"
+            colors={["#FFD700"]}
           />
         }
       >
         {/* GREETING */}
-        <View style={styles.greetingContainer}>
-          <Text style={[styles.helloText, { color: theme.greetingAccent }]}>
-            Hello, {displayName}!
-          </Text>
+        <View style={styles.greetingSection}>
+          <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+            <Text style={[styles.greetingHello, { color: isDarkMode ? "#FFFFFF" : "#0F172A" }]}>
+              Hello,{" "}
+            </Text>
+            <Text style={styles.greetingName}>{studentDisplayName}!</Text>
+          </View>
 
-          <Text style={[styles.subText, { color: theme.textSecondary }]}>
+          <Text
+            style={[
+              styles.greetingSubtitle,
+              { color: isDarkMode ? "#94A3B8" : "#64748B" },
+            ]}
+          >
             Ready to discover something new today?
           </Text>
         </View>
 
-        {/* SEARCH FILTER */}
-        <View style={styles.searchContainer}>
-          <View style={[styles.searchBarWrapper, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
+        {/* SEARCH BAR (Brought back with light & dark mode support) */}
+        <View style={styles.searchBarContainer}>
+          <View
+            style={[
+              styles.searchBarPill,
+              {
+                backgroundColor: isDarkMode ? "#16233B" : "#FFFFFF",
+                borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+              },
+            ]}
+          >
             <TouchableOpacity onPress={() => handleHomeSearchSubmit()}>
               <Feather
                 name="search"
-                size={18}
-                color={isDarkMode ? theme.accentGold : "#94A3B8"}
+                size={17}
+                color={isDarkMode ? "#64748B" : "#94A3B8"}
                 style={styles.searchIcon}
               />
             </TouchableOpacity>
+
             <TextInput
-              style={[styles.searchInput, { color: isDarkMode ? theme.textPrimary : "#0F172A" }]}
-              placeholder="Search books, authors, ISBN..."
+              style={[
+                styles.searchInputText,
+                { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+              ]}
+              placeholder="Search books, authors..."
               placeholderTextColor={isDarkMode ? "#64748B" : "#94A3B8"}
               value={searchText}
               onChangeText={handleSearchTextChange}
@@ -1317,6 +1411,7 @@ export default function HomeScreen() {
               returnKeyType="search"
               onSubmitEditing={() => handleHomeSearchSubmit()}
             />
+
             {searchText.length > 0 ? (
               <TouchableOpacity
                 onPress={() => handleSearchTextChange("")}
@@ -1326,31 +1421,25 @@ export default function HomeScreen() {
               </TouchableOpacity>
             ) : (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                <TouchableOpacity style={{ padding: 6 }} onPress={handlePickDocument} activeOpacity={0.7}>
-                  <Feather name="paperclip" size={17} color={isDarkMode ? theme.accentGold : "#64748B"} />
+                <TouchableOpacity
+                  style={styles.searchScannerBtn}
+                  onPress={handlePickDocument}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Upload file or syllabus"
+                >
+                  <Feather
+                    name="paperclip"
+                    size={18}
+                    color={isDarkMode ? "#94A3B8" : "#64748B"}
+                  />
                 </TouchableOpacity>
+
                 <TouchableOpacity
                   onPress={() => handleHomeSearchSubmit()}
                   activeOpacity={0.8}
-                  style={{
-                    backgroundColor: isDarkMode ? theme.accentGold : "#FCD400",
-                    paddingHorizontal: 13,
-                    paddingVertical: 7,
-                    borderRadius: 18,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
+                  style={styles.searchSubmitPill}
                 >
-                  <Feather name="search" size={11} color="#0B1A2C" />
-                  <Text style={{
-                    color: "#0B1A2C",
-                    fontSize: 10.5,
-                    fontWeight: "800",
-                    letterSpacing: 0.4,
-                  }}>
-                    SEARCH
-                  </Text>
+                  <Text style={styles.searchSubmitText}>SEARCH</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1358,123 +1447,623 @@ export default function HomeScreen() {
 
           {/* SELECTED FILE PREVIEW BADGE */}
           {selectedFile && (
-            <View style={[styles.fileBadgeChip, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-              <Ionicons name="document-text-outline" size={16} color={isDarkMode ? theme.accentGold : theme.accentBlue} />
-              <Text style={[styles.fileBadgeName, { color: theme.textPrimary }]} numberOfLines={1}>
+            <View
+              style={[
+                styles.fileBadgeChip,
+                {
+                  backgroundColor: isDarkMode ? "#16233B" : "#FFFFFF",
+                  borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                },
+              ]}
+            >
+              <Ionicons
+                name="document-text-outline"
+                size={16}
+                color={isDarkMode ? theme.accentGold : theme.accentBlue}
+              />
+              <Text
+                style={[
+                  styles.fileBadgeName,
+                  { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+                ]}
+                numberOfLines={1}
+              >
                 {selectedFile.name}
               </Text>
-              <TouchableOpacity onPress={() => setSelectedFile(null)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+              <TouchableOpacity
+                onPress={() => setSelectedFile(null)}
+                hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+              >
                 <Ionicons name="close-circle" size={18} color="#EF4444" />
               </TouchableOpacity>
             </View>
           )}
         </View>
 
-        {/* WORD SUGGESTIONS */}
-        {wordSuggestions.length > 0 && (
-          <View style={styles.suggestionsWrapper}>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.suggestionsScrollContent}
-            >
-              {wordSuggestions.map((suggestion, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={[styles.suggestionChip, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-                  <Ionicons name="sparkles" size={10} color={isDarkMode ? theme.accentGold : theme.accentBlue} style={{ marginRight: 4 }} />
-                  <Text style={[styles.suggestionChipText, { color: theme.textSecondary }]}>{suggestion}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {/* STATS (Reordered directly underneath search bar) */}
-        <View style={styles.newStatsRow}>
+        {/* STATS ROW (BORROWED / RESERVED) */}
+        <View style={styles.statsRow}>
           <TouchableOpacity
-            activeOpacity={0.7}
+            activeOpacity={0.75}
             onPress={() => router.push("/reservations")}
             style={[
-              styles.newStatCard,
+              styles.statCard,
               {
-                backgroundColor: theme.cardBg,
-                borderColor: theme.cardBorder,
-              }
+                backgroundColor: isDarkMode ? "#16233B" : "#FFFFFF",
+                borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+              },
             ]}
           >
-            <View style={styles.newStatHeader}>
-              <View style={[
-                styles.statIconBadge,
-                { backgroundColor: isDarkMode ? "rgba(56, 189, 248, 0.15)" : "#E0F2FE" }
-              ]}>
-                <Ionicons name="book-outline" size={15} color={isDarkMode ? "#38BDF8" : "#0274BB"} />
+            <View style={styles.statHeader}>
+              <View
+                style={[
+                  styles.statIconBadge,
+                  { backgroundColor: "rgba(245, 158, 11, 0.15)" },
+                ]}
+              >
+                <Ionicons name="book-outline" size={15} color="#F59E0B" />
               </View>
-              <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>BORROWED</Text>
+              <Text
+                style={[
+                  styles.statLabel,
+                  { color: isDarkMode ? "#94A3B8" : "#64748B" },
+                ]}
+              >
+                BORROWED
+              </Text>
             </View>
-            <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : "#0274BB" }]}>
+            <Text
+              style={[
+                styles.statValue,
+                { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+              ]}
+            >
               {activeBorrowedCount}
             </Text>
-            <Text style={{ fontSize: 10.5, color: theme.textSecondary, marginTop: 2, fontWeight: "500" }}>
+            <Text
+              style={[
+                styles.statSub,
+                { color: isDarkMode ? "#64748B" : "#64748B" },
+              ]}
+            >
               Active on loan
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            activeOpacity={0.7}
+            activeOpacity={0.75}
             onPress={() => router.push("/reservations")}
             style={[
-              styles.newStatCard,
+              styles.statCard,
               {
-                backgroundColor: theme.cardBg,
-                borderColor: theme.cardBorder,
-              }
+                backgroundColor: isDarkMode ? "#16233B" : "#FFFFFF",
+                borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+              },
             ]}
           >
-            <View style={styles.newStatHeader}>
-              <View style={[
-                styles.statIconBadge,
-                { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : theme.badgeYellowBg }
-              ]}>
-                <MaterialCommunityIcons name="qrcode-scan" size={15} color={isDarkMode ? theme.accentGold : "#854D0E"} />
+            <View style={styles.statHeader}>
+              <View
+                style={[
+                  styles.statIconBadge,
+                  { backgroundColor: "rgba(16, 185, 129, 0.15)" },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="barcode-scan"
+                  size={15}
+                  color="#10B981"
+                />
               </View>
-              <Text style={[styles.newStatLabel, { color: theme.textSecondary }]}>RESERVED</Text>
+              <Text
+                style={[
+                  styles.statLabel,
+                  { color: isDarkMode ? "#94A3B8" : "#64748B" },
+                ]}
+              >
+                RESERVED
+              </Text>
             </View>
-            <Text style={[styles.newStatNumber, { color: isDarkMode ? theme.accentGold : "#0274BB" }]}>
+            <Text
+              style={[
+                styles.statValue,
+                { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+              ]}
+            >
               {activeReservedCount}
             </Text>
-            <Text style={{ fontSize: 10.5, color: theme.textSecondary, marginTop: 2, fontWeight: "500" }}>
+            <Text
+              style={[
+                styles.statSub,
+                { color: isDarkMode ? "#64748B" : "#64748B" },
+              ]}
+            >
               Awaiting pickup
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* ANNOUNCEMENTS */}
+        {/* TRENDING BOOKS HERO SECTION */}
+        <Text
+          style={[
+            styles.trendingSectionTitle,
+            { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+          ]}
+        >
+          Trending Books
+        </Text>
+
+        <View
+          style={[
+            styles.trendingSpotlightCard,
+            {
+              width: trendingCardWidth,
+              backgroundColor: isDarkMode ? "#16233B" : "#F8FAFC",
+              borderColor: isDarkMode ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            },
+          ]}
+        >
+          {isLoadingBooks && trendingBooks.length === 0 ? (
+            <View style={styles.categoryLoadingBox}>
+              <ActivityIndicator size="small" color="#FFD700" />
+              <Text style={styles.loadingText}>Loading Trending Books...</Text>
+            </View>
+          ) : (
+            <>
+              <ScrollView
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                decelerationRate="fast"
+                snapToInterval={trendingCardWidth}
+                snapToAlignment="center"
+                onScroll={(e) => {
+                  const contentOffsetX = e.nativeEvent.contentOffset.x;
+                  const idx = Math.min(
+                    trendingBooks.length - 1,
+                    Math.max(0, Math.round(contentOffsetX / trendingCardWidth))
+                  );
+                  setActiveCarouselIndex(idx);
+                }}
+                scrollEventThrottle={16}
+                style={{ width: trendingCardWidth }}
+              >
+                {trendingBooks.slice(0, 5).map((book, idx) => {
+                  const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+                  const isAvail = book.availableCopies !== undefined
+                    ? Number(book.availableCopies) > 0
+                    : (book.isAvailable !== undefined 
+                        ? Boolean(book.isAvailable) 
+                        : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true)));
+                  const availCopies = book.availableCopies !== undefined 
+                    ? Number(book.availableCopies) 
+                    : (isAvail ? bookCopies : 0);
+
+                  const navigateToDetail = () => {
+                    router.push({
+                      pathname: "/book-details",
+                      params: {
+                        from: "home",
+                        id: book.id,
+                        title: book.title,
+                        author: book.author,
+                        description: book.description,
+                        year: book.year,
+                        publicationDate: book.publicationDate,
+                        pages: book.pages,
+                        language: book.language,
+                        category: book.category,
+                        department: book.department,
+                        rating: book.rating,
+                        shelf: book.shelf,
+                        available: String(isAvail),
+                        status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
+                        availableCopies: String(availCopies),
+                        reservedCount: String(book.reservedCount || 0),
+                        borrowedCount: String(book.borrowedCount || Math.max(0, bookCopies - availCopies)),
+                        unavailableCopies: String(book.unavailableCopies || Math.max(0, bookCopies - availCopies)),
+                        isbn: book.isbn || "",
+                        copies: String(bookCopies),
+                        totalCopies: String(bookCopies),
+                        volume: book.volume,
+                        edition: book.edition,
+                        accessionNumber: book.accessionNumber,
+                        coverImage: book.coverImage || undefined,
+                        coverUrl: book.coverImage || undefined,
+                      },
+                    });
+                  };
+
+                  return (
+                    <TouchableOpacity
+                      key={idx}
+                      activeOpacity={0.9}
+                      onPress={navigateToDetail}
+                      style={[styles.trendingSlide, { width: trendingCardWidth }]}
+                    >
+                      {/* Left: Book Cover with yellow "TRENDING" badge */}
+                      <View style={styles.trendingCoverWrapper}>
+                        <BookCoverImage
+                          uri={book.coverImage}
+                          title={book.title}
+                          author={book.author}
+                          category={book.category}
+                          style={styles.trendingCoverImage}
+                          iconSize={32}
+                          showText={false}
+                        />
+                        <View style={styles.trendingTopBadge}>
+                          <Text style={styles.trendingTopBadgeText}>TRENDING</Text>
+                        </View>
+                      </View>
+
+                      {/* Right: Content & Action Row */}
+                      <View style={styles.trendingContentCol}>
+                        <View>
+                          <View
+                            style={[
+                              styles.trendingGenreChip,
+                              {
+                                backgroundColor: isDarkMode ? "#0F172A" : "#EDE9FE",
+                                borderColor: isDarkMode ? "rgba(255,255,255,0.12)" : "#DDD6FE",
+                              },
+                            ]}
+                          >
+                            <Text style={styles.trendingGenreText}>
+                              {(book.category || "FANTASY").toUpperCase()}
+                            </Text>
+                          </View>
+
+                          <Text
+                            style={[
+                              styles.trendingTitle,
+                              { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+                            ]}
+                            numberOfLines={2}
+                          >
+                            {book.title}
+                          </Text>
+
+                          <Text style={styles.trendingAuthor} numberOfLines={1}>
+                            by {book.author}
+                          </Text>
+                        </View>
+
+                        {/* Bottom Row: View Detail button + Available status */}
+                        <View style={styles.trendingActionRow}>
+                          <TouchableOpacity
+                            style={styles.viewDetailBtn}
+                            activeOpacity={0.8}
+                            onPress={navigateToDetail}
+                          >
+                            <Text style={styles.viewDetailBtnText}>View Detail</Text>
+                          </TouchableOpacity>
+
+                          <View style={styles.availableIndicatorRow}>
+                            <View
+                              style={[
+                                styles.statusDot,
+                                { backgroundColor: isAvail ? "#22C55E" : "#EF4444" },
+                              ]}
+                            />
+                            <Text
+                              style={[
+                                styles.availableText,
+                                { color: isAvail ? "#22C55E" : "#EF4444" },
+                              ]}
+                            >
+                              {isAvail ? "Available" : "Unavailable"}
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Elongated active pill pagination dots */}
+              <View style={styles.trendingPaginationDots}>
+                {trendingBooks.slice(0, 5).map((_, idx) => (
+                  <View
+                    key={idx}
+                    style={
+                      idx === activeCarouselIndex
+                        ? styles.dotActive
+                        : [
+                            styles.dotInactive,
+                            {
+                              backgroundColor: isDarkMode
+                                ? "#334155"
+                                : "#CBD5E1",
+                            },
+                          ]
+                    }
+                  />
+                ))}
+              </View>
+            </>
+          )}
+        </View>
+
+        {/* 7 CATEGORY SECTIONS (Monochrome white fonts & icons, no colored classification) */}
+        {[
+          { title: "New Arrivals", icon: "sparkles", tag: "NEW" },
+          { title: "Recommended Books", icon: "flame", tag: "TOP PICK" },
+          { title: "Circulation", icon: "book-outline", tag: "MAIN" },
+          { title: "General References", icon: "bookmark-outline", tag: "REF" },
+          { title: "Filipiniana", icon: "flag-outline", tag: "LOCAL" },
+          { title: "Periodicals", icon: "newspaper-outline", tag: "JOURNAL" },
+          { title: "Special Collections", icon: "star-outline", tag: "SPECIAL" },
+        ].map((categoryConfig, cIndex) => {
+          const categoryTitle = categoryConfig.title;
+          const categoryBooks = getCategoryBooks(categoryTitle);
+
+          return (
+            <View key={cIndex} style={styles.categorySection}>
+              {/* Section Header with dynamic theme colors (white in dark mode, dark slate in light mode) */}
+              <View style={styles.categoryHeaderRow}>
+                <View style={styles.categoryHeaderLeft}>
+                  <Ionicons
+                    name={categoryConfig.icon as any}
+                    size={16}
+                    color={isDarkMode ? "#FFFFFF" : "#0F172A"}
+                  />
+                  <Text
+                    style={[
+                      styles.categoryTitleText,
+                      { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+                    ]}
+                  >
+                    {categoryTitle}
+                  </Text>
+                  {categoryConfig.tag && (
+                    <View
+                      style={[
+                        styles.categoryTagChip,
+                        {
+                          borderColor: isDarkMode
+                            ? "rgba(255,255,255,0.20)"
+                            : "#CBD5E1",
+                          backgroundColor: isDarkMode
+                            ? "rgba(255,255,255,0.06)"
+                            : "#F1F5F9",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.categoryTagText,
+                          { color: isDarkMode ? "#FFFFFF" : "#334155" },
+                        ]}
+                      >
+                        {categoryConfig.tag}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* See All link */}
+                <TouchableOpacity
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/department-books",
+                      params: { department: categoryTitle },
+                    })
+                  }
+                  style={styles.seeAllBtn}
+                >
+                  <Text
+                    style={[
+                      styles.seeAllBtnText,
+                      { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+                    ]}
+                  >
+                    See All &gt;
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Category Books Horizontal Scroll */}
+              {isLoadingBooks && categoryBooks.length === 0 ? (
+                <View style={styles.categoryLoadingBox}>
+                  <ActivityIndicator size="small" color={isDarkMode ? "#FFFFFF" : "#0F172A"} />
+                </View>
+              ) : categoryBooks.length === 0 ? (
+                <View
+                  style={[
+                    styles.emptyCategoryCard,
+                    {
+                      backgroundColor: isDarkMode ? "#16233B" : "#FFFFFF",
+                      borderColor: isDarkMode
+                        ? "rgba(255,255,255,0.08)"
+                        : "#E2E8F0",
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name="folder-open-outline"
+                    size={16}
+                    color={isDarkMode ? "#FFFFFF" : "#64748B"}
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={[styles.emptyCategoryText, { color: isDarkMode ? "#CBD5E1" : "#64748B" }]}>
+                    No books available in this category
+                  </Text>
+                </View>
+              ) : (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoryScrollContainer}
+                >
+                  {categoryBooks.map((book, cardIdx) => {
+                    const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
+                    const isAvail = book.availableCopies !== undefined
+                      ? Number(book.availableCopies) > 0
+                      : (book.isAvailable !== undefined 
+                          ? Boolean(book.isAvailable) 
+                          : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true)));
+                    const availCopies = book.availableCopies !== undefined 
+                      ? Number(book.availableCopies) 
+                      : (isAvail ? bookCopies : 0);
+
+                    const badgeText = getBookCoverBadge(book, categoryTitle);
+
+                    return (
+                      <TouchableOpacity
+                        key={cardIdx}
+                        activeOpacity={0.85}
+                        style={styles.bookItemCard}
+                        onPress={() => {
+                          router.push({
+                            pathname: "/book-details",
+                            params: {
+                              from: "home",
+                              id: book.id,
+                              title: book.title,
+                              author: book.author,
+                              description: book.description,
+                              year: book.year,
+                              publicationDate: book.publicationDate,
+                              pages: book.pages,
+                              language: book.language,
+                              category: book.category,
+                              department: book.department,
+                              rating: book.rating,
+                              shelf: book.shelf,
+                              available: String(isAvail),
+                              status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
+                              availableCopies: String(availCopies),
+                              reservedCount: String(book.reservedCount || 0),
+                              borrowedCount: String(book.borrowedCount || Math.max(0, bookCopies - availCopies)),
+                              unavailableCopies: String(book.unavailableCopies || Math.max(0, bookCopies - availCopies)),
+                              isbn: book.isbn || "",
+                              copies: String(bookCopies),
+                              totalCopies: String(bookCopies),
+                              volume: book.volume,
+                              edition: book.edition,
+                              accessionNumber: book.accessionNumber,
+                              coverImage: book.coverImage || undefined,
+                              coverUrl: book.coverImage || undefined,
+                            },
+                          });
+                        }}
+                      >
+                        {/* Book Cover Container with Overlay Badge */}
+                        <View
+                          style={[
+                            styles.bookCoverBox,
+                            {
+                              backgroundColor: isDarkMode ? "#16233B" : "#F1F5F9",
+                              borderColor: isDarkMode
+                                ? "rgba(255,255,255,0.08)"
+                                : "#E2E8F0",
+                            },
+                          ]}
+                        >
+                          <BookCoverImage
+                            uri={book.coverImage}
+                            title={book.title}
+                            author={book.author}
+                            category={book.category || categoryTitle}
+                            style={styles.bookCoverImage}
+                            iconSize={22}
+                            showText={false}
+                          />
+                          {badgeText && (
+                            <View style={styles.bookCoverOverlayBadge}>
+                              <Text
+                                style={styles.bookCoverOverlayBadgeText}
+                                numberOfLines={1}
+                              >
+                                {badgeText}
+                              </Text>
+                            </View>
+                          )}
+                        </View>
+
+                        {/* Details cleanly beneath cover: Title and Author ONLY (high contrast in both themes) */}
+                        <Text
+                          style={[
+                            styles.bookItemTitle,
+                            { color: isDarkMode ? "#FFFFFF" : "#0F172A" },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {book.title}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.bookItemAuthor,
+                            { color: isDarkMode ? "#94A3B8" : "#64748B" },
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {book.author}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          );
+        })}
+
+        {/* SYSTEM ANNOUNCEMENTS */}
         {announcements.length > 0 && (
           <View style={styles.announcementsContainer}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 9, paddingHorizontal: 20, marginBottom: 12 }}>
-              <View style={{
-                width: 28,
-                height: 28,
-                borderRadius: 8,
-                backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.15)" : "#FEF9C3",
-                justifyContent: "center",
-                alignItems: "center"
-              }}>
-                <Ionicons name="megaphone" size={14} color={isDarkMode ? theme.accentGold : "#854D0E"} />
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 9,
+                paddingHorizontal: 16,
+                marginBottom: 12,
+              }}
+            >
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  backgroundColor: isDarkMode
+                    ? "rgba(255, 255, 255, 0.1)"
+                    : "#E2E8F0",
+                  justifyContent: "center",
+                  alignItems: "center",
+                }}
+              >
+                <Ionicons
+                  name="megaphone"
+                  size={14}
+                  color={isDarkMode ? "#FFFFFF" : "#0F172A"}
+                />
               </View>
               <View>
-                <Text style={{
-                  fontSize: 9.5,
-                  fontWeight: "800",
-                  letterSpacing: 1.1,
-                  textTransform: "uppercase",
-                  color: isDarkMode ? theme.accentGold : theme.brandBlue,
-                }}>
+                <Text
+                  style={{
+                    fontSize: 9.5,
+                    fontWeight: "800",
+                    letterSpacing: 1.1,
+                    textTransform: "uppercase",
+                    color: isDarkMode ? "#FFFFFF" : "#64748B",
+                  }}
+                >
                   ACTIVE CAMPUS NOTICE
                 </Text>
-                <Text style={[styles.announcementsTitle, { color: theme.sectionTitle, marginTop: 1, paddingHorizontal: 0, marginBottom: 0, fontSize: 15 }]}>
+                <Text
+                  style={[
+                    styles.announcementsTitle,
+                    {
+                      color: isDarkMode ? "#FFFFFF" : "#0F172A",
+                      marginTop: 1,
+                      paddingHorizontal: 0,
+                      marginBottom: 0,
+                      fontSize: 15,
+                    },
+                  ]}
+                >
                   System Announcements ({announcements.length} Active)
                 </Text>
               </View>
@@ -1486,8 +2075,8 @@ export default function HomeScreen() {
             >
               {announcements.map((item) => {
                 const priorityStyle = getAnnouncementPriorityStyle(item.priority);
-                const isUrgent = item.priority === 'Urgent';
-                const isImportant = item.priority === 'Important';
+                const isUrgent = item.priority === "Urgent";
+                const isImportant = item.priority === "Important";
                 return (
                   <TouchableOpacity
                     key={item.id}
@@ -1500,42 +2089,111 @@ export default function HomeScreen() {
                         backgroundColor: theme.cardBg,
                         borderColor: theme.cardBorder,
                         borderLeftWidth: 4,
-                        borderLeftColor: isUrgent ? "#EF4444" : (isImportant ? "#F59E0B" : (isDarkMode ? "#38BDF8" : "#0274BB")),
+                        borderLeftColor: isUrgent
+                          ? "#EF4444"
+                          : isImportant
+                          ? "#F59E0B"
+                          : isDarkMode
+                          ? "#38BDF8"
+                          : "#0274BB",
                       },
                     ]}
                   >
                     <View style={styles.announcementHeader}>
-                      <View style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 2,
-                        borderRadius: 12,
-                        backgroundColor: isUrgent
-                          ? (isDarkMode ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2")
-                          : (isImportant
-                            ? (isDarkMode ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7")
-                            : (isDarkMode ? "rgba(56, 189, 248, 0.18)" : "#E0F2FE")),
-                      }}>
-                        <Text style={[
-                          styles.announcementPriority,
-                          {
-                            color: isUrgent ? "#DC2626" : (isImportant ? "#D97706" : (isDarkMode ? "#38BDF8" : "#0274BB")),
-                            fontSize: 9.5,
-                            fontWeight: "800",
-                          }
-                        ]}>
+                      <View
+                        style={{
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderRadius: 12,
+                          backgroundColor: isUrgent
+                            ? isDarkMode
+                              ? "rgba(239, 68, 68, 0.18)"
+                              : "#FEE2E2"
+                            : isImportant
+                            ? isDarkMode
+                              ? "rgba(245, 158, 11, 0.18)"
+                              : "#FEF3C7"
+                            : isDarkMode
+                            ? "rgba(56, 189, 248, 0.18)"
+                            : "#E0F2FE",
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.announcementPriority,
+                            {
+                              color: isUrgent
+                                ? "#DC2626"
+                                : isImportant
+                                ? "#D97706"
+                                : isDarkMode
+                                ? "#38BDF8"
+                                : "#0274BB",
+                              fontSize: 9.5,
+                              fontWeight: "800",
+                            },
+                          ]}
+                        >
                           {item.priority}
                         </Text>
                       </View>
-                      <Text style={{ fontSize: 10.5, fontWeight: "500", color: theme.textSecondary }}>
+                      <Text
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: "500",
+                          color: theme.textSecondary,
+                        }}
+                      >
                         To: {(item as any).audience || "All Users"}
                       </Text>
                     </View>
-                    <Text style={[styles.announcementTitleText, { color: isDarkMode ? theme.textPrimary : theme.brandBlue }]} numberOfLines={1}>{item.title}</Text>
-                    <Text style={[styles.announcementBody, { color: theme.textSecondary }]} numberOfLines={2}>{item.content}</Text>
-                    <View style={[styles.announcementFooter, { borderTopColor: theme.cardBorder }]}>
-                      <Text style={[styles.announcementAuthor, { color: theme.textSecondary }]}>By {item.author || "Library Administration"}</Text>
-                      <Text style={[styles.announcementDate, { color: theme.textSecondary }]}>
-                        {formatSafeAnnouncementDate(item.updatedAt || (item as any).createdAt || (item as any).date)}
+                    <Text
+                      style={[
+                        styles.announcementTitleText,
+                        {
+                          color: isDarkMode
+                            ? theme.textPrimary
+                            : theme.brandBlue,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {item.title}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.announcementBody,
+                        { color: theme.textSecondary },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {item.content}
+                    </Text>
+                    <View
+                      style={[
+                        styles.announcementFooter,
+                        { borderTopColor: theme.cardBorder },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.announcementAuthor,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        By {item.author || "Library Administration"}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.announcementDate,
+                          { color: theme.textSecondary },
+                        ]}
+                      >
+                        {formatSafeAnnouncementDate(
+                          item.updatedAt ||
+                            (item as any).createdAt ||
+                            (item as any).date
+                        )}
                       </Text>
                     </View>
                   </TouchableOpacity>
@@ -1544,337 +2202,6 @@ export default function HomeScreen() {
             </ScrollView>
           </View>
         )}
-
-        {/* TRENDING BOOKS SECTION */}
-        <View style={styles.sectionHeaderMonospace}>
-          <Text style={[styles.sectionTitle, { color: theme.sectionTitle }]}>
-            Trending Books
-          </Text>
-        </View>
-
-        <View style={[styles.featuredPlaceholderCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-          {isLoadingBooks && trendingBooks.length === 0 ? (
-            <View style={styles.categoryLoadingBox}>
-              <ActivityIndicator size="small" color={isDarkMode ? theme.accentGold : theme.accentBlue} />
-              <Text style={styles.loadingText}>Loading Trending Books...</Text>
-            </View>
-          ) : (
-            <>
-              <ScrollView
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onScroll={(e) => {
-                  const contentOffsetX = e.nativeEvent.contentOffset.x;
-                  const carouselWidth = Dimensions.get("window").width - 40;
-                  const idx = Math.min(
-                    4,
-                    Math.max(0, Math.round(contentOffsetX / carouselWidth))
-                  );
-                  setActiveCarouselIndex(idx);
-                }}
-                scrollEventThrottle={16}
-                style={{ width: Dimensions.get("window").width - 40 }}
-              >
-                {trendingBooks.slice(0, 5).map((book, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    activeOpacity={0.85}
-                    style={[styles.carouselSlide, { width: Dimensions.get("window").width - 40 }]}
-                    onPress={() => {
-                      const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
-                      const isAvail = book.isAvailable !== undefined 
-                        ? Boolean(book.isAvailable) 
-                        : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
-                      const availCopies = book.availableCopies !== undefined 
-                        ? Number(book.availableCopies) 
-                        : (isAvail ? bookCopies : 0);
-
-                      router.push({
-                        pathname: "/book-details",
-                        params: {
-                          id: book.id,
-                          title: book.title,
-                          author: book.author,
-                          description: book.description,
-                          year: book.year,
-                          publicationDate: book.publicationDate,
-                          pages: book.pages,
-                          language: book.language,
-                          category: book.category,
-                          department: book.department,
-                          rating: book.rating,
-                          shelf: book.shelf,
-                          available: String(isAvail),
-                          status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
-                          availableCopies: String(availCopies),
-                          reservedCount: String(book.reservedCount || 0),
-                          borrowedCount: String(book.borrowedCount || 0),
-                          isbn: book.isbn,
-                          copies: String(bookCopies),
-                          volume: book.volume,
-                          edition: book.edition,
-                          accessionNumber: book.accessionNumber,
-                        },
-                      });
-                    }}
-                  >
-                    <BookCoverImage
-                      uri={book.coverImage}
-                      title={book.title}
-                      author={book.author}
-                      category={book.category}
-                      style={styles.carouselCoverImage}
-                      iconSize={32}
-                      showText={true}
-                    />
-                    <View style={styles.carouselContentRight}>
-                      <View style={[
-                        styles.carouselCategoryBadge,
-                        {
-                          backgroundColor: theme.badgeCategoryBg,
-                          borderColor: isDarkMode ? "transparent" : theme.badgeCategoryBorder,
-                          borderWidth: isDarkMode ? 0 : 1,
-                        }
-                      ]}>
-                        <Text style={[
-                          styles.carouselCategoryText,
-                          {
-                            color: theme.badgeCategoryText,
-                            fontWeight: "800",
-                          }
-                        ]}>
-                          {(book.category || "TRENDING").toUpperCase()}
-                        </Text>
-                      </View>
-                      <Text style={[styles.carouselTitleText, { color: theme.textPrimary }]} numberOfLines={2}>
-                        {book.title}
-                      </Text>
-                      <Text style={[styles.carouselAuthorText, { color: theme.textSecondary }]} numberOfLines={1}>
-                        by {book.author}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <View style={styles.paginationDotsContainer}>
-                {trendingBooks.slice(0, 5).map((_, idx) => (
-                  <View
-                    key={idx}
-                    style={[
-                      styles.paginationDot,
-                      idx === activeCarouselIndex
-                        ? [
-                            styles.paginationDotActive,
-                            {
-                              backgroundColor: isDarkMode ? theme.accentGold : theme.accentGold,
-                              borderColor: isDarkMode ? "transparent" : "#0274BB",
-                              borderWidth: isDarkMode ? 0 : 1.5,
-                              width: 18,
-                            }
-                          ]
-                        : [
-                            styles.paginationDotInactive,
-                            { backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : "rgba(2, 116, 187, 0.20)" }
-                          ],
-                    ]}
-                  />
-                ))}
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* CATEGORY SECTIONS */}
-        {[
-          { title: "New Arrivals", icon: "sparkles", iconColor: "#F59E0B", tag: "NEW" },
-          { title: "Recommended Books", icon: "flame", iconColor: "#EF4444", tag: "TOP PICK" },
-          { title: "Circulation", icon: "book-outline", iconColor: "#0284C7", tag: "MAIN" },
-          { title: "General References", icon: "bookmark-outline", iconColor: "#6366F1", tag: "REF" },
-          { title: "Filipiniana", icon: "flag-outline", iconColor: "#D97706", tag: "LOCAL" },
-          { title: "Periodicals", icon: "newspaper-outline", iconColor: "#0D9488", tag: "JOURNAL" },
-          { title: "Special Collections", icon: "star-outline", iconColor: "#8B5CF6", tag: "SPECIAL" },
-        ].map((categoryConfig, cIndex) => {
-          const categoryTitle = categoryConfig.title;
-          const categoryBooks = getCategoryBooks(categoryTitle);
-
-          return (
-            <View key={cIndex} style={styles.categorySection}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingRight: 20, marginBottom: 8 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                  <View
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      backgroundColor: isDarkMode ? `${categoryConfig.iconColor}25` : `${categoryConfig.iconColor}15`,
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Ionicons name={categoryConfig.icon as any} size={15} color={categoryConfig.iconColor} />
-                  </View>
-                  <Text style={[styles.sectionTitle, { color: theme.sectionTitle, fontSize: 16 }]}>
-                    {categoryTitle}
-                  </Text>
-                  {categoryConfig.tag && (
-                    <View
-                      style={{
-                        backgroundColor: isDarkMode ? `${categoryConfig.iconColor}22` : `${categoryConfig.iconColor}12`,
-                        borderColor: isDarkMode ? `${categoryConfig.iconColor}50` : `${categoryConfig.iconColor}35`,
-                        borderWidth: 1,
-                        borderRadius: 6,
-                        paddingHorizontal: 6,
-                        paddingVertical: 1.5,
-                      }}
-                    >
-                      <Text
-                        style={{
-                          color: categoryConfig.iconColor,
-                          fontSize: 9,
-                          fontWeight: "800",
-                          fontFamily: "monospace",
-                          letterSpacing: 0.5,
-                        }}
-                      >
-                        {categoryConfig.tag}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* SEE ALL HEADER BUTTON */}
-                <TouchableOpacity
-                  activeOpacity={0.75}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/department-books",
-                      params: { department: categoryTitle },
-                    })
-                  }
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 3,
-                    paddingHorizontal: 8,
-                    paddingVertical: 3.5,
-                    borderRadius: 12,
-                    backgroundColor: isDarkMode ? "rgba(255, 215, 0, 0.12)" : theme.badgeYellowBg,
-                    borderWidth: 1,
-                    borderColor: isDarkMode ? "rgba(255, 215, 0, 0.3)" : theme.badgeYellowBorder,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: "800",
-                      color: isDarkMode ? theme.accentGold : "#0274BB",
-                    }}
-                  >
-                    See All
-                  </Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={12}
-                    color={isDarkMode ? theme.accentGold : "#0274BB"}
-                  />
-                </TouchableOpacity>
-              </View>
-              {isLoadingBooks && categoryBooks.length === 0 ? (
-                <View style={styles.categoryLoadingBox}>
-                  <ActivityIndicator size="small" color={isDarkMode ? theme.accentGold : theme.accentBlue} />
-                </View>
-              ) : categoryBooks.length === 0 ? (
-                <View style={[styles.emptyCategoryCard, { backgroundColor: theme.cardBg, borderColor: theme.cardBorder }]}>
-                  <Ionicons name="folder-open-outline" size={16} color="#64748B" style={{ marginRight: 6 }} />
-                  <Text style={styles.emptyCategoryText}>No books available in this category</Text>
-                </View>
-              ) : (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.categoryCardsRow}
-                >
-                  {categoryBooks.map((book, cardIdx) => {
-                    const bookCopies = Math.max(1, Number(book.copies || book.totalCopies || 1));
-                    const isAvail = book.isAvailable !== undefined 
-                      ? Boolean(book.isAvailable) 
-                      : (book.availability ? book.availability === 'Available' : (book.available !== undefined ? String(book.available) === 'true' : true));
-                    const availCopies = book.availableCopies !== undefined 
-                      ? Number(book.availableCopies) 
-                      : (isAvail ? bookCopies : 0);
-
-                    return (
-                      <TouchableOpacity
-                        key={cardIdx}
-                        activeOpacity={0.85}
-                        style={[
-                          styles.categoryCard,
-                          { backgroundColor: theme.cardBg, borderColor: theme.cardBorder },
-                        ]}
-                        onPress={() => {
-                          router.push({
-                          pathname: "/book-details",
-                          params: {
-                            id: book.id,
-                            title: book.title,
-                            author: book.author,
-                            description: book.description,
-                            year: book.year,
-                            publicationDate: book.publicationDate,
-                            pages: book.pages,
-                            language: book.language,
-                            category: book.category,
-                            department: book.department,
-                            rating: book.rating,
-                            shelf: book.shelf,
-                            available: String(isAvail),
-                            status: isAvail ? 'Available' : (book.status || book.availability || 'Unavailable'),
-                            availableCopies: String(availCopies),
-                            reservedCount: String(book.reservedCount || 0),
-                            borrowedCount: String(book.borrowedCount || 0),
-                            isbn: book.isbn,
-                            copies: String(bookCopies),
-                            volume: book.volume,
-                            edition: book.edition,
-                            accessionNumber: book.accessionNumber,
-                            coverImage: book.coverImage || undefined,
-                            coverUrl: book.coverImage || undefined,
-                          },
-                        });
-                      }}
-                    >
-                      <BookCoverImage
-                        uri={book.coverImage}
-                        title={book.title}
-                        author={book.author}
-                        category={book.category || categoryTitle}
-                        style={styles.categoryCardImage}
-                        iconSize={20}
-                        showText={false}
-                      />
-                      <View style={styles.categoryCardTextOverlay}>
-                        <Text style={[styles.categoryCardTitle, { color: theme.textPrimary }]} numberOfLines={2}>
-                          {book.title}
-                        </Text>
-                        <Text style={[styles.categoryCardAuthor, { color: theme.textSecondary }]} numberOfLines={1}>
-                          {book.author}
-                        </Text>
-                        <View style={styles.categoryCardGenreRow}>
-                          <Text style={[styles.categoryCardGenreText, { color: isDarkMode ? "#38BDF8" : "#0284C7" }]} numberOfLines={1}>
-                            {book.genre || book.genres || book.category || book.department || "General"}
-                          </Text>
-                        </View>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
-                </ScrollView>
-              )}
-            </View>
-          );
-        })}
 
         <View style={{ height: 120 }} />
       </ScrollView>
@@ -1970,1003 +2297,146 @@ const styles = StyleSheet.create({
     backgroundColor: "#080F1E",
   },
 
+  /* HEADER */
   header: {
-    height: 60,
-    backgroundColor: "#080F1E",
+    height: 56,
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#111A2E",
   },
-
   headerLeftContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
   },
-
-  hamburgerBtn: {
+  avatarTouchable: {
     padding: 2,
   },
-
-  headerTitle: {
-    color: "#F8FAFC",
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: 0.8,
+  headerAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
   },
-
+  headerAvatarFallback: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerBrandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  headerTitleText: {
+    color: "#FFD700",
+    fontSize: 16,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
-    paddingBottom: 2,
+    gap: 10,
   },
-
-  themeToggleBtn: {
-    padding: 4,
-  },
-
-  notificationButtonRelative: {
-    position: "relative",
-    padding: 4,
-  },
-
-  badgeContainerRelative: {
-    position: "absolute",
-    right: -2,
-    top: -2,
-    backgroundColor: "#EF4444",
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 3,
-    shadowColor: "#EF4444",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-
-  notificationButton: {
-    position: "absolute",
-    right: 20,
-    top: 22,
-  },
-
-  badgeContainer: {
-    position: "absolute",
-    right: -4,
-    top: -4,
-    backgroundColor: "#EF4444",
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 3,
-    shadowColor: "#EF4444",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 6,
-    elevation: 4,
-  },
-
-  badgeText: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "bold",
-  },
-
-  greetingContainer: {
-    paddingHorizontal: 20,
-    marginTop: 14,
-  },
-
-  helloText: {
-    fontSize: 24,
-    fontWeight: "800",
-    letterSpacing: -0.3,
-    lineHeight: 30,
-  },
-
-  subText: {
-    marginTop: 2,
-    fontSize: 13,
-    fontWeight: "500",
-  },
-
-  searchContainer: {
-    paddingHorizontal: 20,
-    marginTop: 14,
-  },
-
-  newStatsRow: {
-    flexDirection: "row",
-    paddingHorizontal: 20,
-    marginTop: 14,
-    gap: 12,
-  },
-
-  newStatCard: {
-    flex: 1,
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-    elevation: 2,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-  },
-
-  statIconBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  newStatHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 6,
-  },
-
-  newStatLabel: {
-    fontSize: 10.5,
-    fontWeight: "800",
-    letterSpacing: 0.6,
-  },
-
-  newStatNumber: {
-    fontSize: 32,
-    fontWeight: "900",
-    lineHeight: 36,
-  },
-
-  sectionHeaderMonospace: {
-    marginTop: 22,
-    marginHorizontal: 20,
-  },
-
-  sectionTitleMonospace: {
-    fontSize: 15,
-    fontWeight: "700",
-    fontFamily: "monospace",
-    color: "#8E9DAE",
-  },
-
-  featuredPlaceholderCard: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    height: 170,
-    borderRadius: 16,
-    borderWidth: 1,
-    justifyContent: "flex-end",
-    alignItems: "center",
-    paddingBottom: 12,
-  },
-
-  paginationDotsContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  paginationDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-
-  categorySection: {
-    marginTop: 22,
-    paddingLeft: 20,
-  },
-
-  categoryCardsRow: {
-    paddingRight: 20,
-    paddingTop: 10,
-    gap: 12,
-    flexDirection: "row",
-  },
-
-  categoryPlaceholderCard: {
-    width: 125,
-    height: 75,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-
-  askBox: {
-    height: 50,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    borderWidth: 1,
-  },
-
-  askText: {
-    flex: 1,
-    marginLeft: 10,
-    fontSize: 14,
-  },
-
-  sectionHeader: {
-    marginTop: 22,
-    marginHorizontal: 20,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  seeAll: {
-    color: "#38BDF8",
-    fontWeight: "700",
-    fontSize: 13,
-  },
-
-  booksRow: {
-    paddingLeft: 20,
-    paddingRight: 20,
-    paddingTop: 12,
-  },
-
-  bookCard: {
-    width: 165,
-    borderRadius: 16,
-    padding: 14,
-    marginRight: 12,
-    borderWidth: 1,
-    elevation: 3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-  },
-
-  bookTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-    lineHeight: 18,
-  },
-
-  bookAuthor: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-
-  ratingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 10,
-  },
-
-  ratingText: {
-    fontSize: 11,
-    marginLeft: 6,
-    fontWeight: "600",
-  },
-
-  reservationTitle: {
-    marginTop: 22,
-    marginHorizontal: 20,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  reservationCard: {
-    marginTop: 12,
-    marginHorizontal: 20,
-    borderRadius: 18,
-    padding: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-  },
-
-  circleShape: {
-    position: "absolute",
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "rgba(245, 158, 11, 0.04)",
-    top: -30,
-    right: -25,
-  },
-
-  pickupRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  bookIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 12,
-  },
-
-  nextPickup: {
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 0.8,
-  },
-
-  reservationBook: {
-    marginTop: 4,
-    fontSize: 18,
-    fontWeight: "800",
-  },
-
-  bottomReservation: {
-    marginTop: 14,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-
-  dateRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  dateText: {
-    marginLeft: 6,
-    fontSize: 12,
-  },
-
-  readyButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 7,
-    borderRadius: 10,
-  },
-
-  readyText: {
-    color: "#080F1E",
-    fontWeight: "800",
-    fontSize: 12,
-  },
-
-  queueCard: {
-    marginTop: 12,
-    marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderWidth: 1,
-  },
-
-  queueLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-
-  queueIcon: {
+  circleHeaderBtn: {
     width: 34,
     height: 34,
-    borderRadius: 10,
-    borderWidth: 1,
+    borderRadius: 17,
+    alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    position: "relative",
+  },
+  redBadgeCircle: {
+    position: "absolute",
+    top: -2,
+    right: -2,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 7.5,
+    backgroundColor: "#EF4444",
     alignItems: "center",
-    marginRight: 12,
-  },
-
-  queueTitle: {
-    fontSize: 14,
-    fontWeight: "700",
-  },
-
-  queueSub: {
-    marginTop: 2,
-    fontSize: 12,
-  },
-
-  statsRow: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    marginTop: 16,
-    justifyContent: "space-between",
-  },
-
-  borrowedCard: {
-    width: "48%",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    elevation: 3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-  },
-
-  borrowedNumber: {
-    marginTop: 8,
-    fontSize: 28,
-    fontWeight: "800",
-  },
-
-  borrowedText: {
-    marginTop: 2,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-
-  pointsCard: {
-    width: "48%",
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    elevation: 3,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-  },
-
-  pointsIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    borderWidth: 1,
     justifyContent: "center",
-    alignItems: "center",
+    paddingHorizontal: 3,
+  },
+  redBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 8.5,
+    fontWeight: "900",
   },
 
-  pointsNumber: {
-    marginTop: 8,
-    fontSize: 28,
-    fontWeight: "800",
-  },
-
-  pointsText: {
-    marginTop: 2,
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.5,
-  },
-
-  announcementsContainer: {
-    marginTop: 20,
-  },
-
-  announcementsTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#FCD34D",
-    paddingHorizontal: 20,
-    marginBottom: 10,
-  },
-
-  announcementsRow: {
-    paddingLeft: 20,
-    paddingRight: 6,
-    paddingBottom: 8,
-  },
-
-  announcementCard: {
-    width: 280,
-    backgroundColor: "#111A2E",
-    borderRadius: 16,
-    padding: 16,
-    marginRight: 14,
-    borderWidth: 1,
-    borderColor: "#1E293B",
-    borderLeftWidth: 4,
-    borderLeftColor: "#38BDF8",
-  },
-
-  announcementUrgent: {
-    borderLeftColor: "#EF4444",
-    backgroundColor: "#1F1315",
-    borderColor: "#3F1B1F",
-  },
-
-  announcementImportant: {
-    borderLeftColor: "#F59E0B",
-    backgroundColor: "#1C1810",
-    borderColor: "#3D2C12",
-  },
-
-  announcementHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-    gap: 4,
-  },
-
-  announcementPriority: {
-    fontSize: 10,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    color: "#38BDF8",
-  },
-
-  announcementTitleText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#F8FAFC",
-    marginBottom: 6,
-  },
-
-  announcementBody: {
-    fontSize: 13,
-    color: "#CBD5E1",
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-
-  announcementFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#1E293B",
-    paddingTop: 8,
-  },
-
-  announcementAuthor: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#94A3B8",
-  },
-
-  announcementDate: {
-    fontSize: 11,
-    color: "#64748B",
-  },
-
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.75)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-
-  announcementModalContent: {
-    width: "100%",
-    maxWidth: 340,
-    backgroundColor: "#111A2E",
-    borderRadius: 24,
-    padding: 24,
-    borderWidth: 1,
-    borderColor: "#1E293B",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 15,
-    elevation: 10,
-  },
-
-  modalAnnHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-
-  modalAnnHeaderLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-
-  modalAnnPriority: {
-    fontSize: 12,
-    fontWeight: "800",
-    textTransform: "uppercase",
-    color: "#38BDF8",
-  },
-
-  modalAnnTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#F8FAFC",
+  /* GREETING */
+  greetingSection: {
+    paddingHorizontal: 16,
+    marginTop: 18,
     marginBottom: 14,
   },
-
-  modalAnnBodyScroll: {
-    maxHeight: 200,
-    marginBottom: 16,
-  },
-
-  modalAnnBodyText: {
-    fontSize: 14,
-    color: "#CBD5E1",
-    lineHeight: 22,
-  },
-
-  modalAnnFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#1E293B",
-    paddingTop: 12,
-    marginBottom: 20,
-  },
-
-  modalAnnAuthor: {
-    fontSize: 12,
+  greetingHello: {
+    fontSize: 22,
     fontWeight: "600",
-    color: "#94A3B8",
   },
-
-  modalAnnDate: {
-    fontSize: 12,
-    color: "#64748B",
-  },
-
-  modalAnnCloseButton: {
-    backgroundColor: "#080F1E",
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#1E293B",
-  },
-
-  modalAnnCloseButtonText: {
-    color: "#FCD34D",
+  greetingName: {
+    fontSize: 22,
     fontWeight: "800",
-    fontSize: 14,
+    color: "#FFD700",
   },
-
-  noReservationsCard: {
-    backgroundColor: "#111A2E",
-    marginHorizontal: 20,
-    marginTop: 16,
-    borderRadius: 18,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#1E293B",
-    gap: 8,
-  },
-
-  noReservationsText: {
+  greetingSubtitle: {
+    fontSize: 13,
     color: "#94A3B8",
-    fontSize: 14,
-    fontWeight: "600",
+    marginTop: 4,
   },
-  searchBarWrapper: {
-    height: 52,
-    borderRadius: 26,
+
+  /* SEARCH BAR */
+  searchBarContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  searchBarPill: {
+    height: 48,
+    borderRadius: 24,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
+    paddingRight: 4,
     borderWidth: 1,
-    elevation: 2,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
   },
   searchIcon: {
-    marginRight: 10,
+    marginLeft: 14,
+    marginRight: 8,
   },
-  searchInput: {
+  searchInputText: {
     flex: 1,
-    color: "#F8FAFC",
-    fontSize: 14,
+    fontSize: 13,
     height: "100%",
+    paddingVertical: 0,
+  },
+  searchScannerBtn: {
+    padding: 8,
+    marginRight: 2,
+  },
+  searchSubmitPill: {
+    backgroundColor: "#FFD700",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  searchSubmitText: {
+    color: "#0B1A2C",
+    fontWeight: "900",
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
   clearIcon: {
     padding: 4,
+    marginRight: 6,
   },
-  suggestionsWrapper: {
-    marginTop: 10,
-    paddingHorizontal: 20,
-  },
-  suggestionsScrollContent: {
-    paddingRight: 20,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  suggestionChip: {
-    backgroundColor: "#1E293B",
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#334155",
-    marginRight: 8,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  suggestionChipText: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  searchResultsContainer: {
-    marginTop: 20,
-    paddingHorizontal: 20,
-  },
-  searchResultsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  searchResultsTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#FCD34D",
-  },
-  noResultsCard: {
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
-    padding: 28,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#1E293B",
-  },
-  noResultsText: {
-    color: "#F8FAFC",
-    fontSize: 15,
-    fontWeight: "700",
-    marginTop: 8,
-    textAlign: "center",
-  },
-  noResultsSub: {
-    color: "#94A3B8",
-    fontSize: 13,
-    marginTop: 4,
-    textAlign: "center",
-  },
-  resultsGrid: {
-    gap: 14,
-  },
-  resultBookCard: {
-    backgroundColor: "#111A2E",
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#1E293B",
-    marginBottom: 12,
-  },
-  resultBookHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  resultBookCategory: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "#38BDF8",
-    letterSpacing: 0.5,
-    flex: 1,
-    marginRight: 8,
-  },
-  matchBadge: {
-    backgroundColor: "rgba(252,211,77,0.15)",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "rgba(252,211,77,0.3)",
-  },
-  matchText: {
-    color: "#FCD34D",
-    fontWeight: "800",
-    fontSize: 8,
-  },
-  statusBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  statusAvail: {
-    backgroundColor: "rgba(34,197,94,0.1)",
-  },
-  statusUnavail: {
-    backgroundColor: "rgba(239,68,68,0.1)",
-  },
-  statusText: {
-    fontSize: 8,
-    fontWeight: "800",
-  },
-  resultBookTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#F8FAFC",
-    marginBottom: 4,
-  },
-  resultBookAuthor: {
-    fontSize: 12,
-    color: "#94A3B8",
-    marginBottom: 12,
-  },
-  resultBookFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    borderTopWidth: 1,
-    borderTopColor: "#1E293B",
-    paddingTop: 10,
-  },
-  resultRatingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  resultRatingText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#CBD5E1",
-    marginLeft: 4,
-  },
-  resultBookShelf: {
-    fontSize: 11,
-    color: "#64748B",
-    maxWidth: "70%",
-  },
-  carouselSlide: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 14,
-    paddingBottom: 20,
-    height: 165,
-  },
-  carouselCoverImage: {
-    width: 95,
-    height: 132,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  carouselContentRight: {
-    flex: 1,
-    marginLeft: 14,
-    justifyContent: "center",
-  },
-  carouselCategoryBadge: {
-    backgroundColor: "rgba(255, 215, 0, 0.15)",
-    alignSelf: "flex-start",
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-    borderRadius: 12,
-    marginBottom: 6,
-  },
-  carouselCategoryText: {
-    color: "#FFD700",
-    fontSize: 9,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  carouselTitleText: {
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  carouselAuthorText: {
-    fontSize: 12,
-    marginBottom: 8,
-  },
-  carouselRatingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  carouselRatingText: {
-    color: "#FFD700",
-    fontSize: 11,
-    fontWeight: "700",
-    marginLeft: 4,
-  },
-  paginationDotActive: {
-    width: 16,
-    backgroundColor: "#FFD700",
-  },
-  paginationDotInactive: {
-    width: 6,
-    backgroundColor: "rgba(255, 215, 0, 0.3)",
-  },
-  categoryCard: {
-    width: 128,
-    height: 198,
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#0F172A",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
-  },
-  categoryCardImage: {
-    width: "100%",
-    height: 124,
-  },
-  categoryCardTextOverlay: {
-    paddingHorizontal: 8,
-    paddingTop: 5,
-    paddingBottom: 6,
-    flex: 1,
-    justifyContent: "space-between",
-  },
-  categoryCardTitle: {
-    fontSize: 11.5,
-    fontWeight: "700",
-    lineHeight: 15,
-  },
-  categoryCardAuthor: {
-    fontSize: 9.5,
-    marginTop: 1,
-  },
-  categoryCardGenreRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 3,
-  },
-  categoryCardGenreText: {
-    fontSize: 9.5,
-    fontWeight: "700",
-  },
-  fallbackCoverContainer: {
-    backgroundColor: "#0B162C",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 6,
-  },
-  fallbackCoverTitle: {
-    color: "#8E9DAE",
-    fontSize: 9,
-    fontWeight: "700",
-    textAlign: "center",
-    marginTop: 4,
-  },
-  emptyCategoryCard: {
-    marginRight: 20,
-    marginTop: 8,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyCategoryText: {
-    color: "#64748B",
-    fontSize: 12,
-    fontWeight: "600",
-    fontFamily: "monospace",
-  },
-  categoryLoadingBox: {
-    paddingVertical: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  loadingText: {
-    color: "#8E9DAE",
-    fontSize: 12,
-    fontWeight: "600",
-    fontFamily: "monospace",
-  },
+
+  /* FILE PREVIEW CHIP */
   fileBadgeChip: {
     flexDirection: "row",
     alignItems: "center",
@@ -2982,5 +2452,455 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     maxWidth: 220,
+  },
+
+  /* WORD SUGGESTIONS */
+  suggestionsWrapper: {
+    marginBottom: 10,
+    paddingHorizontal: 16,
+  },
+  suggestionsScrollContent: {
+    paddingRight: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  suggestionChip: {
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    marginRight: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  suggestionChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  /* STATS ROW */
+  statsRow: {
+    flexDirection: "row",
+    paddingHorizontal: 16,
+    gap: 12,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+  },
+  statHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
+  },
+  statIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statLabel: {
+    color: "#94A3B8",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: "900",
+  },
+  statSub: {
+    color: "#64748B",
+    fontSize: 11,
+    marginTop: 2,
+  },
+
+  /* TRENDING SECTION */
+  trendingSectionTitle: {
+    paddingHorizontal: 16,
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 10,
+  },
+  trendingSpotlightCard: {
+    marginHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 0,
+    overflow: "hidden",
+  },
+  trendingSlide: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 6,
+  },
+  trendingCoverWrapper: {
+    width: 90,
+    height: 135,
+    borderRadius: 8,
+    overflow: "hidden",
+    position: "relative",
+  },
+  trendingCoverImage: {
+    width: 90,
+    height: 135,
+    borderRadius: 8,
+  },
+  trendingTopBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "#FFD700",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    zIndex: 2,
+  },
+  trendingTopBadgeText: {
+    color: "#0F172A",
+    fontSize: 8.5,
+    fontWeight: "900",
+  },
+  trendingContentCol: {
+    flex: 1,
+    marginLeft: 14,
+    height: 135,
+    justifyContent: "space-between",
+  },
+  trendingGenreChip: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  trendingGenreText: {
+    color: "#94A3B8",
+    fontSize: 9.5,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  trendingTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    lineHeight: 20,
+  },
+  trendingAuthor: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 2,
+  },
+  trendingActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: "auto",
+    paddingRight: 6,
+  },
+  viewDetailBtn: {
+    backgroundColor: "#FFD700",
+    paddingHorizontal: 12,
+    paddingVertical: 6.5,
+    borderRadius: 6,
+  },
+  viewDetailBtnText: {
+    color: "#0F172A",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  availableIndicatorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+  },
+  availableText: {
+    fontSize: 11.5,
+    fontWeight: "600",
+  },
+  trendingPaginationDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 5,
+    paddingTop: 8,
+    paddingBottom: 14,
+  },
+  dotActive: {
+    width: 18,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: "#FFD700",
+  },
+  dotInactive: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+
+  /* CATEGORY SECTION */
+  categorySection: {
+    marginTop: 20,
+  },
+  categoryHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  categoryHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  categoryTitleText: {
+    fontSize: 15.5,
+    fontWeight: "800",
+  },
+  categoryTagChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
+    borderWidth: 1,
+  },
+  categoryTagText: {
+    fontSize: 9,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  seeAllBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 4,
+  },
+  seeAllBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  categoryScrollContainer: {
+    paddingHorizontal: 16,
+    gap: 14,
+  },
+  bookItemCard: {
+    width: 125,
+  },
+  bookCoverBox: {
+    width: 125,
+    height: 175,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    position: "relative",
+  },
+  bookCoverImage: {
+    width: "100%",
+    height: "100%",
+  },
+  bookCoverOverlayBadge: {
+    position: "absolute",
+    top: 6,
+    left: 6,
+    backgroundColor: "rgba(15, 23, 42, 0.85)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.20)",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    zIndex: 2,
+  },
+  bookCoverOverlayBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 8.5,
+    fontWeight: "800",
+  },
+  bookItemTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 7,
+  },
+  bookItemAuthor: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 2,
+  },
+  bookItemGenre: {
+    fontSize: 10.5,
+    fontWeight: "600",
+    marginTop: 2,
+  },
+
+  categoryLoadingBox: {
+    paddingVertical: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  emptyCategoryCard: {
+    marginHorizontal: 16,
+    marginTop: 8,
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCategoryText: {
+    color: "#64748B",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  loadingText: {
+    color: "#8E9DAE",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  /* ANNOUNCEMENTS */
+  announcementsContainer: {
+    marginTop: 24,
+  },
+  announcementsTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  announcementsRow: {
+    paddingLeft: 16,
+    paddingRight: 6,
+    paddingBottom: 8,
+  },
+  announcementCard: {
+    width: 280,
+    borderRadius: 16,
+    padding: 16,
+    marginRight: 14,
+    borderWidth: 1,
+  },
+  announcementHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+    justifyContent: "space-between",
+  },
+  announcementPriority: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  announcementTitleText: {
+    fontSize: 15,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+  announcementBody: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  announcementFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    paddingTop: 8,
+  },
+  announcementAuthor: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  announcementDate: {
+    fontSize: 11,
+  },
+
+  /* MODAL */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  announcementModalContent: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  modalAnnHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    paddingBottom: 10,
+  },
+  modalAnnHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  modalAnnPriority: {
+    fontSize: 12,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    color: "#38BDF8",
+  },
+  modalAnnTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 14,
+  },
+  modalAnnBodyScroll: {
+    maxHeight: 200,
+    marginBottom: 16,
+  },
+  modalAnnBodyText: {
+    fontSize: 14,
+    lineHeight: 22,
+  },
+  modalAnnFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    borderTopWidth: 1,
+    paddingTop: 12,
+    marginBottom: 20,
+  },
+  modalAnnAuthor: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  modalAnnDate: {
+    fontSize: 12,
+  },
+  modalAnnCloseButton: {
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  modalAnnCloseButtonText: {
+    fontWeight: "800",
+    fontSize: 14,
   },
 });

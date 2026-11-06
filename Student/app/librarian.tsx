@@ -38,6 +38,8 @@ import {
   markTransactionPickedUp,
   ReceiptData,
   isDueToReturn,
+  resolveReceiptLibrarian,
+  formatDueDate,
 } from "../data/store";
 
 const { width, height } = Dimensions.get("window");
@@ -2061,7 +2063,7 @@ export default function LibrarianScreen() {
         ocrEngine: ocrEngine || "Tesseract Neural OCR",
         confidence: ocrConfidence || 95.0,
         rawText: rawTextWithCover,
-        scannedBy: "Librarian Mobile App (Scanner)",
+        scannedBy: (user as any)?.fullName || (user as any)?.name || "Yana Brich R. Palmares",
         status: "Pending Review",
         availability: "Available",
       };
@@ -3431,6 +3433,34 @@ export default function LibrarianScreen() {
                     SLIP NO: {scannedReceipt?.receiptNumber || "RCP-PROVED-2130"}
                   </Text>
                 </View>
+
+                {/* Approving Librarian Sign-Off Card (Below Slip No, Above Book Details) */}
+                <View style={[
+                  styles.receiptApproverCard,
+                  {
+                    backgroundColor: isDarkMode ? '#102237' : '#F0FDF4',
+                    borderColor: isDarkMode ? '#1E3A5F' : '#BBF7D0',
+                  }
+                ]}>
+                  <View style={styles.receiptApproverAvatar}>
+                    <Ionicons name="shield-checkmark" size={16} color="#10B981" />
+                  </View>
+                  <View style={styles.receiptApproverInfo}>
+                    <Text style={[styles.receiptApproverTag, { color: isDarkMode ? '#94A3B8' : '#64748B' }]}>
+                      APPROVED BY LIBRARIAN
+                    </Text>
+                    <Text style={[styles.receiptApproverName, { color: theme.textPrimary }]} numberOfLines={1}>
+                      {resolveReceiptLibrarian(scannedReceipt).name}
+                    </Text>
+                    <Text style={[styles.receiptApproverRole, { color: isDarkMode ? '#38BDF8' : '#0284C7' }]}>
+                      {resolveReceiptLibrarian(scannedReceipt).role}
+                    </Text>
+                  </View>
+                  <View style={[styles.receiptApproverBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : '#DCFCE7' }]}>
+                    <Ionicons name="checkmark-done" size={11} color="#10B981" />
+                    <Text style={styles.receiptApproverBadgeText}>VERIFIED</Text>
+                  </View>
+                </View>
               </View>
 
               {/* Perforated Ticket Notches & Dashed Divider */}
@@ -3550,7 +3580,7 @@ export default function LibrarianScreen() {
                   </View>
 
                   <Text style={styles.dueHeroDateValue}>
-                    {scannedReceipt?.returnDate || "2026-10-20"}
+                    {formatDueDate(scannedReceipt?.returnDate)}
                   </Text>
 
                   <View style={styles.dueHeroNoticeRow}>
@@ -4701,6 +4731,58 @@ const getStyles = (theme: typeof LIGHT_THEME, isDarkMode: boolean) =>
       fontSize: 11,
       fontWeight: "700",
       color: isDarkMode ? "#CBD5E1" : "#475569",
+      letterSpacing: 0.5,
+    },
+    receiptApproverCard: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginTop: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 9,
+      borderRadius: 12,
+      borderWidth: 1,
+      width: '100%',
+    },
+    receiptApproverAvatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: 'rgba(16, 185, 129, 0.12)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    receiptApproverInfo: {
+      flex: 1,
+      justifyContent: 'center',
+    },
+    receiptApproverTag: {
+      fontSize: 9,
+      fontWeight: '800',
+      letterSpacing: 0.8,
+      marginBottom: 1,
+    },
+    receiptApproverName: {
+      fontSize: 13,
+      fontWeight: '700',
+    },
+    receiptApproverRole: {
+      fontSize: 11,
+      fontWeight: '600',
+      marginTop: 1,
+    },
+    receiptApproverBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 3,
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 8,
+    },
+    receiptApproverBadgeText: {
+      fontSize: 9.5,
+      fontWeight: '800',
+      color: '#10B981',
       letterSpacing: 0.5,
     },
     ticketDividerContainer: {

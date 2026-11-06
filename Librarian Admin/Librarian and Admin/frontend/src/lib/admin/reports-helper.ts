@@ -335,6 +335,98 @@ export async function buildRichReports() {
       searchTerms: sampleSearchTerms,
     };
 
+    // 10. Department Violations Analytics (CICT, CHTM, CCJE, etc.) & Most Violation Students
+    let dbViolatorRows: any[] = [];
+    try {
+      const violQuery = `
+        SELECT 
+          COALESCE(u.name, sub.student_name, 'Unknown Student') as name,
+          COALESCE(u.id_number, sub.student_id, 'N/A') as student_id,
+          CASE 
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%information technology%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bsit' THEN 'BSIT'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%computer science%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bscs' THEN 'BSCS'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%hospitality%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bshm' THEN 'BSHM'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%tourism%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bstm' THEN 'BSTM'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%criminology%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bscrim' THEN 'BSCrim'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%business%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bsba' THEN 'BSBA'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%engineering%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bscpe' THEN 'BSCpE'
+            ELSE 'BSIT'
+          END as course,
+          CASE 
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%information%' OR LOWER(COALESCE(u.course, u.department, '')) IN ('bsit', 'bscs') OR LOWER(COALESCE(u.course, u.department, '')) LIKE '%computer%' THEN 'CICT'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%hospitality%' OR LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%tourism%' OR LOWER(COALESCE(u.course, u.department, '')) IN ('bshm', 'bstm') THEN 'CHTM'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%criminology%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bscrim' THEN 'CCJE'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%business%' OR LOWER(COALESCE(u.course, u.department, '')) IN ('bsba', 'bsa') THEN 'CBMA'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%engineering%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bscpe' THEN 'COE'
+            WHEN LOWER(COALESCE(u.course, u.department, sub.department, '')) LIKE '%education%' OR LOWER(COALESCE(u.course, u.department, '')) = 'bsed' THEN 'CED'
+            ELSE 'CICT'
+          END as department,
+          COUNT(*)::int as violation_count,
+          SUM(COALESCE(sub.penalty, 50.00))::numeric as penalty_total
+        FROM (
+          SELECT user_id, student_id, student_name, department, 50.00 as penalty 
+          FROM transactions 
+          WHERE type::text IN ('Borrow', 'borrow') 
+            AND status::text IN ('Approved', 'approved', 'Picked Up', 'picked up', 'Borrowed', 'borrowed') 
+            AND due_date::date < CURRENT_DATE
+          UNION ALL
+          SELECT user_id, student_id, student_name, 'Circulation' as department, penalty_amount as penalty 
+          FROM violations 
+          WHERE status != 'Resolved' OR status IS NULL
+        ) sub
+        LEFT JOIN users u ON (sub.user_id = u.id OR sub.student_id = u.id_number)
+        GROUP BY 1, 2, 3, 4
+        ORDER BY violation_count DESC
+        LIMIT 10
+      `;
+      const { rows } = await pool.query(violQuery);
+      dbViolatorRows = rows;
+    } catch (vErr) {
+      console.warn("Violations query notice in buildRichReports:", vErr);
+    }
+
+    const collegeViolationsMap: Record<string, number> = {
+      CICT: 0,
+      CHTM: 0,
+      CCJE: 0,
+      CBMA: 0,
+      COE: 0,
+      CAS: 0,
+      CED: 0,
+    };
+
+    dbViolatorRows.forEach((r) => {
+      const dept = r.department || "CICT";
+      if (collegeViolationsMap[dept] !== undefined) {
+        collegeViolationsMap[dept] += Number(r.violation_count || 0);
+      }
+    });
+
+    const totalViolCount = Object.values(collegeViolationsMap).reduce((a, b) => a + b, 0);
+
+    const collegeViolations = [
+      { code: "CICT", name: "College of Information and Communications Technology", mascot: "Red Sentinels", violations: collegeViolationsMap.CICT, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.CICT / totalViolCount) * 100).toFixed(1)) : 0, color: "#EF4444" },
+      { code: "CHTM", name: "College of Hospitality and Tourism Management", mascot: "Pink Vikings", violations: collegeViolationsMap.CHTM, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.CHTM / totalViolCount) * 100).toFixed(1)) : 0, color: "#EC4899" },
+      { code: "CCJE", name: "College of Criminal Justice Education", mascot: "Purple Wizards", violations: collegeViolationsMap.CCJE, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.CCJE / totalViolCount) * 100).toFixed(1)) : 0, color: "#8B5CF6" },
+      { code: "CBMA", name: "College of Business Management and Accountancy", mascot: "Yellow Tycoons", violations: collegeViolationsMap.CBMA, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.CBMA / totalViolCount) * 100).toFixed(1)) : 0, color: "#EAB308" },
+      { code: "COE", name: "College of Engineering", mascot: "Orange Erudites", violations: collegeViolationsMap.COE, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.COE / totalViolCount) * 100).toFixed(1)) : 0, color: "#FF6B00" },
+      { code: "CAS", name: "College of Arts and Sciences", mascot: "Green Titans", violations: collegeViolationsMap.CAS, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.CAS / totalViolCount) * 100).toFixed(1)) : 0, color: "#10B981" },
+      { code: "CED", name: "College of Education", mascot: "Blue Guardians", violations: collegeViolationsMap.CED, percentage: totalViolCount > 0 ? Number(((collegeViolationsMap.CED / totalViolCount) * 100).toFixed(1)) : 0, color: "#3B82F6" },
+    ];
+
+    let topViolationStudents = dbViolatorRows.map((r, idx) => ({
+      rank: idx + 1,
+      name: r.name,
+      studentId: r.student_id,
+      course: r.course,
+      department: r.department,
+      violationCount: Number(r.violation_count || 1),
+      penaltyTotal: Number(r.penalty_total || 50),
+      status: Number(r.violation_count || 1) >= 3 ? "Critical" : "Warning",
+    }));
+    topViolationStudents.sort((a, b) => b.violationCount - a.violationCount);
+    topViolationStudents = topViolationStudents.map((s, idx) => ({ ...s, rank: idx + 1 }));
+
     return {
       ...baseReports,
       monthlyBookAdditions,
@@ -342,6 +434,8 @@ export async function buildRichReports() {
       mostCourseBorrowed,
       mostSearchedBooks,
       topStudentBorrowers,
+      collegeViolations,
+      topViolationStudents,
     };
   } catch (err) {
     console.warn("buildRichReports extended queries notice:", err);

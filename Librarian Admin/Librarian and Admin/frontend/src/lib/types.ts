@@ -40,7 +40,10 @@ export type LibrarianWebPermissionKey =
   | "history"
   | "settings"
   | "export"
-  | "import";
+  | "import"
+  | "catalogDigitized"
+  | "catalogDropdown"
+  | "transactionDropdown";
 
 export type LibrarianMobilePermissionKey =
   | "mobileCatalog"
@@ -64,6 +67,7 @@ export interface LibrarianAccount {
   idNumber: string;
   email: string;
   role: Role;
+  subRole?: string;
   department: string;
   course: string;
   status: "Active" | "Suspended";
@@ -77,6 +81,7 @@ export interface SessionUser {
   name: string;
   email: string;
   role: Role;
+  subRole?: string;
   avatar: string;
   permissions?: Partial<Record<string, boolean>>;
 }
@@ -152,6 +157,11 @@ export interface TransactionRecord {
   comment?: string;
   studentIdImage?: string | null;
   author?: string;
+  assignedTo?: string | null;
+  assignedLibrarianName?: string | null;
+  assignedLibrarianRole?: string | null;
+  approvedByName?: string | null;
+  approvedByRole?: string | null;
   coverUrl?: string;
   userDepartment?: string;
   userCourse?: string;
@@ -189,6 +199,7 @@ export interface SystemUser {
   name: string;
   email: string;
   role: Role;
+  subRole?: string;
   department: Department;
   course?: string;
   idNumber?: string;
@@ -251,6 +262,8 @@ export interface ReportsPayload {
   collegeLoans?: CollegeDepartmentBorrowData[];
   mostCourseBorrowed?: MostCourseBorrowedData;
   topStudentBorrowers?: TopStudentBorrower[];
+  collegeViolations?: CollegeDepartmentViolationData[];
+  topViolationStudents?: TopViolationStudent[];
 }
 
 export interface CourseBorrowedRanking {
@@ -285,6 +298,26 @@ export interface CollegeDepartmentBorrowData {
   borrows: number;
   percentage: number;
   color: string;
+}
+
+export interface CollegeDepartmentViolationData {
+  code: string;
+  name: string;
+  mascot: string;
+  violations: number;
+  percentage: number;
+  color: string;
+}
+
+export interface TopViolationStudent {
+  rank: number;
+  name: string;
+  studentId: string;
+  course: string;
+  department: string;
+  violationCount: number;
+  penaltyTotal?: number;
+  status: "Critical" | "Warning" | "Settled";
 }
 
 export interface SuperAdminVitals {
@@ -329,6 +362,7 @@ export interface SuperAdminUserRecord {
   idNumber: string;
   email: string;
   role: string;
+  subRole?: string;
   department: string;
   course: string;
   status: "Active" | "Suspended" | "Archived";

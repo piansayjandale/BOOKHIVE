@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useNavigationTransition } from "@/components/providers/navigation-provider";
 import {
   Home,
   Search,
@@ -88,6 +90,8 @@ interface TransactionItem {
 }
 
 export function StudentView() {
+  const router = useRouter();
+  const { startNavigation } = useNavigationTransition();
   const [mounted, setMounted] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [activeTab, setActiveTab] = useState<"home" | "search" | "books" | "card">("home");
@@ -1671,7 +1675,8 @@ export function StudentView() {
                     localStorage.removeItem("bookhive_student_user");
                     localStorage.removeItem("bookhive_token");
                   }
-                  window.location.assign("/login");
+                  startNavigation("/login", { fullScreen: true });
+                  router.replace("/login");
                 }}
                 className="w-full py-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 font-bold text-xs hover:bg-rose-500/20 flex items-center justify-center gap-2 cursor-pointer"
               >

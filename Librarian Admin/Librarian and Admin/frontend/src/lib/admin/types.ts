@@ -28,6 +28,7 @@ export interface AdminUserRecord {
   idNumber: string;
   email: string;
   role: Role;
+  subRole?: string;
   department: Department;
   course: string;
   status: "Active" | "Suspended" | "Archived" | (string & {});

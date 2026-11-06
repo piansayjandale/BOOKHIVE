@@ -20,6 +20,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { useThemeColors } from "../hooks/useThemeColors";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cancelReservation } from "../data/store";
+import PageCircleLoader from "../components/PageCircleLoader";
 
 export default function ReservationDetailsScreen() {
   const router = useRouter();
@@ -35,7 +36,22 @@ export default function ReservationDetailsScreen() {
   const isAvailable = params.available === 'true' || params.available === 'Available';
   const dateReserved = (params.dateReserved as string) || (params.pickupDate as string) || (params.date as string) || "Not specified";
 
+  const isBookPickedUp = Boolean(
+    params.isPickedUp === "true" ||
+    String(params.isPickedUp) === "true" ||
+    (params as any).isPickedUp === true ||
+    params.status === "Picked Up" ||
+    params.pickedUpAt
+  );
+
   const handleCancel = () => {
+    if (isBookPickedUp) {
+      Alert.alert(
+        "Book Already Picked Up",
+        "This book has already been physically picked up from the library. Active physical loans cannot be cancelled and must be returned directly to the circulation desk."
+      );
+      return;
+    }
     Alert.alert(
       "Cancel Reservation?",
       `Are you sure you want to cancel your reservation for "${params.title}"? You will lose your current spot in the 1st-come 1st-served queue.`,
@@ -77,14 +93,31 @@ export default function ReservationDetailsScreen() {
   };
 
   const handleBack = useCallback(() => {
-    if (params.from === "notifications" || String(params.from) === "notifications") {
+    const fromSource = String(params.from || "").toLowerCase();
+    if (fromSource === "notifications") {
       router.replace("/notifications");
+      return;
+    }
+    if (fromSource === "reservations" || fromSource === "library-card") {
+      router.replace("/(tabs)/reservations");
+      return;
+    }
+    if (fromSource === "search") {
+      router.replace("/(tabs)/search");
+      return;
+    }
+    if (fromSource === "books") {
+      router.replace("/(tabs)/books");
+      return;
+    }
+    if (fromSource === "home") {
+      router.replace("/(tabs)");
       return;
     }
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace("/(tabs)");
+      router.replace("/(tabs)/reservations");
     }
   }, [params.from, router]);
 
@@ -327,16 +360,19 @@ export default function ReservationDetailsScreen() {
 
       {/* ACTION BUTTON */}
       <TouchableOpacity
-        style={[styles.cancelButton, isSubmitting && { opacity: 0.6 }]}
-        disabled={isSubmitting}
+        style={[
+          styles.cancelButton,
+          (isSubmitting || isBookPickedUp) && { opacity: 0.6, backgroundColor: isDarkMode ? "#334155" : "#94A3B8" }
+        ]}
+        disabled={isSubmitting || isBookPickedUp}
         onPress={handleCancel}
-        activeOpacity={0.85}
+        activeOpacity={isBookPickedUp ? 1 : 0.85}
       >
         {isSubmitting ? (
           <ActivityIndicator size="small" color="#FFFFFF" />
         ) : (
           <Text style={styles.cancelButtonText}>
-            Cancel Reservation
+            {isBookPickedUp ? "Already Picked Up (Cannot Cancel)" : "Cancel Reservation"}
           </Text>
         )}
       </TouchableOpacity>

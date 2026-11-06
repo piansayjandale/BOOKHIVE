@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AnimatedScreen from "../../components/AnimatedScreen";
+import PageCircleLoader from "../../components/PageCircleLoader";
 
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -23,6 +24,7 @@ import { useAuth } from "../../data/AuthContext";
 import { useThemeColors } from "../../hooks/useThemeColors";
 import {
   getReservations,
+  getLibraryCardHistory,
   getStudentProfile,
   subscribe,
   getNotifications,
@@ -32,6 +34,8 @@ import {
   getCourseLabel,
   saveStudentProfile,
   fetchStudentCardAndViolations,
+  isDateOverdue,
+  parseDateOnly,
   hasAllFourIdPhotos,
   loadStudentIdCardsForUser,
   saveStudentIdCardsToStorage,
@@ -68,6 +72,7 @@ export default function ProfileScreen() {
   const [photoViewerVisible, setPhotoViewerVisible] = useState(false);
 
   const [reservations, setReservations] = useState(getReservations());
+  const [libraryCardBooks, setLibraryCardBooks] = useState<ReservationBook[]>(getLibraryCardHistory());
   const [profile, setProfile] = useState(getStudentProfile());
   const [notifications, setNotifications] = useState<NotificationItem[]>(getNotifications());
 
@@ -147,11 +152,13 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     setReservations(getReservations());
+    setLibraryCardBooks(getLibraryCardHistory());
     setProfile(getStudentProfile());
     setNotifications(getNotifications());
     void refreshIdCardsState();
     return subscribe(() => {
       setReservations(getReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
       void refreshIdCardsState();
@@ -161,6 +168,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     React.useCallback(() => {
       setReservations(getReservations());
+      setLibraryCardBooks(getLibraryCardHistory());
       setProfile(getStudentProfile());
       setNotifications(getNotifications());
       void refreshIdCardsState();
@@ -210,22 +218,60 @@ export default function ProfileScreen() {
     }).length;
   }, [reservations]);
 
-  // Dynamic overdue loans / violations calculation
+  // Dynamic overdue loans / violations calculation:
+  // A loan is considered a violation only if the student did not return the book by the due date
+  // (i.e. past the 1-day timer while red in the library card)
   const violations = borrowedBooks
     .filter((b) => {
-      if (!b.date) return false;
-      const dueDate = new Date(b.date);
-      return !isNaN(dueDate.getTime()) && dueDate < new Date();
+      const dueVal = b.dueDate || (b as any).due_date || (b.date !== 'Returned' ? b.date : undefined);
+      return Boolean(dueVal && isDateOverdue(dueVal));
     })
-    .map((b) => ({
-      id: `viol-${b.id}`,
-      bookTitle: b.title,
-      violationType: "Overdue Book Return",
-      penaltyAmount: 50.0,
-      remarks: `Overdue loan beyond agreed due date (${b.date}). Standard fine ₱50/day applied.`,
-      status: "Active Penalty",
-      date: b.date,
-    }));
+    .map((b) => {
+      const dueVal = b.dueDate || (b as any).due_date || b.date;
+      return {
+        id: `viol-${b.id}`,
+        bookTitle: b.title,
+        violationType: "Overdue Book Return",
+        penaltyAmount: 50.0,
+        remarks: `Overdue loan beyond agreed due date (${dueVal}). Standard fine ₱50/day applied.`,
+        status: "Active Penalty",
+        date: dueVal,
+      };
+    });
+
+  // If the student returned a book after the due date, it is considered an active violation until settled
+  const returnedLateViolations = React.useMemo(() => {
+    return libraryCardBooks
+      .filter((book) => {
+        const isReturned = !!(book.isReturned || book.status === 'Completed' || book.status === 'Returned' || book.date === 'Returned');
+        if (!isReturned) return false;
+        const dueVal = book.dueDate || (book as any).due_date || (book.date !== 'Returned' ? book.date : undefined);
+        if (!dueVal) return false;
+        const returnDateVal = book.returnDate && book.returnDate !== 'Returned' ? book.returnDate : (book as any).returnedAt;
+        if (returnDateVal) {
+          const parsedDue = parseDateOnly(dueVal);
+          const parsedReturn = parseDateOnly(returnDateVal);
+          if (parsedDue && parsedReturn) {
+            const dueMs = new Date(parsedDue.year, parsedDue.month, parsedDue.day, 23, 59, 59).getTime();
+            const returnMs = new Date(parsedReturn.year, parsedReturn.month, parsedReturn.day, 0, 0, 0).getTime();
+            return returnMs > dueMs;
+          }
+        }
+        return false;
+      })
+      .map((b) => {
+        const dueVal = b.dueDate || (b as any).due_date || b.date;
+        return {
+          id: `viol-returned-${b.id}`,
+          bookTitle: b.title,
+          violationType: "Late Book Return",
+          penaltyAmount: 50.0,
+          remarks: `Returned after agreed due date (${dueVal}). Standard fine ₱50 applied.`,
+          status: "Active Penalty",
+          date: dueVal,
+        };
+      });
+  }, [libraryCardBooks]);
 
   const [serverViolations, setServerViolations] = useState<any[]>([]);
   const [loadingViolations, setLoadingViolations] = useState(false);
@@ -278,8 +324,15 @@ export default function ProfileScreen() {
       }
     });
 
+    returnedLateViolations.forEach((v) => {
+      if (!v.bookTitle || !seenTitles.has(v.bookTitle.toLowerCase().trim())) {
+        list.push(v);
+        if (v.bookTitle) seenTitles.add(v.bookTitle.toLowerCase().trim());
+      }
+    });
+
     return list;
-  }, [serverViolations, violations]);
+  }, [serverViolations, violations, returnedLateViolations]);
 
   const activeViolations = React.useMemo(() => {
     return allViolations.filter((v) => {

@@ -1,6 +1,5 @@
-import { TransactionsModule } from "@/components/modules/transactions-module";
+import { LazyTransactionsModule } from "@/components/lazy-modules";
 
 export default function TransactionsPage() {
-  return <TransactionsModule />;
+  return <LazyTransactionsModule />;
 }
-

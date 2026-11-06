@@ -1,10 +1,11 @@
 import { Suspense } from "react";
-import { AuditLogsPage } from "@/components/super-admin/audit-logs-page";
+import { LazyAuditLogsPage } from "@/components/lazy-modules";
+import { PageCircleLoader } from "@/components/ui/page-circle-loader";
 
 export default function Page() {
   return (
-    <Suspense fallback={<div className="p-8 text-white">Loading Audit Logs...</div>}>
-      <AuditLogsPage />
+    <Suspense fallback={<PageCircleLoader />}>
+      <LazyAuditLogsPage />
     </Suspense>
   );
 }

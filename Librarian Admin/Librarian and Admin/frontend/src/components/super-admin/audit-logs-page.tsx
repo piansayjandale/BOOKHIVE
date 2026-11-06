@@ -105,7 +105,7 @@ export function AuditLogsPage() {
   const [selectedDate, setSelectedDate] = useState<string>(getTodayString);
   const [isAutoToday, setIsAutoToday] = useState(true);
   const [page, setPage] = useState(1);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
   const [isPending, startTransition] = useTransition();
 
