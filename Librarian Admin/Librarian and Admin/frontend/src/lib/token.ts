@@ -95,6 +95,7 @@ export async function parseSessionToken(cookieValue?: string | null): Promise<Se
       name: payload.name,
       email: payload.email,
       role: payload.role,
+      subRole: payload.subRole,
       avatar: payload.avatar,
       permissions: payload.permissions,
     };
