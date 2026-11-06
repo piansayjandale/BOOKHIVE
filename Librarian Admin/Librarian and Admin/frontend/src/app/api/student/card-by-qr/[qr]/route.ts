@@ -150,7 +150,7 @@ export async function GET(
          FROM transactions t
          WHERE (t.user_id::text = $1 OR LOWER(t.student_id) = LOWER($2) OR LOWER(t.student_name) = LOWER($3))
            AND (
-             (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed'))
+             (t.type::text IN ('Borrow', 'Borrowing') AND t.status::text IN ('Approved', 'On Loan', 'Picked Up', 'Returned', 'Completed', 'Borrowed', 'Overdue'))
              OR (t.type::text = 'Reservation' AND t.status::text IN ('Approved', 'Reserved'))
            )
          ORDER BY t.requested_at DESC

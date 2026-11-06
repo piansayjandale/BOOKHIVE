@@ -3,8 +3,14 @@ import { NextResponse } from "next/server";
 import { SESSION_COOKIE, getSession, createSessionToken } from "@/lib/auth";
 import { BACKEND_URL } from "@/lib/config";
 
+const LIVE_RENDER_BACKEND = "https://bookhive-backend-13kk.onrender.com";
+
 export async function proxyToBackend(path: string, request: Request, customBody?: string) {
-  if (!BACKEND_URL || BACKEND_URL.includes("onrender.com")) {
+  const isProduction = process.env.NODE_ENV === "production" || process.env.NETLIFY;
+  const isOcr = path.includes("/ocr/");
+  const targetBase = isOcr && isProduction ? LIVE_RENDER_BACKEND : BACKEND_URL;
+
+  if (!targetBase || (!isOcr && targetBase.includes("onrender.com"))) {
     return NextResponse.json(
       { message: "Backend proxy unavailable; using direct database handler." },
       { status: 503 },
@@ -21,7 +27,7 @@ export async function proxyToBackend(path: string, request: Request, customBody?
     cookieStore.get(SESSION_COOKIE)?.value;
 
   const { searchParams } = new URL(request.url);
-  const url = `${BACKEND_URL}${path}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+  const url = `${targetBase}${path}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
 
   const headers: HeadersInit = {
     "Content-Type": "application/json",
