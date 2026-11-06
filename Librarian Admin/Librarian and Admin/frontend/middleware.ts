@@ -42,7 +42,7 @@ export async function middleware(request: NextRequest) {
 
   const session = await parseSessionToken(request.cookies.get(SESSION_COOKIE)?.value);
   const isAuthenticated = !!session;
-  const sessionDashboardPath = session ? getDashboardPathForRole(session.role) : "/login";
+  const sessionDashboardPath = session ? getDashboardPathForRole(session.role, (session as any).subRole) : "/login";
 
   // --- API Protection ---
   if (pathname.startsWith("/api")) {
@@ -89,8 +89,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Root always redirects to /intro (Localhost & Live entry point)
+  // Root redirect: authenticated users to their dashboard, visitors to /intro
   if (pathname === "/") {
+    if (isAuthenticated) {
+      return NextResponse.redirect(new URL(sessionDashboardPath, request.url));
+    }
     return NextResponse.redirect(new URL("/intro", request.url));
   }
 

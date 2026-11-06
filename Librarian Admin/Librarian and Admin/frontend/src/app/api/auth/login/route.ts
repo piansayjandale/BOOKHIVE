@@ -403,7 +403,7 @@ export async function POST(request: Request) {
 
     const response = NextResponse.json({
       user: session,
-      redirectPath: getDashboardPathForRole(session.role as any),
+      redirectPath: getDashboardPathForRole(session.role as any, session.subRole),
     });
     const sessionToken = await createSessionToken(session);
     response.cookies.set(SESSION_COOKIE, sessionToken, getSessionCookieOptions());

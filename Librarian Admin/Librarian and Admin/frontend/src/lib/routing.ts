@@ -30,8 +30,12 @@ export function isStaffRole(role?: string | null): boolean {
   );
 }
 
-export function getDashboardPathForRole(role?: Role | string | null): string {
+export function getDashboardPathForRole(
+  role?: Role | string | null,
+  subRole?: string | null
+): string {
   const normalized = normalizeRoleKey(role);
+  const normalizedSub = normalizeRoleKey(subRole);
 
   if (normalized === "SUPER_ADMIN" || normalized === "SUPERADMIN") {
     return "/super-admin/home";
@@ -42,10 +46,20 @@ export function getDashboardPathForRole(role?: Role | string | null): string {
   }
 
   if (
-    normalized === "TECHNICAL_LIBRARIAN" ||
-    normalized === "CIRCULATION_LIBRARIAN" ||
-    normalized === "LIBRARIAN"
+    normalizedSub === "CIRCULATION_LIBRARIAN" ||
+    normalized === "CIRCULATION_LIBRARIAN"
   ) {
+    return "/circulation";
+  }
+
+  if (
+    normalizedSub === "TECHNICAL_LIBRARIAN" ||
+    normalized === "TECHNICAL_LIBRARIAN"
+  ) {
+    return "/technical";
+  }
+
+  if (normalized === "LIBRARIAN") {
     return "/librarian";
   }
 
