@@ -114,7 +114,7 @@ if (isHotspot) {
 console.log(`\x1b[36m[System] Multi-device Tip: To scan on multiple iOS devices simultaneously, make sure the devices and PC share the same Expo account (run 'npm run expo:login' if needed).\x1b[0m`);
 console.log(`\x1b[33m[System] Note: If your phone fails to load or gives "Failed to download remote update", make sure both devices are on the same Wi-Fi, or run 'npm run dev:tunnel'.\x1b[0m`);
 
-console.log(`\x1b[32m[System] Web System (Librarian & Admin) URL: http://localhost:3000 or http://${localIp}:3000\x1b[0m`);
+console.log(`\x1b[32m[System] Web System (Librarian & Admin) URL: http://localhost:3000 (or http://127.0.0.1:3000 / http://${localIp}:3000)\x1b[0m`);
 
 const services = [
   {
@@ -132,7 +132,7 @@ const services = [
     color: '\x1b[36m', // Cyan
     env: { 
       NODE_OPTIONS: '--max-old-space-size=2048',
-      ALLOWED_DEV_ORIGINS: `localhost:3000,127.0.0.1:3000,${localIp}:3000,${localIp}:5000,localhost:5000`
+      ALLOWED_DEV_ORIGINS: `localhost:3000,127.0.0.1:3000,[::1]:3000,${localIp}:3000,${localIp}:5000,localhost:5000,[::1]:5000,[::1]`
     }
   },
   {

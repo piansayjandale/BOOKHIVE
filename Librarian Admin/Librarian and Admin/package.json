@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "frontend:dev": "cd frontend && node ../node_modules/next/dist/bin/next dev -H 0.0.0.0 --webpack",
+    "frontend:dev": "cd frontend && node ../node_modules/next/dist/bin/next dev --webpack",
     "dev": "concurrently \"npm run frontend:dev\" \"npm run api:dev\"",
     "build": "cd frontend && cross-env NODE_OPTIONS=--max-old-space-size=2048 next build",
     "start": "cd frontend && next start",

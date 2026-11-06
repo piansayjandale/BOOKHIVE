@@ -41,6 +41,15 @@ if (!process.env.VERCEL) {
   const PORT = Number(process.env.PORT || 5000);
   const HOST = process.env.HOST || "0.0.0.0";
 
+  server.on("error", (err) => {
+    if (err && err.code === "EADDRINUSE") {
+      console.error(`\x1b[31m[BookHive API Error] Port ${PORT} is already in use by another application.\x1b[0m`);
+      console.error(`\x1b[33m[BookHive API Tip] Please close the conflicting app on port ${PORT} (e.g. run: taskkill /F /PID <pid>).\x1b[0m`);
+    } else {
+      console.error("[BookHive API Server Error]", err);
+    }
+  });
+
   server.listen(PORT, HOST, () => {
     console.log(`[BookHive API] Server listening on http://${HOST}:${PORT}`);
     initOcrWorker().catch((e) => console.warn("[OCR Warmup] Notice:", e.message));

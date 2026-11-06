@@ -27,8 +27,11 @@ const devOrigins = Array.from(
   new Set([
     "localhost:3000",
     "127.0.0.1:3000",
+    "[::1]:3000",
     "localhost:5000",
     "127.0.0.1:5000",
+    "[::1]:5000",
+    "[::1]",
     ...localIps,
     ...envDevOrigins,
   ])
