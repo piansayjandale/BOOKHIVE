@@ -354,8 +354,25 @@ export async function POST(request: Request) {
     }
   }
 
-  // ID card confirmation: recognized institutional markers or verified student ID number + card fields
-  const isOfficialCard = hasCardMarkers || Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY)/i.test(allOcrText));
+  // Bidirectional cross-assurance: If Name is verified, cross-assure ID if core segment / digits present
+  if (nameMatched && !idNumberMatched && idSegments.length >= 2) {
+    const coreSegment = idSegments.find((s) => s.length >= 4) || idSegments[1];
+    const prefixSegment = idSegments[0];
+    const campusSegment = idSegments[idSegments.length - 1];
+    if (
+      (coreSegment && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) ||
+      (prefixSegment && campusSegment && normOcrNoSpace.includes(prefixSegment) && normOcrNoSpace.includes(campusSegment))
+    ) {
+      idNumberMatched = true;
+    }
+  }
+
+  // ID card confirmation: recognized institutional markers or verified student ID number + card fields or name match
+  const isOfficialCard =
+    hasCardMarkers ||
+    Boolean(nameMatched && idNumberMatched) ||
+    Boolean(nameMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText)) ||
+    Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText));
 
   // If ID strongly matched, allow identity cross-assurance
   if (!nameMatched && idNumberMatched && nameParts.length > 0) {

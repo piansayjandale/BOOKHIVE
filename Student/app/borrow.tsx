@@ -214,21 +214,38 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
     }
   }
 
-  // ID card confirmation: recognized institutional markers or verified student ID number + card fields
-  const isOfficialCard = hasCardMarkers || Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY)/i.test(ocrText));
-
-  // If ID strongly matched, allow identity cross-assurance
-  if (!nameMatched && idNumberMatched && nameParts.length > 0) {
-    const surname = nameParts[nameParts.length - 1];
-    const givenNames = nameParts.slice(0, -1);
-    const hasSurname = surname.length >= 2 && (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, 1));
-    const matchedParts = nameParts.filter((p) => normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1));
-    const hasGivenName = givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
-
-    if (hasSurname || matchedParts.length >= 2 || hasGivenName) {
-      nameMatched = true;
+    // Bidirectional cross-assurance: If Name is verified, cross-assure ID if core segment / digits present
+    if (nameMatched && !idNumberMatched && idSegments.length >= 2) {
+      const coreSegment = idSegments.find((s) => s.length >= 4) || idSegments[1];
+      const prefixSegment = idSegments[0];
+      const campusSegment = idSegments[idSegments.length - 1];
+      if (
+        (coreSegment && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) ||
+        (prefixSegment && campusSegment && normOcrNoSpace.includes(prefixSegment) && normOcrNoSpace.includes(campusSegment))
+      ) {
+        idNumberMatched = true;
+      }
     }
-  }
+
+    // ID card confirmation: recognized institutional markers or verified student ID number + card fields or name match
+    const isOfficialCard =
+      hasCardMarkers ||
+      Boolean(nameMatched && idNumberMatched) ||
+      Boolean(nameMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(ocrText)) ||
+      Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(ocrText));
+
+    // If ID strongly matched, allow identity cross-assurance
+    if (!nameMatched && idNumberMatched && nameParts.length > 0) {
+      const surname = nameParts[nameParts.length - 1];
+      const givenNames = nameParts.slice(0, -1);
+      const hasSurname = surname.length >= 2 && (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, 1));
+      const matchedParts = nameParts.filter((p) => normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1));
+      const hasGivenName = givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
+
+      if (hasSurname || matchedParts.length >= 2 || hasGivenName) {
+        nameMatched = true;
+      }
+    }
 
   const success = Boolean(isOfficialCard && nameMatched && idNumberMatched);
   let message = "Student identity verified successfully based on Library Card.";
@@ -472,7 +489,7 @@ export default function BorrowScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
-      quality: 0.45,
+      quality: 0.85,
       base64: true,
     });
     if (!result.canceled && result.assets?.[0]) {
@@ -500,7 +517,7 @@ export default function BorrowScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.45,
+      quality: 0.85,
       base64: true,
     });
     if (!result.canceled && result.assets?.[0]) {

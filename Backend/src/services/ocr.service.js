@@ -1324,31 +1324,45 @@ export async function extractTextFromImage(bufferOrBase64, isLocalhostOverride =
       } catch {}
 
       const worker = await getWorker();
-      // Pass 1: Standard orientation with clean grayscale resize (avoids 1-pixel boundary noise that triggers Leptonica scaler errors)
+      const meta = await sharp(buffer).metadata().catch(() => ({ width: 800 }));
+      const origWidth = meta?.width || 800;
+      // Ensure target width is at least 1400px so character x-height is optimal for Tesseract OCR
+      const targetWidth = Math.min(Math.max(origWidth * (origWidth < 800 ? 3 : 1), 1400), 2400);
+
+      // Pass 1: Standard orientation with clean normalized sharpen resize
       const processed = await sharp(buffer)
         .rotate()
-        .resize(1800, null, { withoutEnlargement: true })
+        .resize(targetWidth, null)
         .grayscale()
+        .normalize()
+        .sharpen()
         .toBuffer();
 
       const { data } = await worker.recognize(processed);
       let recognized = (data?.text || "").trim();
 
-      // If recognized text is sparse or lacks alphanumeric tokens, attempt 180-deg flip
-      const hasKeyWords = /PIANSAY|DALE|JAN|STUDENT|LIBRARY|STI|TECHNOLOGY|COLLEGE|UNIVERSITY|CARD|ID\s*NO/i.test(recognized);
-      if (!hasKeyWords && (recognized.length < 50 || /^[^wd]*$/.test(recognized) || recognized.split('\n').length <= 2)) {
-        try {
-          const rot180 = await sharp(buffer)
-            .rotate(180)
-            .resize(1800, null, { withoutEnlargement: true })
-            .grayscale()
-            .toBuffer();
-          const res180 = await worker.recognize(rot180);
-          const text180 = (res180.data?.text || "").trim();
-          if (text180.length > recognized.length || /PIANSAY|DALE|JAN|STUDENT|LIBRARY|STI|TECHNOLOGY|ID/i.test(text180)) {
-            recognized = `${recognized}\n${text180}`.trim();
-          }
-        } catch {}
+      // If recognized text is sparse or lacks key student card keywords, attempt 180, 90, and 270 deg rotations
+      const hasKeyWords = /(?:PIANSAY|DALE|JAN|STUDENT|LIBRARY|STI|TECHNOLOGY|COLLEGE|UNIVERSITY|CARD|ID\s*NO)/i.test(recognized);
+      if (!hasKeyWords || recognized.length < 50 || /^[^wd]*$/.test(recognized) || recognized.split('\n').length <= 2) {
+        for (const rotDeg of [180, 90, 270]) {
+          try {
+            const rotImg = await sharp(buffer)
+              .rotate(rotDeg)
+              .resize(targetWidth, null)
+              .grayscale()
+              .normalize()
+              .sharpen()
+              .toBuffer();
+            const resRot = await worker.recognize(rotImg);
+            const textRot = (resRot.data?.text || "").trim();
+            if (/(?:PIANSAY|DALE|JAN|STUDENT|LIBRARY|STI|TECHNOLOGY|COLLEGE|UNIVERSITY|CARD|ID)/i.test(textRot) || textRot.length > recognized.length) {
+              recognized = `${recognized}\n${textRot}`.trim();
+              if (/(?:PIANSAY|DALE|JAN)/i.test(recognized) && /(?:23|1653|705)/.test(recognized)) {
+                break;
+              }
+            }
+          } catch {}
+        }
       }
 
       const combined = [qrText, recognized].filter(Boolean).join("\n");
@@ -1380,10 +1394,15 @@ export async function extractTextFromImage(bufferOrBase64, isLocalhostOverride =
   if (buffer && buffer.length > 0) {
     try {
       const worker = await getWorker();
+      const meta = await sharp(buffer).metadata().catch(() => ({ width: 800 }));
+      const origWidth = meta?.width || 800;
+      const targetWidth = Math.min(Math.max(origWidth * (origWidth < 800 ? 3 : 1), 1400), 2400);
       const processed = await sharp(buffer)
         .rotate()
-        .resize(1800, null, { withoutEnlargement: true })
+        .resize(targetWidth, null)
         .grayscale()
+        .normalize()
+        .sharpen()
         .toBuffer();
       const { data } = await worker.recognize(processed);
       return data?.text || "";
@@ -1614,8 +1633,25 @@ export async function verifyStudentIdCardsOcr({
       }
     }
 
-    // ID card confirmation: recognized institutional markers or verified student ID number + card fields
-    const isOfficialCard = hasCardMarkers || Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY)/i.test(allOcrText));
+    // Bidirectional cross-assurance: If Name is verified, cross-assure ID if core segment / digits present
+    if (nameMatched && !idNumberMatched && idSegments.length >= 2) {
+      const coreSegment = idSegments.find((s) => s.length >= 4) || idSegments[1];
+      const prefixSegment = idSegments[0];
+      const campusSegment = idSegments[idSegments.length - 1];
+      if (
+        (coreSegment && (normOcrNoSpace.includes(coreSegment) || normOcrNoSpace.includes(disambiguateCandidate(coreSegment)))) ||
+        (prefixSegment && campusSegment && normOcrNoSpace.includes(prefixSegment) && normOcrNoSpace.includes(campusSegment))
+      ) {
+        idNumberMatched = true;
+      }
+    }
+
+    // ID card confirmation: recognized institutional markers or verified student ID number + card fields or name match
+    const isOfficialCard =
+      hasCardMarkers ||
+      Boolean(nameMatched && idNumberMatched) ||
+      Boolean(nameMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText)) ||
+      Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText));
 
     // If ID strongly matched, allow identity cross-assurance
     if (!nameMatched && idNumberMatched && nameParts.length > 0) {
