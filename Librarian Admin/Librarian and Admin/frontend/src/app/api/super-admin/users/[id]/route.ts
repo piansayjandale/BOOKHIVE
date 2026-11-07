@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { proxyToBackend } from "@/lib/proxy";
 import { getSession } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { adminRepository } from "@/lib/admin/repository";
 
 export const runtime = "nodejs";
 
@@ -99,6 +100,10 @@ async function handleUpdateSuperAdminUser(
     );
 
     if (!rows[0]) {
+      const fallbackUser = await adminRepository.updateUser(id, body).catch(() => null);
+      if (fallbackUser) {
+        return NextResponse.json({ user: fallbackUser });
+      }
       return NextResponse.json({ message: "User not found." }, { status: 404 });
     }
 
@@ -151,6 +156,10 @@ export async function DELETE(
       [id]
     );
     if (!rows[0]) {
+      const ok = await adminRepository.deleteUser(id).catch(() => false);
+      if (ok) {
+        return NextResponse.json({ success: true, deletedUser: { id, name: "Archived User" } });
+      }
       return NextResponse.json({ message: "User not found." }, { status: 404 });
     }
 

@@ -26,16 +26,20 @@ export async function GET(request: Request) {
     const offset = (page - 1) * pageSize;
 
     const filters: any[] = [];
-    const whereClauses: string[] = ["status != 'Purged' AND purged_at IS NULL"];
+    const whereClauses: string[] = ["status::text != 'Purged' AND purged_at IS NULL"];
 
     if (role !== "All") {
       filters.push(role);
-      whereClauses.push(`role = $${filters.length}`);
+      whereClauses.push(`role::text = $${filters.length}`);
     }
 
     if (status !== "All") {
-      filters.push(status);
-      whereClauses.push(`status = $${filters.length}`);
+      if (status === "Suspended" || status === "Archived") {
+        whereClauses.push("(status::text = 'Suspended' OR status::text = 'Archived')");
+      } else {
+        filters.push(status);
+        whereClauses.push(`status::text = $${filters.length}`);
+      }
     }
 
     if (search) {

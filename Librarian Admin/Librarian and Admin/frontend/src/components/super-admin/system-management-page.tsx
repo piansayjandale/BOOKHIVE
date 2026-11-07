@@ -523,6 +523,7 @@ export function SystemManagementPage() {
   const [isSavingUser, setIsSavingUser] = useState(false);
   const [archivedUsers, setArchivedUsers] = useState<SuperAdminUserRecord[]>([]);
   const [isLoadingArchivedUsers, setIsLoadingArchivedUsers] = useState(false);
+  const [hasLoadedArchivedUsers, setHasLoadedArchivedUsers] = useState(false);
 
   // ── Tab 2: Books Catalog (Active) State ────────────────────────────
   const [books, setBooks] = useState<AdminBookRecord[]>([]);
@@ -679,6 +680,7 @@ export function SystemManagementPage() {
       );
       startTransition(() => {
         setArchivedUsers(res.users || []);
+        setHasLoadedArchivedUsers(true);
       });
     } catch (err) {
       console.warn("Error fetching archived users:", err);
@@ -840,14 +842,18 @@ export function SystemManagementPage() {
 
   const handlePurgeSingleUser = async () => {
     if (!purgeConfirmUser) return;
+    const userToDelete = purgeConfirmUser;
     try {
-      await requestJson(`/api/super-admin/users/${purgeConfirmUser.id}`, {
+      await requestJson(`/api/super-admin/users/${userToDelete.id}`, {
         method: "DELETE",
       });
-      notify(`"${purgeConfirmUser.name}" account removed from platform access.`, "success");
+      notify(`"${userToDelete.name}" account removed from platform access.`, "success");
       setPurgeConfirmUser(null);
+      setArchivedUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
+      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id));
       void fetchArchivedUsers();
       void fetchUsers();
+      void fetchVitals();
     } catch (err: any) {
       notify(err.message || "Failed to delete account.", "error");
     }
@@ -865,6 +871,8 @@ export function SystemManagementPage() {
           method: "POST",
         });
         booksCount = res?.purgedCount ?? totalArchivedBooks;
+        setArchivedBooks([]);
+        setTotalArchivedBooks(0);
       }
 
       if (purgeAccountsSelected) {
@@ -872,6 +880,8 @@ export function SystemManagementPage() {
           method: "POST",
         });
         accountsCount = res?.purgedCount ?? totalArchivedAccounts;
+        setArchivedUsers([]);
+        setUsers((prev) => prev.filter((u) => u.status !== "Suspended" && u.status !== "Archived"));
       }
 
       if (purgeBooksSelected && purgeAccountsSelected) {
@@ -935,13 +945,21 @@ export function SystemManagementPage() {
           method: "POST",
         });
         notify(`Purged ${res.purgedCount} archived books permanently.`, "success");
+        setArchivedBooks([]);
+        setTotalArchivedBooks(0);
         void fetchArchivedBooks();
+        void fetchActiveBooks();
+        void fetchVitals();
       } else {
         const res = await requestJson<{ purgedCount: number }>("/api/super-admin/pruning/accounts", {
           method: "POST",
         });
         notify(`Purged ${res.purgedCount} deactivated accounts permanently.`, "success");
+        setArchivedUsers([]);
+        setUsers((prev) => prev.filter((u) => u.status !== "Suspended" && u.status !== "Archived"));
+        void fetchArchivedUsers();
         void fetchUsers();
+        void fetchVitals();
       }
       setPruneConfirmType(null);
     } catch (err: any) {
@@ -968,7 +986,8 @@ export function SystemManagementPage() {
 
   // Calculate suspended / archived accounts
   const suspendedAccounts = users.filter((u) => u.status === "Suspended" || u.status === "Archived");
-  const totalArchivedAccounts = archivedUsers.length > 0 ? archivedUsers.length : suspendedAccounts.length;
+  const displayedArchivedUsers = hasLoadedArchivedUsers ? archivedUsers : (archivedUsers.length > 0 ? archivedUsers : suspendedAccounts);
+  const totalArchivedAccounts = displayedArchivedUsers.length;
 
   return (
     <div className="space-y-6 pb-12">
@@ -1798,7 +1817,7 @@ export function SystemManagementPage() {
                       : "text-slate-400 hover:text-white"
                 )}
               >
-                Archived Accounts ({archivedUsers.length > 0 ? archivedUsers.length : suspendedAccounts.length})
+                Archived Accounts ({totalArchivedAccounts})
               </button>
             </div>
           </div>
@@ -1998,7 +2017,7 @@ export function SystemManagementPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-slate-200">
-                    {(archivedUsers.length > 0 ? archivedUsers : suspendedAccounts).map((user, idx) => (
+                    {displayedArchivedUsers.map((user, idx) => (
                       <tr key={user.id ? `su-${user.id}-${idx}` : `su-idx-${idx}`} className="hover:bg-white/[0.02] transition">
                         <td className="px-4 py-4">
                           <div className="font-bold text-[16px] text-white leading-snug">{user.name}</div>
@@ -2090,7 +2109,7 @@ export function SystemManagementPage() {
                       </tr>
                     ))}
 
-                    {(archivedUsers.length > 0 ? archivedUsers : suspendedAccounts).length === 0 && (
+                    {displayedArchivedUsers.length === 0 && (
                       <tr>
                         <td colSpan={6} className="py-12 text-center text-slate-400">
                           {isLoadingArchivedUsers ? "Checking archived accounts..." : "No archived accounts found in vault. All users are currently active."}
