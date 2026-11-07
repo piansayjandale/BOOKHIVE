@@ -543,6 +543,10 @@ export function SystemManagementPage() {
   const [purgeConfirmBook, setPurgeConfirmBook] = useState<any | null>(null);
   const [purgeConfirmUser, setPurgeConfirmUser] = useState<any | null>(null);
   const [purgeAllArchivedModal, setPurgeAllArchivedModal] = useState(false);
+  const [unifiedPurgeModal, setUnifiedPurgeModal] = useState(false);
+  const [unifiedConfirmAlertModal, setUnifiedConfirmAlertModal] = useState(false);
+  const [purgeBooksSelected, setPurgeBooksSelected] = useState(true);
+  const [purgeAccountsSelected, setPurgeAccountsSelected] = useState(true);
 
   // ── Tab 4: Infrastructure & Pruning State ──────────────────────────
   const [infraData, setInfraData] = useState<any>(null);
@@ -849,6 +853,48 @@ export function SystemManagementPage() {
     }
   };
 
+  const handleUnifiedPurgeExecute = async () => {
+    if (!purgeBooksSelected && !purgeAccountsSelected) return;
+    try {
+      setIsPruning(true);
+      let booksCount = 0;
+      let accountsCount = 0;
+
+      if (purgeBooksSelected) {
+        const res = await requestJson<{ purgedCount: number }>("/api/super-admin/pruning/books", {
+          method: "POST",
+        });
+        booksCount = res?.purgedCount ?? totalArchivedBooks;
+      }
+
+      if (purgeAccountsSelected) {
+        const res = await requestJson<{ purgedCount: number }>("/api/super-admin/pruning/accounts", {
+          method: "POST",
+        });
+        accountsCount = res?.purgedCount ?? totalArchivedAccounts;
+      }
+
+      if (purgeBooksSelected && purgeAccountsSelected) {
+        notify(`Successfully soft-deleted ${booksCount} archived books and ${accountsCount} archived accounts from UI.`, "success");
+      } else if (purgeBooksSelected) {
+        notify(`Successfully soft-deleted ${booksCount} archived books from UI. Accounts were not deleted.`, "success");
+      } else {
+        notify(`Successfully soft-deleted ${accountsCount} archived accounts from UI. Books were not deleted.`, "success");
+      }
+
+      setUnifiedConfirmAlertModal(false);
+      setUnifiedPurgeModal(false);
+      void fetchArchivedBooks();
+      void fetchArchivedUsers();
+      void fetchActiveBooks();
+      void fetchUsers();
+    } catch (err: any) {
+      notify(err.message || "Failed to purge archive records.", "error");
+    } finally {
+      setIsPruning(false);
+    }
+  };
+
   const handlePurgeSingleBook = async () => {
     if (!purgeConfirmBook) return;
     try {
@@ -922,6 +968,7 @@ export function SystemManagementPage() {
 
   // Calculate suspended / archived accounts
   const suspendedAccounts = users.filter((u) => u.status === "Suspended" || u.status === "Archived");
+  const totalArchivedAccounts = archivedUsers.length > 0 ? archivedUsers.length : suspendedAccounts.length;
 
   return (
     <div className="space-y-6 pb-12">
@@ -964,15 +1011,20 @@ export function SystemManagementPage() {
             </button>
           )}
 
-          {activeTab === "archived" && archiveSubTab === "books" && totalArchivedBooks > 0 && (
+          {activeTab === "archived" && (totalArchivedBooks > 0 || totalArchivedAccounts > 0) && (
             <button
               type="button"
-              onClick={() => setPurgeAllArchivedModal(true)}
-              className="btn-purge flex items-center gap-2 rounded-xl bg-[#b91c1c] hover:bg-[#991b1b] px-4 py-2 text-xs font-bold text-white transition shadow-md shadow-red-950/20 border border-red-700/30"
+              onClick={() => {
+                setPurgeBooksSelected(totalArchivedBooks > 0);
+                setPurgeAccountsSelected(totalArchivedAccounts > 0);
+                setUnifiedPurgeModal(true);
+              }}
+              className="btn-purge flex items-center gap-2 rounded-xl bg-[#b91c1c] hover:bg-[#991b1b] px-4 py-2 text-xs font-bold text-white transition shadow-md shadow-red-950/20 border border-red-700/30 cursor-pointer"
               style={{ color: "#ffffff" }}
+              title="Purge archived books and/or accounts"
             >
               <Trash2 className="h-4 w-4" style={{ color: "#ffffff" }} />
-              <span style={{ color: "#ffffff" }}>Purge All Archived</span>
+              <span style={{ color: "#ffffff" }}>Purge Archived Records</span>
             </button>
           )}
         </div>
@@ -1757,15 +1809,19 @@ export function SystemManagementPage() {
               title="Archived Catalog Books"
               description="Manage archived titles. Click 'Restore' to unarchive a book back to the live catalog, or permanently purge obsolete records."
               action={
-                totalArchivedBooks > 0 && (
+                (totalArchivedBooks > 0 || totalArchivedAccounts > 0) && (
                   <button
                     type="button"
-                    onClick={() => setPurgeAllArchivedModal(true)}
-                    className="btn-purge flex items-center gap-2 rounded-xl bg-[#b91c1c] hover:bg-[#991b1b] px-4 py-2 text-xs font-bold text-white transition shadow-md shadow-red-950/20 border border-red-700/30"
+                    onClick={() => {
+                      setPurgeBooksSelected(totalArchivedBooks > 0);
+                      setPurgeAccountsSelected(totalArchivedAccounts > 0);
+                      setUnifiedPurgeModal(true);
+                    }}
+                    className="btn-purge flex items-center gap-2 rounded-xl bg-[#b91c1c] hover:bg-[#991b1b] px-4 py-2 text-xs font-bold text-white transition shadow-md shadow-red-950/20 border border-red-700/30 cursor-pointer"
                     style={{ color: "#ffffff" }}
                   >
                     <Trash2 className="h-4 w-4" style={{ color: "#ffffff" }} />
-                    <span style={{ color: "#ffffff" }}>Purge All Archived Books</span>
+                    <span style={{ color: "#ffffff" }}>Purge Archived Records</span>
                   </button>
                 )
               }
@@ -2832,35 +2888,171 @@ export function SystemManagementPage() {
         </div>
       </AdminModal>
 
-      {/* 5. Purge All Archived Books Modal */}
+      {/* 5a. Unified Purge Selection Modal (Books & Accounts Checkboxes) */}
       <AdminModal
-        open={purgeAllArchivedModal}
-        onClose={() => setPurgeAllArchivedModal(false)}
-        title="Permanent Purge All Archived Books"
-        description="Irreversible bulk deletion of all decommissioned books."
+        open={unifiedPurgeModal}
+        onClose={() => setUnifiedPurgeModal(false)}
+        title="Unified Archive Data Purge"
+        description="Select which decommissioned archive records to soft-delete from the platform UI."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 p-4 text-xs font-medium text-rose-900 dark:text-rose-200 leading-relaxed">
-            <strong className="block text-sm font-bold text-rose-950 dark:text-rose-100 mb-1">PURGE NOTICE</strong>
-            This will purge all <strong className="font-bold text-rose-950 dark:text-rose-100">{totalArchivedBooks} archived books</strong> from active platform display. Records disappear from the UI, but remain securely preserved in the database for administrative retrieval.
+          <p className="text-xs text-slate-300">
+            Select the records you want to purge. Purged items disappear from the UI and active operations while remaining preserved in PostgreSQL for administrative retrieval.
+          </p>
+
+          <div className="space-y-3 pt-1">
+            {/* Checkbox: Archived Books */}
+            <label
+              className={cn(
+                "flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition",
+                purgeBooksSelected
+                  ? "border-rose-500/50 bg-rose-500/10"
+                  : "border-white/10 bg-white/5 hover:bg-white/10"
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={purgeBooksSelected}
+                onChange={(e) => setPurgeBooksSelected(e.target.checked)}
+                disabled={totalArchivedBooks === 0}
+                className="mt-0.5 h-4 w-4 rounded border-slate-600 text-rose-600 focus:ring-rose-500 cursor-pointer"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">Archived Catalog Books</span>
+                  <span className="rounded-full bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold text-rose-300">
+                    {totalArchivedBooks} {totalArchivedBooks === 1 ? "book" : "books"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {totalArchivedBooks === 0
+                    ? "No archived books in vault."
+                    : "Soft-delete decommissioned book records from catalog and archived views."}
+                </p>
+              </div>
+            </label>
+
+            {/* Checkbox: Archived Accounts */}
+            <label
+              className={cn(
+                "flex items-start gap-3 rounded-xl border p-3.5 cursor-pointer transition",
+                purgeAccountsSelected
+                  ? "border-rose-500/50 bg-rose-500/10"
+                  : "border-white/10 bg-white/5 hover:bg-white/10"
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={purgeAccountsSelected}
+                onChange={(e) => setPurgeAccountsSelected(e.target.checked)}
+                disabled={totalArchivedAccounts === 0}
+                className="mt-0.5 h-4 w-4 rounded border-slate-600 text-rose-600 focus:ring-rose-500 cursor-pointer"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white">Archived User Accounts</span>
+                  <span className="rounded-full bg-rose-500/20 border border-rose-500/30 px-2 py-0.5 text-[10px] font-bold text-rose-300">
+                    {totalArchivedAccounts} {totalArchivedAccounts === 1 ? "account" : "accounts"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {totalArchivedAccounts === 0
+                    ? "No archived accounts in vault."
+                    : "Soft-delete suspended and archived accounts from active views and access."}
+                </p>
+              </div>
+            </label>
           </div>
 
+          {/* Selection summary hint */}
+          <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] text-slate-300">
+            {!purgeBooksSelected && !purgeAccountsSelected ? (
+              <span className="text-amber-300 font-medium">Please select at least one record type to proceed.</span>
+            ) : purgeBooksSelected && purgeAccountsSelected ? (
+              <span className="text-rose-300 font-medium">Both books and accounts are selected. Both will be soft-deleted.</span>
+            ) : purgeBooksSelected ? (
+              <span className="text-slate-200 font-medium">Only archived books will be soft-deleted. User accounts will NOT be deleted.</span>
+            ) : (
+              <span className="text-slate-200 font-medium">Only user accounts will be soft-deleted. Books will NOT be deleted.</span>
+            )}
+          </div>
+
+          {/* Footer buttons */}
           <div className="flex items-center justify-end gap-3 pt-2">
             <button
               type="button"
-              onClick={() => setPurgeAllArchivedModal(false)}
-              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5"
+              onClick={() => setUnifiedPurgeModal(false)}
+              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 cursor-pointer"
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={isPruning}
-              onClick={handlePurgeAllArchivedBooks}
-              className="btn-purge rounded-xl bg-[#b91c1c] text-white px-5 py-2 text-xs font-bold hover:bg-[#991b1b] shadow-md border border-red-700/30 disabled:opacity-50"
+              disabled={!purgeBooksSelected && !purgeAccountsSelected}
+              onClick={() => {
+                setUnifiedPurgeModal(false);
+                setUnifiedConfirmAlertModal(true);
+              }}
+              className="btn-purge rounded-xl bg-[#b91c1c] text-white px-5 py-2 text-xs font-bold hover:bg-[#991b1b] shadow-md border border-red-700/30 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               style={{ color: "#ffffff" }}
             >
-              <span style={{ color: "#ffffff" }}>{isPruning ? "Purging..." : "Confirm Purge All"}</span>
+              Approve Selection
+            </button>
+          </div>
+        </div>
+      </AdminModal>
+
+      {/* 5b. Unified Purge Confirmation Alert Popup ("Are you sure about this?") */}
+      <AdminModal
+        open={unifiedConfirmAlertModal}
+        onClose={() => setUnifiedConfirmAlertModal(false)}
+        title="Are you sure about this?"
+        description="Confirm the soft-delete of selected archive records."
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 p-4 text-xs font-medium text-rose-900 dark:text-rose-200 leading-relaxed">
+            <strong className="block text-sm font-bold text-rose-950 dark:text-rose-100 mb-2">
+              CONFIRM PURGE ACTION
+            </strong>
+            Are you sure you want to proceed? Here is what will happen based on your selection:
+            <ul className="mt-2.5 space-y-1.5 list-disc list-inside">
+              <li>
+                <strong>Books:</strong>{" "}
+                {purgeBooksSelected
+                  ? `Will be soft-deleted (${totalArchivedBooks} books removed from UI)`
+                  : "NOT selected — books will NOT be deleted and will remain untouched"}
+              </li>
+              <li>
+                <strong>User Accounts:</strong>{" "}
+                {purgeAccountsSelected
+                  ? `Will be soft-deleted (${totalArchivedAccounts} accounts removed from UI)`
+                  : "NOT selected — accounts will NOT be deleted and will remain untouched"}
+              </li>
+            </ul>
+            <p className="mt-3 text-[11px] opacity-90">
+              Note: Soft-deleted data disappears from UI/UX and cannot function or authenticate, but remains safely preserved in PostgreSQL for administrative retrieval.
+            </p>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setUnifiedConfirmAlertModal(false);
+                setUnifiedPurgeModal(true);
+              }}
+              className="rounded-xl border border-white/10 px-4 py-2 text-xs font-semibold text-slate-300 hover:bg-white/5 cursor-pointer"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              disabled={isPruning}
+              onClick={handleUnifiedPurgeExecute}
+              className="btn-purge rounded-xl bg-[#b91c1c] text-white px-5 py-2 text-xs font-bold hover:bg-[#991b1b] shadow-md border border-red-700/30 disabled:opacity-50 cursor-pointer"
+              style={{ color: "#ffffff" }}
+            >
+              <span style={{ color: "#ffffff" }}>{isPruning ? "Purging..." : "Confirm Purge"}</span>
             </button>
           </div>
         </div>

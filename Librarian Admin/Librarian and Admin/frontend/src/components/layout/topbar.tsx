@@ -54,28 +54,24 @@ export function Topbar({
 
   const hasTransactionsPermission = !user?.permissions || user.permissions.transactions !== false;
 
+  // Only the Circulation Librarian ("Jan Dale B. Piansay") receives ALL circulation notifications.
+  // Other librarians only receive transactions that landed in their account via the distribution system.
   const isCirculationLibrarian = useMemo(() => {
     if (!user) return false;
-    const role = (user.role || "").toLowerCase();
-    const subRole = (user.subRole || "").toLowerCase();
     const name = (user.name || "").toLowerCase();
+    return name.includes("jan dale") || name.includes("piansay");
+  }, [user]);
 
-    if (variant === "circulation") return true;
-    if (subRole.includes("circulation") || role.includes("circulation")) return true;
-    if (name.includes("jan dale")) return true;
-    return false;
-  }, [user, variant]);
-
-  // Helper: check if a transaction was distributed to or handled by the target librarian
+  // Helper: check if a distributed transaction landed in the target librarian's account
   const isDistributedToUser = useCallback((txn: any, targetUser: any) => {
     if (!targetUser) return false;
-    const targetId = String(targetUser.id || "");
+    const targetId = String(targetUser.id || "").trim();
     const targetName = (targetUser.name || "").trim().toLowerCase();
 
-    const assignedId = txn.assignedTo ? String(txn.assignedTo) : "";
-    const assignedName = (txn.assignedLibrarianName || "").trim().toLowerCase();
-    const decidedId = txn.decidedBy ? String(txn.decidedBy) : "";
-    const approvedName = (txn.approvedByName || "").trim().toLowerCase();
+    const assignedId = String(txn.assignedTo || txn.assigned_to || "").trim();
+    const assignedName = (txn.assignedLibrarianName || txn.assigned_librarian_name || "").trim().toLowerCase();
+    const decidedId = String(txn.decidedBy || txn.decided_by || "").trim();
+    const approvedName = (txn.approvedByName || txn.approved_by_name || "").trim().toLowerCase();
 
     const matchesId = Boolean(targetId && (assignedId === targetId || decidedId === targetId));
     const matchesName = Boolean(
