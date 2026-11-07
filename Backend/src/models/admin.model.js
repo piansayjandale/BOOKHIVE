@@ -1321,6 +1321,8 @@ export const adminModel = {
         whereClauses.push(`b.department = $${filters.length}`);
       }
 
+      whereClauses.push("b.purged_at IS NULL AND b.availability != 'Purged'");
+
       if (archivedOnly) {
         whereClauses.push("b.archived_at IS NOT NULL");
       } else if (!includeArchived) {
@@ -1600,7 +1602,7 @@ export const adminModel = {
 
   async deleteBook(id) {
     try {
-      const { rowCount } = await pool.query("DELETE FROM books WHERE id = $1", [id]);
+      const { rowCount } = await pool.query("UPDATE books SET purged_at = NOW(), availability = 'Purged', updated_at = NOW() WHERE id = $1", [id]);
       return rowCount > 0;
     } catch (error) {
       console.error("DB deleteBook failed:", error.message);

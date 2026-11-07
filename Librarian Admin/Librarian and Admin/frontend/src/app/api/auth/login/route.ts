@@ -227,7 +227,9 @@ export async function POST(request: Request) {
       const userRes = await pool.query(
         `SELECT id, name, email, id_number, password_hash, role, sub_role, department, course, permissions
          FROM users
-         WHERE LOWER(email) = $1 OR LOWER(id_number) = $1
+         WHERE (LOWER(email) = $1 OR LOWER(id_number) = $1)
+           AND (status IS NULL OR status != 'Purged')
+           AND purged_at IS NULL
          LIMIT 1`,
         [identifier]
       );

@@ -138,12 +138,14 @@ export const superAdminModel = {
         where.push(`u.role::text ILIKE $${filters.length}`);
       }
 
+      where.push("u.status::text != 'Purged' AND u.purged_at IS NULL");
+
       if (status && status !== "All") {
         if (status === "Suspended" || status === "Archived") {
           where.push(`(u.status::text = 'Suspended' OR u.status::text = 'Archived')`);
         } else {
           filters.push(status);
-          where.push(`u.status::text = $${filters.length}`);
+          where.push(`u.status::text = ${filters.length}`);
         }
       }
 
@@ -342,7 +344,7 @@ export const superAdminModel = {
     } catch {
       // Ignore if no profile
     }
-    const query = `DELETE FROM users WHERE id::text = $1::text RETURNING id, name, email`;
+    const query = `UPDATE users SET status = 'Purged', purged_at = NOW(), updated_at = NOW() WHERE id::text = $1::text RETURNING id, name, email`;
     const { rows } = await pool.query(query, [id]);
     return rows[0] || null;
   },
@@ -350,10 +352,10 @@ export const superAdminModel = {
   // 3. Permanent Data Pruning
   async purgeArchivedBooks() {
     try {
-      const countRes = await pool.query("SELECT COUNT(*) FROM books WHERE archived_at IS NOT NULL");
+      const countRes = await pool.query("SELECT COUNT(*) FROM books WHERE archived_at IS NOT NULL AND purged_at IS NULL");
       const count = Number(countRes.rows[0]?.count || 0);
 
-      await pool.query("DELETE FROM books WHERE archived_at IS NOT NULL");
+      await pool.query("UPDATE books SET purged_at = NOW(), availability = 'Purged', updated_at = NOW() WHERE archived_at IS NOT NULL AND purged_at IS NULL");
       return { purgedCount: count, entity: "Archived Books" };
     } catch (error) {
       console.warn("purgeArchivedBooks error:", error.message);
@@ -363,10 +365,10 @@ export const superAdminModel = {
 
   async purgeDeactivatedAccounts() {
     try {
-      const countRes = await pool.query("SELECT COUNT(*) FROM users WHERE status = 'Suspended' OR status = 'Archived'");
+      const countRes = await pool.query("SELECT COUNT(*) FROM users WHERE (status = 'Suspended' OR status = 'Archived') AND status != 'Purged' AND purged_at IS NULL");
       const count = Number(countRes.rows[0]?.count || 0);
 
-      await pool.query("DELETE FROM users WHERE status = 'Suspended' OR status = 'Archived'");
+      await pool.query("UPDATE users SET status = 'Purged', purged_at = NOW(), updated_at = NOW() WHERE (status = 'Suspended' OR status = 'Archived') AND status != 'Purged'");
       return { purgedCount: count, entity: "Deactivated Accounts" };
     } catch (error) {
       console.warn("purgeDeactivatedAccounts error:", error.message);
@@ -488,6 +490,8 @@ export const superAdminModel = {
       if (tab === "books") {
         const filters = [];
         const where = [];
+
+        where.push("b.purged_at IS NULL AND b.availability != 'Purged'");
 
         if (bookStatus === "Archived") {
           where.push("b.archived_at IS NOT NULL");

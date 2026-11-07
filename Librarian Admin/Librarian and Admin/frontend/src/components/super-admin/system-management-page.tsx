@@ -541,6 +541,7 @@ export function SystemManagementPage() {
   const [isLoadingArchived, setIsLoadingArchived] = useState(false);
   const [restoreConfirmBook, setRestoreConfirmBook] = useState<any | null>(null);
   const [purgeConfirmBook, setPurgeConfirmBook] = useState<any | null>(null);
+  const [purgeConfirmUser, setPurgeConfirmUser] = useState<any | null>(null);
   const [purgeAllArchivedModal, setPurgeAllArchivedModal] = useState(false);
 
   // ── Tab 4: Infrastructure & Pruning State ──────────────────────────
@@ -830,6 +831,21 @@ export function SystemManagementPage() {
       void fetchActiveBooks();
     } catch (err: any) {
       notify(err.message || "Failed to restore book.", "error");
+    }
+  };
+
+  const handlePurgeSingleUser = async () => {
+    if (!purgeConfirmUser) return;
+    try {
+      await requestJson(`/api/super-admin/users/${purgeConfirmUser.id}`, {
+        method: "DELETE",
+      });
+      notify(`"${purgeConfirmUser.name}" account removed from platform access.`, "success");
+      setPurgeConfirmUser(null);
+      void fetchArchivedUsers();
+      void fetchUsers();
+    } catch (err: any) {
+      notify(err.message || "Failed to delete account.", "error");
     }
   };
 
@@ -1819,7 +1835,7 @@ export function SystemManagementPage() {
                               type="button"
                               onClick={() => handleRestoreBook(book)}
                               className={cn(
-                                "flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-bold transition shadow-sm",
+                                "rounded-lg p-2.5 transition shadow-sm",
                                 isLight
                                   ? "border border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
                                   : "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
@@ -1827,7 +1843,6 @@ export function SystemManagementPage() {
                               title="Restore back to active catalog"
                             >
                               <RotateCcw className="h-4 w-4" />
-                              <span>Restore Book</span>
                             </button>
 
                             {/* Permanently Delete */}
@@ -1984,20 +1999,37 @@ export function SystemManagementPage() {
                           </span>
                         </td>
                         <td className="px-4 py-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => void handleRestoreUser(user)}
-                            className={cn(
-                              "flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs sm:text-sm font-bold transition ml-auto shadow-sm",
-                              isLight
-                                ? "border border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
-                                : "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
-                            )}
-                            title="Restore Account"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                            <span>Restore Account</span>
-                          </button>
+                          <div className="flex items-center justify-end gap-2">
+                            {/* Restore Account Icon-Only */}
+                            <button
+                              type="button"
+                              onClick={() => void handleRestoreUser(user)}
+                              className={cn(
+                                "rounded-lg p-2.5 transition shadow-sm",
+                                isLight
+                                  ? "border border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-200"
+                                  : "border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25"
+                              )}
+                              title="Restore Account"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+
+                            {/* Delete Account Trashcan Icon */}
+                            <button
+                              type="button"
+                              onClick={() => setPurgeConfirmUser(user)}
+                              className={cn(
+                                "rounded-lg p-2.5 transition",
+                                isLight
+                                  ? "border border-red-300 bg-red-50 text-red-700 hover:bg-red-100"
+                                  : "border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
+                              )}
+                              title="Delete Account"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -2680,8 +2712,8 @@ export function SystemManagementPage() {
         description="Safely move this user account to the archived records."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/15 p-4 text-xs font-medium text-black">
-            Archiving <strong className="font-bold text-black">{archiveConfirmUser?.name}</strong> ({archiveConfirmUser?.email}) will suspend their platform access while preserving all circulation records and borrow history. You can restore this account anytime from the Archived Records tab.
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/15 p-4 text-xs font-medium text-amber-900 dark:text-amber-200">
+            Archiving <strong className="font-bold text-amber-950 dark:text-amber-100">{archiveConfirmUser?.name}</strong> ({archiveConfirmUser?.email}) will suspend their platform access while preserving all circulation records and borrow history. You can restore this account anytime from the Archived Records tab.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
@@ -2712,8 +2744,8 @@ export function SystemManagementPage() {
         description="Move this book into the Archived Records vault."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-orange-500/30 bg-orange-500/15 p-4 text-xs font-medium text-black">
-            Archiving <strong className="font-bold text-black">&ldquo;{archiveConfirmBook?.title}&rdquo;</strong> will remove it from active student catalog search and borrow requests. You can restore it anytime from the Archived Records tab.
+          <div className="rounded-xl border border-orange-500/30 bg-orange-500/15 p-4 text-xs font-medium text-orange-900 dark:text-orange-200">
+            Archiving <strong className="font-bold text-orange-950 dark:text-orange-100">&ldquo;{archiveConfirmBook?.title}&rdquo;</strong> will remove it from active student catalog search and borrow requests. You can restore it anytime from the Archived Records tab.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
@@ -2736,6 +2768,38 @@ export function SystemManagementPage() {
         </div>
       </AdminModal>
 
+      {/* 3b. Single User Account Delete / Purge Modal */}
+      <AdminModal
+        open={Boolean(purgeConfirmUser)}
+        onClose={() => setPurgeConfirmUser(null)}
+        title="Delete User Account"
+        description="Remove user account from platform access."
+      >
+        <div className="space-y-4">
+          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs font-medium text-rose-900 dark:text-rose-200">
+            Are you sure you want to delete <strong className="font-bold text-rose-950 dark:text-rose-100">{purgeConfirmUser?.name}</strong> ({purgeConfirmUser?.email})? This account will disappear from active UI views and platform authentication, but remains securely preserved in the database for administrative retrieval.
+          </div>
+
+          <div className="flex items-center justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setPurgeConfirmUser(null)}
+              className="rounded-xl border border-slate-300 dark:border-white/10 px-4 py-2 text-xs font-semibold text-black dark:text-slate-300 hover:bg-black/5 dark:hover:bg-white/5"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handlePurgeSingleUser}
+              className="btn-purge rounded-xl bg-[#b91c1c] text-white px-4 py-2 text-xs font-bold hover:bg-[#991b1b] shadow-md border border-red-700/30"
+              style={{ color: "#ffffff" }}
+            >
+              Confirm Delete
+            </button>
+          </div>
+        </div>
+      </AdminModal>
+
       {/* 4. Single Book Permanent Delete Modal */}
       <AdminModal
         open={Boolean(purgeConfirmBook)}
@@ -2744,8 +2808,8 @@ export function SystemManagementPage() {
         description="This will permanently delete this catalog record from PostgreSQL database."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs font-medium text-black">
-            Are you sure you want to permanently delete <strong className="font-bold text-black">&ldquo;{purgeConfirmBook?.title}&rdquo;</strong>? This action cannot be reversed.
+          <div className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-4 text-xs font-medium text-rose-900 dark:text-rose-200">
+            Are you sure you want to delete <strong className="font-bold text-rose-950 dark:text-rose-100">&ldquo;{purgeConfirmBook?.title}&rdquo;</strong>? This record will disappear from active views and the UI, but remains securely preserved in the database for administrative retrieval.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
@@ -2776,9 +2840,9 @@ export function SystemManagementPage() {
         description="Irreversible bulk deletion of all decommissioned books."
       >
         <div className="space-y-4">
-          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 p-4 text-xs font-medium text-black leading-relaxed">
-            <strong className="block text-sm font-bold text-black mb-1">CRITICAL WARNING</strong>
-            This will permanently delete all <strong className="font-bold text-black">{totalArchivedBooks} archived books</strong> from PostgreSQL. This will permanently clear storage space and cannot be undone.
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/15 p-4 text-xs font-medium text-rose-900 dark:text-rose-200 leading-relaxed">
+            <strong className="block text-sm font-bold text-rose-950 dark:text-rose-100 mb-1">PURGE NOTICE</strong>
+            This will purge all <strong className="font-bold text-rose-950 dark:text-rose-100">{totalArchivedBooks} archived books</strong> from active platform display. Records disappear from the UI, but remain securely preserved in the database for administrative retrieval.
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">

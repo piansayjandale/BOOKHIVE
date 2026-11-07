@@ -12,9 +12,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const countRes = await pool.query("SELECT COUNT(*)::int AS count FROM users WHERE status = 'Suspended' OR status = 'Archived'");
+    const countRes = await pool.query("SELECT COUNT(*)::int AS count FROM users WHERE (status = 'Suspended' OR status = 'Archived') AND status != 'Purged' AND purged_at IS NULL");
     const count = Number(countRes.rows[0]?.count || 0);
-    await pool.query("DELETE FROM users WHERE status = 'Suspended' OR status = 'Archived'");
+    await pool.query("UPDATE users SET status = 'Purged', purged_at = NOW(), updated_at = NOW() WHERE (status = 'Suspended' OR status = 'Archived') AND status != 'Purged'");
 
     const session = await getSession().catch(() => null);
     const actor = session?.name || "Super Admin";

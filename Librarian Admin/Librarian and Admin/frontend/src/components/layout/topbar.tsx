@@ -47,6 +47,52 @@ export function Topbar({
     ? `BOOKHIVE ${activeSubRole.replace(/^bookhive\s+/i, "").toUpperCase()}`
     : config.title;
 
+  const isAdminOrSuperAdmin =
+    variant === "admin" ||
+    variant === "super_admin" ||
+    (user?.role && ["Admin", "Super Admin", "SUPER_ADMIN", "ADMIN"].some((r) => user.role.toUpperCase() === r.toUpperCase()));
+
+  const hasTransactionsPermission = !user?.permissions || user.permissions.transactions !== false;
+
+  const isCirculationLibrarian = useMemo(() => {
+    if (!user) return false;
+    const role = (user.role || "").toLowerCase();
+    const subRole = (user.subRole || "").toLowerCase();
+    const name = (user.name || "").toLowerCase();
+
+    if (variant === "circulation") return true;
+    if (subRole.includes("circulation") || role.includes("circulation")) return true;
+    if (name.includes("jan dale")) return true;
+    return false;
+  }, [user, variant]);
+
+  // Helper: check if a transaction was distributed to or handled by the target librarian
+  const isDistributedToUser = useCallback((txn: any, targetUser: any) => {
+    if (!targetUser) return false;
+    const targetId = String(targetUser.id || "");
+    const targetName = (targetUser.name || "").trim().toLowerCase();
+
+    const assignedId = txn.assignedTo ? String(txn.assignedTo) : "";
+    const assignedName = (txn.assignedLibrarianName || "").trim().toLowerCase();
+    const decidedId = txn.decidedBy ? String(txn.decidedBy) : "";
+    const approvedName = (txn.approvedByName || "").trim().toLowerCase();
+
+    const matchesId = Boolean(targetId && (assignedId === targetId || decidedId === targetId));
+    const matchesName = Boolean(
+      targetName &&
+      (
+        assignedName === targetName ||
+        approvedName === targetName ||
+        (assignedName && targetName.includes(assignedName)) ||
+        (assignedName && assignedName.includes(targetName)) ||
+        (approvedName && targetName.includes(approvedName)) ||
+        (approvedName && approvedName.includes(targetName))
+      )
+    );
+
+    return matchesId || matchesName;
+  }, []);
+
   const [clearedAt, setClearedAt] = useState<number>(0);
   const [readIds, setReadIds] = useState<Set<string>>(new Set());
 
@@ -144,6 +190,11 @@ export function Topbar({
   }, []);
 
   const fetchNotifications = useCallback(async () => {
+    if (isAdminOrSuperAdmin || !hasTransactionsPermission) {
+      setNotifications([]);
+      return true;
+    }
+
     try {
       const res = await fetch("/api/transactions?status=All&slim=1&limit=100");
       if (!res.ok) {
@@ -181,10 +232,11 @@ export function Topbar({
         const items = txns
           .filter(
             (t) =>
-              t.status === "Pending" ||
+              (isCirculationLibrarian || isDistributedToUser(t, user)) &&
+              (t.status === "Pending" ||
               t.status === "Cancelled" ||
               t.status === "Returned" ||
-              (t.status === "Approved" && t.type === "Borrow" && isToday(t.dueDate))
+              (t.status === "Approved" && t.type === "Borrow" && isToday(t.dueDate)))
           )
           .map((t) => {
             const isPending = t.status === "Pending";
@@ -291,11 +343,13 @@ export function Topbar({
       console.warn("Failed to fetch notifications:", err instanceof Error ? err.message : String(err));
       return false;
     }
-  }, []);
+  }, [isAdminOrSuperAdmin, hasTransactionsPermission, isCirculationLibrarian, isDistributedToUser, user]);
 
   // Real-time notification handler (instantly prepends incoming socket payloads)
   const handleRealtimeNotification = useCallback((data: any) => {
     if (!data) return;
+    if (isAdminOrSuperAdmin || !hasTransactionsPermission) return;
+    if (!isCirculationLibrarian && !isDistributedToUser(data, user)) return;
 
     const rawId = data.id || `notif-${Date.now()}`;
     const isCancel = data.isCancelled || data.eventName === "reservation:cancelled" || data.status === "Cancelled";
@@ -380,7 +434,7 @@ export function Topbar({
     setTimeout(() => {
       void fetchNotifications();
     }, 1200);
-  }, [fetchNotifications]);
+  }, [fetchNotifications, isAdminOrSuperAdmin, hasTransactionsPermission, isCirculationLibrarian, isDistributedToUser, user]);
 
   useEffect(() => {
     // Initial fetch

@@ -12,9 +12,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const countRes = await pool.query("SELECT COUNT(*)::int AS count FROM books WHERE archived_at IS NOT NULL");
+    const countRes = await pool.query("SELECT COUNT(*)::int AS count FROM books WHERE archived_at IS NOT NULL AND purged_at IS NULL");
     const count = Number(countRes.rows[0]?.count || 0);
-    await pool.query("DELETE FROM books WHERE archived_at IS NOT NULL");
+    await pool.query("UPDATE books SET purged_at = NOW(), availability = 'Purged', updated_at = NOW() WHERE archived_at IS NOT NULL AND purged_at IS NULL");
 
     const session = await getSession().catch(() => null);
     const actor = session?.name || "Super Admin";

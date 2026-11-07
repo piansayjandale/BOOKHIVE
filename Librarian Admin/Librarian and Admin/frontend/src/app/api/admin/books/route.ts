@@ -78,6 +78,8 @@ export async function GET(request: Request) {
         whereClauses.push(`b.department = $${filters.length}`);
       }
 
+      whereClauses.push("b.purged_at IS NULL AND b.availability != 'Purged'");
+
       if (archivedOnly) {
         whereClauses.push("b.archived_at IS NOT NULL");
       } else if (!includeArchived) {

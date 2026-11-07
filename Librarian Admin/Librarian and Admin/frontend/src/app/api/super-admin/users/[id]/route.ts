@@ -147,7 +147,7 @@ export async function DELETE(
   try {
     await pool.query("DELETE FROM admin_profiles WHERE user_id::text = $1::text", [id]).catch(() => {});
     const { rows } = await pool.query(
-      "DELETE FROM users WHERE id::text = $1::text RETURNING id, name, email",
+      "UPDATE users SET status = 'Purged', purged_at = NOW(), updated_at = NOW() WHERE id::text = $1::text RETURNING id, name, email",
       [id]
     );
     if (!rows[0]) {

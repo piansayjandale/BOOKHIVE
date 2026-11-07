@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     const offset = (page - 1) * pageSize;
 
     const filters: any[] = [];
-    const whereClauses: string[] = [];
+    const whereClauses: string[] = ["status != 'Purged' AND purged_at IS NULL"];
 
     if (role !== "All") {
       filters.push(role);

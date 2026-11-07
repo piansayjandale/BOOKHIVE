@@ -204,7 +204,7 @@ export async function DELETE(
     const actorName = session ? `${session.role} ${session.name}` : "BookHive Librarian";
 
     if (permanent || existing.archived_at) {
-      await pool.query("DELETE FROM books WHERE id::text = $1::text", [id]);
+      await pool.query("UPDATE books SET purged_at = NOW(), availability = 'Purged', updated_at = NOW() WHERE id::text = $1::text", [id]);
       try {
         await pool.query(
           `INSERT INTO history_logs (actor, action, target, module, detail)
