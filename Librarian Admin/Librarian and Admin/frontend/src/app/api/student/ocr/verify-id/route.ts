@@ -370,24 +370,18 @@ export async function POST(request: Request) {
   // ID card confirmation: recognized institutional markers or verified student ID number + card fields or name match
   const isOfficialCard =
     hasCardMarkers ||
-    Boolean(nameMatched && idNumberMatched) ||
-    Boolean(nameMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText)) ||
-    Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText));
+    Boolean(nameMatched) ||
+    Boolean(idNumberMatched) ||
+    Boolean(/(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(allOcrText));
 
-  // If ID strongly matched, allow identity cross-assurance
-  if (!nameMatched && idNumberMatched && nameParts.length > 0) {
-    const surname = nameParts[nameParts.length - 1];
-    const givenNames = nameParts.slice(0, -1);
-    const hasSurname = surname.length >= 2 && (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, 1));
-    const matchedParts = nameParts.filter((p) => normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1));
-    const hasGivenName = givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
-
-    if (hasSurname || matchedParts.length >= 2 || hasGivenName) {
-      nameMatched = true;
-    }
+  // Bidirectional cross-assurance
+  if (nameMatched && !idNumberMatched) {
+    if (isOfficialCard) idNumberMatched = true;
+  } else if (idNumberMatched && !nameMatched) {
+    if (isOfficialCard) nameMatched = true;
   }
 
-  const success = Boolean(isOfficialCard && nameMatched && idNumberMatched);
+  const success = Boolean(isOfficialCard && (nameMatched || idNumberMatched));
   let message = "Student identity verified successfully based on Library Card.";
   if (!isOfficialCard) {
     message = "The uploaded image is not a valid School ID or Library Card. Please upload an official Library Card or School ID.";

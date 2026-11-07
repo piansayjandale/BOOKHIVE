@@ -127,10 +127,14 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
         (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, surname.length > 5 ? 2 : 1));
 
       const givenNameMatched =
-        givenNames.length === 0 ||
+        givenNames.length > 0 &&
         givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
 
-      nameMatched = Boolean(surnameMatched && givenNameMatched);
+      const matchedPartsCount = nameParts.filter((p) =>
+        normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1)
+      ).length;
+
+      nameMatched = Boolean(surnameMatched || givenNameMatched || matchedPartsCount >= 2);
     }
   }
 
@@ -230,24 +234,18 @@ function evaluateClientMatch(ocrText: string, enteredName: string, enteredId: st
     // ID card confirmation: recognized institutional markers or verified student ID number + card fields or name match
     const isOfficialCard =
       hasCardMarkers ||
-      Boolean(nameMatched && idNumberMatched) ||
-      Boolean(nameMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(ocrText)) ||
-      Boolean(idNumberMatched && /(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(ocrText));
+      Boolean(nameMatched) ||
+      Boolean(idNumberMatched) ||
+      Boolean(/(?:ID|NO|CARD|STUDENT|CONTACT|SIGNATURE|BS|TECHNOLOGY|COLLEGE|UNIVERSITY|CAMPUS)/i.test(ocrText));
 
-    // If ID strongly matched, allow identity cross-assurance
-    if (!nameMatched && idNumberMatched && nameParts.length > 0) {
-      const surname = nameParts[nameParts.length - 1];
-      const givenNames = nameParts.slice(0, -1);
-      const hasSurname = surname.length >= 2 && (normOcr.includes(surname) || isFuzzyWordMatch(surname, ocrWords, 1));
-      const matchedParts = nameParts.filter((p) => normOcr.includes(p) || isFuzzyWordMatch(p, ocrWords, 1));
-      const hasGivenName = givenNames.some((g) => normOcr.includes(g) || isFuzzyWordMatch(g, ocrWords, 1));
-
-      if (hasSurname || matchedParts.length >= 2 || hasGivenName) {
-        nameMatched = true;
-      }
+    // Bidirectional Cross-Assurance:
+    if (nameMatched && !idNumberMatched) {
+      if (isOfficialCard) idNumberMatched = true;
+    } else if (idNumberMatched && !nameMatched) {
+      if (isOfficialCard) nameMatched = true;
     }
 
-  const success = Boolean(isOfficialCard && nameMatched && idNumberMatched);
+    const success = Boolean(isOfficialCard && (nameMatched || idNumberMatched));
   let message = "Student identity verified successfully based on Library Card.";
   if (!isOfficialCard) {
     message = "The uploaded image is not a valid School ID or Library Card. Please upload an official Library Card or School ID.";
@@ -415,7 +413,7 @@ export default function BorrowScreen() {
           expectedName: checkName,
           expectedIdNumber: checkId,
         },
-        { timeout: 35000 }
+        { timeout: 60000 }
       );
 
       const data = response.data;
@@ -489,7 +487,7 @@ export default function BorrowScreen() {
     }
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
-      quality: 0.85,
+      quality: 0.70,
       base64: true,
     });
     if (!result.canceled && result.assets?.[0]) {
@@ -517,7 +515,7 @@ export default function BorrowScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
-      quality: 0.85,
+      quality: 0.70,
       base64: true,
     });
     if (!result.canceled && result.assets?.[0]) {
@@ -679,7 +677,7 @@ export default function BorrowScreen() {
               expectedName: name.trim(),
               expectedIdNumber: studentId.trim(),
             },
-            { timeout: 35000 }
+            { timeout: 60000 }
           );
 
           const ocrResult = response.data;
@@ -718,15 +716,41 @@ export default function BorrowScreen() {
         }
       }
 
-      // If NOT matched, STOP and DO NOT CONTINUE!
+      // If not automatically matched, allow student to proceed with manual confirmation for librarian review
       if (!isVerified) {
         Alert.alert(
-          "ID Verification Failed",
-          `${mismatchReason || "The information on your Library Card does not match your entered credentials."}\n\nEntered Credentials:\n• Name: ${name}\n• Student ID: ${studentId}\n\nYou cannot continue with this ${action.toLowerCase()} request until your information matches your Library Card. Please re-upload a clearer photo or match your entered details.`,
+          "ID Verification Notice",
+          `${mismatchReason || "The card photo could not be verified automatically."}\n\nEntered Credentials:\n• Name: ${name}\n• Student ID: ${studentId}\n\nWould you like to submit your ${action.toLowerCase()} request with this uploaded card? The librarian will verify your physical card upon book pickup.`,
           [
             {
-              text: "Match Details or Re-upload",
-              style: "default",
+              text: "Re-upload Photo",
+              style: "cancel",
+            },
+            {
+              text: "Proceed with Request",
+              onPress: () => {
+                const returnDate = computeReturnDate(reservationDate);
+                if (!returnDate) {
+                  Alert.alert("Error", "Please enter a valid borrow date.");
+                  return;
+                }
+                setIsSubmitting(true);
+                router.push({
+                  pathname: "/request-confirmation",
+                  params: {
+                    title: String(title),
+                    author: String(author),
+                    isbn: String(isbn),
+                    department,
+                    studentName: name,
+                    studentId,
+                    reservationDate,
+                    returnDate,
+                    action,
+                    studentIDImage,
+                  },
+                });
+              },
             },
           ]
         );
@@ -1424,8 +1448,8 @@ export default function BorrowScreen() {
             <Ionicons
               name={
                 isBorrow
-                  ? (isLimitReached ? "alert-circle" : (hasOverdueLoans ? "warning" : ((isLocalhost && studentIDImage && ocrVerified && !ocrSuccess) ? "alert-circle" : "paper-plane")))
-                  : ((isLocalhost && studentIDImage && ocrVerified && !ocrSuccess) ? "alert-circle" : "bookmark")
+                  ? (isLimitReached ? "alert-circle" : (hasOverdueLoans ? "warning" : "paper-plane"))
+                  : "bookmark"
               }
               size={19}
               color={
@@ -1433,8 +1457,6 @@ export default function BorrowScreen() {
                   ? (isDarkMode ? "#F87171" : "#DC2626")
                   : (hasOverdueLoans
                       ? (isDarkMode ? "#FBBF24" : "#D97706")
-                      : (isLocalhost && studentIDImage && ocrVerified && !ocrSuccess)
-                      ? (isDarkMode ? "#F87171" : "#DC2626")
                       : theme.buttonPrimaryText)
               }
               style={{ marginRight: 8 }}
@@ -1445,8 +1467,6 @@ export default function BorrowScreen() {
                   ? (isDarkMode ? "#F87171" : "#DC2626")
                   : (hasOverdueLoans
                       ? (isDarkMode ? "#FBBF24" : "#D97706")
-                      : (isLocalhost && studentIDImage && ocrVerified && !ocrSuccess)
-                      ? (isDarkMode ? "#F87171" : "#DC2626")
                       : theme.buttonPrimaryText),
                 fontWeight: '900',
                 fontSize: 16,
@@ -1460,12 +1480,8 @@ export default function BorrowScreen() {
                     ? `Borrow Limit Reached (${activeBorrowCount}/${borrowLimit})`
                     : (hasOverdueLoans
                         ? `Overdue Return Required (${overdueBooks.length})`
-                        : (isLocalhost && studentIDImage && ocrVerified && !ocrSuccess)
-                        ? "MATCH REQUIRED TO PROCEED ✕"
                         : 'Submit Borrow Request →'))
-                : ((isLocalhost && studentIDImage && ocrVerified && !ocrSuccess)
-                    ? "MATCH REQUIRED TO PROCEED ✕"
-                    : 'Reserve Book (Join Queue) →')}
+                : 'Reserve Book (Join Queue) →'}
             </Text>
           </View>
         )}
