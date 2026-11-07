@@ -1330,6 +1330,9 @@ export default function BookDetailsScreen() {
                 let borrowDate = "";
                 let returnDate = "";
                 let borrowerName = "";
+                let nameBadgeBg = "transparent";
+                let nameBadgeTextColor = theme.textPrimary;
+                let nameBadgeBorder = "transparent";
 
                 if (ledgerEntry) {
                   const rawBorrow = ledgerEntry.borrowDate || ledgerEntry.requestedAt || ledgerEntry.date;
@@ -1344,6 +1347,35 @@ export default function BookDetailsScreen() {
                   returnDate = formatDateCell(rawReturn);
 
                   borrowerName = ledgerEntry.borrowerName || ledgerEntry.studentName || (isMyActiveLoan ? (user?.fullName || "Student Borrower") : "Student Borrower");
+
+                  const isRes = !isReturnedEntry && (ledgerEntry.type === 'Reservation' || ledgerEntry.action === 'Reserve' || ledgerEntry.status === 'Reserved' || ledgerEntry.status === 'Pending');
+                  const isBorrowActive = !isReturnedEntry && !isRes;
+                  const isDue = isBorrowActive && (ledgerEntry.status === 'Overdue' || (() => {
+                    const d = new Date(ledgerEntry.dueDate || ledgerEntry.returnDate);
+                    if (isNaN(d.getTime())) return false;
+                    const now = new Date();
+                    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+                    const dueStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    return dueStart <= todayStart;
+                  })());
+
+                  if (borrowerName) {
+                    if (isReturnedEntry) {
+                      nameBadgeBg = "transparent";
+                    } else if (isDue) {
+                      nameBadgeBg = isDarkMode ? "rgba(239, 68, 68, 0.2)" : "#FEE2E2";
+                      nameBadgeTextColor = isDarkMode ? "#F87171" : "#991B1B";
+                      nameBadgeBorder = isDarkMode ? "rgba(239, 68, 68, 0.4)" : "#FCA5A5";
+                    } else if (isBorrowActive) {
+                      nameBadgeBg = isDarkMode ? "rgba(16, 185, 129, 0.2)" : "#DCFCE7";
+                      nameBadgeTextColor = isDarkMode ? "#86EFAC" : "#065F46";
+                      nameBadgeBorder = isDarkMode ? "rgba(16, 185, 129, 0.4)" : "#86EFAC";
+                    } else if (isRes) {
+                      nameBadgeBg = isDarkMode ? "rgba(168, 85, 247, 0.2)" : "#F3E8FF";
+                      nameBadgeTextColor = isDarkMode ? "#D8B4FE" : "#6B21A8";
+                      nameBadgeBorder = isDarkMode ? "rgba(168, 85, 247, 0.4)" : "#D8B4FE";
+                    }
+                  }
                 } else if (isFirstActiveRow) {
                   const source = liveBookData?.activeLoan || (isApprovedLoan ? activeRequest : null);
                   const rawBorrow = source?.borrowDate || source?.pickupDate || source?.requestedAt || source?.decidedAt || source?.date;
@@ -1353,6 +1385,10 @@ export default function BookDetailsScreen() {
                   returnDate = formatDateCell(rawReturn);
 
                   borrowerName = source?.borrowerName || source?.studentName || (isMyActiveLoan ? (user?.fullName || "Student Borrower") : "Active Borrower");
+
+                  nameBadgeBg = isDarkMode ? "rgba(16, 185, 129, 0.2)" : "#DCFCE7";
+                  nameBadgeTextColor = isDarkMode ? "#86EFAC" : "#065F46";
+                  nameBadgeBorder = isDarkMode ? "rgba(16, 185, 129, 0.4)" : "#86EFAC";
                 }
 
                 return (
@@ -1368,13 +1404,57 @@ export default function BookDetailsScreen() {
                       </Text>
                     </View>
                     <View style={styles.bookCardCellName}>
-                      <Text style={[styles.bookCardCellNameText, { color: theme.textPrimary }]} numberOfLines={1}>
-                        {borrowerName || " "}
-                      </Text>
+                      {nameBadgeBg !== "transparent" ? (
+                        <View style={{
+                          backgroundColor: nameBadgeBg,
+                          borderColor: nameBadgeBorder,
+                          borderWidth: 1,
+                          borderRadius: 6,
+                          paddingHorizontal: 6,
+                          paddingVertical: 1.5,
+                          alignSelf: "flex-start",
+                          maxWidth: "96%",
+                        }}>
+                          <Text style={{ color: nameBadgeTextColor, fontSize: 11, fontWeight: "700" }} numberOfLines={1}>
+                            {borrowerName}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.bookCardCellNameText, { color: theme.textPrimary }]} numberOfLines={1}>
+                          {borrowerName || " "}
+                        </Text>
+                      )}
                     </View>
                   </View>
                 );
               })}
+            </View>
+
+            {/* Visual Status Legend matching Student Library Card */}
+            <View style={{
+              flexDirection: "row",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+              paddingVertical: 8,
+              paddingHorizontal: 10,
+              borderTopWidth: 1,
+              borderTopColor: isDarkMode ? theme.cardBorder : "rgba(2, 116, 187, 0.12)",
+              backgroundColor: isDarkMode ? "rgba(255, 255, 255, 0.02)" : "#F8FAFC",
+            }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#86EFAC" }} />
+                <Text style={{ fontSize: 10, fontWeight: "600", color: isDarkMode ? "#94A3B8" : "#475569" }}>Green: Borrowed</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#F87171" }} />
+                <Text style={{ fontSize: 10, fontWeight: "600", color: isDarkMode ? "#94A3B8" : "#475569" }}>Red: Due</Text>
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: "#C084FC" }} />
+                <Text style={{ fontSize: 10, fontWeight: "600", color: isDarkMode ? "#94A3B8" : "#475569" }}>Violet: Reserved</Text>
+              </View>
             </View>
           </View>
 

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Check, Copy, Clock3, Info, Tag, X, BookOpen, ChevronDown, ChevronUp, Calendar, Layers, Bookmark, Sparkles } from "lucide-react";
 
-import { generateApaCitation, formatDate, cn } from "@/lib/utils";
+import { generateApaCitation, formatDate, isDueToReturn, cn } from "@/lib/utils";
 import type { BookAvailability, BookRecord } from "@/lib/types";
 import { generateAccessionNumber } from "@/lib/catalog/call-number";
 import { useTheme } from "@/components/providers/theme-provider";
@@ -372,6 +372,8 @@ export function BookDetailModal({
               borrowerName: resolveBorrowerName(entry),
               status: entry.status || "Approved",
               type: entry.type || "Borrow",
+              dueDate: (entry as any).dueDate || (entry as any).due_date || (entry as any).dueDateReturn,
+              returnedAt: (entry as any).returnedAt || (entry as any).returned_at,
             });
           }
         });
@@ -396,6 +398,8 @@ export function BookDetailModal({
                 borrowerName: resolveBorrowerName(t),
                 status: t.status,
                 type: t.type,
+                dueDate: t.dueDate || t.due_date,
+                returnedAt: t.returnedAt || t.returned_at,
               });
             }
           });
@@ -417,6 +421,8 @@ export function BookDetailModal({
                 borrowerName: resolveBorrowerName(t),
                 status: t.status,
                 type: t.type,
+                dueDate: t.dueDate || t.due_date,
+                returnedAt: t.returnedAt || t.returned_at,
               });
             }
           });
@@ -454,6 +460,8 @@ export function BookDetailModal({
                     borrowerName: resolveBorrowerName(r, storedProfileName),
                     status: r.status || "Approved",
                     type: r.action === "Reserve" ? "Reservation" : "Borrow",
+                    dueDate: r.dueDate || r.due_date,
+                    returnedAt: r.returnedAt || r.returned_at,
                   });
                 }
               });
@@ -474,6 +482,8 @@ export function BookDetailModal({
                     borrowerName: resolveBorrowerName(h, storedProfileName),
                     status: h.status || "Completed",
                     type: h.action === "Reserve" ? "Reservation" : "Borrow",
+                    dueDate: h.dueDate || h.due_date,
+                    returnedAt: h.returnedAt || h.returned_at,
                   });
                 }
               });
@@ -494,6 +504,8 @@ export function BookDetailModal({
                     borrowerName: resolveBorrowerName(g, storedProfileName),
                     status: g.status,
                     type: g.type,
+                    dueDate: g.dueDate || g.due_date,
+                    returnedAt: g.returnedAt || g.returned_at,
                   });
                 }
               });
@@ -915,14 +927,89 @@ export function BookDetailModal({
                   const returnDateFormatted = entry?.returnDate ? formatBorrowDate(entry.returnDate) : "";
                   const borrowerName = entry?.borrowerName || "";
 
+                  // Status determination for color indications matching library card
+                  const isReturned = Boolean(
+                    entry && (
+                      entry.status?.toLowerCase() === "returned" ||
+                      entry.status?.toLowerCase() === "completed" ||
+                      Boolean(entry.returnedAt) ||
+                      Boolean((entry as any).returned_at)
+                    )
+                  );
+
+                  const isReservation = Boolean(
+                    entry &&
+                    !isReturned && (
+                      entry.type?.toLowerCase() === "reservation" ||
+                      (entry as any).action === "Reserve" ||
+                      entry.status?.toLowerCase() === "reserved" ||
+                      entry.status?.toLowerCase() === "pending"
+                    )
+                  );
+
+                  const isBorrow = Boolean(
+                    entry &&
+                    !isReturned &&
+                    !isReservation && (
+                      entry.type?.toLowerCase() === "borrow" ||
+                      !entry.type ||
+                      entry.status?.toLowerCase() === "borrowed" ||
+                      entry.status?.toLowerCase() === "approved" ||
+                      entry.status?.toLowerCase() === "picked up" ||
+                      entry.status?.toLowerCase() === "on loan" ||
+                      entry.status?.toLowerCase() === "overdue"
+                    )
+                  );
+
+                  const isDue = Boolean(
+                    entry &&
+                    isBorrow && (
+                      entry.status?.toLowerCase() === "overdue" ||
+                      isDueToReturn(entry.dueDate || entry.returnDate)
+                    )
+                  );
+
+                  let nameHighlightClass = "";
+                  let dotColorClass = "";
+                  let rowTintClass = "";
+
+                  if (entry && borrowerName) {
+                    if (isReturned) {
+                      nameHighlightClass = "";
+                    } else if (isDue) {
+                      // Due / Overdue: Red
+                      nameHighlightClass = isLight
+                        ? "bg-red-100 text-red-800 font-bold border border-red-300"
+                        : "bg-red-500/25 text-[#F87171] font-bold border border-red-500/40";
+                      dotColorClass = isLight ? "bg-red-600" : "bg-red-400";
+                      rowTintClass = isLight ? "bg-red-50/40" : "bg-red-500/[0.08]";
+                    } else if (isBorrow) {
+                      // Currently Borrowed: Green
+                      nameHighlightClass = isLight
+                        ? "bg-[#86EFAC] text-[#064E3B] font-bold border border-emerald-400/60"
+                        : "bg-emerald-400/25 text-[#86EFAC] font-bold border border-emerald-500/40";
+                      dotColorClass = isLight ? "bg-emerald-700" : "bg-emerald-400";
+                      rowTintClass = isLight ? "bg-emerald-50/40" : "bg-emerald-400/[0.08]";
+                    } else if (isReservation) {
+                      // Reservation: Violet
+                      nameHighlightClass = isLight
+                        ? "bg-purple-100 text-purple-800 font-bold border border-purple-300"
+                        : "bg-purple-500/28 text-[#D8B4FE] font-bold border border-purple-500/40";
+                      dotColorClass = isLight ? "bg-purple-600" : "bg-purple-400";
+                      rowTintClass = isLight ? "bg-purple-50/40" : "bg-purple-500/[0.08]";
+                    }
+                  }
+
                   return (
                     <div
                       key={idx}
                       className={cn(
                         "flex min-h-[30px] sm:min-h-[32px] items-stretch text-xs transition-colors border-b last:border-b-0",
-                        isLight
-                          ? "border-slate-300 hover:bg-sky-50/60"
-                          : "border-white/10 hover:bg-white/[0.02]"
+                        rowTintClass ? rowTintClass : (
+                          isLight
+                            ? "border-slate-300 hover:bg-sky-50/60"
+                            : "border-white/10 hover:bg-white/[0.02]"
+                        )
                       )}
                     >
                       <div className={cn(
@@ -938,14 +1025,46 @@ export function BookDetailModal({
                         {returnDateFormatted ? returnDateFormatted : <span className="opacity-0 select-none">&nbsp;</span>}
                       </div>
                       <div className={cn(
-                        "flex-1 min-w-0 px-3 py-1.5 text-xs truncate flex items-center",
+                        "flex-1 min-w-0 px-3 py-1 text-xs truncate flex items-center",
                         isLight ? "text-slate-900 font-semibold" : "text-slate-200 font-medium"
                       )}>
-                        {borrowerName ? borrowerName : <span className="opacity-0 select-none">&nbsp;</span>}
+                        {borrowerName ? (
+                          nameHighlightClass ? (
+                            <span className={cn("px-2 py-0.5 rounded-md inline-flex items-center gap-1.5 max-w-full shadow-2xs", nameHighlightClass)}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", dotColorClass)} />
+                              <span className="truncate">{borrowerName}</span>
+                            </span>
+                          ) : (
+                            <span className="truncate">{borrowerName}</span>
+                          )
+                        ) : (
+                          <span className="opacity-0 select-none">&nbsp;</span>
+                        )}
                       </div>
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Visual Status Legend matching Student Library Card */}
+              <div className={cn(
+                "flex flex-wrap items-center justify-center gap-4 py-2 px-3 border-t text-[11px] font-semibold",
+                isLight
+                  ? "bg-slate-50 border-slate-200 text-slate-600"
+                  : "bg-white/[0.02] border-white/10 text-slate-300"
+              )}>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#86EFAC]" />
+                  <span>Green: Currently Borrowed</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#F87171]" />
+                  <span>Red: Due to Return</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-full bg-[#C084FC]" />
+                  <span>Violet: Reserved</span>
+                </div>
               </div>
             </div>
 

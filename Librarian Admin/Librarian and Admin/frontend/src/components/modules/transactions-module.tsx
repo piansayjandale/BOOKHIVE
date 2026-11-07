@@ -26,6 +26,8 @@ import {
   SlidersHorizontal,
   X,
   ZoomIn,
+  ZoomOut,
+  Loader2,
 } from "lucide-react";
 
 import dashboardSocket from "@/lib/socket";
@@ -680,14 +682,71 @@ export function TransactionsModule() {
   } | null>(null);
   const [declineComment, setDeclineComment] = useState("");
   const [enlargedModalImage, setEnlargedModalImage] = useState<string | null>(null);
+  const [modalZoomScale, setModalZoomScale] = useState(1);
+  const [modalPanOffset, setModalPanOffset] = useState({ x: 0, y: 0 });
+  const [isDraggingZoom, setIsDraggingZoom] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const [isLoadingModalImage, setIsLoadingModalImage] = useState(false);
+
+  const handleZoomIn = () => {
+    setModalZoomScale((prev) => Math.min(Number((prev + 0.5).toFixed(2)), 4));
+  };
+
+  const handleZoomOut = () => {
+    setModalZoomScale((prev) => {
+      const next = Math.max(Number((prev - 0.5).toFixed(2)), 0.5);
+      if (next <= 1) setModalPanOffset({ x: 0, y: 0 });
+      return next;
+    });
+  };
+
+  const handleResetZoom = () => {
+    setModalZoomScale(1);
+    setModalPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleWheelZoom = (e: React.WheelEvent) => {
+    e.stopPropagation();
+    if (e.deltaY < 0) {
+      setModalZoomScale((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 4));
+    } else {
+      setModalZoomScale((prev) => {
+        const next = Math.max(Number((prev - 0.25).toFixed(2)), 0.5);
+        if (next <= 1) setModalPanOffset({ x: 0, y: 0 });
+        return next;
+      });
+    }
+  };
+
+  const handleMouseDownZoom = (e: React.MouseEvent) => {
+    if (modalZoomScale <= 1) return;
+    setIsDraggingZoom(true);
+    dragStartRef.current = { x: e.clientX - modalPanOffset.x, y: e.clientY - modalPanOffset.y };
+  };
+
+  const handleMouseMoveZoom = (e: React.MouseEvent) => {
+    if (!isDraggingZoom || modalZoomScale <= 1) return;
+    setModalPanOffset({
+      x: e.clientX - dragStartRef.current.x,
+      y: e.clientY - dragStartRef.current.y,
+    });
+  };
+
+  const handleMouseUpZoom = () => {
+    setIsDraggingZoom(false);
+  };
 
   // Auto-fetch full student ID image on-demand if missing from transaction summary
   useEffect(() => {
-    if (!confirmModalData?.transaction) return;
+    if (!confirmModalData?.transaction) {
+      setIsLoadingModalImage(false);
+      return;
+    }
     const tx = confirmModalData.transaction;
     const existingImg = tx.studentIdImage || (tx as any).student_id_image;
     if (!existingImg) {
       let isMounted = true;
+      setIsLoadingModalImage(true);
       fetch(`/api/transactions/${tx.id}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -706,10 +765,16 @@ export function TransactionsModule() {
             });
           }
         })
-        .catch(() => {});
+        .catch(() => {})
+        .finally(() => {
+          if (isMounted) setIsLoadingModalImage(false);
+        });
       return () => {
         isMounted = false;
+        setIsLoadingModalImage(false);
       };
+    } else {
+      setIsLoadingModalImage(false);
     }
   }, [confirmModalData?.transaction?.id]);
 
@@ -793,17 +858,25 @@ export function TransactionsModule() {
     return () => window.removeEventListener("highlight-transaction", handleHighlight);
   }, []);
 
-  // Escape key handler for confirmation pop-up modal
+  // Escape key handler for confirmation pop-up modal and zoom lightbox
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && confirmModalData) {
-        setConfirmModalData(null);
-    setDeclineComment("");
+      if (e.key === "Escape") {
+        if (enlargedModalImage) {
+          setEnlargedModalImage(null);
+          setModalZoomScale(1);
+          setModalPanOffset({ x: 0, y: 0 });
+          return;
+        }
+        if (confirmModalData) {
+          setConfirmModalData(null);
+          setDeclineComment("");
+        }
       }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [confirmModalData]);
+  }, [confirmModalData, enlargedModalImage]);
 
   /* ── Master Data Fetching & Optimistic Merge Protection ──────────────── */
 
@@ -3290,7 +3363,11 @@ export function TransactionsModule() {
                   {Boolean(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image) ? (
                     <button
                       type="button"
-                      onClick={() => setEnlargedModalImage(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image)}
+                      onClick={() => {
+                        setModalZoomScale(1);
+                        setModalPanOffset({ x: 0, y: 0 });
+                        setEnlargedModalImage(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image);
+                      }}
                       className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20 hover:bg-emerald-500/20 transition cursor-pointer"
                     >
                       <ZoomIn className="h-3 w-3" />
@@ -3305,19 +3382,34 @@ export function TransactionsModule() {
 
                 {Boolean(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image) ? (
                   <div
-                    onClick={() => setEnlargedModalImage(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image)}
-                    className="group relative aspect-[16/9] w-full max-h-52 overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-black/10 flex items-center justify-center shadow-inner cursor-pointer hover:border-emerald-500/50 transition"
-                    title="Click to view full size ID"
+                    onClick={() => {
+                      setModalZoomScale(1);
+                      setModalPanOffset({ x: 0, y: 0 });
+                      setEnlargedModalImage(confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image);
+                    }}
+                    className={cn(
+                      "group relative aspect-[16/9] w-full max-h-56 overflow-hidden rounded-xl border transition-all cursor-zoom-in shadow-inner flex items-center justify-center select-none",
+                      isLight
+                        ? "border-slate-200 bg-slate-100 hover:border-[#0274BB]/60 hover:shadow-md"
+                        : "border-slate-700 bg-slate-900/60 hover:border-emerald-500/60 hover:shadow-md"
+                    )}
+                    title="Click image to open full size view with zoom in / zoom out"
                   >
                     <img
                       src={confirmModalData.transaction.studentIdImage || (confirmModalData.transaction as any).student_id_image}
                       alt="Student ID Verification"
-                      className="h-full w-full object-contain transition group-hover:scale-[1.02]"
+                      className="h-full w-full object-contain pointer-events-none transition-transform duration-200 group-hover:scale-[1.01]"
                     />
-                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-1.5 text-white text-xs font-bold">
-                      <ZoomIn className="h-4 w-4" />
-                      <span>Click to enlarge</span>
+                    {/* Corner badge indicating click to zoom, completely unobtrusive so it does not block the ID */}
+                    <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/65 backdrop-blur-xs px-2 py-1 text-[10px] font-bold text-white shadow-sm pointer-events-none">
+                      <ZoomIn className="h-3 w-3" />
+                      <span>Click to Zoom</span>
                     </div>
+                  </div>
+                ) : isLoadingModalImage ? (
+                  <div className={cn("h-28 w-full rounded-xl border flex flex-col items-center justify-center gap-2 text-xs", isLight ? "border-slate-200 bg-slate-50 text-slate-500" : "border-slate-700 bg-slate-800/40 text-slate-400")}>
+                    <Loader2 className="h-5 w-5 animate-spin text-[#0274BB] dark:text-[#FCD400]" />
+                    <span>Loading student ID photo...</span>
                   </div>
                 ) : (
                   <div className={cn("h-20 w-full rounded-xl border border-dashed flex flex-col items-center justify-center gap-1 text-xs", isLight ? "border-slate-300 bg-slate-100/50 text-slate-400" : "border-slate-700 bg-white/5 text-slate-500")}>
@@ -3392,31 +3484,116 @@ export function TransactionsModule() {
         </div>
       )}
 
-      {/* Full-size ID Image Enlargement Lightbox */}
+      {/* Full-size ID Image Enlargement Lightbox with Zoom & Pan */}
       {enlargedModalImage && (
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm animate-in fade-in duration-200"
-          onClick={() => setEnlargedModalImage(null)}
+          className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/90 p-2 sm:p-4 backdrop-blur-md animate-in fade-in duration-200 select-none"
+          onClick={() => {
+            setEnlargedModalImage(null);
+            setModalZoomScale(1);
+            setModalPanOffset({ x: 0, y: 0 });
+          }}
         >
+          {/* Top Control Bar */}
           <div
-            className="relative max-h-[90vh] max-w-[90vw] overflow-hidden rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl p-2"
+            className="z-20 mb-2 flex items-center justify-between gap-3 rounded-2xl border border-white/15 bg-slate-900/95 px-4 py-2 text-white shadow-2xl backdrop-blur-md max-w-xl w-full"
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={() => setEnlargedModalImage(null)}
-              className="absolute top-3 right-3 z-10 rounded-full bg-black/60 p-2 text-white hover:bg-black/90 cursor-pointer transition active:scale-95 shadow-md"
-              aria-label="Close enlarged preview"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-200">
+                Student ID Inspection
+              </span>
+              <span className="rounded-md bg-white/10 px-2 py-0.5 text-[11px] font-mono font-bold text-amber-300">
+                {Math.round(modalZoomScale * 100)}%
+              </span>
+            </div>
+
+            {/* Zoom Control Buttons */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleZoomOut}
+                disabled={modalZoomScale <= 0.5}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 hover:bg-white/20 active:scale-95 disabled:opacity-40 transition cursor-pointer"
+                title="Zoom Out (-)"
+                aria-label="Zoom Out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleResetZoom}
+                className="flex h-8 px-2.5 items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/5 hover:bg-white/20 active:scale-95 text-xs font-bold transition cursor-pointer"
+                title="Reset Zoom (100%)"
+                aria-label="Reset Zoom"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>100%</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleZoomIn}
+                disabled={modalZoomScale >= 4}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 hover:bg-white/20 active:scale-95 disabled:opacity-40 transition cursor-pointer"
+                title="Zoom In (+)"
+                aria-label="Zoom In"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </button>
+
+              <div className="mx-1 h-5 w-px bg-white/20" />
+
+              <button
+                type="button"
+                onClick={() => {
+                  setEnlargedModalImage(null);
+                  setModalZoomScale(1);
+                  setModalPanOffset({ x: 0, y: 0 });
+                }}
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/20 text-rose-200 hover:bg-rose-500/40 active:scale-95 transition cursor-pointer shadow-sm"
+                aria-label="Close enlarged preview"
+                title="Close (Esc)"
+              >
+                <X className="h-4 w-4 stroke-[2.5]" />
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Zoomable / Pannable Image Viewport */}
+          <div
+            className="relative flex-1 w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-slate-950/80 flex items-center justify-center p-2"
+            onClick={(e) => e.stopPropagation()}
+            onWheel={handleWheelZoom}
+            onMouseDown={handleMouseDownZoom}
+            onMouseMove={handleMouseMoveZoom}
+            onMouseUp={handleMouseUpZoom}
+            style={{
+              cursor: modalZoomScale > 1 ? (isDraggingZoom ? "grabbing" : "grab") : "default",
+            }}
+          >
             <img
               src={enlargedModalImage}
               alt="Enlarged Student ID"
-              className="max-h-[85vh] max-w-[85vw] object-contain rounded-lg"
+              draggable={false}
+              style={{
+                transform: `scale(${modalZoomScale}) translate(${modalPanOffset.x / modalZoomScale}px, ${modalPanOffset.y / modalZoomScale}px)`,
+                transition: isDraggingZoom ? "none" : "transform 0.15s ease-out",
+              }}
+              className="max-h-[82vh] max-w-[88vw] object-contain rounded-lg select-none pointer-events-none shadow-2xl"
             />
+          </div>
+
+          <div className="mt-2 text-[11px] text-slate-400 font-medium flex items-center gap-3">
+            <span>Scroll mouse wheel to zoom in/out</span>
+            <span>•</span>
+            <span>Drag image to pan when zoomed</span>
+            <span>•</span>
+            <span>Esc to close</span>
           </div>
         </div>
       )}
